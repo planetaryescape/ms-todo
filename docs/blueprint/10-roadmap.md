@@ -217,22 +217,23 @@ A named foundation turn: there's nothing to use yet, but it's released and check
 
 ## Rung 7: Convertible: My Day
 
-**Previously:** quick add in a CLI and TUI. **Now:** the same, plus My Day, shared with the phone through a category.
+**Previously:** quick add in a CLI and TUI. **Now:** the same, plus My Day, kept in our extension and mirrored on the phone through the due date (D-037).
 
 **Promise:** "I plan today in ms-todo, and the phone shows the same plan."
 
 **Build:**
 
-- My Day ([05](05-custom-features.md#my-day)): the category and its creation, the extension date, the rollover, suggestions, the My Day view in the TUI, `myday` in the CLI, the `--my-day` flag and the `+myday` quick-add token.
+- My Day ([05](05-custom-features.md#my-day)): the extension date, the due-date mirror (`myDayDueSet`), the rollover, suggestions, the My Day view in the TUI, `myday` in the CLI, the `--my-day` flag, the `+myday` quick-add token, and a `doctor` note that the phone mirror depends on an app setting Graph can't show.
 
-**New unknowns:** the S7 phone check (does the phone show and filter the category?); the rollover across daemon restarts.
+**New unknowns:** the rollover across daemon restarts, two ms-todo installs rolling over the same tasks, and how the app treats a due date removed after it put the task in its My Day.
 
-**Demo:** add three tasks to My Day, see the tag on the phone, and see them gone after the rollover.
+**Demo:** add a task with no due date to My Day, see it in the phone's My Day, finish it or leave it, and after the rollover the leftover has no due date again.
 
-**Done when** (both depend on the S7 phone check):
+**Done when:**
 
-- A task added to My Day in ms-todo shows the "My Day" category on the phone, and it's gone from My Day after midnight.
-- Adding the category on the phone puts the task in ms-todo's My Day view.
+- A task with no due date added to My Day in ms-todo shows in the phone's My Day (with "Show 'Due Today' tasks in My Day" on).
+- After the rollover, an unfinished task whose due date ms-todo set has no due date and is out of ms-todo's My Day; a task with a due date the user set keeps it.
+- A task added to My Day on one ms-todo instance shows in `ms-todo myday` on another after its next sync.
 
 **Left out:** the rest of the API surface (rung 8).
 

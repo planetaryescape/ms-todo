@@ -57,7 +57,6 @@ The **My Day view** has:
 
 - A heading with the date.
 - Today's tasks, with a "Suggestions" section below them: due today, overdue, and yesterday's unfinished My Day tasks. One key adds a suggestion.
-- The "My Day" category isn't shown as a chip, since it's shown structurally.
 
 **Folders** are collapsible groups in the sidebar, from the list extension.
 

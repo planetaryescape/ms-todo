@@ -52,7 +52,7 @@ If you skip this, `ms-todo auth login` fails when it asks for a token, with an e
    | Permission | Why |
    |---|---|
    | `Tasks.ReadWrite` | Read and write your lists and tasks |
-   | `MailboxSettings.ReadWrite` | Create and manage Outlook categories: `@labels`, and the "My Day" category |
+   | `MailboxSettings.ReadWrite` | Create and manage Outlook categories, for `@labels` |
    | `offline_access` | Get refresh tokens, so you stay signed in (it's under **OpenId permissions**) |
    | `User.Read` | Already there. Shows who is signed in |
 

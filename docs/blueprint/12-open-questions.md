@@ -59,11 +59,11 @@ Confidence: high on error shapes, low on lifetime. Evidence: [S4](../research/sp
 
 ### S7 result (2026-09-24)
 
-**Graph side answered; phone side open.** A category created through Graph can be set on a task, round-trips through delta, and can be filtered on server side. A task can carry a category name with no master category; none is created. Master category names can't be renamed (PATCH returns 200 and changes nothing) and are unique ignoring case (409 `CategoryNameExists`). **`preset4` is Green and `preset3` is Yellow** in Microsoft's mapping, so 05's "preset4, yellowish" was wrong.
+**Answered: the iOS app shows no categories at all.** A category created through Graph can be set on a task, round-trips through delta, and can be filtered on server side. A task can carry a category name with no master category; none is created. Master category names can't be renamed (PATCH returns 200 and changes nothing) and are unique ignoring case (409 `CategoryNameExists`). **`preset4` is Green and `preset3` is Yellow** in Microsoft's mapping, so 05's "preset4, yellowish" was wrong.
 
-**Open: the phone check.** BK checks on the phone whether the tags show on the list row and detail view, which of the two test colours suits My Day, and whether the app can filter by category. The steps are in the evidence file. The spike list and categories stay in place until then.
+**Phone check (BK, iPhone, 2026-09-24):** the iOS To Do app shows **no categories anywhere**, neither on the list row nor in the task detail view, so there's no colour to compare and nothing to filter by. The Graph side still works as above. So a category can't carry My Day to the phone, and D-015's premise is false: My Day moves to our extension, mirrored on the phone through the due date (D-037). Categories stay for `@labels`, which Graph and Outlook show and iOS doesn't.
 
-Confidence: high (Graph), pending (phone). Evidence: [S7](../research/spikes/S7.md). Changed: [05](05-custom-features.md#my-day), D-030.
+Confidence: high. Evidence: [S7](../research/spikes/S7.md). Changed: [05](05-custom-features.md#my-day), D-030, D-037.
 
 ### S8 result (2026-09-24)
 
@@ -79,17 +79,19 @@ Confidence: high (Graph), pending (phone). Evidence: [S7](../research/spikes/S7.
 
 ### S11 result (2026-09-24)
 
-**Graph side answered; phone side open.** `dueDateTime` and `startDateTime` keep only the date: Graph stores midnight in the zone you sent and returns it in UTC. Setting `startDateTime` alone also sets `dueDateTime`. `reminderDateTime` keeps its time. BK's existing due dates are midnight in several zones (23:00Z, 00:00Z and 20:00Z), so reading must round to the nearest local midnight.
+**Answered.** `dueDateTime` and `startDateTime` keep only the date: Graph stores midnight in the zone you sent and returns it in UTC. Setting `startDateTime` alone also sets `dueDateTime`. `reminderDateTime` keeps its time. BK's existing due dates are midnight in several zones (23:00Z, 00:00Z and 20:00Z), so reading must round to the nearest local midnight.
 
-**Open: the phone check.** BK checks how the phone shows a due date, a reminder, and both together. The steps are in the evidence file.
+**Phone check (BK, iPhone, 2026-09-24): confirmed.** The phone shows due dates as dates only, in every zone: a due date written as 22:00 New York shows as the 26th. A reminder shows as a bell. A due date plus a reminder shows as "Sat 26 Sep •" with a bell icon.
 
 **Residual risk:** rounding to the nearest midnight is exact only when the writer's zone is within 12 hours of the reader's; a date written in Pacific/Kiritimati (UTC+14) reads as the previous day in London. The raw value stays in `raw_json` ([02](02-data-model.md#principles)).
 
-Confidence: high (Graph), pending (phone). Evidence: [S11](../research/spikes/S11.md). Changed: [02](02-data-model.md#principles), [06](06-natural-language.md#date-and-time-parsing), D-027.
+Confidence: high. Evidence: [S11](../research/spikes/S11.md). Changed: [02](02-data-model.md#principles), [06](06-natural-language.md#date-and-time-parsing), D-027.
 
 ### S12 result (2026-09-24)
 
 **Completing a recurring task keeps the same ID live and creates a new completed copy.** The PATCH returns 200 with `status: notStarted` and the due date rolled to the next occurrence. A new task with a new ID holds the completed occurrence. Delta returns both. Leaving out `recurrenceTimeZone` moved the due date a day later. After a roll, dates are re-based to UTC midnight. Confidence: high. Evidence: [S12](../research/spikes/S12.md). Changed: [04](04-sync-cache.md#instant-local-writes), [06](06-natural-language.md#recurrence-custom-parser-and-why).
+
+**Explained (2026-09-24):** the iOS app put two of the recurring S12 tasks into its own My Day without BK doing it, while Graph showed no My Day field (v1.0 or beta) and only `lastModifiedDateTime` moved. The cause is the app's setting **"Show 'Due Today' tasks in My Day"**, which is on in BK's app (checked read-only in the Mac app): the app puts any task due today into its own My Day. Those tasks were due today. There's no hidden field. D-037 uses this to mirror ms-todo's My Day on the phone.
 
 ### S13 result (2026-09-24)
 
@@ -116,5 +118,6 @@ Opened on 2026-09-24 by phase 0 (S4, S7, S8) and its review. The placeholders in
 - **Q8. Open.** Is D/M the default date order, so `12/10` is 12 October? (Placeholder: yes, UK.)
 - **Q9. Open.** Does lowercase `tom` mean tomorrow? It clashes with the name Tom. (Placeholder: yes, lowercase only, so `Ask Tom` stays in the title.)
 - **Q10. Open.** BK supplies ten of his own phrases for the corpus, [S8-corpus.tsv](../research/spikes/S8-corpus.tsv).
-- **Q11. Open.** My Day colour: `preset3` (Yellow) or `preset4` (Green)? Pending the S7 phone check. (Placeholder: `preset3`, D-030.)
+- **Q11. Moot (D-037).** My Day colour: `preset3` (Yellow) or `preset4` (Green)? The iOS app shows no categories (S7), and My Day no longer uses one.
+- **Q13. Open.** A task added to My Day with no due date gets today as its due date (D-037). If it's taken out of My Day by hand before the rollover, should ms-todo clear that due date straight away? (Placeholder: yes, by the same rule as the rollover.)
 - **Q12. Open.** A task created into a list that turns out to have been deleted on another device is kept as a `failed` outbox entry ([04](04-sync-cache.md#instant-local-writes)). Should it move to "Tasks" automatically instead? (Placeholder: no, keep it as failed.)

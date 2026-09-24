@@ -10,23 +10,23 @@ A task's extension also holds `opId`, the outbox operation ID of the create that
 
 ## My Day
 
-**Approach: an Outlook category called "My Day", plus the date the task was added, stored in an extension. The daemon clears it each day.**
+**Approach: ms-todo's My Day is a date in our extension. A task with no due date also gets today as its due date, so the phone app shows it in its own My Day, and ms-todo takes that date away again at the rollover (D-037).**
 
-- **Adding a task:** add the category `"My Day"` to its `categories`, and set the extension field `myDay: "YYYY-MM-DD"` to today's local date.
-- **Removing a task:** remove the category and clear `myDay`.
+- **Adding a task:** set the extension field `myDay: "YYYY-MM-DD"` to today's local date. Like every extension write, it reads, merges and PATCHes the whole document ([04](04-sync-cache.md#children-of-a-task)).
+  - **If the task has no due date,** also set `dueDateTime` to today and record `myDayDueSet: true` in the extension. The app then shows the task in its own My Day, on devices where "Show 'Due Today' tasks in My Day" is on.
+  - **If it has a due date,** leave it. The app shows it in its My Day only on the day it's actually due.
+- **Removing a task:** clear `myDay`. Whether a due date ms-todo set is cleared at once is Q13 in [12](12-open-questions.md#product-questions-for-bk) (placeholder: yes, by the rollover's rule).
 - **Daily rollover:** at the first daemon tick after the rollover time (setting `my_day.rollover_time = "HH:MM"`, default `"00:00"` local; D-024), for each task where `myDay` is before today:
-  - Remove the category and clear `myDay`, in a batch.
+  - Clear `myDay`, in a batch.
+  - If `myDayDueSet` is true, clear it too, and if the task isn't completed and its due date is still the one ms-todo set, remove the due date. A due date the user set or moved is never touched. A completed task keeps its date.
   - Record the rollover in `settings.last_rollover_date` so it only runs once, even across restarts.
   - If the daemon was off for days, run it once when the daemon next starts.
-- **A task added on another device.** Someone adds the "My Day" category on the phone (if the phone allows it; pending the S7 phone check), so there's no `myDay` date. The first time the daemon sees it, it sets `myDay` to today. That task then clears at the next midnight like the rest.
-- **Setting up the category.** The category has to exist in `/me/outlook/masterCategories` (`MailboxSettings.ReadWrite`). The daemon creates it once, with colour setting `my_day.color`. The default is **`preset3`, which is Yellow**, close to To Do's sun icon (D-030). This replaces an earlier `preset4`, which Microsoft's mapping makes Green (S7). The choice is pending BK's phone check (Q11). The name is configurable (`my_day.category`), with default `My Day`.
-- **Changing the category name.** Master category names can't be renamed: a PATCH of `displayName` returns 200 and changes nothing (S7). Names are also unique ignoring case. So changing `my_day.category` means creating a new category and re-tagging every task in My Day from the old name to the new one. The old category is left for the user to delete.
+- **Across machines.** The extension lives in Graph, so every ms-todo install on the account sees the same My Day. An extension change bumps the task's etag, delta reports the task, and the daemon fetches the extension (D-029). Two machines rolling over make the same changes, which is harmless.
 - **Suggestions.** Like the app's "Suggestions" pane, the My Day view offers tasks that are due today, overdue, or were in My Day yesterday and aren't complete. These come from local queries.
-- **In the TUI**, My Day is a special view, not a list (see [08](08-tui.md)). The category is hidden from the task's category chips there, because it's shown structurally instead.
-- **On the phone**, the task should show a "My Day" category tag, and the app should be able to filter by category, pending the S7 phone check. That's the reason for this approach. Graph accepts and returns the category (S7).
-- **Keep it separate from the app's own My Day.** The app's My Day is unreachable through the API, and we don't touch it. `ms-todo` docs and the TUI help text say so.
+- **In the TUI**, My Day is a special view, not a list (see [08](08-tui.md)). In the CLI it's `ms-todo myday`, the `--my-day` flag and the `+myday` quick-add token.
+- **The app's own My Day** can't be read or written through Graph. With "Show 'Due Today' tasks in My Day" on, it holds every task due today, including ones ms-todo never added (S12), and tasks added in the app don't reach ms-todo's My Day. The setting isn't in Graph, so `ms-todo doctor` can't check it; the docs and `doctor` say so.
 
-Why not a special list, or copies of tasks? See D-015. In short: tasks can't move between lists without losing data, and copying them into a "My Day" list shows every task twice on the phone.
+Why not a special list, copies of tasks, an Outlook category, or always setting the due date? See D-015 and D-037. In short: tasks can't move between lists without losing data, copying them into a "My Day" list shows every task twice on the phone, the phone doesn't show categories, and overwriting real due dates would hide them in the Planned and overdue views.
 
 ## Folders (list groups)
 

@@ -46,7 +46,7 @@ Things the official app shows but ms-todo doesn't need: none known. Everything t
 
 | App feature | In the API? | ms-todo's approach | Doc |
 |---|---|---|---|
-| My Day | No | Our own My Day, using an Outlook category named "My Day" plus a date in an extension, cleared daily by the daemon | [05](05-custom-features.md) |
+| My Day | No | Our own My Day: a date in our extension, cleared daily by the daemon, and mirrored on the phone by giving a task with no due date today's date (D-037) | [05](05-custom-features.md) |
 | List groups (folders) | No | Folder stored in an open extension on each list | [05](05-custom-features.md) |
 | Assigning a task to someone | No (legacy only) | Assignee stored in an open extension on the task, local meaning only | [05](05-custom-features.md) |
 | Sharing lists | Only flags (`isShared`) | **Not built.** BK doesn't share lists | [11](11-decision-log.md) D-014 |

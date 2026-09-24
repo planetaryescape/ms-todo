@@ -95,7 +95,7 @@ The design is in [`docs/blueprint/`](docs/blueprint/README.md), the Phase 0 resu
 What's planned:
 
 - The whole Microsoft Graph To Do API: lists, tasks (every field, including recurrence), steps, links, attachments up to 25 MB, categories, open extensions, delta sync.
-- Features the API lacks, built on top of it: My Day (an Outlook category, which the phone app should also show; pending a phone check), folders for lists, and assignment.
+- Features the API lacks, built on top of it: My Day (kept by ms-todo, and shown in the phone app's My Day by giving a task with no due date today's date), folders for lists, and assignment.
 - Todoist-style natural-language quick add, parsed deterministically: `Pay rent every 1st #Home p1 !9am`.
 - Offline-tolerant instant writes, with an outbox and rollback when Graph rejects a change.
 

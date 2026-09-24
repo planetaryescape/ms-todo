@@ -11,7 +11,7 @@ Every decision from the planning session on 2026-09-24, **including the options 
 5. BK pointed at his Rust projects mxr and spotuify. A study of both showed **mxr already has a working Microsoft device-code sign-in**, so Rust won.
 6. The scope grew to the full API surface, a cache for a very fast TUI, and features the API lacks built on top: My Day, folders and assignment. Sharing and task assignment were first included, then sharing was dropped.
 7. We proposed no daemon, then reversed that when BK asked what it was optimising for.
-8. My Day went from a special list, to copies of tasks, to an Outlook category.
+8. My Day went from a special list, to copies of tasks, to an Outlook category, and then, when the phone turned out not to show categories, to a date in our extension, mirrored on the phone through the due date (D-037).
 9. Todoist-style natural language: deterministic, with the LLM deferred.
 10. BK will build on a different machine, so this blueprint exists to carry the whole session.
 
@@ -75,6 +75,7 @@ Every decision from the planning session on 2026-09-24, **including the options 
 - **Chosen:** the category "My Day" (visible and filterable on the phone; `categories` is a first-class property, so delta sync definitely picks it up), plus `myDay: date` in the ms-todo extension, and a daily rollover in the daemon. The task never leaves its list. Cost: `MailboxSettings.ReadWrite`, which we need anyway for `@label`.
 - The app's own My Day can't be reached through the API and is left alone.
 - Note (2026-09-24): the phone-visibility premise is unverified pending the S7 phone check (see D-030).
+- **Replaced by D-037:** the phone shows no categories, so the category is dropped. My Day lives in our extension and reaches the phone through the due date.
 
 ### D-016: Deterministic natural-language parsing; the LLM is deferred. (BK: "leave llm parsing for now")
 - BK wanted Todoist-style quick add: deterministic first, then maybe an optional small local LLM for richer parsing.
@@ -134,6 +135,7 @@ Every decision from the planning session on 2026-09-24, **including the options 
 - **Option rejected:** keeping `preset4`. It's green, which doesn't match To Do's yellow sun icon.
 - **Why:** yellow was the original intent. The doc says the actual colour depends on the Outlook client, so BK compares both test categories on the phone (S7, Q11) before this is final. Evidence: [S7](../research/spikes/S7.md).
 - D-015's premise that the phone shows and filters the My Day category also waits on the S7 phone check.
+- **Replaced by D-037:** My Day no longer uses a category, so it has no colour.
 
 ### D-031: Clients use the daemon protocol only; the TUI doesn't read SQLite. (BK, 2026-09-24)
 - **Replaces:** "the TUI may read SQLite directly" in [01](01-architecture.md), the read-only connection pool in [08](08-tui.md), and "the TUI only ever reads SQLite" in [README](README.md). None had an entry of its own here.
@@ -190,3 +192,15 @@ BK checked the blueprint against his Obsidian notes and approved folding these g
 - **Reads of a scope that has never synced.** While a sync runs, the answer is `initial` with no items. With nothing running (the last attempt failed), the read runs a sync and answers from that, so it reports the failure (for example exit 4, signed out) instead of an `initial` that would never become `ready`. Writes wait for the scope's first sync, because they resolve names in the cache.
 - **Without `--list`, a task is looked up only in the cache**, by local or Graph ID. Rung 2 asked every list for an ID it hadn't seen; with the cache that fallback is gone, and a task added elsewhere since the last sync is `not_found` with a hint to run `ms-todo sync --wait`.
 - **Not built in rung 3a, and still to be placed:** the local read filters (`--status`, `--due`, `--importance`, `--search` through FTS5, `--sort`, `--limit`), `EntityChanged` events with the 500-ID cap and `ResyncNeeded`, `sync --list`, attachment metadata (it needs rung 8b's table), and the optional launchd and systemd files. The build brief for rung 3a left them out.
+
+### D-037: My Day lives in our extension, and reaches the phone through the due date. (BK, after the phone check, 2026-09-24)
+- **Replaces:** D-015's Outlook category and D-030's colour.
+- **Why:** BK's phone check (S7) found that the iOS To Do app shows no categories at all, so a "My Day" category would be invisible on the phone. But the app has a setting, "Show 'Due Today' tasks in My Day", which is on in BK's app: it puts every task due today into the app's own My Day. That also explains the S12 observation.
+- **Chosen:**
+  - ms-todo's My Day is the `myDay` date in our extension (`com.planetaryescape.mstodo`), the source of truth, with its own view, suggestions and daily rollover in the CLI and TUI. It syncs across every ms-todo install on the account.
+  - **Phone mirror:** adding a task with **no due date** to My Day also sets its due date to today, and records `myDayDueSet: true` in the extension, so the app shows it in its own My Day on devices where that setting is on.
+  - **Rollover:** a task whose due date ms-todo set, and that isn't completed, loses that due date again. A due date the user set is never touched.
+  - Tasks with a real due date keep it. They appear in the app's My Day only when they're actually due today.
+- **Options rejected:** always setting the due date to today, which clobbers real due dates and hides them in the Planned and overdue views; ms-todo-only, which the phone can't see; and keeping the category, which iOS doesn't show.
+- **Depends on the app setting,** which isn't in Graph, so `ms-todo doctor` can't read it. The docs and `doctor` say so.
+- **Unchanged:** categories stay for `@labels` ([06](06-natural-language.md)), which Graph and Outlook show and iOS doesn't. `MailboxSettings.ReadWrite` is still needed for them.

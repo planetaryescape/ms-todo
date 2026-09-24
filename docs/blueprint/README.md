@@ -13,7 +13,7 @@ The whole project was planned in one session on 2026-09-24, before any code exis
 | 02 | [Data model](02-data-model.md) | SQLite schema, outbox, IDs, how custom data is stored |
 | 03 | [Graph provider](03-graph-provider.md) | Sign-in, scopes, HTTP client, retries, pagination, batch |
 | 04 | [Sync and cache](04-sync-cache.md) | Delta sync, instant local writes, reconciliation, conflicts |
-| 05 | [Custom features](05-custom-features.md) | My Day (category), folders, assignment, move |
+| 05 | [Custom features](05-custom-features.md) | My Day (extension date, due-date mirror), folders, assignment, move |
 | 06 | [Natural language](06-natural-language.md) | Todoist-style quick add, deterministic parser, LLM deferred |
 | 07 | [CLI](07-cli.md) | Command surface, output formats, exit codes, agent skill |
 | 08 | [TUI](08-tui.md) | Views, My Day view, quick add, latency budget |
@@ -37,7 +37,7 @@ Research behind these decisions:
 - **Sync:** Graph delta queries for lists and tasks. No webhooks.
 - **Sign-in:** device code, through BK's own Entra app registration, `/common` authority, no client secret.
 - **Scope:** everything the Graph To Do API offers, plus features the API lacks, built on top of it:
-  - My Day, done with an Outlook category the phone app should also display (pending the S7 phone check)
+  - My Day, kept in our extension and mirrored on the phone through the due date (D-037)
   - folders, stored as list extensions
   - assignment, stored as a task extension
 - **Quick add:** Todoist-style natural language, parsed deterministically. LLM parsing is deferred.
