@@ -2,7 +2,7 @@
 
 A local-first, keyboard-native terminal client for Microsoft To Do. It has a daemon that keeps a local SQLite cache in sync with Microsoft Graph, and two clients of that daemon: a scriptable CLI with stable JSON output and a very fast ratatui TUI.
 
-**Status: Rung 4: offline and undo.** ms-todo signs in to your Microsoft account, shows every task in any of your lists, and adds, edits, completes, reopens and deletes tasks, from a terminal or an agent. Reads come from a local cache the daemon keeps in step with Microsoft To Do through delta sync, so they answer in milliseconds and a change on your phone shows up by itself within about 30 seconds while you're using ms-todo. Writes answer at once too, with or without a network: they're queued and sent in the background, and nothing you write is silently dropped. `ms-todo undo` reverses a change. The TUI and quick-add parsing come in later rungs of the [roadmap](docs/blueprint/10-roadmap.md).
+**Status: Rung 4b: search.** ms-todo signs in to your Microsoft account, shows every task in any of your lists, finds any task by the words in it, and adds, edits, completes, reopens and deletes tasks, from a terminal or an agent. Reads come from a local cache the daemon keeps in step with Microsoft To Do through delta sync, so they answer in milliseconds and a change on your phone shows up by itself within about 30 seconds while you're using ms-todo. Writes answer at once too, with or without a network: they're queued and sent in the background, and nothing you write is silently dropped. `ms-todo undo` reverses a change. The TUI and quick-add parsing come in later rungs of the [roadmap](docs/blueprint/10-roadmap.md).
 
 ## Install
 
@@ -37,6 +37,18 @@ ms-todo auth bearer --reveal-secret   # a valid access token, for curl
 ```
 
 Output is a table in a terminal and JSON when piped. `--format json|jsonl|ids|csv|table` picks one. JSON is `{ "schema_version": 2, "sync": { "state", "generation" }, "items": [...] }`. Each item has every field Graph returns, except that `id` is ms-todo's own stable ID, with Graph's beside it as `graph_id` (commands take either), plus `sync_state` (below). `sync.state` is `initial` until that list's first sync has finished, so an empty `initial` list isn't really empty (other formats say so on stderr). `--format ids` prints one ID per line. `--format csv` has a header row and fixed columns (tasks: `id,title,status,importance,due,reminder,categories,created,modified,sync_state`; lists: `id,name,wellknown,is_owner,is_shared`); a task's notes aren't a column, so use JSON for those. A `--list` name that matches more than one list is an error that lists the candidates; ms-todo never picks one for you.
+
+## Find a task
+
+```sh
+ms-todo search insurance                       # open tasks in every list, best match first
+ms-todo search car insurance                   # every word must appear, in the title or the notes
+ms-todo search '"car insurance"' --status all  # an exact phrase, completed tasks too
+ms-todo search 'insur* NOT renew' --list Tasks --format csv
+ms-todo tasks list --list Home --search boiler # one list's matches, in the `tasks list` shape
+```
+
+Search looks through every task's title and notes (html notes as text), ignoring case and accents, and ranks title matches first. Words can end in `*` to match a prefix; `OR`, `NOT` and parentheses work too, in capitals. It shows open tasks by default (`--status completed|all` for the rest) and at most 50 (`--limit`). Each JSON item is the task plus `list`, its list's name, and `snippet`, the passage that matched with each match between `**`; CSV has `id,title,list,status,due,snippet`. A query ms-todo can't read, like `OR milk` or an unclosed quote, exits 2. It answers from the local cache, in a few milliseconds.
 
 ## Add and finish tasks
 
@@ -112,7 +124,7 @@ Its socket is private to your user (0600, in a 0700 directory), and its log is `
 
 ## Plan
 
-The design is in [`docs/blueprint/`](docs/blueprint/README.md), the Phase 0 results are in [`12-open-questions.md`](docs/blueprint/12-open-questions.md), and the evidence is in `docs/research/spikes/`. Still open: the S4 deltaLink replay, and product questions Q3, Q6–Q10 and Q12. The build climbs a ladder of usable releases: a foundation turn (install and sign in), rung 1 (see my tasks), rung 2 (capture and finish tasks), rung 3a (instant reads from a local cache), rung 3b (live sync through delta), rung 4 (offline writes that are never lost, and undo), and next rung 5 (a fast TUI).
+The design is in [`docs/blueprint/`](docs/blueprint/README.md), the Phase 0 results are in [`12-open-questions.md`](docs/blueprint/12-open-questions.md), and the evidence is in `docs/research/spikes/`. Still open: the S4 deltaLink replay, and product questions Q3, Q6–Q10 and Q12. The build climbs a ladder of usable releases: a foundation turn (install and sign in), rung 1 (see my tasks), rung 2 (capture and finish tasks), rung 3a (instant reads from a local cache), rung 3b (live sync through delta), rung 4 (offline writes that are never lost, and undo), rung 4b (search), and next rung 5 (a fast TUI).
 
 What's planned:
 

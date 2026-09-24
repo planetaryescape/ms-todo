@@ -58,7 +58,7 @@ settings(key PK, value)          -- e.g. my_day_category_name, last_rollover_dat
 
 ## Indexes
 
-Index what the TUI views need to be instant: `tasks(list_local_id, status, deleted_at)`, `tasks(due_date)`, `tasks(my_day_date)`, `tasks(importance)`, plus an FTS5 table over `tasks(title, body_content)` for search. FTS5 is enough at To Do's scale; we're not using Tantivy (D-011).
+Index what the TUI views need to be instant: `tasks(list_local_id, status, deleted_at)`, `tasks(due_date)`, `tasks(my_day_date)`, `tasks(importance)`, plus an FTS5 table over each live task's title and its notes as plain text (`tasks_fts`, migration `0004`, kept current by triggers) for search. FTS5 is enough at To Do's scale; we're not using Tantivy (D-011, D-041).
 
 ## Outbox semantics
 

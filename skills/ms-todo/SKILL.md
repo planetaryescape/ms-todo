@@ -1,11 +1,11 @@
 ---
 name: ms-todo
-description: Read, add, complete, reopen, edit and delete Microsoft To Do tasks from the terminal by driving the `ms-todo` CLI. Use when the user wants to capture a task, tick one off, change a due date or reminder, see what's in a list, or otherwise work with their Microsoft To Do lists and tasks.
+description: Read, find, add, complete, reopen, edit and delete Microsoft To Do tasks from the terminal by driving the `ms-todo` CLI. Use when the user wants to capture a task, tick one off, change a due date or reminder, see what's in a list, find a task by what it says, or otherwise work with their Microsoft To Do lists and tasks.
 ---
 
 # ms-todo
 
-**Skill v2, for ms-todo rung 4** (instant reads from a local cache kept live by delta sync; instant writes that queue offline and are never dropped; undo. No quick-add parsing yet).
+**Skill v3, for ms-todo rung 4b** (instant reads from a local cache kept live by delta sync; search across every list; instant writes that queue offline and are never dropped; undo. No quick-add parsing yet).
 
 `ms-todo` is a terminal client for Microsoft To Do. The CLI is its canonical surface: drive it with shell commands. `mst` is an official alias for the same binary, so either name works; prefer `ms-todo` in scripts because it's more descriptive. A background daemon talks to Microsoft Graph and keeps a local cache; the first command starts it. Reads come from the cache, which the daemon refreshes on start, every 20 seconds while ms-todo is in use (every 5 minutes otherwise) and on `ms-todo sync`.
 
@@ -38,6 +38,24 @@ A list result is `{"schema_version": 2, "sync": {"state", "generation"}, "items"
 A task changed on the phone shows up after the next sync. If the user just changed something elsewhere, or you can't find a task you expect, run `ms-todo sync --wait --format json` first.
 
 A `--list` name must match exactly one list. A task can be named by its exact, unique title, but only together with `--list`. A name that matches several lists or tasks fails with exit code 2 and `candidates`; pick an ID from them, never the first one.
+
+## Finding tasks
+
+When the user names a task by what it's about ("the insurance one") rather than its exact title, search for it instead of reading every list:
+
+```bash
+ms-todo search insurance --format json                     # open tasks in every list, best match first, at most 50
+ms-todo search car insurance --format json                 # every word must appear (title or notes)
+ms-todo search '"car insurance"' --status all --format json   # an exact phrase; completed tasks too
+ms-todo search 'insur*' --list "Tasks" --format json       # words starting with "insur", one list
+ms-todo tasks list --list "Home" --search boiler --format json   # one list, any status, in the tasks shape
+```
+
+- The result is the usual collection, `{"schema_version": 2, "sync", "items"}`, best match first. Each item is the task, as `tasks list` gives it, plus `list` (its list's name) and `snippet` (the passage that matched, with each match between `**`).
+- Search ignores case and accents and looks at titles and notes, not steps or categories. `--status open|completed|all` (default `open`), `--limit N` (default 50).
+- Operators are FTS5's, in capitals: `OR`, `NOT`, parentheses, `"phrases"` and `prefix*`. Anything else is a word, punctuation included. A query ms-todo can't read (`OR milk`, an unclosed quote) exits 2 with `invalid_input`: fix the query, don't retry it as is.
+- Search reads the cache. If a task the user just made elsewhere is missing, run `ms-todo sync --wait --format json` and search again. `sync.state: "initial"` means some lists haven't synced yet, so the results may be incomplete.
+- Several matches and the user meant one? Show them the titles and lists and let them pick; never act on the first result on your own. Then use its `id`.
 
 ## Capture and finish
 

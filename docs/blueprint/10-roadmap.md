@@ -168,6 +168,35 @@ A named foundation turn: there's nothing to use yet, but it's released and check
 
 **Left out:** the TUI, natural-language parsing.
 
+## Rung 4b: search
+
+Added at BK's request (2026-09-24), between rung 4 and rung 5.
+
+**Previously:** instant, offline-safe reads and writes, one list at a time. **Now:** the same, plus finding any task in any list by the words in its title or notes.
+
+**Promise:** "I can find any task by the words in it, instantly."
+
+**Build:**
+
+- Migration `0004`: an FTS5 table over each live task's title and its notes as plain text (html notes rendered to text), with the `unicode61 remove_diacritics 2` tokenizer and `prefix='2 3'`. Triggers on `tasks` keep it current; a tombstoned task isn't in it. The migration indexes the tasks already cached ([02](02-data-model.md#indexes), D-041).
+- `ms-todo search QUERY [--list L] [--status open|completed|all] [--limit N]`: open tasks in every list by default, at most 50, ranked by bm25 with the title weighted above the notes. Each result is the task with its list's name (`list`) and the passage that matched (`snippet`, matches between `**`). The query is FTS5's syntax (words, `"phrases"`, `prefix*`, `AND`, `OR`, `NOT`, parentheses) with every word quoted first, so punctuation is text; a malformed query exits 2.
+- `tasks list --search Q`: the same engine, within one list ([07](07-cli.md)).
+- Every output format; CSV columns `id,title,list,status,due,snippet`. The `schema` snapshot and the agent skill's "Finding tasks" section.
+
+**New unknowns:** FTS5's ranking and tokenizer against BK's real tasks; keeping a second structure in step with every write path.
+
+**Demo:** `mst search "insurance"` returns the matching tasks across all lists, best match first, in about a millisecond. `mst search "insur*" --list Tasks --format csv` works as well.
+
+**Done when:**
+
+- `ms-todo search WORD --status all` returns the same tasks as a `grep` for the word over the titles and notes from `tasks list --format json`, for a few common words on BK's account.
+- The query itself takes about a millisecond on BK's account. Measure it and record the number.
+- A malformed query exits 2 with a clear message.
+
+**Left out:** semantic search (D-042), search in the TUI (rung 5), searching steps, categories or attachments.
+
+**Built (2026-09-24):** as above. On BK's account (30 lists, 655 tasks, all with text notes), in a separate `livetest` instance: for 12 common words, `search --status all` matched exactly the tasks a word-boundary `grep` over titles and notes found (for example 159 for "the", 26 for "check"). The query itself takes 0.3–0.8 ms in SQLite; `ms-todo search` end to end, including process start and IPC, takes 6–7 ms, and `search "insur*" --list Tasks --format csv` 4–6 ms.
+
 ## Rung 5: Motorbike: a fast TUI for daily use
 
 **Previously:** a CLI with instant, offline-safe reads and writes. **Now:** the same, plus a keyboard TUI BK can live in, installable with Homebrew.
@@ -252,4 +281,5 @@ A named foundation turn: there's nothing to use yet, but it's released and check
 ## Deferred (not in v1)
 
 - An optional local-LLM parser behind `QuickAddParser` (D-016).
+- Semantic search, behind the same `search` command (D-042).
 - Windows support.

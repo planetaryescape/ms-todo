@@ -236,3 +236,20 @@ BK checked the blueprint against his Obsidian notes and approved folding these g
 - **A database newer than the binary** makes the daemon exit with status 78 (`EXIT_DATABASE_TOO_NEW`), which the client that started it reports as error kind `database_too_new`, exit 1.
 - **`sync_state` everywhere:** a `SYNC` column in the tasks table and a `sync_state` column at the end of the tasks CSV. Precedence: `unknown`, then `pending`, then `failed`; a `failed` operation marks its task until it's discarded or retried.
 - **Not built, and still to be placed:** move recovery (rung 8), `ConflictOverwritten`, the `outbox.unknown_lookup_hours` setting, pruning `done` operations, the TUI's undo picker (rung 5), and noting a lost answer to a connect that was retried: a create interrupted while its connection is being retried is `unknown` after a restart, though it never reached Graph.
+
+### D-041: Search uses SQLite FTS5. (Rung 4b build, BK, 2026-09-24)
+- **Reaffirms** D-011. Tantivy was rejected again: tasks are small, FTS5 lives in the same database and the same transactions as the cache, and there's no second index to keep in step or rebuild.
+- **As built** (migration `0004`): a regular FTS5 table, `tasks_fts(title, body)`, keyed by `tasks.rowid`, with the `unicode61 remove_diacritics 2` tokenizer and `prefix='2 3'`. It keeps its own copy of the text, so `snippet()` works and a tombstoned task is simply absent. Triggers on insert, update (only when the title, the notes or tombstoned-ness change) and delete keep it current, so every write path, sync or outbox, is covered without code in each.
+- **The notes are indexed as plain text**, from a new `tasks.body_text` column the store fills on every write: an html body is rendered to text with `html2text` (as mxr does), a text body is kept as it is. SQL can't render HTML, so the migration fills text bodies and indexes every live task, and the store fills html ones when it opens the database. A partial index over the rows still missing `body_text` keeps that check free on every later open.
+- **Ranking:** bm25 with the title weighted 10 to the notes' 1, then newest first.
+- **Queries** are FTS5's syntax, but the CLI's input is rewritten first: each word is quoted (a trailing `*` kept outside the quotes), words of punctuation only are dropped, and an explicit `AND` goes between operands with no operator. So `e-mail`, `don't` and `milk (eggs OR bread)` work, and a plain query is all its words ANDed. What FTS5 still rejects (`OR milk`, an unclosed quote or parenthesis) is error kind `invalid_input`, exit 2.
+- **Protocol 4:** `SearchTasks`, and `search` on `ListTasks`, which a protocol 3 daemon would ignore and answer with the whole list.
+- **Across lists** the answer is `ready` once every list has synced once; before that it has what's cached, marked `initial`.
+- **A VACUUM could renumber `tasks.rowid`** (the table has no `INTEGER PRIMARY KEY`), which would detach the index. ms-todo never runs one; anything that adds one must rebuild `tasks_fts` after it.
+- **Closes** D-036's unbuilt `--search`.
+
+### D-042: Semantic search is deferred, not rejected. (BK, 2026-09-24)
+- **BK asked for it.** Keyword search (D-041) ships first.
+- **What it would take:** local embeddings, a small model of about 30–130 MB plus a vector index such as sqlite-vec in the same database, or sending task text to an embeddings API, which breaks local-first and needs consent.
+- **Revisit** after BK has used keyword search and hits "I know it's there but I can't find the word".
+- **How it would plug in:** behind the same `search` command, for example `--semantic` or hybrid ranking that merges bm25 with vector similarity, so the CLI, the output shapes and the skill keep working.
