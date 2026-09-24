@@ -1,0 +1,6 @@
+---
+source: tests/search_cli.rs
+expression: "run(\"ids\")"
+---
+<local id of H1>
+<local id of T1>

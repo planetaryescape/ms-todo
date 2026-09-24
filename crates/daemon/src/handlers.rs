@@ -18,7 +18,7 @@ use crate::doctor::doctor;
 use crate::events::Events;
 use crate::idempotency::{fingerprint, run_once};
 use crate::outbox::Outbox;
-use crate::reads::{list_lists, list_tasks};
+use crate::reads::{list_lists, list_tasks, search_tasks};
 use crate::sync::{PassOutcome, Syncer};
 use crate::task_writes::{add_task, change_tasks};
 use crate::undo::undo;
@@ -46,7 +46,15 @@ pub(crate) async fn handle(state: &State, request: Request) -> Response {
     let result = match request {
         Request::Status => Ok(ResponseData::Status(status(state))),
         Request::ListLists => list_lists(state).await,
-        Request::ListTasks { list } => list_tasks(state, list.as_deref()).await,
+        Request::ListTasks { list, search } => {
+            list_tasks(state, list.as_deref(), search.as_deref()).await
+        }
+        Request::SearchTasks {
+            query,
+            list,
+            status,
+            limit,
+        } => search_tasks(state, &query, list.as_deref(), status, limit).await,
         Request::Sync { wait: false } => {
             state.syncer.request();
             sync_report(state, false, &PassOutcome::default()).await
@@ -232,7 +240,11 @@ pub(crate) fn graph_error(error: GraphError) -> ErrorPayload {
 }
 
 pub(crate) fn store_error(error: StoreError) -> ErrorPayload {
-    error_payload(ErrorKind::Internal, message_with_causes(&error))
+    let kind = match error {
+        StoreError::InvalidQuery(_) => ErrorKind::InvalidInput,
+        _ => ErrorKind::Internal,
+    };
+    error_payload(kind, message_with_causes(&error))
 }
 
 pub(crate) fn error_payload(kind: ErrorKind, message: String) -> ErrorPayload {

@@ -12,6 +12,7 @@ mod idempotency;
 mod lists;
 mod outbox;
 mod pool;
+mod search;
 mod sync_state;
 mod tasks;
 
@@ -23,6 +24,7 @@ pub use outbox::{
     LocalChange, NewOp, OpKind, OpState, OutboxRow, Restore, UNKNOWN_LOOKUP_SECS, apply_body,
 };
 pub use pool::Store;
+pub use search::{SearchHit, StatusFilter, TaskSearch};
 pub use sync_state::{Cursor, LISTS_SCOPE, ScopeRow, scope_list, tasks_scope};
 pub use tasks::{Hydration, SeenTask, TaskRow, TasksPass};
 
@@ -43,6 +45,9 @@ pub enum StoreError {
     Corrupt(String),
     #[error("{0}")]
     Invalid(String),
+    /// A search query FTS5 can't read: the user's input, not the store.
+    #[error("{0}")]
+    InvalidQuery(String),
 }
 
 /// Unix seconds, the store's clock for tombstones and sync times. Ordering

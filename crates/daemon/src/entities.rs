@@ -7,7 +7,7 @@
 //! as `raw_json` and our extension.
 
 use ms_todo_protocol::Entity;
-use ms_todo_store::{ListRow, TaskRow};
+use ms_todo_store::{ListRow, SearchHit, TaskRow};
 use serde_json::{Value, json};
 
 /// Our open extension (docs/blueprint/05-custom-features.md).
@@ -36,6 +36,15 @@ pub(crate) fn task_entity(row: &TaskRow) -> Entity {
     );
     entity.insert("list_id".into(), json!(row.list_local_id));
     add_extension(&mut entity, row.extension.as_ref());
+    entity
+}
+
+/// A task a search found: the task, its list's name as `list`, and the
+/// passage that matched as `snippet`.
+pub(crate) fn search_entity(hit: &SearchHit) -> Entity {
+    let mut entity = task_entity(&hit.task);
+    entity.insert("list".into(), json!(hit.list_name));
+    entity.insert("snippet".into(), json!(hit.snippet));
     entity
 }
 

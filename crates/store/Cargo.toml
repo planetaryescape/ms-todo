@@ -9,6 +9,7 @@ description = "ms-todo's local cache: SQLite (WAL) through sqlx, its migrations 
 [dependencies]
 ms-todo-core = { workspace = true }
 chrono = { workspace = true }
+html2text = { workspace = true }
 serde_json = { workspace = true }
 sqlx = { workspace = true }
 thiserror = { workspace = true }

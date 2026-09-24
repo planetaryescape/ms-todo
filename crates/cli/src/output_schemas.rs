@@ -53,6 +53,7 @@ pub fn output_schema(command: &str) -> Option<Value> {
         ),
         "lists list" => collection(list_entity()),
         "tasks list" => collection(task_entity()),
+        "search" => collection(search_result()),
         "tasks add" | "tasks complete" | "tasks reopen" | "tasks edit" | "tasks delete" => {
             json!({ "oneOf": [applied(), plan()] })
         }
@@ -275,6 +276,24 @@ fn task_entity() -> Value {
     );
     schema["description"] =
         json!("A task: every field Microsoft Graph returns, with `id` replaced");
+    schema
+}
+
+fn search_result() -> Value {
+    let mut schema = task_entity();
+    schema["properties"]["list"] =
+        json!({ "type": "string", "description": "The name of the task's list" });
+    schema["properties"]["snippet"] = json!({
+        "type": "string",
+        "description": "The part of the title or notes that matched, on one line: each match between ** and **, … where it was cut"
+    });
+    schema["required"]
+        .as_array_mut()
+        .expect("task_entity lists required keys")
+        .extend([json!("list"), json!("snippet")]);
+    schema["description"] = json!(
+        "A task that matched, best match first: the task as `tasks list` gives it, with `list` and `snippet`"
+    );
     schema
 }
 

@@ -43,9 +43,13 @@ pub(crate) struct TaskRecord {
     sync_state: String,
 }
 
-/// The columns of a [`TaskRecord`], for `SELECT … FROM tasks`.
+/// The columns of a [`TaskRecord`], for `SELECT … FROM tasks`. Qualified,
+/// so a query can join a table with columns of the same names.
 pub(crate) fn task_record_columns() -> String {
-    format!("local_id, graph_id, list_local_id, title, raw_json, extension_json, {SYNC_STATE}")
+    format!(
+        "tasks.local_id, tasks.graph_id, tasks.list_local_id, tasks.title, tasks.raw_json, \
+         tasks.extension_json, {SYNC_STATE}"
+    )
 }
 
 impl TryFrom<TaskRecord> for TaskRow {
@@ -382,16 +386,17 @@ pub(crate) async fn write_task(
          body_content_type, status, importance, is_reminder_on, reminder_at_utc, due_date, \
          start_date, completed_at_utc, recurrence_json, categories_json, has_attachments, \
          created_at, last_modified_at, extension_json, hydrated_etag, raw_json, etag, local_rev, \
-         deleted_at) \
+         body_text, deleted_at) \
          VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, \
-         ?19, ?20, ?21, ?22, ?23, NULL) \
+         ?19, ?20, ?21, ?22, ?23, ?24, NULL) \
          ON CONFLICT(local_id) DO UPDATE SET graph_id = ?2, list_local_id = ?3, title = ?4, \
          body_content = ?5, body_content_type = ?6, status = ?7, importance = ?8, \
          is_reminder_on = ?9, reminder_at_utc = ?10, due_date = ?11, start_date = ?12, \
          completed_at_utc = ?13, recurrence_json = ?14, categories_json = ?15, \
          has_attachments = ?16, created_at = ?17, last_modified_at = ?18, extension_json = ?19, \
          hydrated_etag = ?20, raw_json = ?21, etag = ?22, \
-         local_rev = CASE WHEN ?23 = 0 THEN local_rev ELSE ?23 END, deleted_at = NULL",
+         local_rev = CASE WHEN ?23 = 0 THEN local_rev ELSE ?23 END, body_text = ?24, \
+         deleted_at = NULL",
     )
     .bind(task.local_id)
     .bind(task.graph_id)
@@ -416,6 +421,7 @@ pub(crate) async fn write_task(
     .bind(task.raw_json)
     .bind(&columns.etag)
     .bind(task.local_rev)
+    .bind(&columns.body_text)
     .execute(tx)
     .await?;
     Ok(())

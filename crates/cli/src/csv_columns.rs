@@ -24,6 +24,9 @@ pub const TASK_COLUMNS: &[&str] = &[
     "sync_state",
 ];
 
+/// A search result: enough to recognise the task and where it matched.
+pub const SEARCH_COLUMNS: &[&str] = &["id", "title", "list", "status", "due", "snippet"];
+
 pub const LIST_COLUMNS: &[&str] = &["id", "name", "wellknown", "is_owner", "is_shared"];
 
 pub fn task_row(task: &Entity) -> Vec<String> {
@@ -47,6 +50,17 @@ pub fn task_row(task: &Entity) -> Vec<String> {
         text(task, "createdDateTime").to_owned(),
         text(task, "lastModifiedDateTime").to_owned(),
         text(task, "sync_state").to_owned(),
+    ]
+}
+
+pub fn search_row(task: &Entity) -> Vec<String> {
+    vec![
+        text(task, "id").to_owned(),
+        text(task, "title").to_owned(),
+        text(task, "list").to_owned(),
+        text(task, "status").to_owned(),
+        local_due(task),
+        text(task, "snippet").to_owned(),
     ]
 }
 

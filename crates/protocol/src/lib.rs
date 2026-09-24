@@ -18,8 +18,10 @@ pub use codec::{Codec, FrameTooLarge, MAX_FRAME_BYTES};
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
 
-/// Bumped on any change an older peer can't read.
-pub const PROTOCOL_VERSION: u32 = 3;
+/// Bumped on any change an older peer can't read. 4: `ListTasks` gained
+/// `search`, which an older daemon would ignore and answer with the whole
+/// list.
+pub const PROTOCOL_VERSION: u32 = 4;
 
 /// The daemon's exit status when its database was upgraded by a newer
 /// ms-todo (a migration this build doesn't know). The client that started
@@ -64,6 +66,24 @@ pub enum Request {
     ListTasks {
         #[serde(default)]
         list: Option<String>,
+        /// Only tasks matching this search (see `SearchTasks`), best match
+        /// first.
+        #[serde(default)]
+        search: Option<String>,
+    },
+    /// Tasks whose title or notes match `query`, best match first, from the
+    /// cache. `query` is FTS5's syntax: words (all must match), `"phrases"`,
+    /// `prefix*`, `AND`, `OR`, `NOT` and parentheses.
+    SearchTasks {
+        query: String,
+        /// Only this list (a name or ID); `None` is every list.
+        #[serde(default)]
+        list: Option<String>,
+        #[serde(default)]
+        status: SearchStatus,
+        /// At most this many; `None` is every match.
+        #[serde(default)]
+        limit: Option<u32>,
     },
     /// Refresh the cache from Graph. With `wait`, the daemon sends
     /// `SyncProgress` events while it works and answers when a pass that
@@ -186,6 +206,13 @@ pub enum ResponseData {
         items: Vec<Entity>,
         sync: SyncInfo,
     },
+    /// Tasks a search matched, best first: each task entity with `list`,
+    /// its list's name, and `snippet`, the passage that matched on one
+    /// line with each match between `**`s.
+    SearchResults {
+        items: Vec<Entity>,
+        sync: SyncInfo,
+    },
     Sync(SyncReport),
     Doctor(DoctorReport),
     Raw {
@@ -236,6 +263,17 @@ pub struct DaemonStatus {
 pub enum SyncState {
     Initial,
     Ready,
+}
+
+/// Which tasks a search considers.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum SearchStatus {
+    /// Not completed.
+    #[default]
+    Open,
+    Completed,
+    All,
 }
 
 /// The sync state of the scope a collection came from.

@@ -12,6 +12,8 @@ pub(crate) struct TaskColumns {
     pub title: String,
     pub body_content: Option<String>,
     pub body_content_type: Option<String>,
+    /// The body without markup, for search (migration 0004).
+    pub body_text: Option<String>,
     pub status: String,
     pub importance: String,
     pub is_reminder_on: bool,
@@ -30,16 +32,21 @@ pub(crate) struct TaskColumns {
 impl TaskColumns {
     pub fn of(task: &Entity) -> Self {
         let body = task.get("body");
+        let body_content = body
+            .and_then(|body| body.get("content"))
+            .and_then(Value::as_str)
+            .map(str::to_owned);
+        let body_content_type = body
+            .and_then(|body| body.get("contentType"))
+            .and_then(Value::as_str)
+            .map(str::to_owned);
         Self {
             title: text(task, "title").unwrap_or_default(),
-            body_content: body
-                .and_then(|body| body.get("content"))
-                .and_then(Value::as_str)
-                .map(str::to_owned),
-            body_content_type: body
-                .and_then(|body| body.get("contentType"))
-                .and_then(Value::as_str)
-                .map(str::to_owned),
+            body_text: body_content
+                .as_deref()
+                .map(|content| body_text(content, body_content_type.as_deref())),
+            body_content,
+            body_content_type,
             status: text(task, "status").unwrap_or_else(|| "notStarted".into()),
             importance: text(task, "importance").unwrap_or_else(|| "normal".into()),
             is_reminder_on: flag(task, "isReminderOn"),
@@ -61,6 +68,20 @@ impl TaskColumns {
             etag: etag(task),
         }
     }
+}
+
+/// A task body as plain text: an html body rendered to text, anything else
+/// as it is. Graph's `contentType` is `text` or `html`.
+pub(crate) fn body_text(content: &str, content_type: Option<&str>) -> String {
+    if !content_type.is_some_and(|kind| kind.eq_ignore_ascii_case("html")) {
+        return content.to_owned();
+    }
+    // Wide enough that nothing wraps: search wants the words, not a layout.
+    // Rendering from memory can't fail on I/O, and markup it can't parse is
+    // still searchable as it came.
+    html2text::config::plain_no_decorate()
+        .string_from_read(content.as_bytes(), 100_000)
+        .unwrap_or_else(|_| content.to_owned())
 }
 
 pub(crate) struct ListColumns {
@@ -147,9 +168,25 @@ mod tests {
         );
         assert_eq!(columns.categories_json, r#"["Home"]"#);
         assert_eq!(columns.body_content.as_deref(), Some("2 pints"));
+        assert_eq!(columns.body_text.as_deref(), Some("2 pints"));
         assert_eq!(columns.etag.as_deref(), Some("W/\"e1\""));
         assert!(columns.due_date.is_some());
         assert_eq!(columns.start_date, None);
         assert_eq!(columns.recurrence_json, None);
+    }
+
+    #[test]
+    fn an_html_body_is_searchable_as_its_text() {
+        let text = body_text(
+            "<html><body><p>Renew the <b>car insurance</b></p><div>by&nbsp;Friday</div></body></html>",
+            Some("html"),
+        );
+        assert!(text.contains("Renew the car insurance"), "{text:?}");
+        assert!(text.contains("Friday"), "{text:?}");
+        assert!(!text.contains('<'), "{text:?}");
+        assert_eq!(
+            body_text("<b>as typed</b>", Some("text")),
+            "<b>as typed</b>"
+        );
     }
 }

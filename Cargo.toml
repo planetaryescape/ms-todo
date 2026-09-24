@@ -78,6 +78,7 @@ csv = "1"
 dirs = "6"
 fastrand = "2"
 fs2 = "0.4"
+html2text = "0.17"
 iana-time-zone = "0.1"
 futures-util = { version = "0.3", default-features = false, features = ["sink", "std"] }
 nix = { version = "0.30", default-features = false, features = ["signal"] }

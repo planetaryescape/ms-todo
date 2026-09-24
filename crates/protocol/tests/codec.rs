@@ -3,8 +3,8 @@ use ms_todo_protocol::{
     Applied, Candidate, Clearable, Codec, DaemonStatus, DoctorReport, ErrorPayload, Event,
     Importance, Message, NewTask, OpError, OutboxDepth, OutboxOp, OutboxState, PROTOCOL_VERSION,
     Payload, Plan, PlannedTask, RawWriteMethod, Request, Response, ResponseData, Rolled,
-    ScopeError, ScopeStatus, SyncInfo, SyncMode, SyncProgress, SyncReport, SyncState, TaskAction,
-    TaskChange, TaskEdit, WriteRejected,
+    ScopeError, ScopeStatus, SearchStatus, SyncInfo, SyncMode, SyncProgress, SyncReport, SyncState,
+    TaskAction, TaskChange, TaskEdit, WriteRejected,
 };
 use serde_json::json;
 use tokio_util::codec::{Decoder, Encoder};
@@ -42,9 +42,19 @@ fn every_request_and_response_round_trips() {
     let payloads = [
         Payload::Request(Request::Status),
         Payload::Request(Request::ListLists),
-        Payload::Request(Request::ListTasks { list: None }),
+        Payload::Request(Request::ListTasks {
+            list: None,
+            search: None,
+        }),
         Payload::Request(Request::ListTasks {
             list: Some("Groceries".into()),
+            search: Some("milk".into()),
+        }),
+        Payload::Request(Request::SearchTasks {
+            query: "insur* OR \"car tax\"".into(),
+            list: Some("Home".into()),
+            status: SearchStatus::All,
+            limit: Some(10),
         }),
         Payload::Request(Request::RawGet { path: "/me".into() }),
         Payload::Request(Request::Bearer),
@@ -70,6 +80,15 @@ fn every_request_and_response_round_trips() {
         }),
         Payload::Response(Response::Ok {
             data: ResponseData::Tasks {
+                items: vec![entity.clone()],
+                sync: SyncInfo {
+                    state: SyncState::Ready,
+                    generation: 3,
+                },
+            },
+        }),
+        Payload::Response(Response::Ok {
+            data: ResponseData::SearchResults {
                 items: vec![entity.clone()],
                 sync: SyncInfo {
                     state: SyncState::Ready,
@@ -386,7 +405,23 @@ fn fields_from_a_newer_peer_are_ignored_and_missing_new_fields_default() {
         decode_json(json!({ "id": 5, "payload": { "type": "request", "cmd": "list_tasks" } }));
     assert_eq!(
         tasks.payload,
-        Payload::Request(Request::ListTasks { list: None })
+        Payload::Request(Request::ListTasks {
+            list: None,
+            search: None
+        })
+    );
+    // A search's filters default to open tasks, every list, no limit.
+    let search = decode_json(
+        json!({ "id": 6, "payload": { "type": "request", "cmd": "search_tasks", "query": "milk" } }),
+    );
+    assert_eq!(
+        search.payload,
+        Payload::Request(Request::SearchTasks {
+            query: "milk".into(),
+            list: None,
+            status: SearchStatus::Open,
+            limit: None
+        })
     );
 
     // A rung 3a daemon's scope has no mode; a newer one's may be unknown.

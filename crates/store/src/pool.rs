@@ -69,6 +69,7 @@ impl Store {
             }
             Err(error) => return Err(error.into()),
         }
+        crate::search::fill_body_text(&writer).await?;
         let reader = SqlitePoolOptions::new()
             .max_connections(READERS)
             .connect_with(base.read_only(true))

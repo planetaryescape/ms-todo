@@ -99,9 +99,13 @@ async fn dispatch(command: Command, paths: &Paths, format: OutputFormat) -> Resu
             let (items, sync) = data_commands::lists(paths).await?;
             print_collection(format, &items, sync, &data_commands::LISTS_TABLE)
         }
-        Command::Tasks(TasksCommand::List { list }) => {
-            let (items, sync) = data_commands::tasks(paths, list).await?;
+        Command::Tasks(TasksCommand::List { list, search }) => {
+            let (items, sync) = data_commands::tasks(paths, list, search).await?;
             print_collection(format, &items, sync, &data_commands::TASKS_TABLE)
+        }
+        Command::Search(args) => {
+            let (items, sync) = data_commands::search(paths, args).await?;
+            print_collection(format, &items, sync, &data_commands::SEARCH_TABLE)
         }
         Command::Sync { wait } => print_success(format, &sync_commands::sync(paths, wait).await?),
         Command::Doctor => print_success(format, &doctor_commands::doctor(paths).await?),

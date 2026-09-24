@@ -38,6 +38,9 @@ pub enum Command {
     /// Tasks in a list
     #[command(subcommand)]
     Tasks(TasksCommand),
+    /// Find tasks by the words in their title or notes, in every list, best
+    /// match first
+    Search(SearchArgs),
     /// Writes waiting to reach Microsoft To Do, and those that didn't
     #[command(subcommand)]
     Outbox(OutboxCommand),
@@ -146,6 +149,10 @@ pub enum TasksCommand {
         /// The list's exact name or its ID [default: the "Tasks" list]
         #[arg(long, value_name = "NAME|ID")]
         list: Option<String>,
+        /// Only tasks whose title or notes match, best match first; the
+        /// syntax is `search`'s
+        #[arg(long, value_name = "QUERY")]
+        search: Option<String>,
     },
     /// Add a task. The text is its title, exactly as given
     Add(AddArgs),
@@ -163,6 +170,34 @@ pub enum TasksCommand {
         #[arg(long)]
         yes: bool,
     },
+}
+
+#[derive(Debug, Args)]
+pub struct SearchArgs {
+    /// Words that must all appear, in any order. Also: "an exact phrase",
+    /// prefix* for words starting with it, OR, NOT and parentheses (the
+    /// operators in capitals)
+    #[arg(required = true, value_name = "QUERY")]
+    pub query: Vec<String>,
+    /// Only this list (exact name or ID) [default: every list]
+    #[arg(long, value_name = "NAME|ID")]
+    pub list: Option<String>,
+    /// Which tasks to look through
+    #[arg(long, value_enum, default_value_t = SearchStatusArg::Open)]
+    pub status: SearchStatusArg,
+    /// At most this many results
+    #[arg(long, value_name = "N", default_value_t = 50, value_parser = clap::value_parser!(u32).range(1..))]
+    pub limit: u32,
+}
+
+#[derive(Clone, Copy, Debug, ValueEnum)]
+pub enum SearchStatusArg {
+    /// Not completed
+    Open,
+    /// Completed only
+    Completed,
+    /// Open and completed
+    All,
 }
 
 /// `--idempotency-key`, on every mutation.

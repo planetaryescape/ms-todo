@@ -1,0 +1,7 @@
+---
+source: tests/search_cli.rs
+expression: "run(\"csv\")"
+---
+id,title,list,status,due,snippet
+<local id of H1>,Renew car insurance,Home,notStarted,2026-09-26,Renew car **insurance**
+<local id of T1>,Call the broker,Tasks,notStarted,,"Ask about the **insurance**, ""fully"" comp"

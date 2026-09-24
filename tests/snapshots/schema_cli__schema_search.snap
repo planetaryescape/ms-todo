@@ -6,25 +6,44 @@ expression: pretty
   "input": {
     "additionalProperties": false,
     "properties": {
+      "limit": {
+        "description": "At most this many results",
+        "type": "string",
+        "x-cli": "--limit"
+      },
       "list": {
-        "description": "The list's exact name or its ID [default: the \"Tasks\" list]",
+        "description": "Only this list (exact name or ID) [default: every list]",
         "type": "string",
         "x-cli": "--list"
       },
-      "search": {
-        "description": "Only tasks whose title or notes match, best match first; the syntax is `search`'s",
-        "type": "string",
-        "x-cli": "--search"
+      "query": {
+        "description": "Words that must all appear, in any order. Also: \"an exact phrase\", prefix* for words starting with it, OR, NOT and parentheses (the operators in capitals)",
+        "items": {
+          "type": "string"
+        },
+        "type": "array",
+        "x-cli": "<QUERY>"
+      },
+      "status": {
+        "description": "Which tasks to look through",
+        "enum": [
+          "open",
+          "completed",
+          "all"
+        ],
+        "x-cli": "--status"
       }
     },
-    "required": [],
+    "required": [
+      "query"
+    ],
     "type": "object"
   },
   "output": {
     "properties": {
       "items": {
         "items": {
-          "description": "A task: every field Microsoft Graph returns, with `id` replaced",
+          "description": "A task that matched, best match first: the task as `tasks list` gives it, with `list` and `snippet`",
           "properties": {
             "body": {
               "type": "object"
@@ -73,6 +92,10 @@ expression: pretty
             "lastModifiedDateTime": {
               "type": "string"
             },
+            "list": {
+              "description": "The name of the task's list",
+              "type": "string"
+            },
             "list_id": {
               "description": "The local ID of the task's list",
               "type": "string"
@@ -82,6 +105,10 @@ expression: pretty
             },
             "reminderDateTime": {
               "type": "object"
+            },
+            "snippet": {
+              "description": "The part of the title or notes that matched, on one line: each match between ** and **, … where it was cut",
+              "type": "string"
             },
             "status": {
               "description": "notStarted or completed, among Graph's values",
@@ -105,7 +132,9 @@ expression: pretty
             "graph_id",
             "sync_state",
             "list_id",
-            "title"
+            "title",
+            "list",
+            "snippet"
           ],
           "type": "object"
         },

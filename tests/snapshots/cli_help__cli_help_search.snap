@@ -1,0 +1,44 @@
+---
+source: tests/cli_help.rs
+expression: help_output(args)
+---
+Find tasks by the words in their title or notes, in every list, best match first
+
+Usage: ms-todo search [OPTIONS] <QUERY>...
+
+Arguments:
+  <QUERY>...
+          Words that must all appear, in any order. Also: "an exact phrase", prefix* for words starting with it, OR, NOT and parentheses (the operators in capitals)
+
+Options:
+      --format <FORMAT>
+          Output format: jsonl is one object per line, ids one ID per line, csv has a header row [default: table in a terminal, json when piped]
+
+          [possible values: table, json, jsonl, ids, csv]
+
+      --list <NAME|ID>
+          Only this list (exact name or ID) [default: every list]
+
+      --instance <NAME>
+          Use a separate copy of ms-todo's data (also MS_TODO_INSTANCE). Builds run from Cargo's target/ directory default to "dev"; "default" is the installed copy
+
+      --status <STATUS>
+          Which tasks to look through
+
+          Possible values:
+          - open:      Not completed
+          - completed: Completed only
+          - all:       Open and completed
+
+          [default: open]
+
+      --limit <N>
+          At most this many results
+
+          [default: 50]
+
+  -h, --help
+          Print help (see a summary with '-h')
+
+  -V, --version
+          Print version
