@@ -27,7 +27,7 @@ expression: pretty
         "x-cli": "--dry-run"
       },
       "due": {
-        "description": "New due date. Due dates have no time; put a time in --reminder",
+        "description": "New due date, in the forms --due takes on `tasks add`; empty or `-` removes it, as --clear-due does",
         "type": "string",
         "x-cli": "--due"
       },
@@ -37,12 +37,8 @@ expression: pretty
         "x-cli": "--idempotency-key"
       },
       "importance": {
-        "description": "New importance",
-        "enum": [
-          "low",
-          "normal",
-          "high"
-        ],
+        "description": "New importance: 1 or p1 (high), 2, 3, p2 or p3 (normal), 4 or p4 (low), or high, normal or low",
+        "type": "string",
         "x-cli": "--importance"
       },
       "list": {
@@ -51,7 +47,7 @@ expression: pretty
         "x-cli": "--list"
       },
       "reminder": {
-        "description": "Remind me at this local time",
+        "description": "Remind me at this local time, in the forms --reminder takes on `tasks add`; empty or `-` turns it off",
         "type": "string",
         "x-cli": "--reminder"
       },

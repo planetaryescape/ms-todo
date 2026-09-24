@@ -7,16 +7,16 @@ use std::io::BufRead;
 
 use ms_todo_core::{ErrorKind, Paths};
 use ms_todo_protocol::{
-    Clearable, Importance, NewTask, RawWriteMethod, Request, ResponseData, TaskChange, TaskEdit,
+    Clearable, NewTask, RawWriteMethod, Request, ResponseData, TaskChange, TaskEdit,
 };
 use serde_json::Value;
 
-use crate::args::{AddArgs, EditArgs, ImportanceArg, RawArgs, RawMethod, TargetArgs, UndoArgs};
+use crate::args::{AddArgs, EditArgs, RawArgs, RawMethod, TargetArgs, UndoArgs};
 use crate::confirm::{can_prompt, confirm};
 use crate::error::CliError;
 use crate::output::OutputFormat;
 use crate::task_output::{describe_plan, print_applied, print_plan};
-use crate::{daemon_client, data_commands};
+use crate::{daemon_client, data_commands, phrases};
 
 /// Read from stdin in place of a task argument.
 const STDIN_MARKER: &str = "-";
@@ -26,9 +26,9 @@ pub async fn add(paths: &Paths, args: AddArgs, format: OutputFormat) -> Result<(
         task: NewTask {
             title: args.text,
             list: args.list,
-            due: args.due,
-            reminder: args.reminder,
-            importance: args.importance.map(importance),
+            due: phrases::set_only(args.due),
+            reminder: phrases::set_only(args.reminder),
+            importance: args.importance,
             body: args.body,
         },
         dry_run: args.dry_run,
@@ -42,7 +42,7 @@ pub async fn edit(paths: &Paths, args: EditArgs, format: OutputFormat) -> Result
     let edit = TaskEdit {
         title: args.title,
         due: clearable(args.due, args.clear_due),
-        importance: args.importance.map(importance),
+        importance: args.importance,
         reminder: clearable(args.reminder, args.clear_reminder),
         body: args.body,
     };
@@ -257,18 +257,10 @@ fn expand_stdin(tasks: Vec<String>) -> Result<(Vec<String>, bool), CliError> {
     Ok((expanded, true))
 }
 
-fn clearable(value: Option<String>, clear: bool) -> Option<Clearable<String>> {
+fn clearable(value: Option<Clearable<String>>, clear: bool) -> Option<Clearable<String>> {
     match (value, clear) {
-        (Some(value), _) => Some(Clearable::Set(value)),
+        (Some(value), _) => Some(value),
         (None, true) => Some(Clearable::Clear),
         (None, false) => None,
-    }
-}
-
-fn importance(arg: ImportanceArg) -> Importance {
-    match arg {
-        ImportanceArg::Low => Importance::Low,
-        ImportanceArg::Normal => Importance::Normal,
-        ImportanceArg::High => Importance::High,
     }
 }

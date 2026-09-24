@@ -453,6 +453,64 @@ async fn a_dry_run_shows_the_plan_and_writes_nothing() {
     assert!(graph.writes().await.is_empty(), "a dry run writes nothing");
 }
 
+/// `--due`, `--reminder` and `--importance` take the phrases the TUI's
+/// fields take, resolved before the daemon sees them.
+#[tokio::test]
+async fn date_and_importance_flags_take_phrases() {
+    let mut env = Env::new();
+    let graph = graph(&mut env).await;
+    tasks_in_default_list(&graph, vec![task("T1", "Buy milk", "W/\"e1\"")]).await;
+
+    let add = env.json(&[
+        "tasks",
+        "add",
+        "Buy bread",
+        "--due",
+        "12 oct 2030",
+        "--reminder",
+        "2030-10-11 17:30",
+        "--importance",
+        "p1",
+        "--dry-run",
+    ]);
+    assert_eq!(
+        add["changes"]["dueDateTime"],
+        json!({ "dateTime": "2030-10-12T00:00:00", "timeZone": "Europe/London" })
+    );
+    assert_eq!(
+        add["changes"]["reminderDateTime"],
+        json!({ "dateTime": "2030-10-11T17:30:00", "timeZone": "Europe/London" })
+    );
+    assert_eq!(add["changes"]["importance"], "high");
+
+    // A relative day resolves to a date, whatever today is.
+    let relative = env.json(&["tasks", "add", "Buy jam", "--due", "tomorrow", "--dry-run"]);
+    let due = relative["changes"]["dueDateTime"]["dateTime"]
+        .as_str()
+        .expect("a due date");
+    assert!(due.ends_with("T00:00:00"), "{due}");
+
+    // `-` clears, like --clear-due.
+    let edit = env.json(&["tasks", "edit", "T1", "--due", "-", "--dry-run"]);
+    assert_eq!(edit["changes"], json!({ "dueDateTime": null }));
+
+    // A usage error, as clap reports any bad flag value.
+    let refused = env
+        .cmd()
+        .args(["tasks", "add", "Buy jam", "--due", "soonish"])
+        .assert()
+        .code(2)
+        .get_output()
+        .stderr
+        .clone();
+    let refused = String::from_utf8_lossy(&refused);
+    assert!(
+        refused.contains("didn't understand \"soonish\""),
+        "{refused}"
+    );
+    assert!(graph.writes().await.is_empty(), "nothing was written");
+}
+
 #[tokio::test]
 async fn ids_on_stdin_are_completed_in_order() {
     let mut env = Env::new();

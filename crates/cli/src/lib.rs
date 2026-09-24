@@ -19,6 +19,7 @@ mod error;
 mod outbox_commands;
 mod output;
 mod output_schemas;
+mod phrases;
 mod schema_commands;
 mod sync_commands;
 mod task_commands;

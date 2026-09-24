@@ -1,6 +1,8 @@
 use clap::{Args, Parser, Subcommand, ValueEnum};
+use ms_todo_protocol::{Clearable, Importance};
 
 use crate::output::OutputFormat;
+use crate::phrases;
 
 /// A local-first, keyboard-native terminal client for Microsoft To Do.
 #[derive(Debug, Parser)]
@@ -222,15 +224,19 @@ pub struct AddArgs {
     /// The list's exact name or its ID [default: the "Tasks" list]
     #[arg(long, value_name = "NAME|ID")]
     pub list: Option<String>,
-    /// Due date. Due dates have no time; put a time in --reminder
-    #[arg(long, value_name = "YYYY-MM-DD")]
-    pub due: Option<String>,
-    /// Remind me at this local time
-    #[arg(long, value_name = "YYYY-MM-DDTHH:MM")]
-    pub reminder: Option<String>,
-    /// How important it is
-    #[arg(long, value_enum)]
-    pub importance: Option<ImportanceArg>,
+    /// Due date: 2026-10-02, today, tomorrow, fri, next mon, in 3 days,
+    /// +2w, 12 oct, 12/10 (day first), end of month. Due dates have no
+    /// time; put a time in --reminder
+    #[arg(long, value_name = "WHEN", value_parser = phrases::due, allow_hyphen_values = true)]
+    pub due: Option<Clearable<String>>,
+    /// Remind me at this local time: 17:30 (the next one), tomorrow 9am,
+    /// fri 5:30pm, 2026-10-02 09:30. A day needs a time
+    #[arg(long, value_name = "WHEN", value_parser = phrases::reminder, allow_hyphen_values = true)]
+    pub reminder: Option<Clearable<String>>,
+    /// How important it is: 1 or p1 (high), 2, 3, p2 or p3 (normal), 4
+    /// or p4 (low), or high, normal or low
+    #[arg(long, value_name = "LEVEL", value_parser = phrases::importance)]
+    pub importance: Option<Importance>,
     /// Notes, as plain text
     #[arg(long, value_name = "TEXT")]
     pub body: Option<String>,
@@ -270,22 +276,33 @@ pub struct EditArgs {
     /// New title, taken literally
     #[arg(long)]
     pub title: Option<String>,
-    /// New due date. Due dates have no time; put a time in --reminder
-    #[arg(long, value_name = "YYYY-MM-DD", conflicts_with = "clear_due")]
-    pub due: Option<String>,
+    /// New due date, in the forms --due takes on `tasks add`; empty or `-`
+    /// removes it, as --clear-due does
+    #[arg(
+        long,
+        value_name = "WHEN",
+        value_parser = phrases::due,
+        allow_hyphen_values = true,
+        conflicts_with = "clear_due"
+    )]
+    pub due: Option<Clearable<String>>,
     /// Remove the due date
     #[arg(long)]
     pub clear_due: bool,
-    /// New importance
-    #[arg(long, value_enum)]
-    pub importance: Option<ImportanceArg>,
-    /// Remind me at this local time
+    /// New importance: 1 or p1 (high), 2, 3, p2 or p3 (normal), 4 or p4
+    /// (low), or high, normal or low
+    #[arg(long, value_name = "LEVEL", value_parser = phrases::importance)]
+    pub importance: Option<Importance>,
+    /// Remind me at this local time, in the forms --reminder takes on
+    /// `tasks add`; empty or `-` turns it off
     #[arg(
         long,
-        value_name = "YYYY-MM-DDTHH:MM",
+        value_name = "WHEN",
+        value_parser = phrases::reminder,
+        allow_hyphen_values = true,
         conflicts_with = "clear_reminder"
     )]
-    pub reminder: Option<String>,
+    pub reminder: Option<Clearable<String>>,
     /// Turn the reminder off
     #[arg(long)]
     pub clear_reminder: bool,
@@ -297,13 +314,6 @@ pub struct EditArgs {
     pub dry_run: bool,
     #[command(flatten)]
     pub idempotency: IdempotencyArgs,
-}
-
-#[derive(Clone, Copy, Debug, ValueEnum)]
-pub enum ImportanceArg {
-    Low,
-    Normal,
-    High,
 }
 
 #[derive(Debug, Args)]

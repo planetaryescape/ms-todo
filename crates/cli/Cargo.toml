@@ -8,6 +8,7 @@ description = "ms-todo's command line: clap definitions, the daemon client, outp
 
 [dependencies]
 ms-todo-core = { workspace = true }
+ms-todo-nlp = { workspace = true }
 ms-todo-protocol = { workspace = true }
 ms-todo-tui = { workspace = true }
 # Only `ms_todo_graph::auth`, for `auth login|status|logout` (tests/workspace_boundaries.rs).

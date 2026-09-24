@@ -17,7 +17,7 @@ expression: pretty
         "x-cli": "--dry-run"
       },
       "due": {
-        "description": "Due date. Due dates have no time; put a time in --reminder",
+        "description": "Due date: 2026-10-02, today, tomorrow, fri, next mon, in 3 days, +2w, 12 oct, 12/10 (day first), end of month. Due dates have no time; put a time in --reminder",
         "type": "string",
         "x-cli": "--due"
       },
@@ -27,12 +27,8 @@ expression: pretty
         "x-cli": "--idempotency-key"
       },
       "importance": {
-        "description": "How important it is",
-        "enum": [
-          "low",
-          "normal",
-          "high"
-        ],
+        "description": "How important it is: 1 or p1 (high), 2, 3, p2 or p3 (normal), 4 or p4 (low), or high, normal or low",
+        "type": "string",
         "x-cli": "--importance"
       },
       "list": {
@@ -41,7 +37,7 @@ expression: pretty
         "x-cli": "--list"
       },
       "reminder": {
-        "description": "Remind me at this local time",
+        "description": "Remind me at this local time: 17:30 (the next one), tomorrow 9am, fri 5:30pm, 2026-10-02 09:30. A day needs a time",
         "type": "string",
         "x-cli": "--reminder"
       },
