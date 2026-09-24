@@ -11,6 +11,6 @@ You're building ms-todo, a Rust terminal client for Microsoft To Do. It was full
 3. Phase 0: confirm with me that the Entra app is registered and where the client ID is stored (1Password). Then run every spike in `12-open-questions.md` against a throwaway list in my account. Record the evidence and conclusions in that file, and update any blueprint documents whose assumptions changed. Stop and report before phase 1, listing any results that change the design.
 4. Then work through `10-roadmap.md` phase by phase. Each phase ends only when its completion check is observed through the real `ms-todo` binary. Commit using `type: description`.
 
-Ask me about product questions (Q1–Q5 in `12-open-questions.md`) when they come up. Don't guess.
+Q1, Q2, Q4 and Q5 in `12-open-questions.md` are answered. Ask me about Q3, and any new product questions, when they come up. Don't guess.
 
 ---

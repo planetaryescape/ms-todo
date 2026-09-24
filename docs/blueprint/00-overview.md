@@ -51,7 +51,7 @@ Things the official app shows but ms-todo doesn't need: none known. Everything t
 | Assigning a task to someone | No (legacy only) | Assignee stored in an open extension on the task, local meaning only | [05](05-custom-features.md) |
 | Sharing lists | Only flags (`isShared`) | **Not built.** BK doesn't share lists | [11](11-decision-log.md) D-014 |
 | Moving a task between lists | No move operation | Copy the task completely with all its children, check the copy, then delete the original. The ID changes | [05](05-custom-features.md) |
-| Location-based reminders | No | Not possible. A location can be stored as text only (open question) | [12](12-open-questions.md) |
+| Location-based reminders | No | Not built. BK doesn't use locations (D-023) | [11](11-decision-log.md) |
 | Suggestions, smart lists | No (they're queries) | Local SQLite views: Important, Planned, All, Completed | [08](08-tui.md) |
 
 ## Non-goals

@@ -19,10 +19,12 @@ For each, record the request, the response (with private data removed), the date
 | S11 | Does setting `dueDateTime` with a time keep the time, or does To Do cut it back to the date? How does the phone show a due date with a time compared with a reminder? | The mapping for "date with a time" | [06](06-natural-language.md) |
 | S12 | Does creating a task with `recurrence` and completing it make Graph create the next occurrence (as the app does), and what does delta return for it? | How recurrence and sync interact | [04](04-sync-cache.md) |
 
-## Product questions for BK (not blocking the start)
+## Product questions for BK
 
-- **Q1.** Default quick-add list when there's no `#List`: the built-in "Tasks" (`defaultList`), or the list currently selected in the TUI?
-- **Q2.** Locations. To Do has no location field or location reminders. Store free text in the extension and show it, or drop locations from the parser?
-- **Q3.** Keep the original Todoist p1–p4 level in the extension, to avoid losing p2 versus p3 (D-017)?
-- **Q4.** When should the My Day rollover run: at midnight, or at a configurable "start of day" such as 04:00, for late-night work?
-- **Q5.** Should the bundled release build include BK's client ID (mxr style), so other people can use ms-todo without registering an app? It's public, but it would be BK's app registration that other users consent to.
+Answered on 2026-09-24:
+
+- **Q1. Answered (D-022).** Quick add with no list goes to the built-in "Tasks" list (`defaultList`). `#List` or `--list` picks a specific one.
+- **Q2. Answered (D-023).** No locations. BK has never needed them. The parser doesn't recognise them, and there's no location field.
+- **Q3. Open.** Keep the original Todoist p1–p4 level in the extension, to avoid losing p2 versus p3 (D-017)? The default until BK decides is no.
+- **Q4. Answered (D-024).** The My Day rollover runs at midnight by default. It's configurable with `my_day.rollover_time` in config.toml.
+- **Q5. Answered (D-025).** Release builds include BK's client ID, so ms-todo works as soon as it's installed. The docs and `auth login` encourage users to register their own app.

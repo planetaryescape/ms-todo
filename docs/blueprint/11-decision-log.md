@@ -93,3 +93,18 @@ Every decision from the planning session on 2026-09-24, **including the options 
 
 ### D-021: Name `ms-todo`, repo `planetaryescape/ms-todo`, public, dual MIT and Apache-2.0 like mxr. (BK)
 - An unrelated tiny `visionik/mstodo` exists. Its name is close but doesn't clash.
+
+### D-022: Quick add goes to "Tasks" by default; you can name a list. (BK)
+- With no `#List` in the text and no `--list` flag, the task goes to the built-in "Tasks" list (`wellknownListName = defaultList`), in both the CLI and the TUI. `#List` and `--list` always override that.
+- **Option rejected:** defaulting to whichever list is selected in the TUI. The TUI and the CLI would behave differently.
+
+### D-023: No location support. (BK: "I've never really needed to put location to my tasks")
+- The API has no location field or location reminders anyway. We won't store location text in the extension, and the parser has no location rule.
+
+### D-024: The My Day rollover is at midnight, configurable. (BK)
+- The default is 00:00 local time. `my_day.rollover_time = "HH:MM"` in config.toml changes it, for example "04:00" for late nights.
+
+### D-025: Bundle BK's client ID, and encourage users to use their own. (BK)
+- Release builds bake in BK's Entra client ID with `option_env!("MS_TODO_CLIENT_ID")` (mxr's `BUNDLED_CLIENT_ID` pattern), so `brew install` then `ms-todo auth login` works immediately. The ID isn't a secret.
+- The README, `docs/`, and the first run of `ms-todo auth login` recommend registering your own app, with a short guide, and explain why: with the bundled ID, users consent to BK's app registration, and its availability depends on BK. `auth.client_id` in config or `MS_TODO_CLIENT_ID` overrides the bundled ID. `ms-todo auth status` shows which one is in use.
+

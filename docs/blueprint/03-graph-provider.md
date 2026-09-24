@@ -8,7 +8,7 @@
 4. **API permissions** (all delegated): `Tasks.ReadWrite`, `MailboxSettings.ReadWrite` (for categories), `offline_access`, `User.Read` (to show who is signed in).
 5. Copy the **Application (client) ID**. There's no client secret.
 
-The client ID is not a secret; mxr's security audit reached the same conclusion. Take it from config (`auth.client_id`) or an environment variable (`MS_TODO_CLIENT_ID`). Release builds can bake in a default with `option_env!("MS_TODO_CLIENT_ID")`, which is mxr's `BUNDLED_CLIENT_ID` pattern. Registering the app may ask for an Azure signup, which can require card verification; see the research doc's registration section.
+The client ID is not a secret; mxr's security audit reached the same conclusion. Take it from config (`auth.client_id`) or an environment variable (`MS_TODO_CLIENT_ID`). Release builds bake in BK's client ID with `option_env!("MS_TODO_CLIENT_ID")`, which is mxr's `BUNDLED_CLIENT_ID` pattern (D-025). `auth login` and the README encourage users to register their own app instead, and `auth status` shows which ID is in use. Registering the app may ask for an Azure signup, which can require card verification; see the research doc's registration section.
 
 ## Sign-in
 

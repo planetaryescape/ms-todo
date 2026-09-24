@@ -77,4 +77,3 @@ Each phase ends with a **completion check that BK or an agent can observe**, run
 
 - An optional local-LLM parser behind `QuickAddParser` (D-016).
 - Windows support.
-- Location text on tasks (Q2).

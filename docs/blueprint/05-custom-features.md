@@ -10,7 +10,7 @@ All ms-todo open extensions use the name `com.planetaryescape.mstodo` (one exten
 
 - **Adding a task:** add the category `"My Day"` to its `categories`, and set the extension field `myDay: "YYYY-MM-DD"` to today's local date.
 - **Removing a task:** remove the category and clear `myDay`.
-- **Daily rollover:** at the first daemon tick after local midnight (setting `my_day.rollover_hour`, default 0), for each task where `myDay` is before today:
+- **Daily rollover:** at the first daemon tick after the rollover time (setting `my_day.rollover_time = "HH:MM"`, default `"00:00"` local; D-024), for each task where `myDay` is before today:
   - Remove the category and clear `myDay`, in a batch.
   - Record the rollover in `settings.last_rollover_date` so it only runs once, even across restarts.
   - If the daemon was off for days, run it once when the daemon next starts.

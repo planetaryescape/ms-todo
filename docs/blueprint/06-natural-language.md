@@ -19,7 +19,7 @@ pub trait QuickAddParser { fn parse(&self, input: &str, ctx: &ParseContext) -> P
 
 | Token | Meaning | Example |
 |---|---|---|
-| `#List` or `#"Multi word"` | Target list. Case-insensitive prefix match, which has to be unique. If it doesn't match, it becomes a warning and stays in the title | `#Home` |
+| `#List` or `#"Multi word"` | Target list. Case-insensitive prefix match, which has to be unique. If it doesn't match, it becomes a warning and stays in the title. With no list given, the task goes to "Tasks" (D-022) | `#Home` |
 | `@label` | Category. It's created if it's missing, with confirmation in the TUI; the CLI needs `--create-categories` | `@errands` |
 | `p1` `p2` `p3` `p4` | Importance: p1 is high, p2 and p3 are normal, p4 is low. Graph only has three levels, so p2 and p3 both map to normal (D-017) | `p1` |
 | `!<time or date>` | Reminder | `!9am`, `!tomorrow 8:30` |
