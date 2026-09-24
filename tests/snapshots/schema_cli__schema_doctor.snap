@@ -134,6 +134,13 @@ expression: pretty
             "last_changed_count": {
               "type": "integer"
             },
+            "last_delta_at": {
+              "description": "When a delta round of this scope last finished",
+              "type": [
+                "string",
+                "null"
+              ]
+            },
             "last_error": {
               "oneOf": [
                 {
@@ -180,6 +187,14 @@ expression: pretty
                 "null"
               ]
             },
+            "mode": {
+              "description": "delta once a pass saved a delta link: the next pass asks Graph only for changes. enumeration until then, or after Graph rejected the link: the next pass reads the whole scope. unknown: a newer daemon's mode this ms-todo doesn't know",
+              "enum": [
+                "enumeration",
+                "delta",
+                "unknown"
+              ]
+            },
             "scope": {
               "description": "lists, or tasks:<list graph_id>",
               "type": "string"
@@ -195,7 +210,8 @@ expression: pretty
             "scope",
             "state",
             "generation",
-            "in_progress"
+            "in_progress",
+            "mode"
           ],
           "type": "object"
         },

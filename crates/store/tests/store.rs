@@ -2,7 +2,8 @@
 //! the checkpoint, and idempotency keys.
 
 use ms_todo_store::{
-    Claim, Entity, Hydration, LISTS_SCOPE, ListsPass, SeenTask, Store, TasksPass, tasks_scope,
+    Claim, Cursor, Entity, Hydration, LISTS_SCOPE, ListsPass, SeenTask, Store, TasksPass,
+    tasks_scope,
 };
 use serde_json::{Value, json};
 
@@ -38,6 +39,7 @@ async fn with_list(store: &Store) -> String {
         .apply_lists(ListsPass {
             rev,
             lists: vec![(list("L1", "Groceries"), None)],
+            cursor: whole(),
         })
         .await
         .expect("apply lists");
@@ -52,6 +54,15 @@ fn pass(list_local_id: &str, rev: i64, seen: Vec<SeenTask>) -> TasksPass {
         seen,
         gone: Vec::new(),
         failure: None,
+        cursor: whole(),
+    }
+}
+
+/// The cursor of a whole read.
+fn whole() -> Cursor {
+    Cursor {
+        delta_link: "link-0".into(),
+        replayed: false,
     }
 }
 
@@ -129,6 +140,7 @@ async fn lists_are_upserted_with_stable_local_ids_and_unseen_ones_are_tombstoned
                 (list("L1", "Food"), Some(json!({ "folder": "Home" }))),
                 (list("L2", "Work"), None),
             ],
+            cursor: whole(),
         })
         .await
         .expect("apply");
@@ -148,6 +160,7 @@ async fn lists_are_upserted_with_stable_local_ids_and_unseen_ones_are_tombstoned
         .apply_lists(ListsPass {
             rev,
             lists: vec![(list("L2", "Work"), None)],
+            cursor: whole(),
         })
         .await
         .expect("apply");
@@ -176,6 +189,7 @@ async fn lists_are_upserted_with_stable_local_ids_and_unseen_ones_are_tombstoned
         .apply_lists(ListsPass {
             rev,
             lists: vec![(list("L2", "Work"), None)],
+            cursor: whole(),
         })
         .await
         .expect("apply");
@@ -431,5 +445,203 @@ async fn idempotency_keys_replay_refuse_a_different_request_and_can_be_released(
     assert_eq!(
         store.claim_key("k", "fp-b", "op-4").await.expect("claim"),
         Claim::Fresh
+    );
+}
+
+fn delta(link: &str) -> Cursor {
+    Cursor {
+        delta_link: link.into(),
+        replayed: true,
+    }
+}
+
+#[tokio::test]
+async fn a_delta_round_applies_only_what_it_names_and_saves_its_link() {
+    let (_dir, store) = open().await;
+    let groceries = with_list(&store).await;
+    let rev = store.local_rev().await.expect("rev");
+    let mut whole = pass(
+        &groceries,
+        rev,
+        vec![
+            seen(task("T1", "Milk", "e1")),
+            seen(task("T2", "Eggs", "e1")),
+        ],
+    );
+    whole.cursor = Cursor {
+        delta_link: "link-1".into(),
+        replayed: false,
+    };
+    store.apply_tasks(whole).await.expect("whole read");
+    let scope = store
+        .scope(&tasks_scope("L1"))
+        .await
+        .expect("read")
+        .expect("row");
+    assert_eq!(scope.delta_link.as_deref(), Some("link-1"));
+    assert!(scope.is_delta());
+    assert_eq!(
+        scope.last_delta_at, None,
+        "a whole read isn't a delta round"
+    );
+
+    // Delta names T2 as removed and T3 as new; T1 isn't mentioned.
+    let rev = store.local_rev().await.expect("rev");
+    let mut round = pass(&groceries, rev, vec![seen(task("T3", "Bread", "e1"))]);
+    round.gone = vec!["T2".into()];
+    round.cursor = delta("link-2");
+    let changed = store.apply_tasks(round).await.expect("delta round");
+    assert_eq!(changed, 2);
+    let mut titles: Vec<String> = store
+        .tasks_in_list(&groceries)
+        .await
+        .expect("tasks")
+        .into_iter()
+        .map(|task| task.title)
+        .collect();
+    titles.sort();
+    assert_eq!(
+        titles,
+        ["Bread", "Milk"],
+        "T1 isn't tombstoned for not being named"
+    );
+    let scope = store
+        .scope(&tasks_scope("L1"))
+        .await
+        .expect("read")
+        .expect("row");
+    assert_eq!(scope.delta_link.as_deref(), Some("link-2"));
+    assert!(scope.last_delta_at.is_some());
+}
+
+#[tokio::test]
+async fn delta_never_tombstones_a_row_written_locally_since_it_fetched() {
+    let (_dir, store) = open().await;
+    let groceries = with_list(&store).await;
+    let rev = store.local_rev().await.expect("rev");
+    store
+        .apply_tasks(pass(&groceries, rev, vec![seen(task("T1", "Milk", "e1"))]))
+        .await
+        .expect("apply");
+
+    let pass_rev = store.local_rev().await.expect("rev");
+    store
+        .upsert_task_local(&groceries, &task("T1", "Oat milk", "e2"), None)
+        .await
+        .expect("edit");
+    let mut round = pass(&groceries, pass_rev, Vec::new());
+    round.gone = vec!["T1".into()];
+    round.cursor = delta("link");
+    store.apply_tasks(round).await.expect("stale delta");
+
+    let t1 = store.task("T1").await.expect("read").expect("T1 is kept");
+    assert_eq!(t1.title, "Oat milk");
+}
+
+#[tokio::test]
+async fn a_failed_delta_round_keeps_the_old_link() {
+    let (_dir, store) = open().await;
+    let groceries = with_list(&store).await;
+    let rev = store.local_rev().await.expect("rev");
+    let mut whole = pass(&groceries, rev, Vec::new());
+    whole.cursor = delta("link-1");
+    store.apply_tasks(whole).await.expect("apply");
+
+    let mut failed = pass(&groceries, rev, vec![seen(task("T1", "Milk", "e1"))]);
+    failed.cursor = delta("link-2");
+    failed.failure = Some(("rejected".into(), "403".into()));
+    store.apply_tasks(failed).await.expect("apply");
+
+    let scope = store
+        .scope(&tasks_scope("L1"))
+        .await
+        .expect("read")
+        .expect("row");
+    assert_eq!(scope.delta_link.as_deref(), Some("link-1"));
+    assert_eq!(scope.generation, 1);
+}
+
+#[tokio::test]
+async fn a_reset_drops_the_link_and_advancing_saves_one() {
+    let (_dir, store) = open().await;
+    store
+        .advance_scope(LISTS_SCOPE, &delta("link-1"))
+        .await
+        .expect("advance");
+    let scope = store.scope(LISTS_SCOPE).await.expect("read").expect("row");
+    assert_eq!(scope.delta_link.as_deref(), Some("link-1"));
+    assert_eq!(scope.generation, 1);
+    assert_eq!(scope.last_changed_count, 0);
+
+    store.reset_scope(LISTS_SCOPE).await.expect("reset");
+    let scope = store.scope(LISTS_SCOPE).await.expect("read").expect("row");
+    assert!(!scope.is_delta());
+    assert_eq!(scope.generation, 1, "the cached data and generation stay");
+}
+
+#[tokio::test]
+async fn a_list_found_deleted_takes_its_tasks_and_scope_with_it() {
+    let (_dir, store) = open().await;
+    let groceries = with_list(&store).await;
+    let rev = store.local_rev().await.expect("rev");
+    let mut whole = pass(&groceries, rev, vec![seen(task("T1", "Milk", "e1"))]);
+    whole.cursor = delta("link");
+    store.apply_tasks(whole).await.expect("apply");
+
+    assert!(store.remove_list("L1", rev).await.expect("remove"));
+    assert!(store.lists().await.expect("lists").is_empty());
+    assert!(store.task("T1").await.expect("read").is_none());
+    assert!(
+        store
+            .scope(&tasks_scope("L1"))
+            .await
+            .expect("read")
+            .is_none()
+    );
+    assert!(!store.remove_list("L1", rev).await.expect("again"));
+}
+
+#[tokio::test]
+async fn migration_0002_applies_on_top_of_a_rung_3a_database() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let path = dir.path().join("ms-todo.db");
+    let only_0001 = dir.path().join("migrations");
+    std::fs::create_dir(&only_0001).expect("mkdir");
+    std::fs::copy(
+        concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/migrations/0001_lists_tasks_sync_state.sql"
+        ),
+        only_0001.join("0001_lists_tasks_sync_state.sql"),
+    )
+    .expect("copy 0001");
+    {
+        let options = sqlx::sqlite::SqliteConnectOptions::new()
+            .filename(&path)
+            .create_if_missing(true);
+        let pool = sqlx::SqlitePool::connect_with(options)
+            .await
+            .expect("connect");
+        sqlx::migrate::Migrator::new(only_0001.as_path())
+            .await
+            .expect("migrator")
+            .run(&pool)
+            .await
+            .expect("0001");
+        sqlx::query(
+            "INSERT INTO sync_state (scope, generation, last_success_at) VALUES ('lists', 7, 1)",
+        )
+        .execute(&pool)
+        .await
+        .expect("a rung 3a scope");
+        pool.close().await;
+    }
+
+    let store = Store::open(&path).await.expect("open applies 0002");
+    let scope = store.scope(LISTS_SCOPE).await.expect("read").expect("row");
+    assert_eq!(scope.generation, 7);
+    assert!(
+        !scope.is_delta(),
+        "a rung 3a scope starts in enumeration mode"
     );
 }

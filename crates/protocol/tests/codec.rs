@@ -2,8 +2,8 @@ use bytes::BytesMut;
 use ms_todo_protocol::{
     Applied, Candidate, Clearable, Codec, DaemonStatus, DoctorReport, ErrorPayload, Event,
     Importance, Message, NewTask, PROTOCOL_VERSION, Payload, Plan, PlannedTask, RawWriteMethod,
-    Request, Response, ResponseData, Rolled, ScopeError, ScopeStatus, SyncInfo, SyncProgress,
-    SyncReport, SyncState, TaskAction, TaskChange, TaskEdit,
+    Request, Response, ResponseData, Rolled, ScopeError, ScopeStatus, SyncInfo, SyncMode,
+    SyncProgress, SyncReport, SyncState, TaskAction, TaskChange, TaskEdit,
 };
 use serde_json::json;
 use tokio_util::codec::{Decoder, Encoder};
@@ -110,6 +110,8 @@ fn every_request_and_response_round_trips() {
                         message: "timed out".into(),
                         at: None,
                     }),
+                    mode: SyncMode::Delta,
+                    last_delta_at: Some(1_790_000_020),
                 }],
             }),
         }),
@@ -333,6 +335,22 @@ fn fields_from_a_newer_peer_are_ignored_and_missing_new_fields_default() {
         tasks.payload,
         Payload::Request(Request::ListTasks { list: None })
     );
+
+    // A rung 3a daemon's scope has no mode; a newer one's may be unknown.
+    let scope = |mode: Option<&str>| {
+        let mut scope = json!({
+            "scope": "lists", "state": "ready", "generation": 1, "in_progress": false,
+            "last_success_at": null, "last_changed_count": 0, "last_error": null
+        });
+        if let Some(mode) = mode {
+            scope["mode"] = json!(mode);
+        }
+        serde_json::from_value::<ScopeStatus>(scope).expect("scope")
+    };
+    assert_eq!(scope(None).mode, SyncMode::Enumeration);
+    assert_eq!(scope(None).last_delta_at, None);
+    assert_eq!(scope(Some("delta")).mode, SyncMode::Delta);
+    assert_eq!(scope(Some("webhook")).mode, SyncMode::Unknown);
 }
 
 #[test]

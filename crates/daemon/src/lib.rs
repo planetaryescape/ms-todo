@@ -1,8 +1,9 @@
 //! ms-todo's daemon (docs/blueprint/01-architecture.md#daemon-lifecycle).
 //! It owns the sign-in and the cache: it's the only process that refreshes
 //! the token, talks to Graph for data and touches the store (D-031). It
-//! keeps the cache in step with Graph by full enumeration (`sync`). Clients reach it over a Unix socket in
-//! the instance's 0700 run directory, speaking `ms-todo-protocol`.
+//! keeps the cache in step with Graph by delta sync (`sync`). Clients reach
+//! it over a Unix socket in the instance's 0700 run directory, speaking
+//! `ms-todo-protocol`.
 //!
 //! Started by `ms-todo daemon start` or automatically by any client, as a
 //! detached `ms-todo daemon run --instance <name>`.

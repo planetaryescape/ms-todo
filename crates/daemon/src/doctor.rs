@@ -1,7 +1,9 @@
 //! The daemon's side of `ms-todo doctor`: the database and every scope's
 //! sync state, with its last error.
 
-use ms_todo_protocol::{DoctorReport, ErrorPayload, ResponseData, ScopeError, ScopeStatus};
+use ms_todo_protocol::{
+    DoctorReport, ErrorPayload, ResponseData, ScopeError, ScopeStatus, SyncMode,
+};
 use ms_todo_store::scope_list;
 
 use crate::freshness::sync_info;
@@ -20,6 +22,12 @@ pub(crate) async fn doctor(state: &State) -> Result<ResponseData, ErrorPayload> 
                     .find(|list| list.graph_id.as_deref() == Some(graph_id))
             });
             ScopeStatus {
+                mode: if row.is_delta() {
+                    SyncMode::Delta
+                } else {
+                    SyncMode::Enumeration
+                },
+                last_delta_at: row.last_delta_at,
                 list_id: list.map(|list| list.local_id.clone()),
                 list_name: list.map(|list| list.display_name.clone()),
                 state: sync.state,

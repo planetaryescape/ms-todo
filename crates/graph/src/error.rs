@@ -85,6 +85,20 @@ impl GraphError {
         }
     }
 
+    /// Whether Graph rejected a delta link, so the scope must be read whole
+    /// again: 410 `SyncStateNotFound` with any inner code, or 400 "Badly
+    /// formed token." (S4). A 404 or 5xx on a delta request isn't one: the
+    /// same link answered 200 a minute later.
+    pub fn is_delta_reset(&self) -> bool {
+        match self.api_error() {
+            Some(error) => {
+                error.status == 410
+                    || (error.status == 400 && error.message.contains("Badly formed token"))
+            }
+            None => false,
+        }
+    }
+
     /// Graph's `error.code`, such as `ErrorItemNotFound`.
     pub fn graph_code(&self) -> Option<&str> {
         match self {
@@ -139,6 +153,30 @@ mod tests {
         assert_eq!(error.kind(), ErrorKind::OutcomeUnknown);
         assert_eq!(error.request_id(), Some("rid"));
         assert_eq!(error.status(), Some(503));
+    }
+
+    #[test]
+    fn only_a_410_or_a_badly_formed_token_resets_a_delta_link() {
+        let gone = GraphError::Api(ApiError::parse(
+            410,
+            None,
+            r#"{"error":{"code":"SyncStateNotFound","message":"The delta token is no longer valid, and the app must reset the sync state.","innerError":{"code":"SyncStateInvalid"}}}"#,
+        ));
+        let badly_formed = GraphError::Api(ApiError::parse(
+            400,
+            None,
+            r#"{"error":{"code":"BadRequest","message":"Badly formed token."}}"#,
+        ));
+        let other_400 = GraphError::Api(ApiError::parse(
+            400,
+            None,
+            r#"{"error":{"code":"BadRequest","message":"Skip token is not provided."}}"#,
+        ));
+        assert!(gone.is_delta_reset());
+        assert!(badly_formed.is_delta_reset());
+        assert!(!other_400.is_delta_reset());
+        assert!(!api(404).is_delta_reset());
+        assert!(!api(500).is_delta_reset());
     }
 
     #[test]

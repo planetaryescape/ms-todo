@@ -1,5 +1,6 @@
-//! Tasks: reads, the daemon's own writes, and applying a full enumeration
-//! of one list (docs/blueprint/04-sync-cache.md#reconciliation-after-a-lost-delta-token).
+//! Tasks: reads, the daemon's own writes, and applying one list's pass:
+//! a whole read of it (docs/blueprint/04-sync-cache.md#reconciliation-after-a-lost-delta-token)
+//! or a delta round (docs/blueprint/04-sync-cache.md#delta-sync).
 
 use std::collections::{HashMap, HashSet};
 
@@ -8,7 +9,7 @@ use sqlx::{FromRow, SqliteConnection};
 
 use crate::graph_columns::{TaskColumns, etag, text};
 use crate::pool::next_local_rev;
-use crate::sync_state::{checkpoint, record_failure};
+use crate::sync_state::{Cursor, checkpoint, record_failure};
 use crate::{Entity, Store, StoreError, new_local_id, now, parse_object, parse_optional, to_json};
 
 /// A live (not tombstoned) task.
@@ -65,20 +66,24 @@ pub struct SeenTask {
     pub hydration: Hydration,
 }
 
-/// One list's full enumeration, ready to apply.
+/// One list's pass, ready to apply.
 pub struct TasksPass {
     pub scope: String,
     pub list_local_id: String,
     /// [`Store::local_rev`] read before the enumeration was fetched.
     pub rev: i64,
     pub seen: Vec<SeenTask>,
-    /// Tasks whose extension fetch found them deleted (404) in between.
+    /// Tasks known deleted: delta's `@removed`, or an extension fetch that
+    /// answered 404.
     pub gone: Vec<String>,
     /// Why a fetch the pass needed failed: `(ErrorKind string, message)`.
     /// With one, what came back is still applied, but the scope isn't
     /// checkpointed, so its generation doesn't move and the next pass
     /// fetches again (04, the checkpoint rule).
     pub failure: Option<(String, String)>,
+    /// Saved at the checkpoint. Unless it's `replayed`, `seen` is every
+    /// task in the list, and the ones not in it are tombstoned.
+    pub cursor: Cursor,
 }
 
 impl Store {
@@ -114,6 +119,9 @@ impl Store {
         &self,
         tasks: &[(String, Option<String>)],
     ) -> Result<HashSet<String>, StoreError> {
+        if tasks.is_empty() {
+            return Ok(HashSet::new());
+        }
         let hydrated: HashMap<String, Option<String>> =
             sqlx::query_as("SELECT graph_id, hydrated_etag FROM tasks WHERE graph_id IS NOT NULL")
                 .fetch_all(self.reader())
@@ -129,10 +137,11 @@ impl Store {
             .collect())
     }
 
-    /// Apply one list's enumeration in a transaction: upsert what came
-    /// back, tombstone what's gone and every task in the list that wasn't
-    /// seen, then checkpoint the scope or record why not. Rows the daemon
-    /// wrote after `pass.rev`, and rows with no Graph ID, are left alone.
+    /// Apply one list's pass in a transaction: upsert what came back,
+    /// tombstone what's gone and, after a whole read, every task in the
+    /// list that wasn't seen, then checkpoint the scope or record why not.
+    /// Rows the daemon wrote after `pass.rev`, and rows with no Graph ID,
+    /// are left alone.
     /// Returns how many rows changed.
     pub async fn apply_tasks(&self, pass: TasksPass) -> Result<i64, StoreError> {
         let mut tx = self.writer().begin().await?;
@@ -161,24 +170,28 @@ impl Store {
             .await?;
             changed += i64::try_from(result.rows_affected()).unwrap_or(0);
         }
-        let live: Vec<String> = sqlx::query_scalar(
-            "SELECT graph_id FROM tasks WHERE list_local_id = ? AND deleted_at IS NULL \
-             AND graph_id IS NOT NULL AND local_rev <= ?",
-        )
-        .bind(&pass.list_local_id)
-        .bind(pass.rev)
-        .fetch_all(&mut *tx)
-        .await?;
-        for graph_id in live.iter().filter(|id| !seen.contains(*id)) {
-            sqlx::query("UPDATE tasks SET deleted_at = ? WHERE graph_id = ?")
-                .bind(deleted_at)
-                .bind(graph_id)
-                .execute(&mut *tx)
-                .await?;
-            changed += 1;
+        // A delta round names only what changed; a whole read tombstones
+        // what it didn't see.
+        if !pass.cursor.replayed {
+            let live: Vec<String> = sqlx::query_scalar(
+                "SELECT graph_id FROM tasks WHERE list_local_id = ? AND deleted_at IS NULL \
+                 AND graph_id IS NOT NULL AND local_rev <= ?",
+            )
+            .bind(&pass.list_local_id)
+            .bind(pass.rev)
+            .fetch_all(&mut *tx)
+            .await?;
+            for graph_id in live.iter().filter(|id| !seen.contains(*id)) {
+                sqlx::query("UPDATE tasks SET deleted_at = ? WHERE graph_id = ?")
+                    .bind(deleted_at)
+                    .bind(graph_id)
+                    .execute(&mut *tx)
+                    .await?;
+                changed += 1;
+            }
         }
         match &pass.failure {
-            None => checkpoint(&mut tx, &pass.scope, changed).await?,
+            None => checkpoint(&mut tx, &pass.scope, changed, &pass.cursor).await?,
             Some((kind, message)) => record_failure(&mut tx, &pass.scope, kind, message).await?,
         }
         tx.commit().await?;

@@ -257,6 +257,24 @@ pub struct ScopeStatus {
     pub last_success_at: Option<i64>,
     pub last_changed_count: u64,
     pub last_error: Option<ScopeError>,
+    #[serde(default)]
+    pub mode: SyncMode,
+    /// Unix seconds: when a delta round of this scope last checkpointed.
+    #[serde(default)]
+    pub last_delta_at: Option<i64>,
+}
+
+/// How a scope's next pass reads it (docs/blueprint/04-sync-cache.md).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum SyncMode {
+    /// No delta link: the next pass reads the whole scope and reconciles.
+    #[default]
+    Enumeration,
+    /// The next pass replays the saved delta link, for changes only.
+    Delta,
+    #[serde(other)]
+    Unknown,
 }
 
 /// Why a scope's last sync failed.

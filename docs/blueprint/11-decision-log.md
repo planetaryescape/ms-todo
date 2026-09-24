@@ -204,3 +204,12 @@ BK checked the blueprint against his Obsidian notes and approved folding these g
 - **Options rejected:** always setting the due date to today, which clobbers real due dates and hides them in the Planned and overdue views; ms-todo-only, which the phone can't see; and keeping the category, which iOS doesn't show.
 - **Depends on the app setting,** which isn't in Graph, so `ms-todo doctor` can't read it. The docs and `doctor` say so.
 - **Unchanged:** categories stay for `@labels` ([06](06-natural-language.md)), which Graph and Outlook show and iOS doesn't. `MailboxSettings.ReadWrite` is still needed for them.
+
+### D-038: Rung 3b's delta sync, as built. (Rung 3b build, 2026-09-24)
+- **Fills in** details [04](04-sync-cache.md#delta-sync) left open. Nothing here reverses an earlier decision.
+- **A whole read is a fresh delta round.** A scope's first pass, and its reset, page `…/delta` with no token to the end: that's every item plus a `deltaLink`, in one set of requests. The plain `/tasks` enumeration is no longer used. A whole read tombstones what it didn't see; a delta round tombstones only `@removed` entries and extension fetches that answer 404.
+- **Lists always apply an enumeration.** Delta never carries extensions (S2), so when `lists/delta` names any list, the one `GET /me/todo/lists` with the filtered `$expand` that 04 fetches for extensions is applied as a whole read (upsert, tombstone the rest), minus lists delta called removed. A lists delta round that names nothing just checkpoints.
+- **Cursors live in `sync_state`** (`delta_link`, `last_delta_at`, migration `0002`). A scope with no link is in enumeration mode; `doctor` shows each scope's `mode` and `last_delta_at`. A 410 or "Badly formed token." drops the link at once, so a reset that then fails stays in enumeration mode.
+- **404 and 5xx keep the link.** The Graph client already retries a 5xx with backoff inside the request. After that, or on a 404, the scope fails and the next pass replays the same link. A tasks-delta 404 first checks `GET /me/todo/lists/{id}`: a 404 there tombstones the list and its tasks and drops its cursor (S4).
+- **Cadence:** a pass every 20 seconds while any client is connected or has sent a request in the last 10 minutes, otherwise every 5 minutes, measured from the end of the last pass. The first request after an idle spell brings the next pass forward. No `sync.interval_secs` setting yet.
+- **Not built, and still to be placed:** `--fresh`, the TUI focus hint, attachment metadata (rung 8b), and syncing after the outbox sends (rung 4).

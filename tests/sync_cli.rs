@@ -9,19 +9,11 @@ use std::time::{Duration, Instant};
 
 use serde_json::{Value, json};
 use support::Env;
-use support::fake_graph::{FakeGraph, list, task};
+use support::fake_graph::{graph_with_tasks, list, task};
 use wiremock::matchers::{method, path};
-use wiremock::{Mock, Request, ResponseTemplate};
+use wiremock::{Mock, ResponseTemplate};
 
 const EXTENSION: &str = "com.planetaryescape.mstodo";
-
-async fn graph_with_tasks(env: &mut Env, tasks: Vec<Value>) -> FakeGraph {
-    let graph = FakeGraph::start(env, vec![list("L-tasks", "Tasks", "defaultList")]).await;
-    graph.edit(|data| {
-        data.tasks.insert("L-tasks".into(), tasks);
-    });
-    graph
-}
 
 fn graph_ids(collection: &Value) -> Vec<String> {
     collection["items"]
@@ -104,19 +96,29 @@ async fn a_sync_pages_every_task_and_brings_in_changes_additions_and_deletions()
     );
     assert_eq!(listed["items"][1]["title"], "task 3, renamed");
 
-    // Three pages each pass (the daemon's own first one included), with
-    // `Prefer` on every page (P1).
-    let pages: Vec<Request> = graph
-        .requests("GET")
-        .await
-        .into_iter()
-        .filter(|request| request.url.path() == "/v1.0/me/todo/lists/L-tasks/tasks")
-        .collect();
+    // The first pass read the list whole in three pages of two, then an
+    // empty page with the deltaLink (P1). Later passes replay that link.
+    // `Prefer` goes on every page, since Graph doesn't carry it (P1).
+    let starts = graph.delta_starts("L-tasks").await;
+    assert_eq!(starts[0], None, "the first pass starts fresh");
     assert!(
-        pages.len() >= 6 && pages.len().is_multiple_of(3),
-        "{} pages",
-        pages.len()
+        starts[1..].iter().all(Option::is_some),
+        "then delta: {starts:?}"
     );
+    let pages = graph.delta_pages().await;
+    let queries: Vec<String> = pages
+        .iter()
+        .filter(|page| page.url.path() == "/v1.0/me/todo/lists/L-tasks/tasks/delta")
+        .map(|page| page.url.query().unwrap_or_default().to_owned())
+        .collect();
+    assert_eq!(queries[0], "", "a fresh round sends no query options (S3)");
+    assert!(
+        queries[1..4]
+            .iter()
+            .all(|query| query.starts_with("$skiptoken=")),
+        "{queries:?}"
+    );
+    assert!(queries[4].starts_with("$deltatoken="), "{queries:?}");
     assert!(pages.iter().all(|page| {
         page.headers
             .get("Prefer")
@@ -286,11 +288,7 @@ async fn a_task_added_while_a_sync_is_in_flight_is_not_tombstoned_by_it() {
     let added = env.json(&["tasks", "add", "Buy bread"]);
     assert_eq!(added["items"][0]["graph_id"], "T-new");
 
-    let settled = Instant::now() + Duration::from_secs(10);
-    while env.json(&["doctor"])["syncing"] != false {
-        assert!(Instant::now() < settled, "the sync never finished");
-        std::thread::sleep(Duration::from_millis(50));
-    }
+    env.wait_until_idle();
     let listed = env.json(&["tasks", "list"]);
     assert_eq!(listed["sync"]["state"], "ready");
     let mut ids = graph_ids(&listed);

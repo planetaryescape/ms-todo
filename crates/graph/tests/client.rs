@@ -506,3 +506,107 @@ async fn a_batch_holds_at_most_20_requests_and_retries_a_throttled_one() {
     // ahead of 20..24.
     assert_eq!(sizes, [20, 20, 5]);
 }
+
+const DELTA: &str = "/v1.0/me/todo/lists/L1/tasks/delta";
+
+#[tokio::test]
+async fn a_delta_round_pages_to_the_empty_page_that_carries_the_delta_link() {
+    let graph = Graph::new().await;
+    let uri = graph.server.uri();
+    Mock::given(method("GET"))
+        .and(path(DELTA))
+        .and(query_param_is_missing("$skiptoken"))
+        .and(header("Prefer", PREFER))
+        .respond_with(page(
+            tasks(0, 2),
+            Some(format!("{uri}{DELTA}?$skiptoken=p2")),
+        ))
+        .expect(1)
+        .mount(&graph.server)
+        .await;
+    Mock::given(method("GET"))
+        .and(path(DELTA))
+        .and(query_param("$skiptoken", "p2"))
+        .and(header("Prefer", PREFER))
+        .respond_with(page(
+            vec![json!({ "id": "T9", "@removed": { "reason": "deleted" } })],
+            Some(format!("{uri}{DELTA}?$skiptoken=p3")),
+        ))
+        .expect(1)
+        .mount(&graph.server)
+        .await;
+    Mock::given(method("GET"))
+        .and(path(DELTA))
+        .and(query_param("$skiptoken", "p3"))
+        .and(header("Prefer", PREFER))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+            "value": [],
+            "@odata.deltaLink": format!("{uri}{DELTA}?$deltatoken=d1")
+        })))
+        .expect(1)
+        .mount(&graph.server)
+        .await;
+
+    let start = graph.client.tasks_delta_start("L1");
+    assert_eq!(start, format!("{uri}{DELTA}"), "no query options (S3)");
+    let delta = graph.client.delta(&start).await.expect("delta");
+
+    assert_eq!(delta.items.len(), 3);
+    assert_eq!(delta.items[2]["@removed"]["reason"], "deleted");
+    assert_eq!(delta.delta_link, format!("{uri}{DELTA}?$deltatoken=d1"));
+}
+
+#[tokio::test]
+async fn a_delta_link_off_the_graph_origin_is_refused() {
+    let graph = Graph::new().await;
+    Mock::given(method("GET"))
+        .and(path(DELTA))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+            "value": [],
+            "@odata.deltaLink": "https://evil.example/v1.0/me/todo/lists/L1/tasks/delta?$deltatoken=x"
+        })))
+        .mount(&graph.server)
+        .await;
+
+    let start = graph.client.tasks_delta_start("L1");
+    let error = graph.client.delta(&start).await.expect_err("refused");
+    assert!(matches!(error, GraphError::Decode(_)), "{error:?}");
+    let error = graph
+        .client
+        .delta("https://evil.example/v1.0/me/todo/lists/L1/tasks/delta")
+        .await
+        .expect_err("a saved link off Graph is refused too");
+    assert!(matches!(error, GraphError::Decode(_)), "{error:?}");
+}
+
+#[tokio::test]
+async fn a_rejected_delta_token_is_a_reset_and_a_404_is_not() {
+    let graph = Graph::new().await;
+    Mock::given(method("GET"))
+        .and(path(DELTA))
+        .and(query_param("$deltatoken", "gone"))
+        .respond_with(graph_error(410, "SyncStateNotFound"))
+        .mount(&graph.server)
+        .await;
+    Mock::given(method("GET"))
+        .and(path(DELTA))
+        .and(query_param("$deltatoken", "flaky"))
+        .respond_with(graph_error(404, "ErrorItemNotFound"))
+        .mount(&graph.server)
+        .await;
+    let uri = graph.server.uri();
+
+    let gone = graph
+        .client
+        .delta(&format!("{uri}{DELTA}?$deltatoken=gone"))
+        .await
+        .expect_err("410");
+    assert!(gone.is_delta_reset());
+    let flaky = graph
+        .client
+        .delta(&format!("{uri}{DELTA}?$deltatoken=flaky"))
+        .await
+        .expect_err("404");
+    assert!(!flaky.is_delta_reset());
+    assert_eq!(flaky.kind(), ErrorKind::NotFound);
+}

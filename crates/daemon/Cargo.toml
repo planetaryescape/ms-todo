@@ -22,5 +22,9 @@ tokio = { workspace = true, features = ["net", "rt-multi-thread", "signal", "syn
 tokio-util = { workspace = true }
 uuid = { workspace = true }
 
+[dev-dependencies]
+# Paused time, for the sync cadence.
+tokio = { workspace = true, features = ["test-util"] }
+
 [lints]
 workspace = true

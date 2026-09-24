@@ -19,7 +19,7 @@ use serde_json::{Map, Value};
 pub use idempotency::{Claim, IDEMPOTENCY_WINDOW_SECS};
 pub use lists::{ListRow, ListsApplied, ListsPass};
 pub use pool::Store;
-pub use sync_state::{LISTS_SCOPE, ScopeRow, scope_list, tasks_scope};
+pub use sync_state::{Cursor, LISTS_SCOPE, ScopeRow, scope_list, tasks_scope};
 pub use tasks::{Hydration, SeenTask, TaskRow, TasksPass};
 
 /// A JSON object from Graph.

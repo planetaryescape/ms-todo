@@ -7,7 +7,9 @@ use serde_json::Value;
 use sqlx::FromRow;
 
 use crate::graph_columns::{ListColumns, text};
-use crate::sync_state::{LISTS_SCOPE, checkpoint, tasks_scope};
+use sqlx::SqliteConnection;
+
+use crate::sync_state::{Cursor, LISTS_SCOPE, checkpoint, tasks_scope};
 use crate::{Entity, Store, StoreError, new_local_id, now, parse_object, parse_optional, to_json};
 
 /// A live (not tombstoned) list.
@@ -65,6 +67,8 @@ pub struct ListsPass {
     /// [`Store::local_rev`] read before the enumeration was fetched.
     pub rev: i64,
     pub lists: Vec<(Entity, Option<Value>)>,
+    /// Saved at the checkpoint.
+    pub cursor: Cursor,
 }
 
 /// What applying a [`ListsPass`] did.
@@ -160,34 +164,67 @@ impl Store {
         .bind(pass.rev)
         .fetch_all(&mut *tx)
         .await?;
-        let deleted_at = now();
         for (local_id, graph_id) in live {
             if seen.contains(&graph_id) {
                 continue;
             }
-            sqlx::query("UPDATE lists SET deleted_at = ? WHERE local_id = ?")
-                .bind(deleted_at)
-                .bind(&local_id)
-                .execute(&mut *tx)
-                .await?;
-            sqlx::query(
-                "UPDATE tasks SET deleted_at = ? \
-                 WHERE list_local_id = ? AND deleted_at IS NULL AND local_rev <= ?",
-            )
-            .bind(deleted_at)
-            .bind(&local_id)
-            .bind(pass.rev)
-            .execute(&mut *tx)
-            .await?;
-            sqlx::query("DELETE FROM sync_state WHERE scope = ?")
-                .bind(tasks_scope(&graph_id))
-                .execute(&mut *tx)
-                .await?;
+            tombstone_list(&mut tx, &local_id, &graph_id, pass.rev).await?;
             applied.changed += 1;
             applied.removed.push(graph_id);
         }
-        checkpoint(&mut tx, LISTS_SCOPE, applied.changed).await?;
+        checkpoint(&mut tx, LISTS_SCOPE, applied.changed, &pass.cursor).await?;
         tx.commit().await?;
         Ok(applied)
     }
+
+    /// Tombstone the list whose Graph ID is `graph_id`, found deleted
+    /// outside a lists pass (a 404 on `GET /me/todo/lists/{id}`, S4), with
+    /// its tasks, and drop its tasks scope. Returns whether it was live.
+    pub async fn remove_list(&self, graph_id: &str, rev: i64) -> Result<bool, StoreError> {
+        let mut tx = self.writer().begin().await?;
+        let live: Option<String> = sqlx::query_scalar(
+            "SELECT local_id FROM lists WHERE graph_id = ? AND deleted_at IS NULL AND local_rev <= ?",
+        )
+        .bind(graph_id)
+        .bind(rev)
+        .fetch_optional(&mut *tx)
+        .await?;
+        let Some(local_id) = live else {
+            return Ok(false);
+        };
+        tombstone_list(&mut tx, &local_id, graph_id, rev).await?;
+        tx.commit().await?;
+        Ok(true)
+    }
+}
+
+/// Tombstone a list and its tasks not written since `rev`, and drop its
+/// tasks scope, cursor and all: a deleted list's tasks delta keeps
+/// answering 200 with nothing (S4), so it would never say so itself.
+async fn tombstone_list(
+    tx: &mut SqliteConnection,
+    local_id: &str,
+    graph_id: &str,
+    rev: i64,
+) -> Result<(), StoreError> {
+    let deleted_at = now();
+    sqlx::query("UPDATE lists SET deleted_at = ? WHERE local_id = ?")
+        .bind(deleted_at)
+        .bind(local_id)
+        .execute(&mut *tx)
+        .await?;
+    sqlx::query(
+        "UPDATE tasks SET deleted_at = ? \
+         WHERE list_local_id = ? AND deleted_at IS NULL AND local_rev <= ?",
+    )
+    .bind(deleted_at)
+    .bind(local_id)
+    .bind(rev)
+    .execute(&mut *tx)
+    .await?;
+    sqlx::query("DELETE FROM sync_state WHERE scope = ?")
+        .bind(tasks_scope(graph_id))
+        .execute(&mut *tx)
+        .await?;
+    Ok(())
 }

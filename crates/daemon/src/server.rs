@@ -173,6 +173,9 @@ async fn accept_until_shutdown(listener: UnixListener, state: Arc<State>) -> Res
 }
 
 async fn serve_connection(stream: UnixStream, state: Arc<State>, shutdown: Arc<Notify>) {
+    // A connected client, and each request it sends, keep sync polling at
+    // the active cadence.
+    let _client = state.syncer.client_connected();
     let mut framed = Framed::new(stream, Codec::new());
     while let Some(frame) = framed.next().await {
         let message = match frame {
@@ -192,6 +195,7 @@ async fn serve_connection(stream: UnixStream, state: Arc<State>, shutdown: Arc<N
             // Clients only send requests; ignore anything else.
             _ => continue,
         };
+        state.syncer.client_request();
         let stopping = request == Request::Shutdown;
         // Progress of any sync the request waits for goes back as events
         // with its ID, each resetting the client's stall deadline.

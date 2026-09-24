@@ -1,10 +1,18 @@
-//! A Microsoft Graph double for full-enumeration syncs: lists (with the
-//! filtered `$expand`), each list's tasks in pages, and `$batch` GETs of
-//! single tasks with our extension, chained the way Graph chains them
-//! (a failed step makes the rest 424). Tests change `data` between syncs,
-//! as a phone would, and mount their own mocks for writes.
+//! A Microsoft Graph double for syncs: lists (with the filtered `$expand`),
+//! each list's tasks in pages, `lists/delta` and each list's `tasks/delta`,
+//! a single list's GET, and `$batch` GETs of single tasks with our
+//! extension, chained the way Graph chains them (a failed step makes the
+//! rest 424). Tests change `data` between syncs, as a phone would, and
+//! mount their own mocks for writes.
+//!
+//! Delta works like Graph's as far as ms-todo can tell: a delta token
+//! remembers the scope as it was when issued, a replay returns every item
+//! that differs since, whole, plus `@removed` for what's gone, and a round
+//! always ends with an empty page carrying the `deltaLink` (P1). A token
+//! that isn't a number is "Badly formed", and one the fake doesn't know,
+//! or issued for another scope, is 410 `SyncStateNotFound` (S4).
 
-use std::collections::{HashMap, HashSet};
+use std::collections::{HashMap, HashSet, VecDeque};
 use std::sync::{Arc, Mutex, PoisonError};
 use std::time::Duration;
 
@@ -23,12 +31,39 @@ pub struct Data {
     pub extensions: HashMap<String, Value>,
     /// Tasks whose single GET answers 404, as if deleted after the page.
     pub gone_on_fetch: HashSet<String>,
+    /// Lists whose single GET answers 404, as if deleted since lists delta
+    /// last looked (S4).
+    pub gone_lists: HashSet<String>,
     /// Tasks whose single GET answers 403.
     pub forbidden_on_fetch: HashSet<String>,
     /// Tasks per page; Graph's is up to 200 with the `Prefer` ms-todo sends.
     pub page_size: usize,
     /// How long each page of tasks takes, to catch a sync in the middle.
     pub tasks_delay: Option<Duration>,
+    /// Statuses the next delta requests of a scope (`lists`, or a list
+    /// ID) fail with, one per request, with Graph's body for each.
+    pub delta_errors: HashMap<String, VecDeque<u16>>,
+    /// The scope each delta token was issued for, and what it held then.
+    delta_tokens: HashMap<u64, (String, HashMap<String, Value>)>,
+    /// Delta rounds being paged: the items, then the deltaLink.
+    delta_rounds: HashMap<u64, (Vec<Value>, String)>,
+    next_token: u64,
+}
+
+impl Data {
+    /// Forget every delta token, as Graph sometimes does (S4): a replay of
+    /// any of them is a 410.
+    pub fn forget_delta_tokens(&mut self) {
+        self.delta_tokens.clear();
+    }
+
+    /// Fail the next delta request of `scope` with `status`.
+    pub fn fail_delta(&mut self, scope: &str, status: u16) {
+        self.delta_errors
+            .entry(scope.to_owned())
+            .or_default()
+            .push_back(status);
+    }
 }
 
 pub struct FakeGraph {
@@ -87,6 +122,41 @@ impl FakeGraph {
                 match data.tasks_delay {
                     Some(delay) => answer.set_delay(delay),
                     None => answer,
+                }
+            })
+            .mount(&server)
+            .await;
+
+        let shared = Arc::clone(&data);
+        let base = server.uri();
+        Mock::given(method("GET"))
+            .and(path_regex(r"^/v1\.0/me/todo/lists(/[^/]+/tasks)?/delta$"))
+            .respond_with(move |request: &Request| {
+                let mut data = lock(&shared);
+                let answer = answer_delta(&mut data, &base, request);
+                match (
+                    data.tasks_delay,
+                    request.url.path().ends_with("/tasks/delta"),
+                ) {
+                    (Some(delay), true) => answer.set_delay(delay),
+                    _ => answer,
+                }
+            })
+            .with_priority(1)
+            .mount(&server)
+            .await;
+
+        let shared = Arc::clone(&data);
+        Mock::given(method("GET"))
+            .and(path_regex(r"^/v1\.0/me/todo/lists/[^/]+$"))
+            .respond_with(move |request: &Request| {
+                let data = lock(&shared);
+                let id = request.url.path().rsplit('/').next().unwrap_or_default();
+                match data.lists.iter().find(|list| list["id"] == id) {
+                    Some(list) if !data.gone_lists.contains(id) => {
+                        ResponseTemplate::new(200).set_body_json(list)
+                    }
+                    _ => not_found(),
                 }
             })
             .mount(&server)
@@ -158,6 +228,32 @@ impl FakeGraph {
             .collect()
     }
 
+    /// The delta requests of `scope` (`lists`, or a list ID) that started a
+    /// round, in order: each one's `$deltatoken`, or `None` for a fresh
+    /// start.
+    pub async fn delta_starts(&self, scope: &str) -> Vec<Option<String>> {
+        let wanted = match scope {
+            "lists" => "/v1.0/me/todo/lists/delta".to_owned(),
+            list => format!("/v1.0/me/todo/lists/{list}/tasks/delta"),
+        };
+        self.requests("GET")
+            .await
+            .into_iter()
+            .filter(|request| request.url.path() == wanted)
+            .filter(|request| query(request, "$skiptoken").is_none())
+            .map(|request| query(&request, "$deltatoken"))
+            .collect()
+    }
+
+    /// Every delta page request of any scope.
+    pub async fn delta_pages(&self) -> Vec<Request> {
+        self.requests("GET")
+            .await
+            .into_iter()
+            .filter(|request| request.url.path().ends_with("/delta"))
+            .collect()
+    }
+
     /// The single-task GETs sent inside `$batch` calls, as their URLs.
     pub async fn batched_gets(&self) -> Vec<String> {
         self.requests("POST")
@@ -179,6 +275,116 @@ impl FakeGraph {
 
 fn lock(data: &Mutex<Data>) -> std::sync::MutexGuard<'_, Data> {
     data.lock().unwrap_or_else(PoisonError::into_inner)
+}
+
+fn query(request: &Request, key: &str) -> Option<String> {
+    request
+        .url
+        .query_pairs()
+        .find(|(name, _)| name == key)
+        .map(|(_, value)| value.into_owned())
+}
+
+fn delta_error(status: u16) -> ResponseTemplate {
+    let (code, message) = match status {
+        410 => (
+            "SyncStateNotFound",
+            "The delta token is no longer valid, and the app must reset the sync state.",
+        ),
+        400 => ("BadRequest", "Badly formed token."),
+        404 => (
+            "ErrorItemNotFound",
+            "The specified object was not found in the store.",
+        ),
+        _ => ("InternalServerError", "Something went wrong."),
+    };
+    ResponseTemplate::new(status)
+        .set_body_json(json!({ "error": { "code": code, "message": message } }))
+}
+
+// `/me/todo/lists/delta` or `/me/todo/lists/{l}/tasks/delta`.
+fn answer_delta(data: &mut Data, base: &str, request: &Request) -> ResponseTemplate {
+    let path = request.url.path().to_owned();
+    let scope = match path.split('/').nth(5) {
+        Some("delta") | None => "lists".to_owned(),
+        Some(list) => list.to_owned(),
+    };
+    if let Some(skip) = query(request, "$skiptoken") {
+        return delta_page(data, base, &path, &skip);
+    }
+    if let Some(status) = data
+        .delta_errors
+        .get_mut(&scope)
+        .and_then(VecDeque::pop_front)
+    {
+        return delta_error(status);
+    }
+    let since = match query(request, "$deltatoken") {
+        None => HashMap::new(),
+        Some(token) => {
+            let Ok(token) = token.parse::<u64>() else {
+                return delta_error(400);
+            };
+            match data.delta_tokens.get(&token) {
+                Some((issued_for, then)) if *issued_for == scope => then.clone(),
+                _ => return delta_error(410),
+            }
+        }
+    };
+    // A deleted list's tasks delta answers 200 with nothing (S4).
+    let now: HashMap<String, Value> = match scope.as_str() {
+        "lists" => data.lists.clone(),
+        list => data.tasks.get(list).cloned().unwrap_or_default(),
+    }
+    .into_iter()
+    .map(|item| (item["id"].as_str().unwrap_or_default().to_owned(), item))
+    .collect();
+    let mut items: Vec<Value> = now
+        .iter()
+        .filter(|(id, item)| since.get(*id) != Some(*item))
+        .map(|(_, item)| item.clone())
+        .collect();
+    items.extend(
+        since
+            .keys()
+            .filter(|id| !now.contains_key(*id))
+            .map(|id| json!({ "@removed": { "reason": "deleted" }, "id": id })),
+    );
+    items.sort_by(|a, b| a["id"].as_str().cmp(&b["id"].as_str()));
+    let token = data.next_token;
+    data.next_token += 1;
+    data.delta_tokens.insert(token, (scope, now));
+    let round = token;
+    data.delta_rounds
+        .insert(round, (items, format!("{base}{path}?$deltatoken={token}")));
+    delta_page(data, base, &path, &format!("{round}-0"))
+}
+
+// One page of a round, `skip` being `<round>-<offset>`. After the items
+// comes an empty page with the deltaLink, as Graph often sends (P1).
+fn delta_page(data: &Data, base: &str, path: &str, skip: &str) -> ResponseTemplate {
+    let parsed = skip.split_once('-').and_then(|(round, offset)| {
+        let offset = offset.parse::<usize>().ok()?;
+        Some((
+            round,
+            data.delta_rounds.get(&round.parse::<u64>().ok()?)?,
+            offset,
+        ))
+    });
+    let Some((round, (items, delta_link), offset)) = parsed else {
+        return ResponseTemplate::new(400).set_body_json(
+            json!({ "error": { "code": "BadRequest", "message": "bad skip token" } }),
+        );
+    };
+    if offset >= items.len() {
+        return ResponseTemplate::new(200)
+            .set_body_json(json!({ "value": [], "@odata.deltaLink": delta_link }));
+    }
+    let end = (offset + data.page_size).min(items.len());
+    ResponseTemplate::new(200).set_body_json(json!({
+        "value": items[offset..end].to_vec(),
+        "@odata.nextLink": format!("{base}{path}?$skiptoken={round}-{end}")
+    }))
 }
 
 fn not_found() -> ResponseTemplate {
@@ -225,6 +431,15 @@ fn answer_get(data: &Data, url: &str) -> (u16, Value) {
             json!({ "error": { "code": "ErrorItemNotFound", "message": "gone" } }),
         ),
     }
+}
+
+/// Graph with one list, the default "Tasks" (`L-tasks`), holding `tasks`.
+pub async fn graph_with_tasks(env: &mut Env, tasks: Vec<Value>) -> FakeGraph {
+    let graph = FakeGraph::start(env, vec![list("L-tasks", "Tasks", "defaultList")]).await;
+    graph.edit(|data| {
+        data.tasks.insert("L-tasks".into(), tasks);
+    });
+    graph
 }
 
 pub fn list(id: &str, name: &str, wellknown: &str) -> Value {

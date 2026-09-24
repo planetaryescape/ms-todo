@@ -347,9 +347,14 @@ fn doctor() -> Value {
                         "in_progress": { "type": "boolean" },
                         "last_success_at": nullable("string", ""),
                         "last_changed_count": { "type": "integer" },
-                        "last_error": { "oneOf": [failure.clone(), { "type": "null" }] }
+                        "last_error": { "oneOf": [failure.clone(), { "type": "null" }] },
+                        "mode": {
+                            "enum": ["enumeration", "delta", "unknown"],
+                            "description": "delta once a pass saved a delta link: the next pass asks Graph only for changes. enumeration until then, or after Graph rejected the link: the next pass reads the whole scope. unknown: a newer daemon's mode this ms-todo doesn't know"
+                        },
+                        "last_delta_at": nullable("string", "When a delta round of this scope last finished")
                     }),
-                    &["scope", "state", "generation", "in_progress"],
+                    &["scope", "state", "generation", "in_progress", "mode"],
                 )
             },
             "last_error": {

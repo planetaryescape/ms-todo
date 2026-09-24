@@ -5,7 +5,7 @@
 
 use ms_todo_core::Paths;
 use ms_todo_graph::auth::{Authenticator, Endpoints};
-use ms_todo_protocol::{DoctorReport, Request, ResponseData, ScopeStatus, SyncState};
+use ms_todo_protocol::{DoctorReport, Request, ResponseData, ScopeStatus, SyncMode, SyncState};
 use serde::Serialize;
 
 use crate::daemon_client::{self, Inspection};
@@ -54,6 +54,11 @@ pub struct Scope {
     pub last_success_at: Option<String>,
     pub last_changed_count: u64,
     pub last_error: Option<ScopeFailure>,
+    /// `delta` once a pass has saved a delta link; `enumeration` until
+    /// then, or after Graph rejected the link.
+    pub mode: SyncMode,
+    /// RFC 3339, UTC: when a delta round last checkpointed.
+    pub last_delta_at: Option<String>,
 }
 
 #[derive(Clone, Serialize)]
@@ -182,6 +187,8 @@ impl From<ScopeStatus> for Scope {
             in_progress: status.in_progress,
             last_success_at: status.last_success_at.map(rfc3339),
             last_changed_count: status.last_changed_count,
+            mode: status.mode,
+            last_delta_at: status.last_delta_at.map(rfc3339),
             last_error: status.last_error.map(|error| ScopeFailure {
                 kind: error.kind,
                 message: error.message,
@@ -216,7 +223,23 @@ impl Render for Doctor {
                 .iter()
                 .filter(|scope| scope.state == SyncState::Ready)
                 .count();
-            let mut sync = format!("{ready} of {} scopes ready", self.scopes.len());
+            let delta = self
+                .scopes
+                .iter()
+                .filter(|scope| scope.mode == SyncMode::Delta)
+                .count();
+            let mut sync = format!(
+                "{ready} of {} scopes ready, {delta} on delta",
+                self.scopes.len()
+            );
+            if let Some(last) = self
+                .scopes
+                .iter()
+                .filter_map(|scope| scope.last_delta_at.as_deref())
+                .max()
+            {
+                sync.push_str(&format!("; last delta {last}"));
+            }
             if self.syncing == Some(true) {
                 sync.push_str("; syncing now");
             }

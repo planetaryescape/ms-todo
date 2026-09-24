@@ -36,13 +36,26 @@ const MAX_PAGES: usize = 1_000;
 /// A JSON object from Graph, every field kept.
 pub type Entity = Map<String, Value>;
 
-/// One page of a collection. Short or empty pages aren't the end; only a
-/// missing `nextLink` is (P1).
+/// One page of a collection or a delta round. Short or empty pages aren't
+/// the end (P1): only a missing `nextLink` is, and the last page of a delta
+/// round carries the `deltaLink` instead.
 #[derive(Deserialize)]
 struct Page {
     value: Vec<Entity>,
     #[serde(rename = "@odata.nextLink")]
     next_link: Option<String>,
+    #[serde(rename = "@odata.deltaLink")]
+    delta_link: Option<String>,
+}
+
+/// A whole delta round (docs/blueprint/04-sync-cache.md#delta-sync).
+#[derive(Debug)]
+pub struct Delta {
+    /// Every entity that changed, whole, and `@removed` entries for what
+    /// was deleted. From a fresh start, every entity in the scope.
+    pub items: Vec<Entity>,
+    /// Where the next round starts.
+    pub delta_link: String,
 }
 
 pub struct GraphClient {
@@ -104,6 +117,39 @@ impl GraphClient {
         let mut url = self.task_url(list_id, task_id);
         expand_extension(&mut url, name);
         url
+    }
+
+    /// Where a fresh `lists/delta` round starts. No query options: delta
+    /// rejects `$select`, `$filter` and `$top` (S3).
+    pub fn lists_delta_start(&self) -> String {
+        self.url(&["me", "todo", "lists", "delta"]).into()
+    }
+
+    /// Where a fresh `tasks/delta` round of list `list_id` starts.
+    pub fn tasks_delta_start(&self, list_id: &str) -> String {
+        self.url(&["me", "todo", "lists", list_id, "tasks", "delta"])
+            .into()
+    }
+
+    /// One delta round from `from`, a start URL or a saved `deltaLink`:
+    /// follow `nextLink` until a page carries the `deltaLink`, sending
+    /// `Prefer` on every page (P1). A rejected link is an error for which
+    /// [`GraphError::is_delta_reset`] is true.
+    pub async fn delta(&self, from: &str) -> Result<Delta, GraphError> {
+        let first = self.next_link(from)?;
+        let (items, delta_link) = self.pages(first).await?;
+        let delta_link = delta_link
+            .ok_or_else(|| GraphError::Decode("a delta round ended without a deltaLink".into()))?;
+        Ok(Delta { items, delta_link })
+    }
+
+    /// `GET /me/todo/lists/{id}`: after a delete it's 404, even while the
+    /// list's tasks still answer (S4).
+    pub async fn get_list(&self, list_id: &str) -> Result<Entity, GraphError> {
+        entity(
+            self.get(self.url(&["me", "todo", "lists", list_id]), false)
+                .await?,
+        )
     }
 
     /// `GET /me/todo/lists/{id}/tasks`, every page.
@@ -248,9 +294,16 @@ impl GraphClient {
             && (url.path() == base_path || url.path().starts_with(&format!("{base_path}/")))
     }
 
+    /// Every item of a collection.
+    async fn get_collection(&self, first: Url) -> Result<Vec<Entity>, GraphError> {
+        Ok(self.pages(first).await?.0)
+    }
+
     /// Follow `@odata.nextLink` until there isn't one (P1: a short or empty
     /// page doesn't mean the last page), sending `Prefer` on every page.
-    async fn get_collection(&self, first: Url) -> Result<Vec<Entity>, GraphError> {
+    /// Returns the items and, for a delta round, the last page's
+    /// `deltaLink`, checked to stay on Graph.
+    async fn pages(&self, first: Url) -> Result<(Vec<Entity>, Option<String>), GraphError> {
         let mut items = Vec::new();
         let mut next = Some(first.clone());
         let mut pages = 0;
@@ -265,16 +318,21 @@ impl GraphClient {
             let page: Page = serde_json::from_value(self.get(url, true).await?)
                 .map_err(|error| GraphError::Decode(format!("a collection page: {error}")))?;
             items.extend(page.value);
+            if let Some(delta_link) = page.delta_link {
+                // Checked now, so a saved link is always one we'd follow.
+                self.next_link(&delta_link)?;
+                return Ok((items, Some(delta_link)));
+            }
             next = page
                 .next_link
                 .map(|link| self.next_link(&link))
                 .transpose()?;
         }
-        Ok(items)
+        Ok((items, None))
     }
 
-    // The bearer token goes wherever the nextLink points, so it must stay
-    // on the Graph origin.
+    // The bearer token goes wherever a nextLink or deltaLink points, so it
+    // must stay on the Graph origin.
     fn next_link(&self, link: &str) -> Result<Url, GraphError> {
         Url::parse(link)
             .ok()

@@ -96,6 +96,18 @@ impl Env {
         found.expect("checked above").to_owned()
     }
 
+    /// Wait up to 10 seconds for the running sync to finish.
+    pub fn wait_until_idle(&self) {
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
+        while self.json(&["doctor"])["syncing"] != false {
+            assert!(
+                std::time::Instant::now() < deadline,
+                "the sync never finished"
+            );
+            std::thread::sleep(std::time::Duration::from_millis(50));
+        }
+    }
+
     pub fn socket(&self) -> PathBuf {
         PathBuf::from(
             self.json(&["daemon", "status"])["socket"]

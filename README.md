@@ -2,7 +2,7 @@
 
 A local-first, keyboard-native terminal client for Microsoft To Do. It has a daemon that keeps a local SQLite cache in sync with Microsoft Graph, and two clients of that daemon: a scriptable CLI with stable JSON output and a very fast ratatui TUI.
 
-**Status: rung 3a, instant reads.** ms-todo signs in to your Microsoft account, shows every task in any of your lists, and adds, edits, completes, reopens and deletes tasks, from a terminal or an agent. Reads come from a local cache the daemon keeps in step with Microsoft To Do, so they answer in milliseconds; writes still go straight to Microsoft Graph, then into the cache. Live sync, offline writes and undo come in later rungs of the [roadmap](docs/blueprint/10-roadmap.md).
+**Status: Rung 3b: live sync.** ms-todo signs in to your Microsoft account, shows every task in any of your lists, and adds, edits, completes, reopens and deletes tasks, from a terminal or an agent. Reads come from a local cache the daemon keeps in step with Microsoft To Do through delta sync, so they answer in milliseconds and a change on your phone shows up by itself within about 30 seconds while you're using ms-todo. Writes still go straight to Microsoft Graph, then into the cache. Offline writes and undo come in later rungs of the [roadmap](docs/blueprint/10-roadmap.md).
 
 ## Install
 
@@ -65,16 +65,16 @@ Exit codes: 0 success, 1 network or Graph failure (including `outcome_unknown`),
 
 ## Keep it fresh
 
-The daemon syncs everything when it starts, every 5 minutes, and when asked:
+The daemon syncs when it starts, every 20 seconds while you're using ms-todo (a client is connected, or asked for anything in the last 10 minutes), every 5 minutes otherwise, and when asked:
 
 ```sh
 ms-todo sync --wait    # returns once a sync that started after it has finished; progress on stderr
 ms-todo sync           # just asks for one
-ms-todo doctor         # sign-in, daemon, the cache's path and size, each list's sync state, the last error
+ms-todo doctor         # sign-in, daemon, the cache's path and size, each list's sync state and mode, the last error
 ms-todo schema tasks list   # the JSON schemas of a command's input and output; `ms-todo schema` for all
 ```
 
-A change made on your phone shows up after the next sync. A sync fetches every list and task (and ms-todo's own data for tasks that changed), removes what's gone, and never undoes a change ms-todo itself made while it ran.
+A change made on your phone shows up after the next sync. The first sync of each list reads all of it; after that, a sync asks Microsoft Graph only for what changed (delta), fetches ms-todo's own data for those tasks, and removes what's gone. If Graph drops the delta link, that list is read whole again and anything deleted meanwhile is removed. A sync never undoes a change ms-todo itself made while it ran. `doctor` shows each list's mode (`delta` or `enumeration`) and when its last delta ran.
 
 ## The daemon
 
@@ -90,7 +90,7 @@ Its socket is private to your user (0600, in a 0700 directory), and its log is `
 
 ## Plan
 
-The design is in [`docs/blueprint/`](docs/blueprint/README.md), the Phase 0 results are in [`12-open-questions.md`](docs/blueprint/12-open-questions.md), and the evidence is in `docs/research/spikes/`. Still open: the phone halves of spikes S7 and S11, the S4 deltaLink replay, and product questions Q3 and Q6–Q12. The build climbs a ladder of usable releases: a foundation turn (install and sign in), rung 1 (see my tasks), rung 2 (capture and finish tasks), rung 3a (instant reads from a local cache), and next rung 3b (live sync through delta).
+The design is in [`docs/blueprint/`](docs/blueprint/README.md), the Phase 0 results are in [`12-open-questions.md`](docs/blueprint/12-open-questions.md), and the evidence is in `docs/research/spikes/`. Still open: the S4 deltaLink replay, and product questions Q3, Q6–Q10 and Q12. The build climbs a ladder of usable releases: a foundation turn (install and sign in), rung 1 (see my tasks), rung 2 (capture and finish tasks), rung 3a (instant reads from a local cache), rung 3b (live sync through delta), and next rung 4 (offline writes that are never lost).
 
 What's planned:
 
