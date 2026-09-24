@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.1.3](https://github.com/planetaryescape/ms-todo/compare/v0.1.2...v0.1.3) (2026-09-24)
+
+
+### Features
+
+* answer reads instantly from a local cache kept in sync with Graph ([2a9fc5f](https://github.com/planetaryescape/ms-todo/commit/2a9fc5fbfb624e8d0bbca169dbbdd8656d6e0859))
+
+
+### Bug Fixes
+
+* private cache files and keep idempotency keys on uncertain writes ([a2b09ff](https://github.com/planetaryescape/ms-todo/commit/a2b09ff8c244f2c3ec0a029002035a72c76a0dba))
+
 ## [0.1.2](https://github.com/planetaryescape/ms-todo/compare/v0.1.1...v0.1.2) (2026-09-24)
 
 
