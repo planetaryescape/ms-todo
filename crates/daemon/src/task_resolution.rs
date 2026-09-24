@@ -1,18 +1,38 @@
-//! Which tasks a command means. Without `--list`, each name is a Graph task
-//! ID: one this daemon has seen, or else one found by asking every list
-//! (Graph has no path to a task without its list). With `--list`, a name is
-//! an ID or an exact title within that list, and a title several tasks share
-//! is an error listing them; it never picks one
+//! Which tasks a command means, looked up in the cache. Without `--list`,
+//! each name is a task's local ID or Graph ID. With `--list`, a name may
+//! also be an exact title within that list, and a title several tasks
+//! share is an error listing them; it never picks one
 //! (docs/blueprint/07-cli.md#global-flags).
 
-use futures_util::StreamExt;
-use futures_util::stream::FuturesUnordered;
 use ms_todo_core::ErrorKind;
-use ms_todo_protocol::{Candidate, Entity, ErrorPayload};
+use ms_todo_protocol::{Candidate, ErrorPayload};
+use ms_todo_store::{LISTS_SCOPE, ListRow, TaskRow, tasks_scope};
 
-use crate::handlers::{State, error_payload, graph_error};
-use crate::known_tasks::Target;
-use crate::list_resolution::{field, resolve_list};
+use crate::freshness::{all_ready, ensure_ready};
+use crate::handlers::{State, error_payload, store_error};
+use crate::list_resolution::{ListRef, resolve_list};
+
+/// A task a command changes, as cached, with its list.
+#[derive(Clone, Debug)]
+pub(crate) struct Target {
+    pub row: TaskRow,
+    pub list: ListRef,
+}
+
+impl Target {
+    /// Graph's ID, for the request.
+    pub fn graph_id(&self) -> &str {
+        self.row.graph_id.as_deref().unwrap_or_default()
+    }
+
+    pub fn local_id(&self) -> &str {
+        &self.row.local_id
+    }
+
+    pub fn title(&self) -> &str {
+        &self.row.title
+    }
+}
 
 /// Resolve every name before anything is written, so a bad name fails the
 /// whole command. A task named twice is changed once.
@@ -28,52 +48,51 @@ pub(crate) async fn resolve_tasks(
                 .into(),
         ));
     }
+    ensure_ready(state, LISTS_SCOPE).await?;
+    let lists = state.store.lists().await.map_err(store_error)?;
     let mut targets = match list {
-        Some(list) => resolve_in_list(state, names, list).await?,
-        None => resolve_by_id(state, names).await?,
+        Some(list) => resolve_in_list(state, names, &resolve_list(&lists, Some(list))?).await?,
+        None => resolve_by_id(state, names, lists).await?,
     };
     let mut seen = std::collections::HashSet::new();
-    targets.retain(|target| seen.insert(target.id().to_owned()));
+    targets.retain(|target| seen.insert(target.row.local_id.clone()));
     Ok(targets)
 }
 
 async fn resolve_in_list(
     state: &State,
     names: &[String],
-    wanted: &str,
+    list: &ListRef,
 ) -> Result<Vec<Target>, ErrorPayload> {
-    let lists = state.graph.list_lists().await.map_err(graph_error)?;
-    let list = resolve_list(&lists, Some(wanted))?;
+    ensure_ready(state, &tasks_scope(&list.graph_id)).await?;
     let tasks = state
-        .graph
-        .list_tasks(&list.id)
+        .store
+        .tasks_in_list(&list.local_id)
         .await
-        .map_err(graph_error)?;
-    state.known.remember_all(&list.id, &tasks);
+        .map_err(store_error)?;
     names
         .iter()
         .map(|name| {
-            let task = match_in_list(&tasks, name, &list.name)?;
             Ok(Target {
-                list_id: list.id.clone(),
-                task: task.clone(),
+                row: match_in_list(&tasks, name, &list.name)?.clone(),
+                list: list.clone(),
             })
         })
         .collect()
 }
 
 fn match_in_list<'a>(
-    tasks: &'a [Entity],
+    tasks: &'a [TaskRow],
     name: &str,
     list_name: &str,
-) -> Result<&'a Entity, ErrorPayload> {
-    if let Some(by_id) = tasks.iter().find(|task| text(task, "id") == name) {
+) -> Result<&'a TaskRow, ErrorPayload> {
+    if let Some(by_id) = tasks
+        .iter()
+        .find(|task| task.local_id == name || task.graph_id.as_deref() == Some(name))
+    {
         return Ok(by_id);
     }
-    let mut titled: Vec<&Entity> = tasks
-        .iter()
-        .filter(|task| text(task, "title") == name)
-        .collect();
+    let mut titled: Vec<&TaskRow> = tasks.iter().filter(|task| task.title == name).collect();
     match titled.len() {
         1 => Ok(titled.remove(0)),
         0 => Err(error_payload(
@@ -84,8 +103,8 @@ fn match_in_list<'a>(
             candidates: titled
                 .iter()
                 .map(|task| Candidate {
-                    id: text(task, "id").to_owned(),
-                    name: text(task, "title").to_owned(),
+                    id: task.local_id.clone(),
+                    name: task.title.clone(),
                 })
                 .collect(),
             ..error_payload(
@@ -98,92 +117,91 @@ fn match_in_list<'a>(
     }
 }
 
-async fn resolve_by_id(state: &State, ids: &[String]) -> Result<Vec<Target>, ErrorPayload> {
-    let mut lists = None;
+async fn resolve_by_id(
+    state: &State,
+    ids: &[String],
+    mut lists: Vec<ListRow>,
+) -> Result<Vec<Target>, ErrorPayload> {
     let mut targets = Vec::with_capacity(ids.len());
+    let mut settled = false;
     for id in ids {
-        if let Some(known) = state.known.get(id) {
-            targets.push(known);
-            continue;
+        let mut found = lookup(state, &lists, id).await?;
+        // A task in a list whose first sync hasn't finished may just not
+        // be cached yet: wait for that, once.
+        if found.is_none() && !settled && !all_ready(state).await? {
+            settled = true;
+            state.syncer.settle().await;
+            lists = state.store.lists().await.map_err(store_error)?;
+            found = lookup(state, &lists, id).await?;
         }
-        if lists.is_none() {
-            lists = Some(state.graph.list_lists().await.map_err(graph_error)?);
-        }
-        let lists = lists.as_deref().unwrap_or_default();
-        targets.push(locate(state, lists, id).await?);
+        targets.push(found.ok_or_else(|| {
+            error_payload(
+                ErrorKind::NotFound,
+                format!(
+                    "no task has the ID {id:?}. A task added elsewhere shows up after the next \
+                     sync (`ms-todo sync --wait`); to pick a task by its exact title, add --list"
+                ),
+            )
+        })?);
     }
     Ok(targets)
 }
 
-/// Ask every list for the task, and stop at the first that has it. The
-/// client's concurrency cap (4, S9) bounds how many of these run at once.
-async fn locate(state: &State, lists: &[Entity], id: &str) -> Result<Target, ErrorPayload> {
-    let list_ids: Vec<&str> = lists.iter().filter_map(|list| field(list, "id")).collect();
-    let mut answers: FuturesUnordered<_> = list_ids
+async fn lookup(
+    state: &State,
+    lists: &[ListRow],
+    id: &str,
+) -> Result<Option<Target>, ErrorPayload> {
+    let Some(row) = state.store.task(id).await.map_err(store_error)? else {
+        return Ok(None);
+    };
+    let list = lists
         .iter()
-        .map(|list_id| async move { (*list_id, state.graph.get_task(list_id, id).await) })
-        .collect();
-    let mut malformed = 0;
-    while let Some((list_id, answer)) = answers.next().await {
-        match answer {
-            Ok(task) => {
-                state.known.remember(list_id, &task);
-                return Ok(Target {
-                    list_id: list_id.to_owned(),
-                    task,
-                });
-            }
-            // Not in this list. A malformed ID is a 400, not a 404 (S10).
-            Err(error) if error.status() == Some(404) => {}
-            Err(error) if error.status() == Some(400) => malformed += 1,
-            Err(error) => return Err(graph_error(error)),
-        }
-    }
-    if malformed > 0 && malformed == list_ids.len() {
-        return Err(error_payload(
-            ErrorKind::InvalidInput,
-            format!(
-                "{id:?} isn't a task ID; to pick a task by its exact title, add --list. \
-                 IDs come from `ms-todo tasks list`"
-            ),
-        ));
-    }
-    Err(error_payload(
-        ErrorKind::NotFound,
-        format!("no list has a task with ID {id:?}; see `ms-todo tasks list`"),
-    ))
-}
-
-fn text<'a>(entity: &'a Entity, key: &str) -> &'a str {
-    field(entity, key).unwrap_or_default()
+        .find(|list| list.local_id == row.list_local_id)
+        .and_then(ListRef::of);
+    Ok(list.map(|list| Target { row, list }))
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use serde_json::json;
+    use serde_json::Map;
 
-    fn tasks() -> Vec<Entity> {
-        [
-            json!({ "id": "T1", "title": "Buy milk" }),
-            json!({ "id": "T2", "title": "Call mum" }),
-            json!({ "id": "T3", "title": "Call mum" }),
+    fn task(local: &str, graph: &str, title: &str) -> TaskRow {
+        TaskRow {
+            local_id: local.into(),
+            graph_id: Some(graph.into()),
+            list_local_id: "l".into(),
+            title: title.into(),
+            raw: Map::new(),
+            extension: None,
+        }
+    }
+
+    fn tasks() -> Vec<TaskRow> {
+        vec![
+            task("t1", "T1", "Buy milk"),
+            task("t2", "T2", "Call mum"),
+            task("t3", "T3", "Call mum"),
         ]
-        .into_iter()
-        .filter_map(|value| value.as_object().cloned())
-        .collect()
     }
 
     #[test]
-    fn an_id_or_a_unique_title_matches() {
+    fn a_local_id_graph_id_or_unique_title_matches() {
         let tasks = tasks();
         assert_eq!(
-            text(match_in_list(&tasks, "T2", "L").expect("id"), "id"),
-            "T2"
+            match_in_list(&tasks, "t2", "L").expect("local").local_id,
+            "t2"
         );
         assert_eq!(
-            text(match_in_list(&tasks, "Buy milk", "L").expect("title"), "id"),
-            "T1"
+            match_in_list(&tasks, "T2", "L").expect("graph").local_id,
+            "t2"
+        );
+        assert_eq!(
+            match_in_list(&tasks, "Buy milk", "L")
+                .expect("title")
+                .local_id,
+            "t1"
         );
     }
 
@@ -196,7 +214,7 @@ mod tests {
             .iter()
             .map(|task| task.id.as_str())
             .collect();
-        assert_eq!(ids, ["T2", "T3"]);
+        assert_eq!(ids, ["t2", "t3"]);
     }
 
     #[test]

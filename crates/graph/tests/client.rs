@@ -358,3 +358,151 @@ async fn raw_get_only_reaches_paths_under_the_graph_root() {
             .is_empty()
     );
 }
+
+const EXTENSION: &str = "com.planetaryescape.mstodo";
+
+#[tokio::test]
+async fn lists_with_our_extension_send_the_filtered_expand_on_every_page() {
+    let graph = Graph::new().await;
+    Mock::given(method("GET"))
+        .and(path("/v1.0/me/todo/lists"))
+        .and(query_param(
+            "$expand",
+            "extensions($filter=id eq 'com.planetaryescape.mstodo')",
+        ))
+        .respond_with(page(
+            vec![json!({ "id": "L1", "extensions": [{ "folder": "Home" }] })],
+            None,
+        ))
+        .expect(1)
+        .mount(&graph.server)
+        .await;
+
+    let lists = graph
+        .client
+        .list_lists_with_extension(EXTENSION)
+        .await
+        .expect("lists");
+
+    assert_eq!(lists[0]["extensions"][0]["folder"], "Home");
+}
+
+/// Answers each `$batch` from `answer(sub-request id)`, and records the
+/// requests each batch carried.
+fn batch_responder(
+    seen: std::sync::Arc<std::sync::Mutex<Vec<Value>>>,
+    answer: impl Fn(&str, usize) -> (u16, Value) + Send + Sync + 'static,
+) -> impl Fn(&wiremock::Request) -> ResponseTemplate + Send + Sync + 'static {
+    move |request: &wiremock::Request| {
+        let body: Value = serde_json::from_slice(&request.body).expect("json");
+        let round = {
+            let mut seen = seen.lock().expect("lock");
+            seen.push(body.clone());
+            seen.len()
+        };
+        let responses: Vec<Value> = body["requests"]
+            .as_array()
+            .expect("requests")
+            .iter()
+            .map(|sub| {
+                let id = sub["id"].as_str().expect("id");
+                let (status, body) = answer(id, round);
+                json!({ "id": id, "status": status, "headers": {}, "body": body })
+            })
+            .collect();
+        ResponseTemplate::new(200).set_body_json(json!({ "responses": responses }))
+    }
+}
+
+#[tokio::test]
+async fn a_batch_chains_its_gets_and_requeues_what_a_failed_step_blocked() {
+    let graph = Graph::new().await;
+    let seen = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
+    Mock::given(method("POST"))
+        .and(path("/v1.0/$batch"))
+        .respond_with(batch_responder(seen.clone(), |id, round| {
+            match (id, round) {
+                ("1", _) => (
+                    404,
+                    json!({ "error": { "code": "ErrorItemNotFound", "message": "gone" } }),
+                ),
+                // After the 404 in round 1, the rest of the chain never ran.
+                ("2", 1) => (
+                    424,
+                    json!({ "error": { "code": "FailedDependency", "message": "" } }),
+                ),
+                (id, _) => (200, json!({ "id": format!("T{id}") })),
+            }
+        }))
+        .mount(&graph.server)
+        .await;
+    let urls: Vec<_> = ["T0", "T1", "T2"]
+        .iter()
+        .map(|task| graph.client.task_with_extension_url("L1", task, EXTENSION))
+        .collect();
+
+    let results = graph.client.get_each(&urls).await.expect("batch");
+
+    assert_eq!(results[0].as_ref().expect("T0")["id"], "T0");
+    assert_eq!(
+        results[1].as_ref().expect_err("gone").kind(),
+        ErrorKind::NotFound
+    );
+    assert_eq!(results[2].as_ref().expect("T2")["id"], "T2");
+    let batches = seen.lock().expect("lock").clone();
+    assert_eq!(batches.len(), 2);
+    assert_eq!(
+        batches[0]["requests"],
+        json!([
+            { "id": "0", "method": "GET", "url": "/me/todo/lists/L1/tasks/T0?$expand=extensions($filter=id%20eq%20%27com.planetaryescape.mstodo%27)" },
+            { "id": "1", "method": "GET", "url": "/me/todo/lists/L1/tasks/T1?$expand=extensions($filter=id%20eq%20%27com.planetaryescape.mstodo%27)", "dependsOn": ["0"] },
+            { "id": "2", "method": "GET", "url": "/me/todo/lists/L1/tasks/T2?$expand=extensions($filter=id%20eq%20%27com.planetaryescape.mstodo%27)", "dependsOn": ["1"] }
+        ])
+    );
+    assert_eq!(
+        batches[1]["requests"].as_array().expect("requests").len(),
+        1
+    );
+    assert!(batches[1]["requests"][0].get("dependsOn").is_none());
+}
+
+#[tokio::test]
+async fn a_batch_holds_at_most_20_requests_and_retries_a_throttled_one() {
+    let graph = Graph::new().await;
+    let seen = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
+    Mock::given(method("POST"))
+        .and(path("/v1.0/$batch"))
+        .respond_with(batch_responder(seen.clone(), |id, round| {
+            match (id, round) {
+                ("0", 1) => (
+                    429,
+                    json!({ "error": { "code": "activityLimitReached", "message": "" } }),
+                ),
+                // The rest of the chain never ran.
+                (_, 1) => (424, json!({})),
+                (id, _) => (200, json!({ "id": id })),
+            }
+        }))
+        .mount(&graph.server)
+        .await;
+    let urls: Vec<_> = (0..25)
+        .map(|n| {
+            graph
+                .client
+                .task_with_extension_url("L1", &format!("T{n}"), EXTENSION)
+        })
+        .collect();
+
+    let results = graph.client.get_each(&urls).await.expect("batch");
+
+    assert!(results.iter().all(Result::is_ok));
+    let sizes: Vec<usize> = seen
+        .lock()
+        .expect("lock")
+        .iter()
+        .map(|batch| batch["requests"].as_array().expect("requests").len())
+        .collect();
+    // Round 1: 0 is throttled and 1..19 blocked; they go first in round 2,
+    // ahead of 20..24.
+    assert_eq!(sizes, [20, 20, 5]);
+}

@@ -4,7 +4,7 @@
 
 ## Status
 
-**Rung 2 is built** (capture and finish tasks), on top of rung 1 (see my tasks) and F1 (install and sign in). The workspace is `crates/core`, `crates/protocol`, `crates/graph` (sign-in, the HTTP client, endpoints), `crates/daemon` and `crates/cli`. A minimal daemon reads and writes straight to Graph, with no cache or outbox yet (D-034); the CLI has `auth`, `lists list`, `tasks list|add|complete|reopen|edit|delete`, `raw GET|POST|PATCH|DELETE`, `daemon start|stop|status`, `--dry-run`, and `--format table|json|jsonl|ids|csv`. The agent skill is `skills/ms-todo/SKILL.md` (v0). Rung 3a (instant reads from a cache) is next. The blueprint was written in the planning session on 2026-09-24, on a different machine from the build.
+**Status: Rung 3a: instant reads** is built, on top of rung 2 (capture and finish tasks), rung 1 (see my tasks) and F1 (install and sign in). The workspace is `crates/core`, `crates/protocol`, `crates/graph` (sign-in, the HTTP client, endpoints, `$batch`), `crates/store` (SQLite through sqlx; only the daemon uses it), `crates/daemon` and `crates/cli`. The daemon keeps a cache in step with Graph by full enumeration (on start, every 5 minutes, on `sync`) and answers reads from it; writes go synchronously to Graph and then into the cache (no outbox yet). Entities carry local IDs with `graph_id` beside them, at `schema_version` 2. The CLI has `auth`, `lists list`, `tasks list|add|complete|reopen|edit|delete`, `sync [--wait]`, `doctor`, `schema [CMD]`, `raw GET|POST|PATCH|DELETE`, `daemon start|stop|status`, `--dry-run`, `--idempotency-key`, and `--format table|json|jsonl|ids|csv`. The agent skill is `skills/ms-todo/SKILL.md` (v1). Rung 3b (live sync through delta) is next; what rung 3a didn't build is listed in D-036. The blueprint was written in the planning session on 2026-09-24, on a different machine from the build.
 
 **Phase 0 is done** (2026-09-24). The spike results are in `docs/blueprint/12-open-questions.md` and the evidence in `docs/research/spikes/`. Still open: the phone halves of spikes S7 and S11, the S4 deltaLink replay, and product questions Q3 and Q6–Q12. Every rung of `docs/blueprint/10-roadmap.md` is a usable release.
 
@@ -22,6 +22,7 @@
 - Run the case: `./target/release/ms-todo tasks list --list <L> --format json`, `tasks add … --dry-run`, and so on. `--dry-run` shows the exact Graph body without writing.
 - Probe Graph directly: `ms-todo raw GET <path>`, or `curl -H "Authorization: Bearer $(ms-todo auth bearer --reveal-secret --format table)" https://graph.microsoft.com/v1.0/...`.
 - Read the daemon's log: `logs/daemon.log` in the instance's data directory. Restart it with `ms-todo daemon stop`; the next command starts it.
+- Check the cache: `ms-todo doctor` shows each scope's sync state and last error; `ms-todo sync --wait` refreshes it. The database is `ms-todo.db` in the instance's data directory; open it read-only (`sqlite3 "file:…/ms-todo.db?mode=ro"`) if you need to look inside.
 - Writes against BK's real account go only to a throwaway list he's named for the job, resolved by name first.
 
 If a behaviour is unclear, run it and read the real response rather than guessing (spotuify's lesson, adapted from its `AGENTS.md`).

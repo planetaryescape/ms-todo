@@ -120,6 +120,8 @@ A named foundation turn: there's nothing to use yet, but it's released and check
 
 **Left out:** delta and background freshness faster than 5 minutes (rung 3b), offline writes, undo, the TUI.
 
+**Built (2026-09-24):** the store, full enumeration with the checkpoint rule, reads from the cache with the `initial` state, local IDs at `schema_version` 2, `--idempotency-key`, `schema`, `doctor`, and the stall deadline (issue 002). Measured on BK's account: first sync about 17 seconds, a later one about 2.3 seconds, `tasks list --list Tasks` about 10 ms. The local filters, `EntityChanged` events and the service files weren't built; [D-036](11-decision-log.md) lists them.
+
 ## Rung 3b: Bicycle with gears: live sync
 
 **Previously:** instant reads from a cache refreshed every 5 minutes or on `sync`. **Now:** the same, plus live sync: a change on the phone shows up by itself within about 30 seconds.

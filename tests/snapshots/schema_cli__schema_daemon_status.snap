@@ -1,0 +1,72 @@
+---
+source: tests/schema_cli.rs
+expression: pretty
+---
+{
+  "input": {
+    "additionalProperties": false,
+    "properties": {},
+    "required": [],
+    "type": "object"
+  },
+  "output": {
+    "properties": {
+      "instance": {
+        "type": "string"
+      },
+      "pid": {
+        "type": [
+          "integer",
+          "null"
+        ]
+      },
+      "problem": {
+        "type": "string"
+      },
+      "protocol_version": {
+        "type": [
+          "integer",
+          "null"
+        ]
+      },
+      "ready": {
+        "type": "boolean"
+      },
+      "running": {
+        "type": "boolean"
+      },
+      "schema_version": {
+        "const": 2
+      },
+      "signed_in": {
+        "type": [
+          "boolean",
+          "null"
+        ]
+      },
+      "socket": {
+        "type": "string"
+      },
+      "started_at": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "version": {
+        "type": [
+          "string",
+          "null"
+        ]
+      }
+    },
+    "required": [
+      "schema_version",
+      "running",
+      "ready",
+      "instance",
+      "socket"
+    ],
+    "type": "object"
+  }
+}

@@ -1,6 +1,6 @@
 # 002: IPC calls use a total deadline, not a stall deadline
 
-**Status:** open. Due by rung 3a, before the first sync and `sync --wait`.
+**Status:** closed in rung 3a (2026-09-24).
 
 ## Problem
 
@@ -14,3 +14,7 @@ Rung 1's calls are short. The daemon bounds each Graph request at 60 seconds, wi
 
 - Progress events from the daemon during the first sync, `sync --wait` and other long calls.
 - A client deadline that resets on each progress event, instead of the 300-second total.
+
+## Resolution
+
+`crates/cli/src/daemon_client.rs` now gives up on a stall, not on total time: a request fails only when the daemon has sent nothing for it for `STALL_TIMEOUT` (300 seconds; `MS_TODO_REQUEST_TIMEOUT_MS` in debug builds). Each `SyncProgress` event the daemon sends for the request restarts the clock. Any request that waits on a sync streams one event per finished scope: `sync --wait`, and a read or write waiting for the first sync. The connection loop gives every request a progress sink (a task-local in `crates/daemon/src/sync/scheduler.rs`), so no request type is a special case. Tests: `a_sync_that_keeps_making_progress_outlives_the_stall_deadline` and `a_sync_that_stops_making_progress_gives_up_after_the_stall_deadline` in `tests/lost_reply_cli.rs`.

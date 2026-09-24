@@ -27,7 +27,7 @@ pub struct DaemonState {
 }
 
 impl DaemonState {
-    fn new(paths: &Paths, inspection: Inspection) -> Self {
+    pub(crate) fn new(paths: &Paths, inspection: Inspection) -> Self {
         let mut state = Self {
             running: false,
             ready: false,

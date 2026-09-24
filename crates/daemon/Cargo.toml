@@ -4,17 +4,20 @@ version.workspace = true
 edition.workspace = true
 license.workspace = true
 publish = false
-description = "ms-todo's daemon: the socket server, and the only process that talks to Graph and refreshes the token."
+description = "ms-todo's daemon: the socket server, the sync loop, and the only process that talks to Graph, refreshes the token and touches the store."
 
 [dependencies]
 ms-todo-core = { workspace = true }
 ms-todo-protocol = { workspace = true }
 ms-todo-graph = { workspace = true }
+ms-todo-store = { workspace = true }
 chrono = { workspace = true }
 fs2 = { workspace = true }
 futures-util = { workspace = true }
 iana-time-zone = { workspace = true }
+serde = { workspace = true }
 serde_json = { workspace = true }
+sha2 = { workspace = true }
 tokio = { workspace = true, features = ["net", "rt-multi-thread", "signal", "sync"] }
 tokio-util = { workspace = true }
 uuid = { workspace = true }

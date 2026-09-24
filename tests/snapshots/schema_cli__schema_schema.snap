@@ -1,0 +1,47 @@
+---
+source: tests/schema_cli.rs
+expression: pretty
+---
+{
+  "input": {
+    "additionalProperties": false,
+    "properties": {
+      "command": {
+        "description": "The command, such as `tasks list`",
+        "items": {
+          "type": "string"
+        },
+        "type": "array",
+        "x-cli": "<CMD>"
+      }
+    },
+    "required": [],
+    "type": "object"
+  },
+  "output": {
+    "properties": {
+      "command": {
+        "type": "string"
+      },
+      "commands": {
+        "type": "object"
+      },
+      "error": {
+        "type": "object"
+      },
+      "input": {
+        "type": "object"
+      },
+      "output": {
+        "type": "object"
+      },
+      "schema_version": {
+        "const": 2
+      }
+    },
+    "required": [
+      "schema_version"
+    ],
+    "type": "object"
+  }
+}

@@ -18,5 +18,6 @@ Options:
       --importance <IMPORTANCE>      How important it is [possible values: low, normal, high]
       --body <TEXT>                  Notes, as plain text
       --dry-run                      Show what would be sent without changing anything
+      --idempotency-key <KEY>        Run this change at most once: repeating the command with the same key returns the first result for 24 hours, and the same key with a different change exits 2
   -h, --help                         Print help
   -V, --version                      Print version

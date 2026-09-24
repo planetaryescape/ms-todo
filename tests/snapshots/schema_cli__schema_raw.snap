@@ -1,0 +1,44 @@
+---
+source: tests/schema_cli.rs
+expression: pretty
+---
+{
+  "input": {
+    "additionalProperties": false,
+    "properties": {
+      "body": {
+        "description": "JSON request body, for POST and PATCH",
+        "type": "string",
+        "x-cli": "--body"
+      },
+      "method": {
+        "description": "HTTP method. POST, PATCH and DELETE are never resent once they may have reached Graph",
+        "enum": [
+          "GET",
+          "POST",
+          "PATCH",
+          "DELETE"
+        ],
+        "x-cli": "<METHOD>"
+      },
+      "path": {
+        "description": "Path under https://graph.microsoft.com/v1.0, such as /me/todo/lists",
+        "type": "string",
+        "x-cli": "<PATH>"
+      },
+      "yes": {
+        "description": "Send a POST, PATCH or DELETE when not in a terminal",
+        "type": "boolean",
+        "x-cli": "--yes"
+      }
+    },
+    "required": [
+      "method",
+      "path"
+    ],
+    "type": "object"
+  },
+  "output": {
+    "description": "Microsoft Graph's response body, exactly as it came: no schema_version, no envelope"
+  }
+}

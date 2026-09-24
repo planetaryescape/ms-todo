@@ -1,0 +1,22 @@
+[package]
+name = "ms-todo-store"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish = false
+description = "ms-todo's local cache: SQLite (WAL) through sqlx, its migrations and queries. Only the daemon uses it (D-031)."
+
+[dependencies]
+ms-todo-core = { workspace = true }
+chrono = { workspace = true }
+serde_json = { workspace = true }
+sqlx = { workspace = true }
+thiserror = { workspace = true }
+uuid = { workspace = true }
+
+[dev-dependencies]
+tempfile = { workspace = true }
+tokio = { workspace = true, features = ["rt-multi-thread"] }
+
+[lints]
+workspace = true

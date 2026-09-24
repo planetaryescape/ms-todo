@@ -1,0 +1,81 @@
+---
+source: tests/schema_cli.rs
+expression: error
+---
+{
+  "properties": {
+    "error": {
+      "properties": {
+        "applied": {
+          "description": "Local IDs a multi-task change changed before it failed",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "candidates": {
+          "description": "What an ambiguous name matched; pick one ID",
+          "items": {
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "name": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "id",
+              "name"
+            ],
+            "type": "object"
+          },
+          "type": "array"
+        },
+        "graph_code": {
+          "description": "Graph's error.code",
+          "type": "string"
+        },
+        "kind": {
+          "enum": [
+            "auth_required",
+            "auth_expired",
+            "auth_revoked",
+            "invalid_input",
+            "not_found",
+            "conflict",
+            "rejected",
+            "rate_limited",
+            "unsupported",
+            "network",
+            "outcome_unknown",
+            "api",
+            "decode",
+            "daemon_unavailable",
+            "internal"
+          ]
+        },
+        "message": {
+          "type": "string"
+        },
+        "op_id": {
+          "description": "The failed mutation's op_id",
+          "type": "string"
+        },
+        "request_id": {
+          "description": "Graph's request-id header",
+          "type": "string"
+        }
+      },
+      "required": [
+        "kind",
+        "message"
+      ],
+      "type": "object"
+    }
+  },
+  "required": [
+    "error"
+  ],
+  "type": "object"
+}

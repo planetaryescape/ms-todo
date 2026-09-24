@@ -1,0 +1,140 @@
+---
+source: tests/schema_cli.rs
+expression: pretty
+---
+{
+  "input": {
+    "additionalProperties": false,
+    "properties": {
+      "list": {
+        "description": "The list's exact name or its ID [default: the \"Tasks\" list]",
+        "type": "string",
+        "x-cli": "--list"
+      }
+    },
+    "required": [],
+    "type": "object"
+  },
+  "output": {
+    "properties": {
+      "items": {
+        "items": {
+          "description": "A task: every field Microsoft Graph returns, with `id` replaced",
+          "properties": {
+            "body": {
+              "type": "object"
+            },
+            "categories": {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            "createdDateTime": {
+              "type": "string"
+            },
+            "dueDateTime": {
+              "description": "Graph's dateTimeTimeZone; a date only",
+              "type": "object"
+            },
+            "extensions": {
+              "description": "ms-todo's own open extension (com.planetaryescape.mstodo), when it has one and it has been fetched",
+              "items": {
+                "type": "object"
+              },
+              "type": "array"
+            },
+            "graph_id": {
+              "description": "Microsoft Graph's ID, for `raw` and debugging; commands take it too",
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "id": {
+              "description": "ms-todo's local ID; stable, and what commands take",
+              "type": "string"
+            },
+            "importance": {
+              "enum": [
+                "low",
+                "normal",
+                "high"
+              ]
+            },
+            "isReminderOn": {
+              "type": "boolean"
+            },
+            "lastModifiedDateTime": {
+              "type": "string"
+            },
+            "list_id": {
+              "description": "The local ID of the task's list",
+              "type": "string"
+            },
+            "recurrence": {
+              "type": "object"
+            },
+            "reminderDateTime": {
+              "type": "object"
+            },
+            "status": {
+              "description": "notStarted or completed, among Graph's values",
+              "type": "string"
+            },
+            "sync_state": {
+              "description": "Always synced until offline writes arrive; never retry `unknown`",
+              "enum": [
+                "synced",
+                "pending",
+                "unknown",
+                "failed"
+              ]
+            },
+            "title": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "id",
+            "graph_id",
+            "sync_state",
+            "list_id",
+            "title"
+          ],
+          "type": "object"
+        },
+        "type": "array"
+      },
+      "schema_version": {
+        "const": 2
+      },
+      "sync": {
+        "properties": {
+          "generation": {
+            "description": "Goes up by one per finished sync of the scope",
+            "type": "integer"
+          },
+          "state": {
+            "description": "initial until this scope's first sync finishes: an empty `items` then doesn't mean empty",
+            "enum": [
+              "initial",
+              "ready"
+            ]
+          }
+        },
+        "required": [
+          "state",
+          "generation"
+        ],
+        "type": "object"
+      }
+    },
+    "required": [
+      "schema_version",
+      "sync",
+      "items"
+    ],
+    "type": "object"
+  }
+}

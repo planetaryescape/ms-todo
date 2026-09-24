@@ -1,0 +1,36 @@
+---
+source: tests/schema_cli.rs
+expression: pretty
+---
+{
+  "input": {
+    "additionalProperties": false,
+    "properties": {},
+    "required": [],
+    "type": "object"
+  },
+  "output": {
+    "properties": {
+      "removed": {
+        "description": "Whether a stored sign-in was deleted",
+        "type": "boolean"
+      },
+      "schema_version": {
+        "const": 2
+      },
+      "signed_in": {
+        "const": false
+      },
+      "token_path": {
+        "type": "string"
+      }
+    },
+    "required": [
+      "schema_version",
+      "signed_in",
+      "removed",
+      "token_path"
+    ],
+    "type": "object"
+  }
+}

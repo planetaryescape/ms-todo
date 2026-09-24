@@ -38,6 +38,21 @@ pub enum Command {
     /// Tasks in a list
     #[command(subcommand)]
     Tasks(TasksCommand),
+    /// Refresh the local cache from Microsoft To Do
+    Sync {
+        /// Wait until a sync that started after this command has finished
+        #[arg(long)]
+        wait: bool,
+    },
+    /// Check sign-in, the daemon, the local cache and each list's sync
+    Doctor,
+    /// Print the JSON schemas of a command's input and output (every
+    /// command's without CMD)
+    Schema {
+        /// The command, such as `tasks list`
+        #[arg(value_name = "CMD")]
+        command: Vec<String>,
+    },
     /// Send an authenticated request straight to Microsoft Graph, for debugging
     Raw(RawArgs),
     /// Start, stop or check the background daemon that talks to Microsoft
@@ -95,6 +110,16 @@ pub enum TasksCommand {
     },
 }
 
+/// `--idempotency-key`, on every mutation.
+#[derive(Debug, Args)]
+pub struct IdempotencyArgs {
+    /// Run this change at most once: repeating the command with the same key
+    /// returns the first result for 24 hours, and the same key with a
+    /// different change exits 2
+    #[arg(long, value_name = "KEY")]
+    pub idempotency_key: Option<String>,
+}
+
 #[derive(Debug, Args)]
 pub struct AddArgs {
     /// The task's title, taken literally
@@ -117,6 +142,8 @@ pub struct AddArgs {
     /// Show what would be sent without changing anything
     #[arg(long)]
     pub dry_run: bool,
+    #[command(flatten)]
+    pub idempotency: IdempotencyArgs,
 }
 
 #[derive(Debug, Args)]
@@ -132,6 +159,8 @@ pub struct TargetArgs {
     /// Show what would change without changing anything
     #[arg(long)]
     pub dry_run: bool,
+    #[command(flatten)]
+    pub idempotency: IdempotencyArgs,
 }
 
 #[derive(Debug, Args)]
@@ -171,6 +200,8 @@ pub struct EditArgs {
     /// Show what would change without changing anything
     #[arg(long)]
     pub dry_run: bool,
+    #[command(flatten)]
+    pub idempotency: IdempotencyArgs,
 }
 
 #[derive(Clone, Copy, Debug, ValueEnum)]

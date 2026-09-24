@@ -8,15 +8,15 @@
 use std::io::{IsTerminal, Write};
 
 use ms_todo_core::ErrorKind;
-use ms_todo_protocol::Entity;
+use ms_todo_protocol::{Entity, SyncInfo, SyncState};
 use serde::Serialize;
 use serde_json::Value;
 
 use crate::error::CliError;
 
-/// Bumped when an output shape changes incompatibly. It goes to 2 in rung
-/// 3a, when `id` becomes the local ID (D-034).
-pub const SCHEMA_VERSION: u32 = 1;
+/// Bumped when an output shape changes incompatibly. 2 since rung 3a, where
+/// `id` became the local ID, with `graph_id` beside it (D-034).
+pub const SCHEMA_VERSION: u32 = 2;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, clap::ValueEnum)]
 pub enum OutputFormat {
@@ -129,20 +129,32 @@ pub struct Table {
 #[derive(Serialize)]
 struct CollectionEnvelope<'a> {
     schema_version: u32,
+    sync: SyncInfo,
     items: &'a [Entity],
 }
 
+/// A collection from the cache. JSON carries the scope's sync state in its
+/// envelope; the other formats have none, so while the cache is still
+/// `initial` they say so on stderr.
 pub fn print_collection(
     format: OutputFormat,
     items: &[Entity],
+    sync: SyncInfo,
     table: &Table,
 ) -> Result<(), CliError> {
+    if sync.state == SyncState::Initial && format != OutputFormat::Json {
+        eprintln!(
+            "ms-todo is still syncing for the first time, so this may be incomplete; \
+             `ms-todo sync --wait` waits for it"
+        );
+    }
     let mut stdout = std::io::stdout().lock();
     match format {
         OutputFormat::Json => print_json(
             format,
             &CollectionEnvelope {
                 schema_version: SCHEMA_VERSION,
+                sync,
                 items,
             },
         ),

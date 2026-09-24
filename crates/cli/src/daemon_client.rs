@@ -11,6 +11,11 @@
 //! (docs/blueprint/01-architecture.md#daemon-lifecycle). Any client that
 //! finds the socket missing or dead starts a detached daemon and waits until
 //! `Status` answers with a compatible protocol version.
+//!
+//! A request gives up only after the daemon has sent nothing for it for a
+//! while (a stall), never on total time: each progress event restarts the
+//! clock, so a long `sync --wait` runs as long as it keeps moving
+//! (docs/blueprint/01-architecture.md#transport, issue 002).
 
 use std::fs::File;
 use std::io::{ErrorKind as IoErrorKind, Read, Seek, SeekFrom};
@@ -24,7 +29,7 @@ use fs2::FileExt;
 use futures_util::{SinkExt, StreamExt};
 use ms_todo_core::{ErrorKind, Paths};
 use ms_todo_protocol::{
-    Codec, DaemonStatus, Message, PROTOCOL_VERSION, Payload, Request, Response, ResponseData,
+    Codec, DaemonStatus, Event, Message, PROTOCOL_VERSION, Payload, Request, Response, ResponseData,
 };
 use nix::errno::Errno;
 use nix::sys::signal::{Signal, kill};
@@ -37,10 +42,11 @@ use crate::error::CliError;
 
 /// How long a daemon may take to answer `Status` or `Shutdown`.
 const QUICK_TIMEOUT: Duration = Duration::from_secs(3);
-/// A data request's ceiling. The daemon bounds each Graph call at 60 s and
-/// its retries and pages, so this only catches a daemon that's stuck.
-const REQUEST_TIMEOUT: Duration = Duration::from_secs(300);
-const REQUEST_TIMEOUT_ENV: &str = "MS_TODO_REQUEST_TIMEOUT_MS";
+/// How long a data request may go without an answer or a progress event.
+/// Longer than the daemon's worst bounded step: a Graph call is 60 s, with
+/// at most 3 retries, and a write may first wait for the first sync.
+const STALL_TIMEOUT: Duration = Duration::from_secs(300);
+const STALL_TIMEOUT_ENV: &str = "MS_TODO_REQUEST_TIMEOUT_MS";
 const READY_TIMEOUT: Duration = Duration::from_secs(15);
 const EXIT_TIMEOUT: Duration = Duration::from_secs(10);
 const POLL_INTERVAL: Duration = Duration::from_millis(50);
@@ -61,17 +67,28 @@ impl DaemonClient {
     }
 
     pub async fn request(&mut self, request: Request) -> Result<ResponseData, CliError> {
-        self.request_within(request, request_timeout()).await
+        self.request_within(request, stall_timeout()).await
+    }
+
+    /// Send `request` and pass each event the daemon sends for it to
+    /// `on_event` until the answer arrives.
+    pub async fn request_with_events(
+        &mut self,
+        request: Request,
+        on_event: impl FnMut(Event),
+    ) -> Result<ResponseData, CliError> {
+        let stall = stall_timeout();
+        let id = self.send(request, stall).await?;
+        into_data(self.reply(id, stall, on_event).await?)
     }
 
     async fn request_within(
         &mut self,
         request: Request,
-        timeout: Duration,
+        stall: Duration,
     ) -> Result<ResponseData, CliError> {
-        let deadline = Instant::now() + timeout;
-        let id = self.send(request, deadline).await?;
-        into_data(self.reply(id, deadline).await?)
+        let id = self.send(request, stall).await?;
+        into_data(self.reply(id, stall, |_| {}).await?)
     }
 
     /// Send a mutation and wait for its answer. Once the request is on the
@@ -84,8 +101,8 @@ impl DaemonClient {
         op_id: &str,
         check: &str,
     ) -> Result<ResponseData, CliError> {
-        let deadline = Instant::now() + request_timeout();
-        let id = self.send(request, deadline).await?;
+        let stall = stall_timeout();
+        let id = self.send(request, stall).await?;
         let lost = |why: String| CliError {
             op_id: Some(op_id.to_owned()),
             ..CliError::message(
@@ -97,47 +114,60 @@ impl DaemonClient {
                 ),
             )
         };
-        match self.reply(id, deadline).await {
+        match self.reply(id, stall, |_| {}).await {
             Ok(Response::Unknown) => Err(lost("it sent an answer this version can't read".into())),
             Ok(response) => into_data(response),
             Err(error) => Err(lost(error.message)),
         }
     }
 
-    async fn send(&mut self, request: Request, deadline: Instant) -> Result<u64, CliError> {
+    async fn send(&mut self, request: Request, stall: Duration) -> Result<u64, CliError> {
         self.next_id += 1;
         let message = Message {
             id: self.next_id,
             payload: Payload::Request(request),
         };
-        tokio::time::timeout_at(deadline, self.framed.send(message))
+        tokio::time::timeout(stall, self.framed.send(message))
             .await
             .map_err(|_| unavailable("the daemon didn't take the request in time".into()))?
             .map_err(ipc_error)?;
         Ok(self.next_id)
     }
 
-    async fn reply(&mut self, id: u64, deadline: Instant) -> Result<Response, CliError> {
-        let read = async {
-            loop {
-                let frame = self.framed.next().await.ok_or_else(|| {
-                    mismatch("the daemon closed the connection without answering")
-                })?;
-                let message = frame.map_err(ipc_error)?;
-                match message.payload {
-                    // Id 0 is the daemon rejecting a frame it couldn't read.
-                    Payload::Response(response) if message.id == id || message.id == 0 => {
-                        return Ok(response);
-                    }
-                    // Events, and anything a newer daemon adds, aren't answers.
-                    _ => {}
+    /// Wait for the answer to request `id`. Each frame for it (an answer
+    /// or a progress event) restarts the `stall` clock; other frames don't.
+    async fn reply(
+        &mut self,
+        id: u64,
+        stall: Duration,
+        mut on_event: impl FnMut(Event),
+    ) -> Result<Response, CliError> {
+        let mut deadline = Instant::now() + stall;
+        loop {
+            let frame = tokio::time::timeout_at(deadline, self.framed.next())
+                .await
+                .map_err(|_| {
+                    unavailable(format!(
+                        "the daemon sent nothing for {} seconds",
+                        stall.as_secs_f64().round()
+                    ))
+                })?
+                .ok_or_else(|| mismatch("the daemon closed the connection without answering"))?;
+            let message = frame.map_err(ipc_error)?;
+            match message.payload {
+                // Id 0 is the daemon rejecting a frame it couldn't read.
+                Payload::Response(response) if message.id == id || message.id == 0 => {
+                    return Ok(response);
                 }
+                Payload::Event(event) if message.id == id => {
+                    deadline = Instant::now() + stall;
+                    on_event(event);
+                }
+                // Anything else, including what a newer daemon adds, isn't
+                // progress on this request.
+                _ => {}
             }
-        };
-        let seconds = deadline.saturating_duration_since(Instant::now()).as_secs();
-        tokio::time::timeout_at(deadline, read).await.map_err(|_| {
-            unavailable(format!("the daemon didn't answer within {seconds} seconds"))
-        })?
+        }
     }
 }
 
@@ -151,17 +181,17 @@ fn into_data(response: Response) -> Result<ResponseData, CliError> {
     }
 }
 
-/// [`REQUEST_TIMEOUT`], or in debug builds `MS_TODO_REQUEST_TIMEOUT_MS`, so
-/// tests can reach the deadline without waiting five minutes.
-fn request_timeout() -> Duration {
+/// [`STALL_TIMEOUT`], or in debug builds `MS_TODO_REQUEST_TIMEOUT_MS`, so
+/// tests can reach it without waiting five minutes.
+fn stall_timeout() -> Duration {
     if cfg!(debug_assertions)
-        && let Some(millis) = std::env::var(REQUEST_TIMEOUT_ENV)
+        && let Some(millis) = std::env::var(STALL_TIMEOUT_ENV)
             .ok()
             .and_then(|value| value.parse().ok())
     {
         return Duration::from_millis(millis);
     }
-    REQUEST_TIMEOUT
+    STALL_TIMEOUT
 }
 
 /// A daemon that's ready for requests, and the status it reported: started
@@ -197,8 +227,18 @@ pub async fn inspect(paths: &Paths) -> Inspection {
 
 /// Send one request, starting the daemon first if needed.
 pub async fn ask(paths: &Paths, request: Request) -> Result<ResponseData, CliError> {
+    ask_with_events(paths, request, |_| {}).await
+}
+
+/// Send one request, starting the daemon first if needed, and pass the
+/// events the daemon sends for it to `on_event`.
+pub async fn ask_with_events(
+    paths: &Paths,
+    request: Request,
+    on_event: impl FnMut(Event),
+) -> Result<ResponseData, CliError> {
     let (mut client, _) = connect(paths).await?;
-    client.request(request).await
+    client.request_with_events(request, on_event).await
 }
 
 /// Send one mutation carrying `op_id`. A lost answer after sending is

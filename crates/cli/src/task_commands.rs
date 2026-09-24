@@ -33,6 +33,7 @@ pub async fn add(paths: &Paths, args: AddArgs, format: OutputFormat) -> Result<(
         },
         dry_run: args.dry_run,
         op_id: op_id_unless(args.dry_run),
+        idempotency_key: args.idempotency.idempotency_key,
     };
     send(paths, request, format).await
 }
@@ -50,6 +51,7 @@ pub async fn edit(paths: &Paths, args: EditArgs, format: OutputFormat) -> Result
         args.list,
         TaskChange::Edit(edit),
         args.dry_run,
+        args.idempotency.idempotency_key,
     );
     send(paths, request, format).await
 }
@@ -62,7 +64,13 @@ pub async fn change(
     format: OutputFormat,
 ) -> Result<(), CliError> {
     let (tasks, _) = expand_stdin(args.tasks)?;
-    let request = change_request(tasks, args.list, change, args.dry_run);
+    let request = change_request(
+        tasks,
+        args.list,
+        change,
+        args.dry_run,
+        args.idempotency.idempotency_key,
+    );
     send(paths, request, format).await
 }
 
@@ -73,8 +81,9 @@ pub async fn delete(
     format: OutputFormat,
 ) -> Result<(), CliError> {
     let (tasks, from_stdin) = expand_stdin(args.tasks)?;
+    let key = args.idempotency.idempotency_key;
     if yes || args.dry_run {
-        let request = change_request(tasks, args.list, TaskChange::Delete, args.dry_run);
+        let request = change_request(tasks, args.list, TaskChange::Delete, args.dry_run, key);
         return send(paths, request, format).await;
     }
     // stdin can't be both the IDs and the answer.
@@ -86,7 +95,7 @@ pub async fn delete(
                 .into(),
         ));
     }
-    let preview = change_request(tasks, args.list, TaskChange::Delete, true);
+    let preview = change_request(tasks, args.list, TaskChange::Delete, true, None);
     let plan = match daemon_client::ask(paths, preview).await? {
         ResponseData::Plan(plan) => plan,
         _ => return Err(crate::unexpected_response()),
@@ -100,7 +109,7 @@ pub async fn delete(
     let ids = plan.targets.into_iter().map(|target| target.id).collect();
     send(
         paths,
-        change_request(ids, None, TaskChange::Delete, false),
+        change_request(ids, None, TaskChange::Delete, false, key),
         format,
     )
     .await
@@ -162,6 +171,7 @@ fn change_request(
     list: Option<String>,
     change: TaskChange,
     dry_run: bool,
+    idempotency_key: Option<String>,
 ) -> Request {
     Request::ChangeTasks {
         tasks,
@@ -169,6 +179,7 @@ fn change_request(
         change,
         dry_run,
         op_id: op_id_unless(dry_run),
+        idempotency_key,
     }
 }
 

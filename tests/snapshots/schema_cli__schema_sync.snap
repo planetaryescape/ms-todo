@@ -1,0 +1,49 @@
+---
+source: tests/schema_cli.rs
+expression: pretty
+---
+{
+  "input": {
+    "additionalProperties": false,
+    "properties": {
+      "wait": {
+        "description": "Wait until a sync that started after this command has finished",
+        "type": "boolean",
+        "x-cli": "--wait"
+      }
+    },
+    "required": [],
+    "type": "object"
+  },
+  "output": {
+    "properties": {
+      "changed": {
+        "description": "Lists and tasks added, changed or removed",
+        "type": "integer"
+      },
+      "generation": {
+        "description": "The lists scope's sync generation afterwards",
+        "type": "integer"
+      },
+      "schema_version": {
+        "const": 2
+      },
+      "scopes": {
+        "description": "Scopes synced: the lists, and each list's tasks",
+        "type": "integer"
+      },
+      "waited": {
+        "description": "False when the sync was only asked for",
+        "type": "boolean"
+      }
+    },
+    "required": [
+      "schema_version",
+      "waited",
+      "scopes",
+      "changed",
+      "generation"
+    ],
+    "type": "object"
+  }
+}

@@ -13,6 +13,8 @@ SQLite (sqlx, migrations in `crates/store/migrations/`) is the local source of t
 
 ## Tables (first draft; refine in rung 3a)
 
+Rung 3a built `lists`, `tasks`, `sync_state`, an `idempotency_keys` table and a `counters` table; the schema as built is `crates/store/migrations/0001_lists_tasks_sync_state.sql`, and [D-036](11-decision-log.md) explains where it differs from this draft. The other tables arrive with the rungs that use them.
+
 ```
 lists(local_id PK, graph_id UNIQUE NULL, display_name, wellknown_list_name,
       is_owner, is_shared, folder TEXT NULL,          -- from extension, see 05

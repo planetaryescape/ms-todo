@@ -2,7 +2,8 @@
 //
 // Dependency direction for ms-todo's crates (docs/blueprint/01-architecture.md#crates).
 // `core` stays free of I/O. Clients talk to the daemon protocol only (D-031):
-// only `daemon` uses the Graph client for data. `cli` may still use
+// only `daemon` uses the Graph client for data, and only `daemon` touches
+// the store. `cli` may still use
 // `ms_todo_graph::auth`, because `auth login|status|logout` work without a
 // daemon (D-033 item 4), and it never depends on `daemon`, which would bring
 // the Graph client in with it.
@@ -88,6 +89,55 @@ fn only_the_daemon_uses_graph_beyond_auth() {
         offenders.is_empty(),
         "only crates/daemon may use ms_todo_graph beyond auth:\n{}",
         offenders.join("\n")
+    );
+}
+
+#[test]
+fn only_the_daemon_touches_the_store() {
+    for manifest in [
+        "Cargo.toml",
+        "crates/cli/Cargo.toml",
+        "crates/core/Cargo.toml",
+        "crates/protocol/Cargo.toml",
+        "crates/graph/Cargo.toml",
+    ] {
+        assert!(
+            !dependencies(manifest)
+                .iter()
+                .any(|name| name == "ms-todo-store"),
+            "{manifest} must not depend on ms-todo-store; clients read the cache over IPC"
+        );
+    }
+    assert!(
+        dependencies("crates/daemon/Cargo.toml")
+            .iter()
+            .any(|name| name == "ms-todo-store")
+    );
+    // The store sits under the daemon: it knows neither Graph nor the wire.
+    for dependency in dependencies("crates/store/Cargo.toml") {
+        assert!(
+            !dependency.starts_with("ms-todo-") || dependency == "ms-todo-core",
+            "crates/store may depend on ms-todo-core only, not {dependency}"
+        );
+    }
+    let offenders: Vec<String> = [
+        "crates/cli/src",
+        "crates/protocol/src",
+        "crates/graph/src",
+        "src",
+    ]
+    .iter()
+    .flat_map(|dir| rust_files(&repo_root().join(dir)))
+    .filter(|file| {
+        std::fs::read_to_string(file)
+            .expect("read source")
+            .contains("ms_todo_store")
+    })
+    .map(|file| file.display().to_string())
+    .collect();
+    assert!(
+        offenders.is_empty(),
+        "only crates/daemon may use ms_todo_store: {offenders:?}"
     );
 }
 

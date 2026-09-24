@@ -1,0 +1,85 @@
+---
+source: tests/schema_cli.rs
+expression: pretty
+---
+{
+  "input": {
+    "additionalProperties": false,
+    "properties": {},
+    "required": [],
+    "type": "object"
+  },
+  "output": {
+    "properties": {
+      "account": {
+        "description": "The sign-in name",
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "client_id": {
+        "description": "The configured client ID",
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "client_id_source": {
+        "description": "env, config or bundled",
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "config_file": {
+        "type": "string"
+      },
+      "display_name": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "expires_at": {
+        "description": "When the access token expires",
+        "format": "date-time",
+        "type": "string"
+      },
+      "expires_in_seconds": {
+        "type": "integer"
+      },
+      "instance": {
+        "type": "string"
+      },
+      "schema_version": {
+        "const": 2
+      },
+      "scopes": {
+        "items": {
+          "type": "string"
+        },
+        "type": "array"
+      },
+      "signed_in": {
+        "type": "boolean"
+      },
+      "token_client_id": {
+        "description": "Only when the sign-in belongs to another client ID",
+        "type": "string"
+      },
+      "token_path": {
+        "type": "string"
+      }
+    },
+    "required": [
+      "schema_version",
+      "signed_in",
+      "expires_at",
+      "scopes",
+      "token_path",
+      "instance"
+    ],
+    "type": "object"
+  }
+}

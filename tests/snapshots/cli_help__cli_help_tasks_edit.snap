@@ -21,5 +21,6 @@ Options:
       --clear-reminder               Turn the reminder off
       --body <TEXT>                  New notes, as plain text. They replace the old ones
       --dry-run                      Show what would change without changing anything
+      --idempotency-key <KEY>        Run this change at most once: repeating the command with the same key returns the first result for 24 hours, and the same key with a different change exits 2
   -h, --help                         Print help
   -V, --version                      Print version

@@ -179,6 +179,11 @@ impl Paths {
         self.run_dir.join("daemon.lock")
     }
 
+    /// The cache: SQLite in WAL mode, owned by the daemon.
+    pub fn database_file(&self) -> PathBuf {
+        self.data_dir.join("ms-todo.db")
+    }
+
     /// The daemon's stderr.
     pub fn daemon_log_file(&self) -> PathBuf {
         self.data_dir.join("logs").join("daemon.log")

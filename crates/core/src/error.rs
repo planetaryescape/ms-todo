@@ -40,6 +40,25 @@ pub enum ErrorKind {
 }
 
 impl ErrorKind {
+    /// Every kind, for `ms-todo schema`'s error schema.
+    pub const ALL: [Self; 15] = [
+        Self::AuthRequired,
+        Self::AuthExpired,
+        Self::AuthRevoked,
+        Self::InvalidInput,
+        Self::NotFound,
+        Self::Conflict,
+        Self::Rejected,
+        Self::RateLimited,
+        Self::Unsupported,
+        Self::Network,
+        Self::OutcomeUnknown,
+        Self::Api,
+        Self::Decode,
+        Self::DaemonUnavailable,
+        Self::Internal,
+    ];
+
     /// The stable `kind` value in JSON error output and on the IPC wire.
     pub fn as_str(self) -> &'static str {
         match self {
@@ -121,24 +140,6 @@ pub fn message_with_causes(error: &dyn std::error::Error) -> String {
 mod tests {
     use super::ErrorKind;
 
-    const ALL: [ErrorKind; 15] = [
-        ErrorKind::AuthRequired,
-        ErrorKind::AuthExpired,
-        ErrorKind::AuthRevoked,
-        ErrorKind::InvalidInput,
-        ErrorKind::NotFound,
-        ErrorKind::Conflict,
-        ErrorKind::Rejected,
-        ErrorKind::RateLimited,
-        ErrorKind::Unsupported,
-        ErrorKind::Network,
-        ErrorKind::OutcomeUnknown,
-        ErrorKind::Api,
-        ErrorKind::Decode,
-        ErrorKind::DaemonUnavailable,
-        ErrorKind::Internal,
-    ];
-
     #[test]
     fn every_sign_in_failure_exits_4() {
         for kind in [
@@ -164,13 +165,13 @@ mod tests {
 
     #[test]
     fn kind_strings_round_trip_and_are_unique() {
-        for kind in ALL {
+        for kind in ErrorKind::ALL {
             assert_eq!(ErrorKind::parse(kind.as_str()), Some(kind));
         }
-        let mut strings: Vec<_> = ALL.iter().map(|kind| kind.as_str()).collect();
+        let mut strings: Vec<_> = ErrorKind::ALL.iter().map(|kind| kind.as_str()).collect();
         strings.sort_unstable();
         strings.dedup();
-        assert_eq!(strings.len(), ALL.len());
+        assert_eq!(strings.len(), ErrorKind::ALL.len());
         assert_eq!(ErrorKind::parse("from_a_newer_daemon"), None);
     }
 }

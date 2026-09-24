@@ -1,0 +1,38 @@
+---
+source: tests/schema_cli.rs
+expression: pretty
+---
+{
+  "input": {
+    "additionalProperties": false,
+    "properties": {
+      "reveal_secret": {
+        "description": "Confirm that the token may be printed. Anyone holding it can act as you until it expires",
+        "type": "boolean",
+        "x-cli": "--reveal-secret"
+      }
+    },
+    "required": [],
+    "type": "object"
+  },
+  "output": {
+    "properties": {
+      "access_token": {
+        "type": "string"
+      },
+      "expires_at": {
+        "format": "date-time",
+        "type": "string"
+      },
+      "schema_version": {
+        "const": 2
+      }
+    },
+    "required": [
+      "schema_version",
+      "access_token",
+      "expires_at"
+    ],
+    "type": "object"
+  }
+}

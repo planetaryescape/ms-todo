@@ -1,7 +1,11 @@
-//! A mutation whose answer is lost after the CLI sent it: the daemon may
-//! still apply it, so the CLI reports `outcome_unknown` with the `op_id` it
-//! chose, never a plain `daemon_unavailable` that invites a retry. Uses a
-//! fake daemon that answers `Status` and then goes quiet or hangs up.
+//! Answers that are lost or slow, with a fake daemon that answers `Status`
+//! and then goes quiet, hangs up, or sends progress:
+//!
+//! - A mutation whose answer is lost after the CLI sent it may still have
+//!   been applied, so the CLI reports `outcome_unknown` with the `op_id` it
+//!   chose, never a plain `daemon_unavailable` that invites a retry.
+//! - The CLI gives up only after a stall with nothing from the daemon, never
+//!   on total time: each progress event restarts the clock (issue 002).
 
 mod support;
 
@@ -12,7 +16,8 @@ use std::sync::mpsc;
 use std::time::Duration;
 
 use ms_todo_protocol::{
-    DaemonStatus, Message, PROTOCOL_VERSION, Payload, Request, Response, ResponseData,
+    DaemonStatus, Event, Message, PROTOCOL_VERSION, Payload, Request, Response, ResponseData,
+    SyncProgress, SyncReport,
 };
 use serde_json::Value;
 use support::Env;
@@ -23,6 +28,21 @@ enum AfterRequest {
     Hang,
     /// Close the connection, as a daemon that died would.
     HangUp,
+    /// Send this many progress events, one per interval, then answer.
+    Progress(usize, Duration),
+    /// Send one progress event, then never anything again.
+    ProgressThenHang,
+}
+
+fn progress(id: u64, done: u32) -> Message {
+    Message {
+        id,
+        payload: Payload::Event(Event::SyncProgress(SyncProgress {
+            scopes_done: done,
+            scopes_total: 31,
+            doing: "tasks".into(),
+        })),
+    }
 }
 
 fn read_frame(stream: &mut UnixStream) -> Option<Message> {
@@ -82,6 +102,29 @@ fn fake_daemon(socket: &Path, after: AfterRequest) -> (mpsc::Receiver<Request>, 
                     let _ = released.recv_timeout(Duration::from_secs(30));
                 }
                 AfterRequest::HangUp => {}
+                AfterRequest::Progress(events, every) => {
+                    for done in 0..events {
+                        std::thread::sleep(every);
+                        let done = u32::try_from(done).expect("few events");
+                        write_frame(&mut stream, &progress(message.id, done));
+                    }
+                    let answer = Message {
+                        id: message.id,
+                        payload: Payload::Response(Response::Ok {
+                            data: ResponseData::Sync(SyncReport {
+                                waited: true,
+                                scopes: 31,
+                                changed: 1,
+                                generation: 2,
+                            }),
+                        }),
+                    };
+                    write_frame(&mut stream, &answer);
+                }
+                AfterRequest::ProgressThenHang => {
+                    write_frame(&mut stream, &progress(message.id, 1));
+                    let _ = released.recv_timeout(Duration::from_secs(30));
+                }
             }
             return;
         }
@@ -155,5 +198,53 @@ fn a_dry_run_whose_answer_never_comes_is_just_daemon_unavailable() {
     assert_eq!(code, 1);
     assert_eq!(error["error"]["kind"], "daemon_unavailable");
     assert!(error["error"].get("op_id").is_none());
+    let _ = std::fs::remove_file(&socket);
+}
+
+#[test]
+fn a_sync_that_keeps_making_progress_outlives_the_stall_deadline() {
+    let env = Env::new();
+    let socket = env.socket();
+    // 8 events 200 ms apart: 1.6 s in all, against a 500 ms stall deadline.
+    let (received, _release) = fake_daemon(
+        &socket,
+        AfterRequest::Progress(8, Duration::from_millis(200)),
+    );
+
+    let output = env
+        .cmd()
+        .env("MS_TODO_REQUEST_TIMEOUT_MS", "500")
+        .args(["--format", "json", "sync", "--wait"])
+        .output()
+        .expect("run ms-todo");
+
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let report: serde_json::Value = serde_json::from_slice(&output.stdout).expect("json");
+    assert_eq!(report["changed"], 1);
+    let request = received
+        .recv_timeout(Duration::from_secs(10))
+        .expect("the daemon got the request");
+    assert_eq!(request, Request::Sync { wait: true });
+    let _ = std::fs::remove_file(&socket);
+}
+
+#[test]
+fn a_sync_that_stops_making_progress_gives_up_after_the_stall_deadline() {
+    let env = Env::new();
+    let socket = env.socket();
+    let (_received, _release) = fake_daemon(&socket, AfterRequest::ProgressThenHang);
+
+    let started = std::time::Instant::now();
+    let (error, code) = run(&env, &["sync", "--wait"]);
+
+    assert_eq!(code, 1);
+    assert_eq!(error["error"]["kind"], "daemon_unavailable");
+    let message = error["error"]["message"].as_str().expect("message");
+    assert!(message.contains("sent nothing for"), "{message}");
+    assert!(started.elapsed() < Duration::from_secs(10));
     let _ = std::fs::remove_file(&socket);
 }

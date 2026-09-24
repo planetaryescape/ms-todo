@@ -19,10 +19,13 @@ use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
 
 /// Bumped on any change an older peer can't read.
-pub const PROTOCOL_VERSION: u32 = 1;
+pub const PROTOCOL_VERSION: u32 = 2;
 
-/// A JSON object from Graph, every field kept. Its `id` is the Graph ID in
-/// rungs 1 and 2 (docs/blueprint/07-cli.md#output-contract).
+/// A list or task: Graph's JSON with every field kept, except that `id` is
+/// ms-todo's local ID, with Graph's beside it as `graph_id`, and
+/// `sync_state` says whether it's in step with Graph
+/// (docs/blueprint/07-cli.md#output-contract). A task also has `list_id`,
+/// its list's local ID.
 pub type Entity = Map<String, Value>;
 
 /// One frame. A client picks `id`, and the daemon echoes it on the response.
@@ -48,17 +51,25 @@ pub enum Payload {
 pub enum Request {
     /// Readiness and version check; answers even while signed out.
     Status,
+    /// Lists from the cache.
     ListLists,
-    /// Tasks of the list named or identified by `list`, or of the default
-    /// list ("Tasks") when `None`.
+    /// Tasks from the cache, of the list named or identified by `list`, or
+    /// of the default list ("Tasks") when `None`.
     ListTasks {
         #[serde(default)]
         list: Option<String>,
     },
-    /// An authenticated GET of a path under the Graph v1.0 root.
-    RawGet {
-        path: String,
+    /// Refresh the cache from Graph. With `wait`, the daemon sends
+    /// `SyncProgress` events while it works and answers when a pass that
+    /// started after this request has finished.
+    Sync {
+        #[serde(default)]
+        wait: bool,
     },
+    /// The daemon's view of its own health, for `ms-todo doctor`.
+    Doctor,
+    /// An authenticated GET of a path under the Graph v1.0 root.
+    RawGet { path: String },
     /// A synchronous POST, PATCH or DELETE of a path under the Graph v1.0
     /// root. Never resent after it may have reached Graph.
     RawWrite {
@@ -79,6 +90,10 @@ pub enum Request {
         /// the answer is lost; the daemon makes one when it's missing.
         #[serde(default)]
         op_id: Option<String>,
+        /// `--idempotency-key`: a repeat of the same request with the same
+        /// key gets the first one's result.
+        #[serde(default)]
+        idempotency_key: Option<String>,
     },
     /// Apply one change to each task in `tasks`: Graph IDs, or with `list`,
     /// IDs or exact titles within that list. With `dry_run`, answers `Plan`
@@ -93,6 +108,9 @@ pub enum Request {
         /// Chosen by the client before sending (see `AddTask`).
         #[serde(default)]
         op_id: Option<String>,
+        /// See `AddTask`.
+        #[serde(default)]
+        idempotency_key: Option<String>,
     },
     /// A valid access token, for `auth bearer --reveal-secret`.
     Bearer,
@@ -115,16 +133,29 @@ pub enum Response {
     Unknown,
 }
 
+impl From<Result<ResponseData, ErrorPayload>> for Response {
+    fn from(result: Result<ResponseData, ErrorPayload>) -> Self {
+        match result {
+            Ok(data) => Self::Ok { data },
+            Err(error) => Self::Error { error },
+        }
+    }
+}
+
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum ResponseData {
     Status(DaemonStatus),
     Lists {
         items: Vec<Entity>,
+        sync: SyncInfo,
     },
     Tasks {
         items: Vec<Entity>,
+        sync: SyncInfo,
     },
+    Sync(SyncReport),
+    Doctor(DoctorReport),
     Raw {
         body: Value,
     },
@@ -158,7 +189,87 @@ pub struct DaemonStatus {
     pub signed_in: bool,
 }
 
-/// A list or task by its ID and display name (a task's title).
+/// Whether a scope's cache has been filled yet. `initial` until its first
+/// sync finishes, so an empty result isn't mistaken for an empty list
+/// (docs/blueprint/07-cli.md#output-contract).
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum SyncState {
+    Initial,
+    Ready,
+}
+
+/// The sync state of the scope a collection came from.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SyncInfo {
+    pub state: SyncState,
+    /// Goes up by one each time a sync of the scope finishes.
+    pub generation: u64,
+}
+
+/// What `sync` did.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SyncReport {
+    /// False when a sync was only asked for (no `--wait`).
+    pub waited: bool,
+    /// Scopes the pass finished: the lists, and each list's tasks.
+    pub scopes: u32,
+    /// Lists and tasks the pass added, changed or removed.
+    pub changed: u64,
+    /// The `lists` scope's generation afterwards.
+    pub generation: u64,
+}
+
+/// Sent while a sync runs, to a client waiting for it. Each one is
+/// progress, so it resets the client's stall deadline.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SyncProgress {
+    pub scopes_done: u32,
+    /// Zero until the lists are known.
+    pub scopes_total: u32,
+    /// What it's doing, for people.
+    pub doing: String,
+}
+
+/// The daemon's side of `ms-todo doctor`.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct DoctorReport {
+    pub database_path: String,
+    pub database_bytes: u64,
+    /// Whether a sync pass is running now.
+    pub syncing: bool,
+    pub scopes: Vec<ScopeStatus>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ScopeStatus {
+    /// `lists`, or `tasks:<list graph ID>`.
+    pub scope: String,
+    /// For a tasks scope, its list's local ID and name.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub list_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub list_name: Option<String>,
+    pub state: SyncState,
+    pub generation: u64,
+    pub in_progress: bool,
+    /// Unix seconds.
+    pub last_success_at: Option<i64>,
+    pub last_changed_count: u64,
+    pub last_error: Option<ScopeError>,
+}
+
+/// Why a scope's last sync failed.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ScopeError {
+    /// An `ms_todo_core::ErrorKind` string.
+    pub kind: String,
+    pub message: String,
+    /// Unix seconds.
+    pub at: Option<i64>,
+}
+
+/// A list or task by its local ID and display name (a task's title).
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Candidate {
     pub id: String,
@@ -268,6 +379,7 @@ pub struct Plan {
     pub changes: Value,
 }
 
+/// A task a plan changes, by local IDs.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct PlannedTask {
     pub id: String,
@@ -281,10 +393,10 @@ pub struct Applied {
     /// The create's `opId`, or a fresh UUID for other actions.
     pub op_id: String,
     pub action: TaskAction,
-    /// Each task as Graph returned it after the change. For `delete`, as it
-    /// was last read.
+    /// Each task as Graph returned it after the change, in the entity shape
+    /// (local `id`, `graph_id`). For `delete`, as it was last read.
     pub items: Vec<Entity>,
-    /// The list each of `items` is in, in the same order.
+    /// The local ID of the list each of `items` is in, in the same order.
     #[serde(default)]
     pub list_ids: Vec<String>,
     /// Recurring tasks this completed: Graph kept the task, moved its due
@@ -321,11 +433,13 @@ pub struct ErrorPayload {
     pub applied: Vec<String>,
 }
 
-/// Pushed by the daemon. Rung 1 sends none; the type exists so a client
-/// built now skips the events later rungs add.
+/// Pushed by the daemon. A client skips events it doesn't know.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "event", rename_all = "snake_case")]
 pub enum Event {
+    /// Progress of the sync a `Sync { wait: true }` request waits for,
+    /// sent with that request's message ID.
+    SyncProgress(SyncProgress),
     #[serde(other)]
     Unknown,
 }

@@ -5,6 +5,8 @@
 //! temp dir, so nothing touches the developer's own sign-in or daemon. Every
 //! test stops its daemon, even when it fails.
 
+pub mod fake_graph;
+
 use std::path::PathBuf;
 
 use assert_cmd::Command;
@@ -61,6 +63,37 @@ impl Env {
             .stdout
             .clone();
         serde_json::from_slice(&output).expect("json output")
+    }
+
+    /// Run `args` with `--format json`, expect exit `code`, and return the
+    /// JSON error from stderr.
+    pub fn failure(&self, args: &[&str], code: i32) -> Value {
+        let output = self
+            .cmd()
+            .args(["--format", "json"])
+            .args(args)
+            .assert()
+            .code(code)
+            .get_output()
+            .clone();
+        serde_json::from_slice(&output.stderr).expect("json error on stderr")
+    }
+
+    /// Run a sync and wait for it, so reads answer from a filled cache.
+    pub fn synced(&self) -> Value {
+        self.json(&["sync", "--wait"])
+    }
+
+    /// The local ID of the list or task whose Graph ID is `graph_id`, in
+    /// the items of `collection` (`lists list`, or `tasks list --list L`).
+    pub fn local_id(&self, collection: &[&str], graph_id: &str) -> String {
+        let items = self.json(collection)["items"].clone();
+        let found = items
+            .as_array()
+            .and_then(|items| items.iter().find(|item| item["graph_id"] == graph_id))
+            .and_then(|item| item["id"].as_str());
+        assert!(found.is_some(), "no {graph_id} in {collection:?}: {items}");
+        found.expect("checked above").to_owned()
     }
 
     pub fn socket(&self) -> PathBuf {

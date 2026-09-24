@@ -1,0 +1,242 @@
+---
+source: tests/schema_cli.rs
+expression: pretty
+---
+{
+  "input": {
+    "additionalProperties": false,
+    "properties": {},
+    "required": [],
+    "type": "object"
+  },
+  "output": {
+    "properties": {
+      "daemon": {
+        "properties": {
+          "instance": {
+            "type": "string"
+          },
+          "pid": {
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "problem": {
+            "type": "string"
+          },
+          "protocol_version": {
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "ready": {
+            "type": "boolean"
+          },
+          "running": {
+            "type": "boolean"
+          },
+          "signed_in": {
+            "type": [
+              "boolean",
+              "null"
+            ]
+          },
+          "socket": {
+            "type": "string"
+          },
+          "started_at": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "version": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "running",
+          "ready",
+          "instance",
+          "socket"
+        ],
+        "type": "object"
+      },
+      "database": {
+        "properties": {
+          "bytes": {
+            "type": "integer"
+          },
+          "path": {
+            "type": "string"
+          }
+        },
+        "type": [
+          "object",
+          "null"
+        ]
+      },
+      "last_error": {
+        "description": "The most recent failure of any scope",
+        "oneOf": [
+          {
+            "properties": {
+              "at": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "kind": {
+                "type": "string"
+              },
+              "message": {
+                "type": "string"
+              },
+              "scope": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "kind",
+              "message"
+            ],
+            "type": "object"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      },
+      "problems": {
+        "items": {
+          "type": "string"
+        },
+        "type": "array"
+      },
+      "schema_version": {
+        "const": 2
+      },
+      "scopes": {
+        "items": {
+          "properties": {
+            "generation": {
+              "type": "integer"
+            },
+            "in_progress": {
+              "type": "boolean"
+            },
+            "last_changed_count": {
+              "type": "integer"
+            },
+            "last_error": {
+              "oneOf": [
+                {
+                  "properties": {
+                    "at": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "kind": {
+                      "type": "string"
+                    },
+                    "message": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "kind",
+                    "message"
+                  ],
+                  "type": "object"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "last_success_at": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "list_id": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "list_name": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "scope": {
+              "description": "lists, or tasks:<list graph_id>",
+              "type": "string"
+            },
+            "state": {
+              "enum": [
+                "initial",
+                "ready"
+              ]
+            }
+          },
+          "required": [
+            "scope",
+            "state",
+            "generation",
+            "in_progress"
+          ],
+          "type": "object"
+        },
+        "type": "array"
+      },
+      "sign_in": {
+        "properties": {
+          "expires_at": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "signed_in": {
+            "type": "boolean"
+          },
+          "token_path": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "signed_in",
+          "token_path"
+        ],
+        "type": "object"
+      },
+      "syncing": {
+        "type": [
+          "boolean",
+          "null"
+        ]
+      }
+    },
+    "required": [
+      "schema_version",
+      "sign_in",
+      "daemon",
+      "database",
+      "scopes",
+      "problems"
+    ],
+    "type": "object"
+  }
+}

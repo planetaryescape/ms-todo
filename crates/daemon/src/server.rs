@@ -17,14 +17,17 @@ use ms_todo_core::{ErrorKind, Paths};
 use ms_todo_graph::GraphClient;
 use ms_todo_graph::auth::{Authenticator, Endpoints};
 use ms_todo_graph::private_file::{atomic_write_mode_0600, ensure_private_dir};
-use ms_todo_protocol::{Codec, FrameTooLarge, Message, Payload, Request, Response};
+use ms_todo_protocol::{Codec, Event, FrameTooLarge, Message, Payload, Request, Response};
+use ms_todo_store::Store;
 use tokio::net::{UnixListener, UnixStream};
 use tokio::signal::unix::{SignalKind, signal};
-use tokio::sync::Notify;
+use tokio::sync::{Notify, mpsc};
 use tokio::task::JoinSet;
 use tokio_util::codec::Framed;
 
 use crate::handlers::{State, error_payload, handle};
+use crate::idempotency::settle_unfinished;
+use crate::sync::{PROGRESS, PassContext, Syncer};
 
 /// Overrides Graph's base URL in debug builds, so tests can point a real
 /// daemon at a mock server. Release builds ignore it: it would let whoever
@@ -72,7 +75,8 @@ pub(crate) async fn serve(paths: Paths) -> Result<(), String> {
             .map_err(|error| describe(&socket, &error))?;
         atomic_write_mode_0600(&paths.pid_file(), std::process::id().to_string().as_bytes())
             .map_err(|error| describe(&paths.pid_file(), &error))?;
-        let state = Arc::new(build_state(&paths)?);
+        let state = Arc::new(build_state(&paths).await?);
+        settle_unfinished(&state).await;
         eprintln!(
             "ms-todo daemon {} (pid {}) listening on {}",
             env!("CARGO_PKG_VERSION"),
@@ -90,7 +94,7 @@ pub(crate) async fn serve(paths: Paths) -> Result<(), String> {
     served
 }
 
-fn build_state(paths: &Paths) -> Result<State, String> {
+async fn build_state(paths: &Paths) -> Result<State, String> {
     let mut endpoints = Endpoints::default();
     if cfg!(debug_assertions)
         && let Ok(url) = std::env::var(GRAPH_URL_ENV)
@@ -104,21 +108,47 @@ fn build_state(paths: &Paths) -> Result<State, String> {
     );
     let graph = GraphClient::new(Arc::clone(&auth), &graph_base)
         .map_err(|error| ms_todo_core::message_with_causes(&error))?;
+    let store = Store::open(&paths.database_file())
+        .await
+        .map_err(|error| describe_store(&paths.database_file(), &error))?;
+    // Nothing is running yet, whatever a daemon that died left behind.
+    store
+        .clear_in_progress()
+        .await
+        .map_err(|error| describe_store(&paths.database_file(), &error))?;
     Ok(State {
         auth,
-        graph,
-        known: Default::default(),
+        graph: Arc::new(graph),
+        store: Arc::new(store),
+        syncer: Syncer::new(),
         instance: paths.instance.label().to_owned(),
         started_at: chrono::Utc::now().timestamp(),
     })
+}
+
+fn describe_store(path: &Path, error: &ms_todo_store::StoreError) -> String {
+    format!(
+        "{}: {}",
+        path.display(),
+        ms_todo_core::message_with_causes(error)
+    )
 }
 
 async fn accept_until_shutdown(listener: UnixListener, state: Arc<State>) -> Result<(), String> {
     let shutdown = Arc::new(Notify::new());
     let mut terminate = signal(SignalKind::terminate()).map_err(|error| error.to_string())?;
     let mut interrupt = signal(SignalKind::interrupt()).map_err(|error| error.to_string())?;
-    // Dropping the set when we return aborts connections still open.
+    // Dropping the set when we return aborts connections still open, and
+    // the sync loop with them.
     let mut connections = JoinSet::new();
+    let syncing = Arc::clone(&state);
+    connections.spawn(async move {
+        let context = PassContext {
+            graph: Arc::clone(&syncing.graph),
+            store: Arc::clone(&syncing.store),
+        };
+        syncing.syncer.run(context).await;
+    });
     loop {
         tokio::select! {
             accepted = listener.accept() => match accepted {
@@ -161,7 +191,26 @@ async fn serve_connection(stream: UnixStream, state: Arc<State>, shutdown: Arc<N
             _ => continue,
         };
         let stopping = request == Request::Shutdown;
-        let response = handle(&state, request).await;
+        // Progress of any sync the request waits for goes back as events
+        // with its ID, each resetting the client's stall deadline.
+        let (progress, mut updates) = mpsc::unbounded_channel();
+        let work = PROGRESS.scope(progress, handle(&state, request));
+        tokio::pin!(work);
+        let response = loop {
+            tokio::select! {
+                response = &mut work => break response,
+                Some(update) = updates.recv() => {
+                    let event = Message {
+                        id: message.id,
+                        payload: Payload::Event(Event::SyncProgress(update)),
+                    };
+                    if framed.send(event).await.is_err() {
+                        // The client went away; nobody to answer.
+                        return;
+                    }
+                }
+            }
+        };
         if send(&mut framed, message.id, response).await.is_err() {
             return;
         }

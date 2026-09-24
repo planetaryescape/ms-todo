@@ -1,6 +1,7 @@
 //! ms-todo's daemon (docs/blueprint/01-architecture.md#daemon-lifecycle).
-//! It owns the sign-in: it's the only process that refreshes the token and
-//! talks to Graph for data (D-031). Clients reach it over a Unix socket in
+//! It owns the sign-in and the cache: it's the only process that refreshes
+//! the token, talks to Graph for data and touches the store (D-031). It
+//! keeps the cache in step with Graph by full enumeration (`sync`). Clients reach it over a Unix socket in
 //! the instance's 0700 run directory, speaking `ms-todo-protocol`.
 //!
 //! Started by `ms-todo daemon start` or automatically by any client, as a
@@ -11,10 +12,15 @@
 // would only add noise.
 #![allow(clippy::result_large_err)]
 
+mod doctor;
+mod entities;
+mod freshness;
 mod handlers;
-mod known_tasks;
+mod idempotency;
 mod list_resolution;
+mod reads;
 mod server;
+mod sync;
 mod task_fields;
 mod task_resolution;
 mod task_writes;

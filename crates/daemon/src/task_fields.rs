@@ -8,7 +8,6 @@ use ms_todo_protocol::{Clearable, Entity, ErrorPayload, Importance, NewTask, Tas
 use serde_json::{Map, Value, json};
 
 use crate::handlers::error_payload;
-use crate::list_resolution::field;
 
 const REMINDER_FORMAT: &str = "%Y-%m-%dT%H:%M";
 
@@ -181,6 +180,11 @@ fn graph_reminder(task: &Entity) -> Option<NaiveDateTime> {
         reminder.get("timeZone")?.as_str()?,
     )?
     .with_nanosecond(0)
+}
+
+/// A string property of a Graph entity.
+fn field<'a>(entity: &'a Entity, name: &str) -> Option<&'a str> {
+    entity.get(name).and_then(|value| value.as_str())
 }
 
 fn date_time_time_zone(date_time: &str, zone: &str) -> Value {

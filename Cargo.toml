@@ -38,6 +38,7 @@ members = [
     "crates/core",
     "crates/protocol",
     "crates/graph",
+    "crates/store",
     "crates/daemon",
     "crates/cli",
 ]
@@ -45,7 +46,8 @@ members = [
 [workspace.package]
 version = "0.1.2"
 edition = "2024"
-rust-version = "1.85"
+# sqlx 0.9 needs 1.94.
+rust-version = "1.94"
 license = "MIT OR Apache-2.0"
 repository = "https://github.com/planetaryescape/ms-todo"
 
@@ -62,6 +64,7 @@ todo = "warn"
 ms-todo-core = { path = "crates/core" }
 ms-todo-protocol = { path = "crates/protocol" }
 ms-todo-graph = { path = "crates/graph" }
+ms-todo-store = { path = "crates/store" }
 ms-todo-daemon = { path = "crates/daemon" }
 ms-todo-cli = { path = "crates/cli" }
 
@@ -78,6 +81,9 @@ nix = { version = "0.30", default-features = false, features = ["signal"] }
 reqwest = { version = "0.13", features = ["json", "form"] }  # rustls is the default TLS in 0.13
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
+sha2 = "0.10"
+# Runtime queries only: no `query!` macros, so builds need no database.
+sqlx = { version = "0.9", default-features = false, features = ["runtime-tokio", "sqlite-bundled", "migrate", "macros"] }
 thiserror = "2"
 tokio = { version = "1", default-features = false, features = ["rt", "macros", "time"] }
 tokio-util = { version = "0.7", features = ["codec"] }

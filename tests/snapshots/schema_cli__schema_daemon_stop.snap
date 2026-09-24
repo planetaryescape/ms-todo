@@ -1,0 +1,35 @@
+---
+source: tests/schema_cli.rs
+expression: pretty
+---
+{
+  "input": {
+    "additionalProperties": false,
+    "properties": {},
+    "required": [],
+    "type": "object"
+  },
+  "output": {
+    "properties": {
+      "running": {
+        "const": false
+      },
+      "schema_version": {
+        "const": 2
+      },
+      "stopped_pid": {
+        "description": "The PID stopped, or null if none was running",
+        "type": [
+          "integer",
+          "null"
+        ]
+      }
+    },
+    "required": [
+      "schema_version",
+      "running",
+      "stopped_pid"
+    ],
+    "type": "object"
+  }
+}

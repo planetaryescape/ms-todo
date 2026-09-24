@@ -1,0 +1,14 @@
+---
+source: tests/cli_help.rs
+expression: help_output(args)
+---
+Refresh the local cache from Microsoft To Do
+
+Usage: ms-todo sync [OPTIONS]
+
+Options:
+      --format <FORMAT>  Output format: jsonl is one object per line, ids one ID per line, csv has a header row [default: table in a terminal, json when piped] [possible values: table, json, jsonl, ids, csv]
+      --wait             Wait until a sync that started after this command has finished
+      --instance <NAME>  Use a separate copy of ms-todo's data (also MS_TODO_INSTANCE). Builds run from Cargo's target/ directory default to "dev"; "default" is the installed copy
+  -h, --help             Print help
+  -V, --version          Print version

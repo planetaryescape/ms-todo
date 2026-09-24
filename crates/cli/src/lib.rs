@@ -14,8 +14,12 @@ mod csv_columns;
 mod daemon_client;
 mod daemon_commands;
 mod data_commands;
+mod doctor_commands;
 mod error;
 mod output;
+mod output_schemas;
+mod schema_commands;
+mod sync_commands;
 mod task_commands;
 mod task_output;
 mod time;
@@ -91,13 +95,16 @@ async fn dispatch(command: Command, paths: &Paths, format: OutputFormat) -> Resu
             }
         }
         Command::Lists(ListsCommand::List) => {
-            let items = data_commands::lists(paths).await?;
-            print_collection(format, &items, &data_commands::LISTS_TABLE)
+            let (items, sync) = data_commands::lists(paths).await?;
+            print_collection(format, &items, sync, &data_commands::LISTS_TABLE)
         }
         Command::Tasks(TasksCommand::List { list }) => {
-            let items = data_commands::tasks(paths, list).await?;
-            print_collection(format, &items, &data_commands::TASKS_TABLE)
+            let (items, sync) = data_commands::tasks(paths, list).await?;
+            print_collection(format, &items, sync, &data_commands::TASKS_TABLE)
         }
+        Command::Sync { wait } => print_success(format, &sync_commands::sync(paths, wait).await?),
+        Command::Doctor => print_success(format, &doctor_commands::doctor(paths).await?),
+        Command::Schema { command } => print_raw(format, &schema_commands::schema(&command)?),
         Command::Tasks(TasksCommand::Add(args)) => task_commands::add(paths, args, format).await,
         Command::Tasks(TasksCommand::Complete(args)) => {
             task_commands::change(paths, args, TaskChange::Complete, format).await

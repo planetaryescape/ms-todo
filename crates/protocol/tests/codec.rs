@@ -1,8 +1,9 @@
 use bytes::BytesMut;
 use ms_todo_protocol::{
-    Applied, Candidate, Clearable, Codec, DaemonStatus, ErrorPayload, Event, Importance, Message,
-    NewTask, PROTOCOL_VERSION, Payload, Plan, PlannedTask, RawWriteMethod, Request, Response,
-    ResponseData, Rolled, TaskAction, TaskChange, TaskEdit,
+    Applied, Candidate, Clearable, Codec, DaemonStatus, DoctorReport, ErrorPayload, Event,
+    Importance, Message, NewTask, PROTOCOL_VERSION, Payload, Plan, PlannedTask, RawWriteMethod,
+    Request, Response, ResponseData, Rolled, ScopeError, ScopeStatus, SyncInfo, SyncProgress,
+    SyncReport, SyncState, TaskAction, TaskChange, TaskEdit,
 };
 use serde_json::json;
 use tokio_util::codec::{Decoder, Encoder};
@@ -60,12 +61,57 @@ fn every_request_and_response_round_trips() {
         Payload::Response(Response::Ok {
             data: ResponseData::Lists {
                 items: vec![entity.clone()],
+                sync: SyncInfo {
+                    state: SyncState::Initial,
+                    generation: 0,
+                },
             },
         }),
         Payload::Response(Response::Ok {
             data: ResponseData::Tasks {
                 items: vec![entity.clone()],
+                sync: SyncInfo {
+                    state: SyncState::Ready,
+                    generation: 3,
+                },
             },
+        }),
+        Payload::Request(Request::Sync { wait: true }),
+        Payload::Request(Request::Doctor),
+        Payload::Event(Event::SyncProgress(SyncProgress {
+            scopes_done: 2,
+            scopes_total: 31,
+            doing: "tasks in Groceries".into(),
+        })),
+        Payload::Response(Response::Ok {
+            data: ResponseData::Sync(SyncReport {
+                waited: true,
+                scopes: 31,
+                changed: 2,
+                generation: 4,
+            }),
+        }),
+        Payload::Response(Response::Ok {
+            data: ResponseData::Doctor(DoctorReport {
+                database_path: "/tmp/ms-todo.db".into(),
+                database_bytes: 4096,
+                syncing: false,
+                scopes: vec![ScopeStatus {
+                    scope: "tasks:AAMk=".into(),
+                    list_id: Some("5b9c".into()),
+                    list_name: Some("Tasks".into()),
+                    state: SyncState::Ready,
+                    generation: 1,
+                    in_progress: false,
+                    last_success_at: Some(1_790_000_000),
+                    last_changed_count: 0,
+                    last_error: Some(ScopeError {
+                        kind: "network".into(),
+                        message: "timed out".into(),
+                        at: None,
+                    }),
+                }],
+            }),
         }),
         Payload::Response(Response::Ok {
             data: ResponseData::Raw {
@@ -106,6 +152,7 @@ fn every_request_and_response_round_trips() {
             },
             dry_run: true,
             op_id: None,
+            idempotency_key: Some("k1".into()),
         }),
         Payload::Request(Request::ChangeTasks {
             tasks: vec!["T1".into(), "T2".into()],
@@ -118,6 +165,7 @@ fn every_request_and_response_round_trips() {
             }),
             dry_run: false,
             op_id: Some("op-edit".into()),
+            idempotency_key: None,
         }),
         Payload::Request(Request::ChangeTasks {
             tasks: vec!["T1".into()],
@@ -125,6 +173,7 @@ fn every_request_and_response_round_trips() {
             change: TaskChange::Complete,
             dry_run: false,
             op_id: None,
+            idempotency_key: None,
         }),
         Payload::Response(Response::Ok {
             data: ResponseData::Plan(Plan {

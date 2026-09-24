@@ -1,4 +1,4 @@
-//! The daemon's lifecycle and rung 1's reads, through the real binary; see
+//! The daemon's lifecycle and reads, through the real binary; see
 //! `support` for the environment.
 
 mod support;
@@ -7,9 +7,10 @@ use std::os::unix::fs::PermissionsExt;
 use std::path::Path;
 
 use serde_json::{Value, json};
+use support::fake_graph::{FakeGraph, list, task};
 use support::{ACCESS_TOKEN, Env};
 use wiremock::matchers::{header, method, path};
-use wiremock::{Mock, MockServer, ResponseTemplate};
+use wiremock::{Mock, ResponseTemplate};
 
 fn pid_exists(pid: u64) -> bool {
     std::process::Command::new("kill")
@@ -31,7 +32,7 @@ fn start_status_stop_and_the_pid_is_gone() {
     let started = env.json(&["daemon", "start"]);
     assert_eq!(started["running"], true);
     assert_eq!(started["ready"], true);
-    assert_eq!(started["protocol_version"], 1);
+    assert_eq!(started["protocol_version"], 2);
     assert_eq!(started["instance"], "dev");
     let pid = started["pid"].as_u64().expect("pid");
     assert!(pid_exists(pid));
@@ -105,27 +106,32 @@ fn auth_bearer_without_reveal_secret_exits_2_before_starting_a_daemon() {
     assert_eq!(env.json(&["daemon", "status"])["running"], false);
 }
 
-async fn graph_with_lists(env: &mut Env) -> MockServer {
-    let server = MockServer::start().await;
-    Mock::given(method("GET"))
-        .and(path("/v1.0/me/todo/lists"))
-        .and(header("Authorization", format!("Bearer {ACCESS_TOKEN}").as_str()))
-        .respond_with(ResponseTemplate::new(200).set_body_json(json!({ "value": [
-            { "id": "L-tasks", "displayName": "Tasks", "wellknownListName": "defaultList", "isShared": false },
-            { "id": "L-a", "displayName": "Groceries", "wellknownListName": "none", "isShared": false },
-            { "id": "L-b", "displayName": "Groceries", "wellknownListName": "none", "isShared": true }
-        ]})))
-        .mount(&server)
-        .await;
-    env.graph_url = Some(format!("{}/v1.0", server.uri()));
-    env.sign_in();
-    server
+/// Graph with "Tasks" and two lists both named "Groceries", signed in.
+async fn graph_with_lists(env: &mut Env) -> FakeGraph {
+    let graph = FakeGraph::start(
+        env,
+        vec![
+            list("L-tasks", "Tasks", "defaultList"),
+            list("L-a", "Groceries", "none"),
+            list("L-b", "Groceries", "none"),
+        ],
+    )
+    .await;
+    graph.edit(|data| {
+        let mut milk = task("T1", "Buy milk", "W/\"e1\"");
+        milk["importance"] = json!("high");
+        data.tasks.insert("L-tasks".into(), vec![milk]);
+        data.tasks.insert("L-a".into(), Vec::new());
+        data.tasks.insert("L-b".into(), Vec::new());
+    });
+    graph
 }
 
 #[tokio::test]
 async fn an_ambiguous_list_name_exits_2_with_the_candidates() {
     let mut env = Env::new();
     let _graph = graph_with_lists(&mut env).await;
+    env.synced();
 
     let assert = env
         .cmd()
@@ -141,41 +147,64 @@ async fn an_ambiguous_list_name_exits_2_with_the_candidates() {
         .iter()
         .filter_map(|candidate| candidate["id"].as_str())
         .collect();
-    assert_eq!(ids, ["L-a", "L-b"]);
+    let lists = ["lists", "list"];
+    assert_eq!(
+        ids,
+        [env.local_id(&lists, "L-a"), env.local_id(&lists, "L-b")]
+    );
 }
 
 #[tokio::test]
 async fn lists_and_tasks_come_back_in_the_collection_envelope() {
     let mut env = Env::new();
     let graph = graph_with_lists(&mut env).await;
-    Mock::given(method("GET"))
-        .and(path("/v1.0/me/todo/lists/L-tasks/tasks"))
-        .and(header("Prefer", "odata.maxpagesize=200"))
-        .respond_with(ResponseTemplate::new(200).set_body_json(json!({ "value": [
-            { "id": "T1", "title": "Buy milk", "status": "notStarted", "importance": "high" }
-        ]})))
-        .mount(&graph)
-        .await;
-    Mock::given(method("GET"))
-        .and(path("/v1.0/me/todo/lists/L-b/tasks"))
-        .respond_with(ResponseTemplate::new(200).set_body_json(json!({ "value": [] })))
-        .mount(&graph)
-        .await;
+    env.synced();
 
     let lists = env.json(&["lists", "list"]);
-    assert_eq!(lists["schema_version"], 1);
+    assert_eq!(lists["schema_version"], 2);
+    assert_eq!(lists["sync"]["state"], "ready");
     assert_eq!(lists["items"].as_array().expect("items").len(), 3);
     assert_eq!(lists["items"][1]["displayName"], "Groceries");
+    assert_eq!(lists["items"][1]["graph_id"], "L-a");
+    assert_eq!(lists["items"][1]["sync_state"], "synced");
 
     // No --list: the default "Tasks" list, with every Graph field kept.
     let tasks = env.json(&["tasks", "list"]);
-    assert_eq!(tasks["schema_version"], 1);
-    assert_eq!(tasks["items"][0]["id"], "T1");
-    assert_eq!(tasks["items"][0]["importance"], "high");
+    assert_eq!(tasks["schema_version"], 2);
+    assert_eq!(tasks["sync"]["state"], "ready");
+    let milk = &tasks["items"][0];
+    assert_eq!(milk["graph_id"], "T1");
+    assert_eq!(milk["importance"], "high");
+    assert_eq!(milk["list_id"], lists["items"][0]["id"]);
+    let local = milk["id"].as_str().expect("local id");
+    assert_eq!(local.len(), 36, "a UUID: {local}");
 
-    // An ID picks one of the two same-named lists.
-    let by_id = env.json(&["tasks", "list", "--list", "L-b"]);
-    assert_eq!(by_id["items"], json!([]));
+    // Either ID picks one of the two same-named lists.
+    let by_graph_id = env.json(&["tasks", "list", "--list", "L-b"]);
+    assert_eq!(by_graph_id["items"], json!([]));
+    let local_b = lists["items"][2]["id"].as_str().expect("id");
+    assert_eq!(
+        env.json(&["tasks", "list", "--list", local_b])["items"],
+        json!([])
+    );
+
+    // Reads come from the cache: no request after the sync.
+    let requests = graph
+        .server
+        .received_requests()
+        .await
+        .expect("recorded")
+        .len();
+    env.json(&["tasks", "list"]);
+    assert_eq!(
+        graph
+            .server
+            .received_requests()
+            .await
+            .expect("recorded")
+            .len(),
+        requests
+    );
 
     let jsonl = env
         .cmd()
@@ -191,8 +220,8 @@ async fn lists_and_tasks_come_back_in_the_collection_envelope() {
         .map(|line| serde_json::from_str(line).expect("one JSON object per line"))
         .collect();
     assert_eq!(records.len(), 3);
-    assert!(records.iter().all(|record| record["schema_version"] == 1));
-    assert_eq!(records[2]["id"], "L-b");
+    assert!(records.iter().all(|record| record["schema_version"] == 2));
+    assert_eq!(records[2]["graph_id"], "L-b");
 
     let ids = env
         .cmd()
@@ -202,7 +231,16 @@ async fn lists_and_tasks_come_back_in_the_collection_envelope() {
         .get_output()
         .stdout
         .clone();
-    assert_eq!(String::from_utf8(ids).expect("utf8"), "L-tasks\nL-a\nL-b\n");
+    let local_ids: Vec<&str> = lists["items"]
+        .as_array()
+        .expect("items")
+        .iter()
+        .filter_map(|list| list["id"].as_str())
+        .collect();
+    assert_eq!(
+        String::from_utf8(ids).expect("utf8"),
+        format!("{}\n", local_ids.join("\n"))
+    );
 
     let missing = env
         .cmd()
@@ -219,8 +257,12 @@ async fn raw_get_and_bearer_go_through_the_daemon() {
     let graph = graph_with_lists(&mut env).await;
     Mock::given(method("GET"))
         .and(path("/v1.0/me"))
+        .and(header(
+            "Authorization",
+            format!("Bearer {ACCESS_TOKEN}").as_str(),
+        ))
         .respond_with(ResponseTemplate::new(200).set_body_json(json!({ "displayName": "BK" })))
-        .mount(&graph)
+        .mount(&graph.server)
         .await;
 
     let me = env.json(&["raw", "GET", "/me"]);

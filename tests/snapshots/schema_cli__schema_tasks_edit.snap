@@ -1,0 +1,288 @@
+---
+source: tests/schema_cli.rs
+expression: pretty
+---
+{
+  "input": {
+    "additionalProperties": false,
+    "properties": {
+      "body": {
+        "description": "New notes, as plain text. They replace the old ones",
+        "type": "string",
+        "x-cli": "--body"
+      },
+      "clear_due": {
+        "description": "Remove the due date",
+        "type": "boolean",
+        "x-cli": "--clear-due"
+      },
+      "clear_reminder": {
+        "description": "Turn the reminder off",
+        "type": "boolean",
+        "x-cli": "--clear-reminder"
+      },
+      "dry_run": {
+        "description": "Show what would change without changing anything",
+        "type": "boolean",
+        "x-cli": "--dry-run"
+      },
+      "due": {
+        "description": "New due date. Due dates have no time; put a time in --reminder",
+        "type": "string",
+        "x-cli": "--due"
+      },
+      "idempotency_key": {
+        "description": "Run this change at most once: repeating the command with the same key returns the first result for 24 hours, and the same key with a different change exits 2",
+        "type": "string",
+        "x-cli": "--idempotency-key"
+      },
+      "importance": {
+        "description": "New importance",
+        "enum": [
+          "low",
+          "normal",
+          "high"
+        ],
+        "x-cli": "--importance"
+      },
+      "list": {
+        "description": "Look for the task in this list (exact name or ID), which also lets TASK be an exact title",
+        "type": "string",
+        "x-cli": "--list"
+      },
+      "reminder": {
+        "description": "Remind me at this local time",
+        "type": "string",
+        "x-cli": "--reminder"
+      },
+      "task": {
+        "description": "The task's ID from `tasks list`, or its exact title when --list is given",
+        "type": "string",
+        "x-cli": "<TASK>"
+      },
+      "title": {
+        "description": "New title, taken literally",
+        "type": "string",
+        "x-cli": "--title"
+      }
+    },
+    "required": [
+      "task"
+    ],
+    "type": "object"
+  },
+  "output": {
+    "oneOf": [
+      {
+        "properties": {
+          "action": {
+            "enum": [
+              "add",
+              "complete",
+              "reopen",
+              "edit",
+              "delete"
+            ]
+          },
+          "items": {
+            "description": "Each task after the change; for delete, as it was",
+            "items": {
+              "description": "A task: every field Microsoft Graph returns, with `id` replaced",
+              "properties": {
+                "body": {
+                  "type": "object"
+                },
+                "categories": {
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array"
+                },
+                "createdDateTime": {
+                  "type": "string"
+                },
+                "dueDateTime": {
+                  "description": "Graph's dateTimeTimeZone; a date only",
+                  "type": "object"
+                },
+                "extensions": {
+                  "description": "ms-todo's own open extension (com.planetaryescape.mstodo), when it has one and it has been fetched",
+                  "items": {
+                    "type": "object"
+                  },
+                  "type": "array"
+                },
+                "graph_id": {
+                  "description": "Microsoft Graph's ID, for `raw` and debugging; commands take it too",
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "id": {
+                  "description": "ms-todo's local ID; stable, and what commands take",
+                  "type": "string"
+                },
+                "importance": {
+                  "enum": [
+                    "low",
+                    "normal",
+                    "high"
+                  ]
+                },
+                "isReminderOn": {
+                  "type": "boolean"
+                },
+                "lastModifiedDateTime": {
+                  "type": "string"
+                },
+                "list_id": {
+                  "description": "The local ID of the task's list",
+                  "type": "string"
+                },
+                "recurrence": {
+                  "type": "object"
+                },
+                "reminderDateTime": {
+                  "type": "object"
+                },
+                "status": {
+                  "description": "notStarted or completed, among Graph's values",
+                  "type": "string"
+                },
+                "sync_state": {
+                  "description": "Always synced until offline writes arrive; never retry `unknown`",
+                  "enum": [
+                    "synced",
+                    "pending",
+                    "unknown",
+                    "failed"
+                  ]
+                },
+                "title": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "id",
+                "graph_id",
+                "sync_state",
+                "list_id",
+                "title"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "list_ids": {
+            "description": "The local ID of each item's list, in order",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "op_id": {
+            "type": "string"
+          },
+          "rolled": {
+            "description": "Recurring tasks completed: still open, due on the next date",
+            "items": {
+              "properties": {
+                "id": {
+                  "type": "string"
+                },
+                "next_due": {
+                  "format": "date",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "id",
+                "next_due"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "schema_version": {
+            "const": 2
+          }
+        },
+        "required": [
+          "schema_version",
+          "op_id",
+          "action",
+          "items",
+          "list_ids"
+        ],
+        "type": "object"
+      },
+      {
+        "properties": {
+          "action": {
+            "enum": [
+              "add",
+              "complete",
+              "reopen",
+              "edit",
+              "delete"
+            ]
+          },
+          "changes": {
+            "description": "The Graph fields each target gets; null for delete"
+          },
+          "dry_run": {
+            "const": true
+          },
+          "list": {
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "name": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "id",
+              "name"
+            ],
+            "type": "object"
+          },
+          "schema_version": {
+            "const": 2
+          },
+          "targets": {
+            "items": {
+              "properties": {
+                "id": {
+                  "type": "string"
+                },
+                "list_id": {
+                  "type": "string"
+                },
+                "title": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "id",
+                "title",
+                "list_id"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "schema_version",
+          "dry_run",
+          "action",
+          "changes"
+        ],
+        "type": "object"
+      }
+    ]
+  }
+}

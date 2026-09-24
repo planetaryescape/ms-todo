@@ -89,10 +89,21 @@ impl GraphClient {
         self
     }
 
-    /// `GET /me/todo/lists`, every page.
-    pub async fn list_lists(&self) -> Result<Vec<Entity>, GraphError> {
-        self.get_collection(self.url(&["me", "todo", "lists"]))
-            .await
+    /// Every list with our open extension `name` inline, every page: the
+    /// filtered `$expand`, since an unfiltered one silently returns nothing
+    /// (S2). A list without the extension has none in `extensions`.
+    pub async fn list_lists_with_extension(&self, name: &str) -> Result<Vec<Entity>, GraphError> {
+        let mut url = self.url(&["me", "todo", "lists"]);
+        expand_extension(&mut url, name);
+        self.get_collection(url).await
+    }
+
+    /// `GET /me/todo/lists/{list}/tasks/{task}` with our open extension
+    /// `name` inline, for [`GraphClient::get_each`].
+    pub fn task_with_extension_url(&self, list_id: &str, task_id: &str, name: &str) -> Url {
+        let mut url = self.task_url(list_id, task_id);
+        expand_extension(&mut url, name);
+        url
     }
 
     /// `GET /me/todo/lists/{id}/tasks`, every page.
@@ -187,7 +198,7 @@ impl GraphClient {
         self.get(url, false).await
     }
 
-    fn url(&self, segments: &[&str]) -> Url {
+    pub(crate) fn url(&self, segments: &[&str]) -> Url {
         let mut url = self.base.clone();
         // `path_segments_mut` percent-encodes each segment, so an ID can
         // never add a path level or a query string.
@@ -214,6 +225,20 @@ impl GraphClient {
             return Err(invalid("it leaves the Graph v1.0 root"));
         }
         Ok(url)
+    }
+
+    /// `url` relative to the v1.0 root, as a `$batch` sub-request names it.
+    pub(crate) fn relative(&self, url: &Url) -> String {
+        let base_path = self.base.path().trim_end_matches('/');
+        let path = url.path().strip_prefix(base_path).unwrap_or(url.path());
+        match url.query() {
+            Some(query) => format!("{path}?{query}"),
+            None => path.to_owned(),
+        }
+    }
+
+    pub(crate) fn backoff_unit(&self) -> Duration {
+        self.backoff_unit
     }
 
     // Same origin, and still under `/v1.0/` once `..` has been resolved.
@@ -270,7 +295,7 @@ impl GraphClient {
     /// it didn't run: a 429, a 401 before the refresh, or a failed connect.
     /// Any other failure after it may have reached Graph is `OutcomeUnknown`
     /// (D-028).
-    async fn send(&self, call: Call<'_>) -> Result<Value, GraphError> {
+    pub(crate) async fn send(&self, call: Call<'_>) -> Result<Value, GraphError> {
         let mut attempt = 0;
         let mut refreshed = false;
         let mut token = self.auth.valid_token().await?;
@@ -334,42 +359,50 @@ impl GraphClient {
                     attempt += 1;
                 }
                 decision @ (RetryDecision::GiveUp | RetryDecision::OutcomeUnknown) => {
-                    let error = ApiError::parse(
-                        status.as_u16(),
-                        crate::api_error::request_id(&headers),
-                        &String::from_utf8_lossy(&body),
-                    );
+                    let failure = api_failure(status, &headers, &String::from_utf8_lossy(&body));
                     if decision == RetryDecision::OutcomeUnknown {
-                        return Err(GraphError::OutcomeUnknown(Box::new(GraphError::Api(error))));
+                        return Err(GraphError::OutcomeUnknown(Box::new(failure)));
                     }
-                    if status == StatusCode::TOO_MANY_REQUESTS {
-                        return Err(GraphError::RateLimited {
-                            retry_after: retry::retry_after(&headers),
-                            source: error,
-                        });
-                    }
-                    return Err(GraphError::Api(error));
+                    return Err(failure);
                 }
             }
         }
     }
 }
 
+/// A final error answer as a typed error; a 429 is `RateLimited` with the
+/// wait Graph asked for. Shared by single requests and `$batch` steps.
+pub(crate) fn api_failure(
+    status: StatusCode,
+    headers: &reqwest::header::HeaderMap,
+    body: &str,
+) -> GraphError {
+    let error = ApiError::parse(status.as_u16(), crate::api_error::request_id(headers), body);
+    if status == StatusCode::TOO_MANY_REQUESTS {
+        GraphError::RateLimited {
+            retry_after: retry::retry_after(headers),
+            source: error,
+        }
+    } else {
+        GraphError::Api(error)
+    }
+}
+
 /// One request for [`GraphClient::send`].
-struct Call<'a> {
-    method: Method,
-    url: Url,
-    body: Option<&'a Value>,
+pub(crate) struct Call<'a> {
+    pub method: Method,
+    pub url: Url,
+    pub body: Option<&'a Value>,
     /// An etag Graph gave us; never `*` or anything made up (S6: those are a 500).
-    if_match: Option<&'a str>,
-    paged: bool,
+    pub if_match: Option<&'a str>,
+    pub paged: bool,
     /// False for every create and for a PATCH that completes a recurring task.
-    idempotent: bool,
+    pub idempotent: bool,
 }
 
 impl Call<'_> {
     /// An idempotent request with no body, `If-Match` or paging.
-    fn new(method: Method, url: Url) -> Self {
+    pub fn new(method: Method, url: Url) -> Self {
         Self {
             method,
             url,
@@ -393,7 +426,15 @@ async fn read(request: reqwest::RequestBuilder) -> Result<ReadResponse, reqwest:
     Ok((status, headers, body))
 }
 
-fn entity(value: Value) -> Result<Entity, GraphError> {
+// `$expand` works only with a filter on the extension's ID (S2). Spaces are
+// written as %20: `+` isn't a space outside form encoding.
+fn expand_extension(url: &mut Url, name: &str) {
+    url.set_query(Some(&format!(
+        "$expand=extensions($filter=id%20eq%20'{name}')"
+    )));
+}
+
+pub(crate) fn entity(value: Value) -> Result<Entity, GraphError> {
     match value {
         Value::Object(entity) => Ok(entity),
         other => Err(GraphError::Decode(format!(

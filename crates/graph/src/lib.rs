@@ -7,6 +7,7 @@ compile_error!("ms-todo supports macOS and Linux only; the token store relies on
 
 mod api_error;
 pub mod auth;
+mod batch;
 mod client;
 mod error;
 pub mod private_file;
