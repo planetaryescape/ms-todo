@@ -1,0 +1,14 @@
+[package]
+name = "ms-todo-core"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish = false
+description = "Shared error kinds and file locations for ms-todo. No I/O dependencies."
+
+[dependencies]
+dirs = { workspace = true }
+thiserror = { workspace = true }
+
+[lints]
+workspace = true

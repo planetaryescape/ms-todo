@@ -1,0 +1,19 @@
+[package]
+name = "ms-todo-cli"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish = false
+description = "ms-todo's command line: clap definitions, output formats and exit codes."
+
+[dependencies]
+ms-todo-core = { workspace = true }
+ms-todo-graph = { workspace = true }
+chrono = { workspace = true }
+clap = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+tokio = { workspace = true }
+
+[lints]
+workspace = true

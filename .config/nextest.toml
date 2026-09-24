@@ -1,0 +1,12 @@
+# Adapted from spotuify .config/nextest.toml @ d807e5e4f9d2f09878cdc22309af3589623f7785
+# (mxr's file at dfb23d10 only bounds one mxr-specific test.)
+#
+# Each test runs in its own process, so one hung test gets terminated and
+# reported instead of wedging the whole run.
+
+[profile.default]
+# Warn at 30s, kill after 2 periods (60s). Nothing in the suite should come
+# close; the device-code tests poll with millisecond intervals.
+slow-timeout = { period = "30s", terminate-after = 2 }
+# The dev loop wants the full failure list from one run.
+fail-fast = false

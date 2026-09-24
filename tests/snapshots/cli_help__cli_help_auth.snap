@@ -1,0 +1,19 @@
+---
+source: tests/cli_help.rs
+expression: help_output(args)
+---
+Sign in to Microsoft, check the sign-in, or sign out
+
+Usage: ms-todo auth [OPTIONS] <COMMAND>
+
+Commands:
+  login   Sign in with a device code: open the printed URL and enter the code
+  status  Show the signed-in account, token expiry, client ID and scopes
+  logout  Delete the stored sign-in
+  help    Print this message or the help of the given subcommand(s)
+
+Options:
+      --format <FORMAT>  Output format [default: table in a terminal, json when piped] [possible values: table, json]
+      --instance <NAME>  Use a separate copy of ms-todo's data (also MS_TODO_INSTANCE). Builds run from Cargo's target/ directory default to "dev"
+  -h, --help             Print help
+  -V, --version          Print version

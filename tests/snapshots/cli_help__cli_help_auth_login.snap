@@ -1,0 +1,13 @@
+---
+source: tests/cli_help.rs
+expression: help_output(args)
+---
+Sign in with a device code: open the printed URL and enter the code
+
+Usage: ms-todo auth login [OPTIONS]
+
+Options:
+      --format <FORMAT>  Output format [default: table in a terminal, json when piped] [possible values: table, json]
+      --instance <NAME>  Use a separate copy of ms-todo's data (also MS_TODO_INSTANCE). Builds run from Cargo's target/ directory default to "dev"
+  -h, --help             Print help
+  -V, --version          Print version

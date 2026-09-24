@@ -1,0 +1,17 @@
+---
+source: tests/cli_help.rs
+expression: help_output(args)
+---
+A local-first, keyboard-native terminal client for Microsoft To Do
+
+Usage: ms-todo [OPTIONS] <COMMAND>
+
+Commands:
+  auth  Sign in to Microsoft, check the sign-in, or sign out
+  help  Print this message or the help of the given subcommand(s)
+
+Options:
+      --format <FORMAT>  Output format [default: table in a terminal, json when piped] [possible values: table, json]
+      --instance <NAME>  Use a separate copy of ms-todo's data (also MS_TODO_INSTANCE). Builds run from Cargo's target/ directory default to "dev"
+  -h, --help             Print help
+  -V, --version          Print version
