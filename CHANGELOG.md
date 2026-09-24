@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.5](https://github.com/planetaryescape/ms-todo/compare/v0.1.4...v0.1.5) (2026-09-24)
+
+
+### Features
+
+* add mst as an official alias ([f0b305c](https://github.com/planetaryescape/ms-todo/commit/f0b305cc59762009bfa1b5700d20986859a9508d))
+
 ## [0.1.4](https://github.com/planetaryescape/ms-todo/compare/v0.1.3...v0.1.4) (2026-09-24)
 
 
