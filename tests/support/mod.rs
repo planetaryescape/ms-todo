@@ -140,6 +140,54 @@ impl Env {
         });
         std::fs::write(token_path, token.to_string()).expect("write token");
     }
+
+    /// Every outbox operation, newest first.
+    pub fn outbox(&self) -> Vec<Value> {
+        self.json(&["outbox", "list"])["items"]
+            .as_array()
+            .cloned()
+            .unwrap_or_default()
+    }
+
+    /// Wait up to 20 seconds until no write is pending or being sent.
+    pub fn settled(&self) {
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(20);
+        loop {
+            let outbox = self.outbox();
+            if outbox
+                .iter()
+                .all(|op| op["state"] != "pending" && op["state"] != "inflight")
+            {
+                return;
+            }
+            assert!(
+                std::time::Instant::now() < deadline,
+                "the outbox never settled: {outbox:?}"
+            );
+            std::thread::sleep(std::time::Duration::from_millis(50));
+        }
+    }
+
+    /// Wait up to 20 seconds until operation `op_id` is in `state`, and
+    /// return it.
+    pub fn op_in_state(&self, op_id: &str, state: &str) -> Value {
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(20);
+        loop {
+            let op = self
+                .outbox()
+                .into_iter()
+                .find(|op| op["op_id"] == op_id)
+                .unwrap_or(Value::Null);
+            if op["state"] == state {
+                return op;
+            }
+            assert!(
+                std::time::Instant::now() < deadline,
+                "operation {op_id} never became {state}: {op}"
+            );
+            std::thread::sleep(std::time::Duration::from_millis(50));
+        }
+    }
 }
 
 impl Drop for Env {

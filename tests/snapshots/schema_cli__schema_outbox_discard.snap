@@ -1,0 +1,172 @@
+---
+source: tests/schema_cli.rs
+expression: pretty
+---
+{
+  "input": {
+    "additionalProperties": false,
+    "properties": {
+      "op": {
+        "description": "The write's op_id from `outbox list`",
+        "type": "string",
+        "x-cli": "<OP>"
+      },
+      "yes": {
+        "description": "Discard without asking",
+        "type": "boolean",
+        "x-cli": "--yes"
+      }
+    },
+    "required": [
+      "op"
+    ],
+    "type": "object"
+  },
+  "output": {
+    "properties": {
+      "items": {
+        "description": "Newest first; retry and discard give the one operation",
+        "items": {
+          "properties": {
+            "action": {
+              "enum": [
+                "add",
+                "edit",
+                "complete",
+                "reopen",
+                "delete"
+              ]
+            },
+            "attempts": {
+              "type": "integer"
+            },
+            "changes": {
+              "description": "The Graph fields it sends: a failed add keeps the task's content here"
+            },
+            "command_id": {
+              "description": "The op_id the change printed; a change to several tasks has one operation per task",
+              "type": "string"
+            },
+            "created_at": {
+              "description": "Unix seconds",
+              "type": "integer"
+            },
+            "depends_on": {
+              "description": "The operation this one waits for",
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "flagged": {
+              "description": "unknown for over 24 hours: resolve it with `outbox retry` or `outbox discard`",
+              "type": "boolean"
+            },
+            "last_error": {
+              "oneOf": [
+                {
+                  "properties": {
+                    "kind": {
+                      "type": "string"
+                    },
+                    "message": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "kind",
+                    "message"
+                  ],
+                  "type": "object"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "list_id": {
+              "type": "string"
+            },
+            "next_attempt_at": {
+              "description": "Unix seconds: when a pending write is tried again",
+              "type": [
+                "integer",
+                "null"
+              ]
+            },
+            "note": {
+              "description": "What was seen while it was unknown",
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "op_id": {
+              "type": "string"
+            },
+            "sent_at": {
+              "type": [
+                "integer",
+                "null"
+              ]
+            },
+            "state": {
+              "description": "unknown: it may or may not have reached Microsoft To Do; never resend it yourself. failed: rejected, and its local change rolled back",
+              "enum": [
+                "pending",
+                "inflight",
+                "unknown",
+                "failed",
+                "done"
+              ]
+            },
+            "task_id": {
+              "type": "string"
+            },
+            "title": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "undoes": {
+              "description": "For an undo: the op_id it undoes",
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "unknown_since": {
+              "type": [
+                "integer",
+                "null"
+              ]
+            }
+          },
+          "required": [
+            "op_id",
+            "command_id",
+            "action",
+            "task_id",
+            "list_id",
+            "state",
+            "attempts",
+            "created_at",
+            "flagged",
+            "changes"
+          ],
+          "type": "object"
+        },
+        "type": "array"
+      },
+      "schema_version": {
+        "const": 2
+      }
+    },
+    "required": [
+      "schema_version",
+      "items"
+    ],
+    "type": "object"
+  }
+}

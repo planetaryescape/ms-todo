@@ -37,11 +37,14 @@ pub enum ErrorKind {
     DaemonUnavailable,
     /// A local failure: the token file, its lock, a bug.
     Internal,
+    /// The local database was upgraded by a newer ms-todo, so this one
+    /// can't read it. Install the latest version.
+    DatabaseTooNew,
 }
 
 impl ErrorKind {
     /// Every kind, for `ms-todo schema`'s error schema.
-    pub const ALL: [Self; 15] = [
+    pub const ALL: [Self; 16] = [
         Self::AuthRequired,
         Self::AuthExpired,
         Self::AuthRevoked,
@@ -57,6 +60,7 @@ impl ErrorKind {
         Self::Decode,
         Self::DaemonUnavailable,
         Self::Internal,
+        Self::DatabaseTooNew,
     ];
 
     /// The stable `kind` value in JSON error output and on the IPC wire.
@@ -77,6 +81,7 @@ impl ErrorKind {
             Self::Decode => "decode",
             Self::DaemonUnavailable => "daemon_unavailable",
             Self::Internal => "internal",
+            Self::DatabaseTooNew => "database_too_new",
         }
     }
 
@@ -99,6 +104,7 @@ impl ErrorKind {
             "decode" => Self::Decode,
             "daemon_unavailable" => Self::DaemonUnavailable,
             "internal" => Self::Internal,
+            "database_too_new" => Self::DatabaseTooNew,
             _ => return None,
         })
     }
@@ -117,7 +123,8 @@ impl ErrorKind {
             | Self::Api
             | Self::Decode
             | Self::DaemonUnavailable
-            | Self::Internal => 1,
+            | Self::Internal
+            | Self::DatabaseTooNew => 1,
         }
     }
 }

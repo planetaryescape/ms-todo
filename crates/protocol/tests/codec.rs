@@ -1,9 +1,10 @@
 use bytes::BytesMut;
 use ms_todo_protocol::{
     Applied, Candidate, Clearable, Codec, DaemonStatus, DoctorReport, ErrorPayload, Event,
-    Importance, Message, NewTask, PROTOCOL_VERSION, Payload, Plan, PlannedTask, RawWriteMethod,
-    Request, Response, ResponseData, Rolled, ScopeError, ScopeStatus, SyncInfo, SyncMode,
-    SyncProgress, SyncReport, SyncState, TaskAction, TaskChange, TaskEdit,
+    Importance, Message, NewTask, OpError, OutboxDepth, OutboxOp, OutboxState, PROTOCOL_VERSION,
+    Payload, Plan, PlannedTask, RawWriteMethod, Request, Response, ResponseData, Rolled,
+    ScopeError, ScopeStatus, SyncInfo, SyncMode, SyncProgress, SyncReport, SyncState, TaskAction,
+    TaskChange, TaskEdit, WriteRejected,
 };
 use serde_json::json;
 use tokio_util::codec::{Decoder, Encoder};
@@ -113,6 +114,12 @@ fn every_request_and_response_round_trips() {
                     mode: SyncMode::Delta,
                     last_delta_at: Some(1_790_000_020),
                 }],
+                outbox: OutboxDepth {
+                    pending: 1,
+                    unknown: 2,
+                    flagged: 1,
+                    ..OutboxDepth::default()
+                },
             }),
         }),
         Payload::Response(Response::Ok {
@@ -132,6 +139,7 @@ fn every_request_and_response_round_trips() {
                 candidates: vec![Candidate {
                     id: "a".into(),
                     name: "Groceries".into(),
+                    ..Candidate::default()
                 }],
                 op_id: None,
                 applied: Vec::new(),
@@ -199,6 +207,7 @@ fn every_request_and_response_round_trips() {
                     id: "T1".into(),
                     next_due: "2026-09-27".into(),
                 }],
+                undoes: None,
             }),
         }),
         Payload::Response(Response::Error {
@@ -212,6 +221,50 @@ fn every_request_and_response_round_trips() {
                 applied: vec!["T1".into()],
             },
         }),
+        Payload::Request(Request::Undo {
+            target: Some("op-1".into()),
+            copy: Some("T-copy".into()),
+            op_id: Some("op-2".into()),
+            idempotency_key: None,
+        }),
+        Payload::Request(Request::OutboxList {
+            state: Some(OutboxState::Unknown),
+        }),
+        Payload::Response(Response::Ok {
+            data: ResponseData::Outbox {
+                items: vec![OutboxOp {
+                    op_id: "op-1".into(),
+                    command_id: "op-1".into(),
+                    action: "add".into(),
+                    task_id: "t1".into(),
+                    list_id: "l1".into(),
+                    title: Some("Buy milk".into()),
+                    state: OutboxState::Failed,
+                    attempts: 1,
+                    created_at: 1_790_000_000,
+                    next_attempt_at: None,
+                    sent_at: Some(1_790_000_001),
+                    unknown_since: None,
+                    depends_on: None,
+                    undoes: None,
+                    last_error: Some(OpError {
+                        kind: "rejected".into(),
+                        message: "the list was deleted".into(),
+                    }),
+                    note: None,
+                    flagged: false,
+                    changes: json!({ "title": "Buy milk" }),
+                }],
+            },
+        }),
+        Payload::Event(Event::WriteRejected(WriteRejected {
+            op_id: "op-1".into(),
+            task_id: "t1".into(),
+            error: OpError {
+                kind: "rejected".into(),
+                message: "no".into(),
+            },
+        })),
     ];
     for (id, payload) in payloads.into_iter().enumerate() {
         let message = Message {

@@ -11,7 +11,7 @@ use ms_todo_protocol::{
 };
 use serde_json::Value;
 
-use crate::args::{AddArgs, EditArgs, ImportanceArg, RawArgs, RawMethod, TargetArgs};
+use crate::args::{AddArgs, EditArgs, ImportanceArg, RawArgs, RawMethod, TargetArgs, UndoArgs};
 use crate::confirm::{can_prompt, confirm};
 use crate::error::CliError;
 use crate::output::OutputFormat;
@@ -90,8 +90,8 @@ pub async fn delete(
     if from_stdin || !can_prompt() {
         return Err(CliError::message(
             ErrorKind::InvalidInput,
-            "`tasks delete` can't be undone yet, and there's no terminal to ask in: pass --yes \
-             to delete, or --dry-run to see what would be deleted"
+            "there's no terminal to ask in: pass --yes to delete (`ms-todo undo` brings it \
+             back), or --dry-run to see what would be deleted"
                 .into(),
         ));
     }
@@ -166,6 +166,17 @@ pub async fn raw(paths: &Paths, args: RawArgs) -> Result<Value, CliError> {
     }
 }
 
+/// `undo [OP_ID] [--copy ID]`: queue the inverse of a change.
+pub async fn undo(paths: &Paths, args: UndoArgs, format: OutputFormat) -> Result<(), CliError> {
+    let request = Request::Undo {
+        target: args.op_id,
+        copy: args.copy,
+        op_id: Some(new_op_id()),
+        idempotency_key: args.idempotency.idempotency_key,
+    };
+    send(paths, request, format).await
+}
+
 fn change_request(
     tasks: Vec<String>,
     list: Option<String>,
@@ -196,12 +207,14 @@ fn new_op_id() -> String {
 
 async fn send(paths: &Paths, request: Request, format: OutputFormat) -> Result<(), CliError> {
     let op_id = match &request {
-        Request::AddTask { op_id, .. } | Request::ChangeTasks { op_id, .. } => op_id.clone(),
+        Request::AddTask { op_id, .. }
+        | Request::ChangeTasks { op_id, .. }
+        | Request::Undo { op_id, .. } => op_id.clone(),
         _ => None,
     };
     let answer = match op_id {
         Some(op_id) => {
-            daemon_client::ask_mutation(paths, request, &op_id, "`ms-todo tasks list`").await?
+            daemon_client::ask_mutation(paths, request, &op_id, "`ms-todo outbox list`").await?
         }
         None => daemon_client::ask(paths, request).await?,
     };

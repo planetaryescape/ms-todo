@@ -61,7 +61,14 @@ impl Store {
             .max_connections(1)
             .connect_with(base.clone().create_if_missing(true))
             .await?;
-        sqlx::migrate!("./migrations").run(&writer).await?;
+        match sqlx::migrate!("./migrations").run(&writer).await {
+            Ok(()) => {}
+            // Applied, but not among this build's migrations.
+            Err(sqlx::migrate::MigrateError::VersionMissing(_)) => {
+                return Err(StoreError::NewerDatabase);
+            }
+            Err(error) => return Err(error.into()),
+        }
         let reader = SqlitePoolOptions::new()
             .max_connections(READERS)
             .connect_with(base.read_only(true))

@@ -56,6 +56,17 @@ pub fn output_schema(command: &str) -> Option<Value> {
         "tasks add" | "tasks complete" | "tasks reopen" | "tasks edit" | "tasks delete" => {
             json!({ "oneOf": [applied(), plan()] })
         }
+        "undo" => applied(),
+        "outbox list" | "outbox retry" | "outbox discard" => versioned(
+            json!({
+                "items": {
+                    "type": "array",
+                    "description": "Newest first; retry and discard give the one operation",
+                    "items": outbox_op()
+                }
+            }),
+            &["items"],
+        ),
         "sync" => versioned(
             json!({
                 "waited": { "type": "boolean", "description": "False when the sync was only asked for" },
@@ -156,8 +167,58 @@ fn described(mut schema: Value, description: &str) -> Value {
 
 fn candidate() -> Value {
     object(
-        json!({ "id": { "type": "string" }, "name": { "type": "string" } }),
+        json!({
+            "id": { "type": "string" },
+            "name": { "type": "string" },
+            "created_at": { "type": "string", "description": "For a task: when Graph created it" },
+            "list_id": { "type": "string", "description": "For a task: its list's local ID" }
+        }),
         &["id", "name"],
+    )
+}
+
+fn outbox_op() -> Value {
+    object(
+        json!({
+            "op_id": { "type": "string" },
+            "command_id": { "type": "string", "description": "The op_id the change printed; a change to several tasks has one operation per task" },
+            "action": { "enum": ["add", "edit", "complete", "reopen", "delete"] },
+            "task_id": { "type": "string" },
+            "list_id": { "type": "string" },
+            "title": nullable("string", ""),
+            "state": {
+                "enum": ["pending", "inflight", "unknown", "failed", "done"],
+                "description": "unknown: it may or may not have reached Microsoft To Do; never resend it yourself. failed: rejected, and its local change rolled back"
+            },
+            "attempts": { "type": "integer" },
+            "created_at": { "type": "integer", "description": "Unix seconds" },
+            "next_attempt_at": nullable("integer", "Unix seconds: when a pending write is tried again"),
+            "sent_at": nullable("integer", ""),
+            "unknown_since": nullable("integer", ""),
+            "depends_on": nullable("string", "The operation this one waits for"),
+            "undoes": nullable("string", "For an undo: the op_id it undoes"),
+            "last_error": {
+                "oneOf": [
+                    object(json!({ "kind": { "type": "string" }, "message": { "type": "string" } }), &["kind", "message"]),
+                    { "type": "null" }
+                ]
+            },
+            "note": nullable("string", "What was seen while it was unknown"),
+            "flagged": { "type": "boolean", "description": "unknown for over 24 hours: resolve it with `outbox retry` or `outbox discard`" },
+            "changes": { "description": "The Graph fields it sends: a failed add keeps the task's content here" }
+        }),
+        &[
+            "op_id",
+            "command_id",
+            "action",
+            "task_id",
+            "list_id",
+            "state",
+            "attempts",
+            "created_at",
+            "flagged",
+            "changes",
+        ],
     )
 }
 
@@ -168,7 +229,7 @@ fn identity() -> Value {
         "graph_id": nullable("string", "Microsoft Graph's ID, for `raw` and debugging; commands take it too"),
         "sync_state": {
             "enum": ["synced", "pending", "unknown", "failed"],
-            "description": "Always synced until offline writes arrive; never retry `unknown`"
+            "description": "From its outbox writes: synced; pending (queued or being sent); unknown (a write may or may not have reached Microsoft To Do; never retry it, see `outbox list`); failed (a write was rejected and rolled back; see `outbox list`)"
         },
         "extensions": {
             "type": "array",
@@ -239,13 +300,14 @@ fn collection(item: Value) -> Value {
 fn applied() -> Value {
     versioned(
         json!({
-            "op_id": { "type": "string" },
-            "action": { "enum": ["add", "complete", "reopen", "edit", "delete"] },
+            "op_id": { "type": "string", "description": "What `undo` and `outbox list` know the change by" },
+            "action": { "enum": ["add", "complete", "reopen", "edit", "delete", "undo"] },
             "items": {
                 "type": "array",
                 "items": task_entity(),
-                "description": "Each task after the change; for delete, as it was"
+                "description": "Each task as ms-todo has it now, sync_state pending until the write reaches Microsoft To Do; for delete, as it was"
             },
+            "undoes": { "type": "string", "description": "For an undo: the op_id it undoes" },
             "list_ids": {
                 "type": "array",
                 "items": { "type": "string" },
@@ -360,6 +422,18 @@ fn doctor() -> Value {
             "last_error": {
                 "description": "The most recent failure of any scope",
                 "oneOf": [last_error, { "type": "null" }]
+            },
+            "outbox": {
+                "type": ["object", "null"],
+                "description": "How many writes are in each state; flagged are unknown for over 24 hours",
+                "properties": {
+                    "pending": { "type": "integer" },
+                    "inflight": { "type": "integer" },
+                    "unknown": { "type": "integer" },
+                    "failed": { "type": "integer" },
+                    "done": { "type": "integer" },
+                    "flagged": { "type": "integer" }
+                }
             },
             "problems": { "type": "array", "items": { "type": "string" } }
         }),

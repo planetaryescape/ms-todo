@@ -1,33 +1,30 @@
-//! `tasks add|complete|reopen|edit|delete`, sent synchronously to Graph
-//! (no outbox until rung 4), with what Graph returns written to the cache.
-//! Targets are resolved in the cache. Each builds a typed [`Plan`] first; a
-//! dry run returns it and the real run applies it, so the preview is what
-//! runs.
+//! `tasks add|complete|reopen|edit|delete` (docs/blueprint/04-sync-cache.md#instant-local-writes).
+//! Each resolves its targets in the cache and builds a typed [`Plan`]; a
+//! dry run returns it. A real run applies the change to the cache and
+//! queues it in the outbox in one transaction, then answers at once with
+//! the tasks `pending`: the outbox worker sends them to Graph, with or
+//! without a network right now.
 //!
-//! - A create carries its `opId` in our extension (S13) and is never resent
-//!   once it may have reached Graph; nor is completing a recurring task
-//!   (D-028). Either comes back as `outcome_unknown` with the `op_id`.
-//! - A PATCH sends `If-Match` with the cached etag (S6). On a 412 it
-//!   re-reads the task once: if nobody touched the fields it changes, it
-//!   re-sends; otherwise it's a conflict, and nothing is overwritten.
+//! A create carries its `opId` in our extension (S13), so an ambiguous
+//! outcome can be attributed later (D-028). Each change to several tasks
+//! queues one operation per task, all under the command's `op_id`.
 
-use ms_todo_core::{DATE_FORMAT, ErrorKind, message_with_causes};
-use ms_todo_graph::GraphError;
+use ms_todo_core::DATE_FORMAT;
 use ms_todo_protocol::{
-    Applied, Entity, ErrorPayload, NewTask, Plan, PlannedTask, ResponseData, Rolled, TaskAction,
-    TaskChange,
+    Applied, ErrorPayload, NewTask, Plan, PlannedTask, ResponseData, TaskAction, TaskChange,
 };
-use ms_todo_store::LISTS_SCOPE;
-use serde_json::{Value, json};
+use ms_todo_store::{Entity, LISTS_SCOPE, LocalChange, NewOp, OpKind, TaskRow, apply_body};
+use serde_json::{Map, Value, json};
 
-use crate::entities::{EXTENSION_NAME, split_extension, task_entity};
+use crate::entities::{EXTENSION_NAME, task_entity};
 use crate::freshness::ensure_ready;
-use crate::handlers::{State, error_payload, graph_error, store_error};
-use crate::list_resolution::{ListRef, resolve_list};
+use crate::handlers::{State, error_payload, store_error};
+use crate::list_resolution::resolve_list;
+use crate::outbox::op_id_for;
 use crate::task_fields::{
     Field, edit_fields, graph_body, graph_due_date, new_task_fields, user_time_zone,
 };
-use crate::task_resolution::{Target, resolve_tasks};
+use crate::task_resolution::resolve_tasks;
 
 pub(crate) async fn add_task(
     state: &State,
@@ -48,45 +45,21 @@ pub(crate) async fn add_task(
             changes: body,
         }));
     }
-    body["extensions"] = json!([{
-        "@odata.type": "microsoft.graph.openTypeExtension",
-        "extensionName": EXTENSION_NAME,
-        "opId": op_id,
-    }]);
-    match state.graph.create_task(&list.graph_id, &body).await {
-        Ok(created) => {
-            let item = record(state, &list, created)
-                .await
-                .map_err(|error| ErrorPayload {
-                    op_id: Some(op_id.clone()),
-                    ..error
-                })?;
-            Ok(ResponseData::Applied(Applied {
-                op_id,
-                action: TaskAction::Add,
-                items: vec![item],
-                list_ids: vec![list.local_id],
-                rolled: Vec::new(),
-            }))
-        }
-        Err(error @ GraphError::OutcomeUnknown(_)) => Err(ErrorPayload {
-            message: format!(
-                "{}. The task may or may not have been created in {:?}. Check with \
-                 `ms-todo tasks list --list {}` before adding it again: a blind retry can \
-                 make a duplicate. If it's there, its {EXTENSION_NAME} extension holds \
-                 opId {op_id}",
-                message_with_causes(&error),
-                list.name,
-                list.local_id,
-            ),
-            op_id: Some(op_id),
-            ..graph_error(error)
-        }),
-        Err(error) => Err(ErrorPayload {
-            op_id: Some(op_id),
-            ..graph_error(error)
-        }),
-    }
+    let extension = our_extension(&op_id, None);
+    body["extensions"] = json!([extension]);
+    let op = NewOp {
+        op_id: op_id.clone(),
+        entity_local_id: uuid::Uuid::new_v4().to_string(),
+        list_local_id: list.local_id,
+        op: OpKind::Create,
+        action: action_name(TaskAction::Add).to_owned(),
+        change: LocalChange::Insert {
+            raw: new_task_raw(&body),
+            extension: Some(extension),
+        },
+        payload: json!({ "body": body }),
+    };
+    queue(state, &op_id, None, vec![op], TaskAction::Add).await
 }
 
 pub(crate) async fn change_tasks(
@@ -104,7 +77,7 @@ pub(crate) async fn change_tasks(
         TaskChange::Delete => (TaskAction::Delete, Vec::new()),
         TaskChange::Unknown => {
             return Err(error_payload(
-                ErrorKind::Unsupported,
+                ms_todo_core::ErrorKind::Unsupported,
                 "this daemon doesn't know that change; restart it with `ms-todo daemon stop`"
                     .into(),
             ));
@@ -131,296 +104,215 @@ pub(crate) async fn change_tasks(
             changes,
         }));
     }
-
-    let mut applied = Applied {
-        op_id: op_id.clone(),
-        action,
-        items: Vec::new(),
-        list_ids: Vec::new(),
-        rolled: Vec::new(),
-    };
-    let mut applied_ids = Vec::new();
-    for (done, target) in targets.iter().enumerate() {
-        let result = if action == TaskAction::Delete {
-            delete(state, target).await
-        } else {
-            patch(state, target, &fields, &changes, action).await
-        };
-        match result {
-            Ok((task, rolled)) => {
-                applied_ids.push(target.local_id().to_owned());
-                applied.items.push(task);
-                applied.list_ids.push(target.list.local_id.clone());
-                applied.rolled.extend(rolled);
+    let ops = targets
+        .iter()
+        .enumerate()
+        .map(|(index, target)| {
+            let op_id = op_id_for(&op_id, index);
+            let row = &target.row;
+            if action == TaskAction::Delete {
+                delete_op(op_id, row, action)
+            } else {
+                update_op(op_id, row, &changes, action)
             }
-            Err(mut error) => {
-                let not_attempted = targets.len() - done - 1;
-                if done > 0 || not_attempted > 0 {
-                    error.message = format!(
-                        "{} (task {}; {done} changed before it, {not_attempted} not attempted)",
-                        error.message,
-                        target.local_id(),
-                    );
-                }
-                error.op_id = Some(op_id);
-                error.applied = applied_ids;
-                return Err(error);
-            }
-        }
-    }
-    Ok(ResponseData::Applied(applied))
+        })
+        .collect();
+    queue(state, &op_id, None, ops, action).await
 }
 
-async fn delete(state: &State, target: &Target) -> Result<(Entity, Option<Rolled>), ErrorPayload> {
-    state
-        .graph
-        .delete_task(&target.list.graph_id, target.graph_id())
-        .await
-        .map_err(graph_error)?;
-    state
+/// Queue `ops`, one command's, wake the worker, and answer with what the
+/// tasks look like now.
+pub(crate) async fn queue(
+    state: &State,
+    command_id: &str,
+    undoes: Option<&str>,
+    ops: Vec<NewOp>,
+    action: TaskAction,
+) -> Result<ResponseData, ErrorPayload> {
+    let rows = state
         .store
-        .tombstone_task_local(target.local_id())
+        .enqueue(command_id, undoes, ops)
         .await
         .map_err(store_error)?;
-    Ok((task_entity(&target.row), None))
+    state.outbox.wake();
+    Ok(ResponseData::Applied(Applied {
+        op_id: command_id.to_owned(),
+        action,
+        items: rows.iter().map(task_entity).collect(),
+        list_ids: rows.iter().map(|row| row.list_local_id.clone()).collect(),
+        rolled: Vec::new(),
+        undoes: undoes.map(str::to_owned),
+    }))
 }
 
-async fn patch(
-    state: &State,
-    target: &Target,
-    fields: &[Field],
-    body: &Value,
-    action: TaskAction,
-) -> Result<(Entity, Option<Rolled>), ErrorPayload> {
-    let seen = &target.row.raw;
-    let sent = send_patch(state, target, seen, body, action).await;
-    if !matches!(&sent, Err(error) if error.status() == Some(412)) {
-        return settle(state, target, seen, sent, action).await;
+/// A PATCH of `body`'s fields on `row`, applied to the cache at once.
+pub(crate) fn update_op(op_id: String, row: &TaskRow, body: &Value, action: TaskAction) -> NewOp {
+    let mut payload = json!({ "body": body });
+    if completes_recurring(&row.raw, action) {
+        // Never resent after an ambiguous answer, and its outcome is
+        // judged by whether the due date moved (S12).
+        payload["recurring"] = json!(true);
+        payload["due_before"] =
+            json!(graph_due_date(&row.raw).map(|date| date.format(DATE_FORMAT).to_string()));
     }
-    // The cached etag is stale: something changed the task since we read it.
-    let fetched = state
-        .graph
-        .get_task(&target.list.graph_id, target.graph_id())
-        .await
-        .map_err(graph_error)?;
-    let (current, extension) = split_extension(fetched);
-    let current_item = record_split(state, &target.list, &current, extension).await?;
-    if !completes_recurring(&current, action)
-        && fields.iter().all(|field| field.is_applied_to(&current))
-    {
-        // Ours already, e.g. a retried PATCH whose first try went through.
-        return Ok((current_item, None));
+    NewOp {
+        op_id,
+        entity_local_id: row.local_id.clone(),
+        list_local_id: row.list_local_id.clone(),
+        op: OpKind::Update,
+        action: action_name(action).to_owned(),
+        payload,
+        change: LocalChange::Update,
     }
-    let touched = touched_keys(seen, &current, fields, completes_recurring(seen, action));
-    if !touched.is_empty() {
-        return Err(error_payload(
-            ErrorKind::Conflict,
-            format!(
-                "task {} ({:?}) changed on the server since ms-todo last read it ({}), so \
-                 nothing was overwritten; check it with `ms-todo tasks list` and try again",
-                target.local_id(),
-                target.title(),
-                touched.join(", "),
-            ),
-        ));
-    }
-    let sent = send_patch(state, target, &current, body, action).await;
-    settle(state, target, &current, sent, action).await
 }
 
-/// PATCH with `seen`'s etag. Completing a recurring task isn't idempotent:
-/// a repeat would complete the next occurrence too.
-async fn send_patch(
-    state: &State,
-    target: &Target,
-    seen: &Entity,
-    body: &Value,
-    action: TaskAction,
-) -> Result<Entity, GraphError> {
-    state
-        .graph
-        .update_task(
-            &target.list.graph_id,
-            target.graph_id(),
-            body,
-            etag(seen),
-            !completes_recurring(seen, action),
-        )
-        .await
+pub(crate) fn delete_op(op_id: String, row: &TaskRow, action: TaskAction) -> NewOp {
+    NewOp {
+        op_id,
+        entity_local_id: row.local_id.clone(),
+        list_local_id: row.list_local_id.clone(),
+        op: OpKind::Delete,
+        action: action_name(action).to_owned(),
+        payload: json!({}),
+        change: LocalChange::Tombstone,
+    }
 }
 
-/// A PATCH's answer as the command's result, given the task as it was sent.
-async fn settle(
-    state: &State,
-    target: &Target,
-    seen: &Entity,
-    sent: Result<Entity, GraphError>,
-    action: TaskAction,
-) -> Result<(Entity, Option<Rolled>), ErrorPayload> {
-    let recurring = completes_recurring(seen, action);
-    match sent {
-        Ok(updated) => {
-            let rolled = if recurring {
-                recurring_outcome(seen, &updated, target.local_id())?
-            } else {
-                None
-            };
-            Ok((record(state, &target.list, updated).await?, rolled))
+/// Our open extension as a create sends it, holding the operation's ID.
+/// `kept` is the rest of an extension the task had, for a re-create.
+pub(crate) fn our_extension(op_id: &str, kept: Option<&Value>) -> Value {
+    let mut extension = Map::new();
+    if let Some(Value::Object(kept)) = kept {
+        for (key, value) in kept {
+            // Graph's own bookkeeping, not our data.
+            if key != "id" && !key.starts_with('@') {
+                extension.insert(key.clone(), value.clone());
+            }
         }
-        Err(error) if recurring => Err(recurring_error(error, target)),
-        Err(error) => Err(graph_error(error)),
     }
+    extension.insert(
+        "@odata.type".into(),
+        json!("microsoft.graph.openTypeExtension"),
+    );
+    extension.insert("extensionName".into(), json!(EXTENSION_NAME));
+    extension.insert("opId".into(), json!(op_id));
+    Value::Object(extension)
 }
 
-/// The fields we're changing whose server value moved between our read and
-/// now. Completing a recurring task also watches the due date: if it moved,
-/// someone else completed that occurrence, and re-sending would complete
-/// the next one too.
-fn touched_keys(
-    before: &Entity,
-    now: &Entity,
-    fields: &[Field],
-    completes_recurring: bool,
-) -> Vec<&'static str> {
-    let due: &[&'static str] = if completes_recurring {
-        &["dueDateTime"]
-    } else {
-        &[]
-    };
-    let mut keys: Vec<&'static str> = fields
-        .iter()
-        .flat_map(Field::graph_keys)
-        .chain(due)
-        .copied()
-        .filter(|key| before.get(*key) != now.get(*key))
-        .collect();
-    keys.dedup();
-    keys
-}
-
-/// S12: completing a recurring task keeps its ID, moves its due date to the
-/// next occurrence and leaves it `notStarted`; Graph adds a completed copy
-/// with a new ID. Success is a 200 with either `completed` or a moved due
-/// date (docs/blueprint/04-sync-cache.md#completing-a-recurring-task).
-fn recurring_outcome(
-    before: &Entity,
-    after: &Entity,
-    local_id: &str,
-) -> Result<Option<Rolled>, ErrorPayload> {
-    if after.get("status").and_then(Value::as_str) == Some("completed") {
-        return Ok(None);
-    }
-    match (graph_due_date(before), graph_due_date(after)) {
-        (Some(was), Some(next)) if next > was => Ok(Some(Rolled {
-            id: local_id.to_owned(),
-            next_due: next.format(DATE_FORMAT).to_string(),
-        })),
-        _ => Err(error_payload(
-            ErrorKind::OutcomeUnknown,
-            "Graph accepted completing this recurring task, but it's still not completed and \
-             its due date didn't move on. Check it with `ms-todo tasks list` before trying again"
-                .into(),
-        )),
-    }
-}
-
-fn recurring_error(error: GraphError, target: &Target) -> ErrorPayload {
-    if !matches!(error, GraphError::OutcomeUnknown(_)) {
-        return graph_error(error);
-    }
-    ErrorPayload {
-        message: format!(
-            "{}. Recurring task {} ({:?}) may or may not have been completed. Check with \
-             `ms-todo tasks list --list {}` before trying again: if its due date moved on and \
-             a completed copy appeared, it worked, and a retry would complete the next \
-             occurrence too",
-            message_with_causes(&error),
-            target.local_id(),
-            target.title(),
-            target.list.local_id,
-        ),
-        ..graph_error(error)
-    }
+/// A task not yet sent, as the cache shows it: what the POST sets, over
+/// Graph's defaults for a new task.
+pub(crate) fn new_task_raw(body: &Value) -> Entity {
+    let now = chrono::Utc::now()
+        .format("%Y-%m-%dT%H:%M:%S%.6fZ")
+        .to_string();
+    let mut raw = Map::new();
+    raw.insert("title".into(), json!(""));
+    raw.insert("status".into(), json!("notStarted"));
+    raw.insert("importance".into(), json!("normal"));
+    raw.insert("isReminderOn".into(), json!(false));
+    raw.insert("categories".into(), json!([]));
+    raw.insert("createdDateTime".into(), json!(now));
+    raw.insert("lastModifiedDateTime".into(), json!(now));
+    apply_body(&mut raw, body);
+    raw
 }
 
 fn completes_recurring(task: &Entity, action: TaskAction) -> bool {
     action == TaskAction::Complete && task.get("recurrence").is_some_and(Value::is_object)
 }
 
-fn etag(task: &Entity) -> Option<&str> {
-    task.get("@odata.etag").and_then(Value::as_str)
-}
-
-/// Write what Graph returned for a task in `list` to the cache, and return
-/// it as clients see it. If the cache can't take it, the change was still
-/// made in Microsoft To Do, and the error says so; the next sync records it.
-async fn record(state: &State, list: &ListRef, task: Entity) -> Result<Entity, ErrorPayload> {
-    let (raw, extension) = split_extension(task);
-    record_split(state, list, &raw, extension).await
-}
-
-/// [`record`], for a task already split by [`split_extension`].
-async fn record_split(
-    state: &State,
-    list: &ListRef,
-    raw: &Entity,
-    extension: Option<Option<Value>>,
-) -> Result<Entity, ErrorPayload> {
-    match state
-        .store
-        .upsert_task_local(&list.local_id, raw, extension)
-        .await
-    {
-        Ok(row) => Ok(task_entity(&row)),
-        // Graph took the change, so it must never look safe to resend: it's
-        // `outcome_unknown`, which the caller doesn't retry blindly, and
-        // which `--idempotency-key` keeps.
-        Err(error) => Err(error_payload(
-            ErrorKind::OutcomeUnknown,
-            format!(
-                "the change was made in Microsoft To Do (task {}), but the local cache couldn't \
-                 record it: {}. The next sync picks it up; don't send the change again",
-                raw.get("id").and_then(Value::as_str).unwrap_or_default(),
-                store_error(error).message,
-            ),
-        )),
+/// The outbox's `action` for a user's action.
+pub(crate) fn action_name(action: TaskAction) -> &'static str {
+    match action {
+        TaskAction::Add => "add",
+        TaskAction::Complete => "complete",
+        TaskAction::Reopen => "reopen",
+        TaskAction::Edit => "edit",
+        TaskAction::Delete => "delete",
+        TaskAction::Undo | TaskAction::Unknown => "change",
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use ms_todo_store::TaskRow;
 
-    fn entity(value: Value) -> Entity {
-        value.as_object().cloned().expect("object")
+    fn row(raw: Value) -> TaskRow {
+        TaskRow {
+            local_id: "t1".into(),
+            graph_id: Some("T1".into()),
+            list_local_id: "l1".into(),
+            title: "Water plants".into(),
+            raw: raw.as_object().cloned().expect("object"),
+            extension: None,
+            sync_state: "synced".into(),
+        }
     }
 
     #[test]
-    fn a_rolled_recurring_completion_reports_the_next_due_date() {
-        let before = entity(json!({
-            "id": "T", "status": "notStarted", "recurrence": {},
+    fn an_update_sends_only_its_fields() {
+        let task = row(json!({ "id": "T1", "title": "Milk", "importance": "low" }));
+        let op = update_op(
+            "op-1".into(),
+            &task,
+            &json!({ "title": "Oat milk" }),
+            TaskAction::Edit,
+        );
+        assert!(matches!(op.change, LocalChange::Update));
+        assert_eq!(op.payload, json!({ "body": { "title": "Oat milk" } }));
+    }
+
+    #[test]
+    fn completing_a_recurring_task_records_its_due_date_before() {
+        let task = row(json!({
+            "id": "T1", "recurrence": { "pattern": {} },
             "dueDateTime": { "dateTime": "2026-09-24T00:00:00.0000000", "timeZone": "UTC" }
         }));
-        let after = entity(json!({
-            "id": "T", "status": "notStarted", "recurrence": {},
-            "dueDateTime": { "dateTime": "2026-10-01T00:00:00.0000000", "timeZone": "UTC" }
-        }));
-        let rolled = recurring_outcome(&before, &after, "local-T")
-            .expect("success")
-            .expect("rolled");
-        assert_eq!(rolled.next_due, "2026-10-01");
-        assert_eq!(rolled.id, "local-T");
-        let unmoved = recurring_outcome(&before, &before, "local-T").expect_err("didn't move");
-        assert_eq!(unmoved.kind, "outcome_unknown");
+        let body = json!({ "status": "completed" });
+        let op = update_op("op-1".into(), &task, &body, TaskAction::Complete);
+        assert_eq!(op.payload["recurring"], true);
+        assert_eq!(op.payload["due_before"], "2026-09-24");
+        let edit = update_op(
+            "op-2".into(),
+            &task,
+            &json!({ "title": "x" }),
+            TaskAction::Edit,
+        );
+        assert!(edit.payload.get("recurring").is_none());
     }
 
     #[test]
-    fn only_the_fields_we_change_count_as_touched() {
-        let before = entity(json!({ "title": "a", "status": "notStarted", "importance": "low" }));
-        let now = entity(json!({ "title": "b", "status": "notStarted", "importance": "low" }));
-        let status = [Field::Status("completed")];
-        assert!(touched_keys(&before, &now, &status, false).is_empty());
-        let title = [Field::Title("c".into())];
-        assert_eq!(touched_keys(&before, &now, &title, false), ["title"]);
+    fn a_task_not_yet_sent_has_graphs_defaults_under_what_it_sets() {
+        let raw =
+            new_task_raw(&json!({ "title": "Buy milk", "importance": "high", "extensions": [] }));
+        assert_eq!(raw["title"], "Buy milk");
+        assert_eq!(raw["importance"], "high");
+        assert_eq!(raw["status"], "notStarted");
+        assert!(raw.get("extensions").is_none());
+        let created = raw["createdDateTime"].as_str().expect("created");
+        assert!(
+            chrono::DateTime::parse_from_rfc3339(created).is_ok(),
+            "{created}"
+        );
+    }
+
+    #[test]
+    fn a_re_create_keeps_our_extension_data_but_takes_a_new_op_id() {
+        let kept = json!({
+            "@odata.type": "#microsoft.graph.openTypeExtension",
+            "id": "microsoft.graph.openTypeExtension.com.planetaryescape.mstodo",
+            "extensionName": EXTENSION_NAME,
+            "opId": "old",
+            "myDay": "2026-09-24"
+        });
+        let extension = our_extension("new", Some(&kept));
+        assert_eq!(extension["opId"], "new");
+        assert_eq!(extension["myDay"], "2026-09-24");
+        assert_eq!(
+            extension["@odata.type"],
+            "microsoft.graph.openTypeExtension"
+        );
+        assert!(extension.get("id").is_none());
     }
 }

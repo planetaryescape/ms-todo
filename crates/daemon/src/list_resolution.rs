@@ -34,6 +34,7 @@ impl ListRef {
         Candidate {
             id: self.local_id.clone(),
             name: self.name.clone(),
+            ..Candidate::default()
         }
     }
 }

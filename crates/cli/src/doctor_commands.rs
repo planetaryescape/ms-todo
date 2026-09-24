@@ -5,7 +5,9 @@
 
 use ms_todo_core::Paths;
 use ms_todo_graph::auth::{Authenticator, Endpoints};
-use ms_todo_protocol::{DoctorReport, Request, ResponseData, ScopeStatus, SyncMode, SyncState};
+use ms_todo_protocol::{
+    DoctorReport, OutboxDepth, Request, ResponseData, ScopeStatus, SyncMode, SyncState,
+};
 use serde::Serialize;
 
 use crate::daemon_client::{self, Inspection};
@@ -24,6 +26,8 @@ pub struct Doctor {
     pub scopes: Vec<Scope>,
     /// The most recent sync failure of any scope.
     pub last_error: Option<LastError>,
+    /// How many writes are in each outbox state.
+    pub outbox: Option<OutboxDepth>,
     /// What needs attention, for people.
     pub problems: Vec<String>,
 }
@@ -110,6 +114,7 @@ pub async fn doctor(paths: &Paths) -> Result<Doctor, CliError> {
             syncing: None,
             scopes: Vec::new(),
             last_error: None,
+            outbox: None,
             problems,
         });
     };
@@ -118,6 +123,7 @@ pub async fn doctor(paths: &Paths) -> Result<Doctor, CliError> {
         database_bytes,
         syncing,
         scopes,
+        outbox,
     } = report;
     let scopes: Vec<Scope> = scopes.into_iter().map(Scope::from).collect();
     let last_error = scopes
@@ -138,6 +144,19 @@ pub async fn doctor(paths: &Paths) -> Result<Doctor, CliError> {
             scopes.len()
         ));
     }
+    if outbox.unknown > 0 {
+        problems.push(format!(
+            "{} write(s) may or may not have reached Microsoft To Do ({} for over a day); don't \
+             resend them yourself: see `ms-todo outbox list --state unknown`",
+            outbox.unknown, outbox.flagged
+        ));
+    }
+    if outbox.failed > 0 {
+        problems.push(format!(
+            "{} write(s) were rejected and kept; see `ms-todo outbox list --state failed`",
+            outbox.failed
+        ));
+    }
     if scopes.is_empty() && !syncing {
         problems.push("nothing has synced yet; run `ms-todo sync --wait`".into());
     }
@@ -151,6 +170,7 @@ pub async fn doctor(paths: &Paths) -> Result<Doctor, CliError> {
         syncing: Some(syncing),
         scopes,
         last_error,
+        outbox: Some(outbox),
         problems,
     })
 }
@@ -244,6 +264,15 @@ impl Render for Doctor {
                 sync.push_str("; syncing now");
             }
             rows.push(("Sync", sync));
+        }
+        if let Some(outbox) = &self.outbox {
+            rows.push((
+                "Outbox",
+                format!(
+                    "{} pending, {} sending, {} unknown, {} failed, {} done",
+                    outbox.pending, outbox.inflight, outbox.unknown, outbox.failed, outbox.done
+                ),
+            ));
         }
         for scope in self
             .scopes

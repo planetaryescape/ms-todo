@@ -10,6 +10,7 @@
 mod graph_columns;
 mod idempotency;
 mod lists;
+mod outbox;
 mod pool;
 mod sync_state;
 mod tasks;
@@ -18,6 +19,9 @@ use serde_json::{Map, Value};
 
 pub use idempotency::{Claim, IDEMPOTENCY_WINDOW_SECS};
 pub use lists::{ListRow, ListsApplied, ListsPass};
+pub use outbox::{
+    LocalChange, NewOp, OpKind, OpState, OutboxRow, Restore, UNKNOWN_LOOKUP_SECS, apply_body,
+};
 pub use pool::Store;
 pub use sync_state::{Cursor, LISTS_SCOPE, ScopeRow, scope_list, tasks_scope};
 pub use tasks::{Hydration, SeenTask, TaskRow, TasksPass};
@@ -31,6 +35,10 @@ pub enum StoreError {
     Sqlx(#[from] sqlx::Error),
     #[error("the local database's migrations failed")]
     Migrate(#[from] sqlx::migrate::MigrateError),
+    /// The database has a migration this build doesn't know: a newer
+    /// ms-todo upgraded it.
+    #[error("this database was upgraded by a newer ms-todo; install the latest version")]
+    NewerDatabase,
     #[error("a row in the local database isn't valid: {0}")]
     Corrupt(String),
     #[error("{0}")]

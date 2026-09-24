@@ -16,6 +16,7 @@ mod daemon_commands;
 mod data_commands;
 mod doctor_commands;
 mod error;
+mod outbox_commands;
 mod output;
 mod output_schemas;
 mod schema_commands;
@@ -32,7 +33,7 @@ use ms_todo_graph::auth::{Authenticator, Endpoints};
 use ms_todo_protocol::TaskChange;
 
 pub use args::Cli;
-use args::{AuthCommand, Command, DaemonCommand, ListsCommand, TasksCommand};
+use args::{AuthCommand, Command, DaemonCommand, ListsCommand, OutboxCommand, TasksCommand};
 use error::CliError;
 use output::{OutputFormat, print_collection, print_error, print_raw, print_success};
 
@@ -117,6 +118,16 @@ async fn dispatch(command: Command, paths: &Paths, format: OutputFormat) -> Resu
         }
         Command::Tasks(TasksCommand::Edit(args)) => task_commands::edit(paths, args, format).await,
         Command::Raw(args) => print_raw(format, &task_commands::raw(paths, args).await?),
+        Command::Outbox(OutboxCommand::List { state }) => {
+            outbox_commands::list(paths, state, format).await
+        }
+        Command::Outbox(OutboxCommand::Retry { op }) => {
+            outbox_commands::retry(paths, op, format).await
+        }
+        Command::Outbox(OutboxCommand::Discard { op, yes }) => {
+            outbox_commands::discard(paths, op, yes, format).await
+        }
+        Command::Undo(args) => task_commands::undo(paths, args, format).await,
         Command::Daemon(DaemonCommand::Start) => {
             print_success(format, &daemon_commands::start(paths).await?)
         }

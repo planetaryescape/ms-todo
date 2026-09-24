@@ -2,8 +2,8 @@
 //! are dates only, written as midnight in the user's IANA zone (S11, D-027);
 //! a time goes to the reminder, which sets `isReminderOn`.
 
-use chrono::{NaiveDate, NaiveDateTime, Timelike};
-use ms_todo_core::{DATE_FORMAT, ErrorKind, local_date_time, local_due_date};
+use chrono::{NaiveDate, NaiveDateTime};
+use ms_todo_core::{DATE_FORMAT, ErrorKind, local_due_date};
 use ms_todo_protocol::{Clearable, Entity, ErrorPayload, Importance, NewTask, TaskEdit};
 use serde_json::{Map, Value, json};
 
@@ -24,19 +24,6 @@ pub(crate) enum Field {
 }
 
 impl Field {
-    /// The Graph properties this field writes, which a concurrent edit on
-    /// the server may also have touched.
-    pub fn graph_keys(&self) -> &'static [&'static str] {
-        match self {
-            Self::Title(_) => &["title"],
-            Self::Status(_) => &["status"],
-            Self::Importance(_) => &["importance"],
-            Self::Due(_) => &["dueDateTime"],
-            Self::Reminder(_) => &["isReminderOn", "reminderDateTime"],
-            Self::Body(_) => &["body"],
-        }
-    }
-
     fn write(&self, body: &mut Map<String, Value>, zone: &str) {
         match self {
             Self::Title(title) => {
@@ -66,27 +53,6 @@ impl Field {
                     "body".into(),
                     json!({ "content": text, "contentType": "text" }),
                 );
-            }
-        }
-    }
-
-    /// Whether `task`, as Graph returned it, already holds this value.
-    pub fn is_applied_to(&self, task: &Entity) -> bool {
-        match self {
-            Self::Title(title) => field(task, "title") == Some(title.as_str()),
-            Self::Status(status) => field(task, "status") == Some(*status),
-            Self::Importance(importance) => task.get("importance") == Some(&json!(importance)),
-            Self::Due(due) => graph_due_date(task) == *due,
-            Self::Reminder(None) => task.get("isReminderOn") != Some(&Value::Bool(true)),
-            Self::Reminder(Some(at)) => {
-                task.get("isReminderOn") == Some(&Value::Bool(true))
-                    && graph_reminder(task) == Some(*at)
-            }
-            Self::Body(content) => {
-                task.get("body")
-                    .and_then(|body| body.get("content"))
-                    .and_then(Value::as_str)
-                    == Some(content.as_str())
             }
         }
     }
@@ -172,21 +138,6 @@ pub(crate) fn graph_due_date(task: &Entity) -> Option<NaiveDate> {
     )
 }
 
-// A reminder keeps its time (S11); Graph returns it in UTC.
-fn graph_reminder(task: &Entity) -> Option<NaiveDateTime> {
-    let reminder = task.get("reminderDateTime")?;
-    local_date_time(
-        reminder.get("dateTime")?.as_str()?,
-        reminder.get("timeZone")?.as_str()?,
-    )?
-    .with_nanosecond(0)
-}
-
-/// A string property of a Graph entity.
-fn field<'a>(entity: &'a Entity, name: &str) -> Option<&'a str> {
-    entity.get(name).and_then(|value| value.as_str())
-}
-
 fn date_time_time_zone(date_time: &str, zone: &str) -> Value {
     json!({ "dateTime": date_time, "timeZone": zone })
 }
@@ -222,10 +173,6 @@ fn invalid(message: String) -> ErrorPayload {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    fn entity(value: Value) -> Entity {
-        value.as_object().cloned().expect("object")
-    }
 
     #[test]
     fn a_due_date_is_local_midnight_in_the_given_zone() {
@@ -268,29 +215,5 @@ mod tests {
         let error = edit_fields(&TaskEdit::default()).expect_err("empty");
         assert_eq!(error.kind, "invalid_input");
         assert!(title("  ").is_err());
-    }
-
-    #[test]
-    fn applied_values_are_recognised_in_graphs_shape() {
-        let task = entity(json!({
-            "title": "Buy milk",
-            "status": "completed",
-            "importance": "high",
-            "isReminderOn": false,
-            "dueDateTime": { "dateTime": "2026-09-26T00:00:00.0000000", "timeZone": "UTC" },
-            "body": { "content": "2 pints", "contentType": "text" }
-        }));
-        for field in [
-            Field::Title("Buy milk".into()),
-            Field::Status("completed"),
-            Field::Importance(Importance::High),
-            Field::Due(parse_due("2026-09-26").ok()),
-            Field::Reminder(None),
-            Field::Body("2 pints".into()),
-        ] {
-            assert!(field.is_applied_to(&task), "{field:?}");
-        }
-        assert!(!Field::Status("notStarted").is_applied_to(&task));
-        assert!(!Field::Due(None).is_applied_to(&task));
     }
 }

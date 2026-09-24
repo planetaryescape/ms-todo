@@ -50,11 +50,12 @@ expression: pretty
               "complete",
               "reopen",
               "edit",
-              "delete"
+              "delete",
+              "undo"
             ]
           },
           "items": {
-            "description": "Each task after the change; for delete, as it was",
+            "description": "Each task as ms-todo has it now, sync_state pending until the write reaches Microsoft To Do; for delete, as it was",
             "items": {
               "description": "A task: every field Microsoft Graph returns, with `id` replaced",
               "properties": {
@@ -120,7 +121,7 @@ expression: pretty
                   "type": "string"
                 },
                 "sync_state": {
-                  "description": "Always synced until offline writes arrive; never retry `unknown`",
+                  "description": "From its outbox writes: synced; pending (queued or being sent); unknown (a write may or may not have reached Microsoft To Do; never retry it, see `outbox list`); failed (a write was rejected and rolled back; see `outbox list`)",
                   "enum": [
                     "synced",
                     "pending",
@@ -151,6 +152,7 @@ expression: pretty
             "type": "array"
           },
           "op_id": {
+            "description": "What `undo` and `outbox list` know the change by",
             "type": "string"
           },
           "rolled": {
@@ -175,6 +177,10 @@ expression: pretty
           },
           "schema_version": {
             "const": 2
+          },
+          "undoes": {
+            "description": "For an undo: the op_id it undoes",
+            "type": "string"
           }
         },
         "required": [
@@ -205,7 +211,15 @@ expression: pretty
           },
           "list": {
             "properties": {
+              "created_at": {
+                "description": "For a task: when Graph created it",
+                "type": "string"
+              },
               "id": {
+                "type": "string"
+              },
+              "list_id": {
+                "description": "For a task: its list's local ID",
                 "type": "string"
               },
               "name": {

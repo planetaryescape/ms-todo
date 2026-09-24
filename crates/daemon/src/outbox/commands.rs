@@ -1,0 +1,212 @@
+//! `ms-todo outbox list|retry|discard` (docs/blueprint/07-cli.md): the
+//! user's view of the queue, and their way to resolve what the worker
+//! won't decide alone.
+//!
+//! - `retry` sends an `unknown` or `failed` operation again (a resend the
+//!   user chose: an `unknown` create may then exist twice), or a `pending`
+//!   one now. A `failed` one's local change is made again first.
+//! - `discard` drops an operation that isn't `done` or being sent. One that
+//!   never reached Graph (`pending`) has its local change undone; an
+//!   `unknown` create's task goes (Graph's copy, if it exists, arrives by
+//!   sync), and for any other `unknown` one the list is read whole on the
+//!   next pass. A `failed` one was rolled back already.
+
+use ms_todo_core::ErrorKind;
+use ms_todo_protocol::{ErrorPayload, OpError, OutboxOp, OutboxState, ResponseData};
+use ms_todo_store::{OpKind, OpState, OutboxRow, Restore, apply_body};
+
+use super::now;
+use super::rollback::{reconcile_list, undo_local};
+use crate::handlers::{State, error_payload, store_error};
+
+pub(crate) async fn list(
+    state: &State,
+    wanted: Option<OutboxState>,
+) -> Result<ResponseData, ErrorPayload> {
+    let wanted = match wanted {
+        None => None,
+        Some(wanted) => Some(store_state(wanted)?),
+    };
+    let ops = state.store.outbox(wanted).await.map_err(store_error)?;
+    let now = now();
+    Ok(ResponseData::Outbox {
+        items: ops.iter().map(|op| outbox_op(op, now)).collect(),
+    })
+}
+
+pub(crate) async fn retry(state: &State, op_id: &str) -> Result<ResponseData, ErrorPayload> {
+    let op = find(state, op_id).await?;
+    let restore = match op.state {
+        OpState::Pending | OpState::Unknown => Restore::Nothing,
+        OpState::Failed => redo_local(state, &op).await?,
+        OpState::Inflight => return Err(being_sent(&op)),
+        OpState::Done => return Err(already_done(&op)),
+    };
+    state
+        .store
+        .requeue(&op.op_id, &restore)
+        .await
+        .map_err(store_error)?;
+    state.outbox.wake();
+    current(state, &op.op_id).await
+}
+
+pub(crate) async fn discard(state: &State, op_id: &str) -> Result<ResponseData, ErrorPayload> {
+    let op = find(state, op_id).await?;
+    match op.state {
+        OpState::Inflight => return Err(being_sent(&op)),
+        OpState::Done => return Err(already_done(&op)),
+        OpState::Pending | OpState::Unknown | OpState::Failed => {}
+    }
+    if op.op == OpKind::Create && op.state != OpState::Failed {
+        let waiting = state
+            .store
+            .unresolved_dependents(&op.op_id)
+            .await
+            .map_err(store_error)?;
+        if !waiting.is_empty() {
+            return Err(error_payload(
+                ErrorKind::InvalidInput,
+                format!(
+                    "other changes to this task wait for it to be created; discard them first: {}",
+                    waiting.join(", ")
+                ),
+            ));
+        }
+    }
+    let current = state
+        .store
+        .task_any(&op.entity_local_id)
+        .await
+        .map_err(store_error)?
+        .map(|(row, _)| row.raw);
+    let (restore, reconcile) = match (op.state, op.op) {
+        (OpState::Pending, _) => (undo_local(&op, current.as_ref()), false),
+        (OpState::Unknown, OpKind::Create) => (Restore::Tombstone, false),
+        (OpState::Unknown, _) => (Restore::Nothing, true),
+        _ => (Restore::Nothing, false),
+    };
+    state
+        .store
+        .discard_op(&op.op_id, &restore)
+        .await
+        .map_err(store_error)?;
+    if reconcile {
+        reconcile_list(state, &op.list_local_id).await;
+    }
+    Ok(ResponseData::OutboxOp(outbox_op(&op, now())))
+}
+
+/// A `failed` operation's local change, made again for a retry.
+async fn redo_local(state: &State, op: &OutboxRow) -> Result<Restore, ErrorPayload> {
+    let row = state
+        .store
+        .task_any(&op.entity_local_id)
+        .await
+        .map_err(store_error)?;
+    let Some((row, _)) = row else {
+        return Err(error_payload(
+            ErrorKind::NotFound,
+            format!("task {} isn't cached any more", op.entity_local_id),
+        ));
+    };
+    Ok(match op.op {
+        // The task's content is still in its row, tombstoned.
+        OpKind::Create => Restore::Replace(row.raw),
+        OpKind::Update => {
+            let mut raw = row.raw;
+            apply_body(&mut raw, op.body());
+            Restore::Replace(raw)
+        }
+        OpKind::Delete => Restore::Tombstone,
+    })
+}
+
+async fn find(state: &State, op_id: &str) -> Result<OutboxRow, ErrorPayload> {
+    state
+        .store
+        .outbox_op(op_id)
+        .await
+        .map_err(store_error)?
+        .ok_or_else(|| {
+            error_payload(
+                ErrorKind::NotFound,
+                format!("no outbox operation {op_id:?}; see `ms-todo outbox list`"),
+            )
+        })
+}
+
+async fn current(state: &State, op_id: &str) -> Result<ResponseData, ErrorPayload> {
+    let op = find(state, op_id).await?;
+    Ok(ResponseData::OutboxOp(outbox_op(&op, now())))
+}
+
+fn being_sent(op: &OutboxRow) -> ErrorPayload {
+    error_payload(
+        ErrorKind::InvalidInput,
+        format!(
+            "operation {} is being sent right now; check again in a moment",
+            op.op_id
+        ),
+    )
+}
+
+fn already_done(op: &OutboxRow) -> ErrorPayload {
+    error_payload(
+        ErrorKind::InvalidInput,
+        format!(
+            "operation {} is done already; to reverse it, use `ms-todo undo {}`",
+            op.op_id, op.command_id
+        ),
+    )
+}
+
+fn store_state(state: OutboxState) -> Result<OpState, ErrorPayload> {
+    Ok(match state {
+        OutboxState::Pending => OpState::Pending,
+        OutboxState::Inflight => OpState::Inflight,
+        OutboxState::Unknown => OpState::Unknown,
+        OutboxState::Failed => OpState::Failed,
+        OutboxState::Done => OpState::Done,
+        OutboxState::Other => {
+            return Err(error_payload(
+                ErrorKind::Unsupported,
+                "this daemon doesn't know that state; restart it with `ms-todo daemon stop`".into(),
+            ));
+        }
+    })
+}
+
+/// An operation as clients see it.
+pub(super) fn outbox_op(op: &OutboxRow, now: i64) -> OutboxOp {
+    OutboxOp {
+        op_id: op.op_id.clone(),
+        command_id: op.command_id.clone(),
+        action: op.action.clone(),
+        task_id: op.entity_local_id.clone(),
+        list_id: op.list_local_id.clone(),
+        title: op.title.clone(),
+        state: match op.state {
+            OpState::Pending => OutboxState::Pending,
+            OpState::Inflight => OutboxState::Inflight,
+            OpState::Unknown => OutboxState::Unknown,
+            OpState::Failed => OutboxState::Failed,
+            OpState::Done => OutboxState::Done,
+        },
+        attempts: u32::try_from(op.attempts).unwrap_or(u32::MAX),
+        created_at: op.created_at,
+        next_attempt_at: (op.state == OpState::Pending && op.next_attempt_at > now)
+            .then_some(op.next_attempt_at),
+        sent_at: op.sent_at,
+        unknown_since: op.unknown_since,
+        depends_on: op.depends_on.clone(),
+        undoes: op.undoes.clone(),
+        last_error: op
+            .last_error
+            .clone()
+            .map(|(kind, message)| OpError { kind, message }),
+        note: op.note.clone(),
+        flagged: op.is_flagged(now),
+        changes: op.body().clone(),
+    }
+}

@@ -18,8 +18,10 @@
 //!
 //! Each scope gets the store's `local_rev` from `begin_scope`, before it
 //! fetches, so a write the daemon makes meanwhile is never undone or
-//! tombstoned by a stale page. That's rung 3a's "pending work"; the outbox
-//! adds its operations in rung 4.
+//! tombstoned by a stale page, and a task with an outbox operation
+//! `pending`, `inflight` or `unknown` is left alone altogether (04). When
+//! a list is found deleted, its queued operations fail with
+//! `WriteRejected`.
 
 use std::collections::HashSet;
 use std::sync::Arc;
@@ -36,6 +38,7 @@ use ms_todo_store::{
 use super::hydration::hydrate;
 use super::scheduler::PassOutcome;
 use crate::entities::{EXTENSION_NAME, split_extension};
+use crate::events::Events;
 use crate::handlers::{graph_error, store_error};
 
 /// Lists synced at once. The Graph client's own cap (4, S9) bounds the
@@ -45,6 +48,7 @@ const LISTS_AT_ONCE: usize = 4;
 pub(crate) struct PassContext {
     pub graph: Arc<GraphClient>,
     pub store: Arc<Store>,
+    pub events: Events,
 }
 
 pub(super) async fn run_pass(context: &PassContext, report: impl Fn(SyncProgress)) -> PassOutcome {
@@ -151,7 +155,21 @@ async fn sync_lists(context: &PassContext) -> Result<u64, ErrorPayload> {
         })
         .await
         .map_err(store_error)?;
+    rejected_with_list(context, &applied.failed_ops).await;
     Ok(u64::try_from(applied.changed).unwrap_or(0))
+}
+
+/// Say that `op_ids`, queued for a list found deleted, were rejected.
+async fn rejected_with_list(context: &PassContext, op_ids: &[String]) {
+    for op_id in op_ids {
+        let Ok(Some(op)) = context.store.outbox_op(op_id).await else {
+            continue;
+        };
+        let (kind, message) = op.last_error.clone().unwrap_or_default();
+        context
+            .events
+            .write_rejected(op_id, &op.entity_local_id, &kind, &message);
+    }
 }
 
 async fn sync_list(context: &PassContext, list: &ListRow) -> Result<u64, ErrorPayload> {
@@ -302,7 +320,10 @@ async fn list_not_found(
                 .remove_list(list_graph_id, rev)
                 .await
                 .map_err(store_error)?;
-            Ok(u64::from(removed))
+            if let Some(failed) = &removed {
+                rejected_with_list(context, failed).await;
+            }
+            Ok(u64::from(removed.is_some()))
         }
         _ => Err(fail(&context.store, scope, failure).await),
     }

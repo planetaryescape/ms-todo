@@ -1,7 +1,7 @@
 //! `--idempotency-key` through the real binary and daemon: a repeat gets
-//! the first result without reaching Graph again, the same key with a
-//! different request exits 2, and a failure that changed nothing frees the
-//! key (docs/blueprint/04-sync-cache.md#instant-local-writes).
+//! the first result without queueing it again, the same key with a
+//! different request exits 2, and a request that failed, which queued
+//! nothing, frees the key (docs/blueprint/04-sync-cache.md#instant-local-writes).
 
 mod support;
 
@@ -46,10 +46,13 @@ async fn a_repeat_with_the_same_key_returns_the_first_result_without_resending()
     ];
 
     let first = env.json(&add);
+    env.settled();
     let second = env.json(&add);
 
     assert_eq!(first, second, "the same op_id and the same task");
+    env.settled();
     assert_eq!(graph.writes().await.len(), 1);
+    assert_eq!(env.outbox().len(), 1, "queued once");
 
     let mut done = task("T1", "Buy milk", "W/\"e2\"");
     done["status"] = json!("completed");
@@ -66,6 +69,7 @@ async fn a_repeat_with_the_same_key_returns_the_first_result_without_resending()
         "agent-run-2",
     ];
     assert_eq!(env.json(&complete), env.json(&complete));
+    env.settled();
     assert_eq!(graph.writes().await.len(), 2);
 }
 
@@ -99,42 +103,45 @@ async fn the_same_key_for_a_different_request_exits_2() {
             .is_some_and(|message| message.contains("different request")),
         "{error}"
     );
+    env.settled();
     assert_eq!(graph.writes().await.len(), 1);
 }
 
 #[tokio::test]
-async fn a_failure_that_changed_nothing_frees_the_key() {
+async fn a_request_that_failed_frees_the_key() {
     let mut env = Env::new();
     let graph = graph(&mut env).await;
-    Mock::given(method("POST"))
-        .and(path(LIST))
-        .and(body_partial_json(json!({ "title": "Buy eggs" })))
-        .respond_with(
-            ResponseTemplate::new(400)
-                .set_body_json(json!({ "error": { "code": "invalidRequest", "message": "no" } })),
-        )
-        .up_to_n_times(1)
-        .mount(&graph.server)
-        .await;
-    Mock::given(method("POST"))
-        .and(path(LIST))
-        .and(body_partial_json(json!({ "title": "Buy eggs" })))
-        .respond_with(
-            ResponseTemplate::new(201).set_body_json(task("T-eggs", "Buy eggs", "W/\"x\"")),
-        )
-        .mount(&graph.server)
-        .await;
-    let add = ["tasks", "add", "Buy eggs", "--idempotency-key", "k"];
+    let add = [
+        "tasks",
+        "add",
+        "Buy bread",
+        "--list",
+        "Groceries",
+        "--idempotency-key",
+        "k",
+    ];
 
-    env.cmd().args(add).assert().code(5);
+    // No such list yet: nothing is queued.
+    env.failure(&add, 3);
+    graph.edit(|data| {
+        data.lists.push(list("L-groc", "Groceries", "none"));
+        data.tasks.insert("L-groc".into(), Vec::new());
+    });
+    env.synced();
+    Mock::given(method("POST"))
+        .and(path("/v1.0/me/todo/lists/L-groc/tasks"))
+        .respond_with(ResponseTemplate::new(201).set_body_json(task("T-b", "Buy bread", "W/\"b\"")))
+        .mount(&graph.server)
+        .await;
     let retried = env.json(&add);
 
-    assert_eq!(retried["items"][0]["graph_id"], "T-eggs");
-    assert_eq!(graph.writes().await.len(), 2);
+    assert_eq!(retried["action"], "add");
+    env.settled();
+    assert_eq!(graph.writes().await.len(), 1);
 }
 
 #[tokio::test]
-async fn a_create_graph_took_but_the_cache_couldnt_record_keeps_its_key_as_outcome_unknown() {
+async fn a_write_the_cache_cant_queue_reaches_nothing_and_frees_its_key() {
     let mut env = Env::new();
     let graph = graph(&mut env).await;
     env.synced();
@@ -156,11 +163,15 @@ async fn a_create_graph_took_but_the_cache_couldnt_record_keeps_its_key_as_outco
     .expect("trigger");
     let add = ["tasks", "add", "Buy bread", "--idempotency-key", "k"];
 
-    let first = env.failure(&add, 1);
-    let repeat = env.failure(&add, 1);
+    let refused = env.failure(&add, 1);
+    assert_eq!(refused["error"]["kind"], "internal", "{refused}");
+    assert!(env.outbox().is_empty(), "nothing queued");
 
-    assert_eq!(first["error"]["kind"], "outcome_unknown", "{first}");
-    assert!(first["error"]["op_id"].is_string());
-    assert_eq!(repeat, first, "the repeat gets the recorded result");
-    assert_eq!(graph.writes().await.len(), 1, "no second POST");
+    sqlx::query("DROP TRIGGER refuse_tasks")
+        .execute(&mut connection)
+        .await
+        .expect("drop trigger");
+    env.json(&add);
+    env.settled();
+    assert_eq!(graph.writes().await.len(), 1, "one POST, from the retry");
 }

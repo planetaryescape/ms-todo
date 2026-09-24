@@ -13,29 +13,36 @@ use serde_json::{Value, json};
 /// Our open extension (docs/blueprint/05-custom-features.md).
 pub(crate) const EXTENSION_NAME: &str = "com.planetaryescape.mstodo";
 
-/// Rung 3a writes synchronously, so everything cached is in step with Graph.
-/// `pending`, `unknown` and `failed` arrive with the outbox (rung 4).
-const SYNCED: &str = "synced";
-
 pub(crate) fn list_entity(row: &ListRow) -> Entity {
     let mut entity = row.raw.clone();
-    identify(&mut entity, &row.local_id, row.graph_id.as_deref());
+    // Lists are only ever changed through Graph so far.
+    identify(
+        &mut entity,
+        &row.local_id,
+        row.graph_id.as_deref(),
+        "synced",
+    );
     add_extension(&mut entity, row.extension.as_ref());
     entity
 }
 
 pub(crate) fn task_entity(row: &TaskRow) -> Entity {
     let mut entity = row.raw.clone();
-    identify(&mut entity, &row.local_id, row.graph_id.as_deref());
+    identify(
+        &mut entity,
+        &row.local_id,
+        row.graph_id.as_deref(),
+        &row.sync_state,
+    );
     entity.insert("list_id".into(), json!(row.list_local_id));
     add_extension(&mut entity, row.extension.as_ref());
     entity
 }
 
-fn identify(entity: &mut Entity, local_id: &str, graph_id: Option<&str>) {
+fn identify(entity: &mut Entity, local_id: &str, graph_id: Option<&str>, sync_state: &str) {
     entity.insert("id".into(), json!(local_id));
     entity.insert("graph_id".into(), json!(graph_id));
-    entity.insert("sync_state".into(), json!(SYNCED));
+    entity.insert("sync_state".into(), json!(sync_state));
 }
 
 fn add_extension(entity: &mut Entity, extension: Option<&Value>) {
@@ -89,12 +96,13 @@ mod tests {
             title: "Buy milk".into(),
             raw: entity(json!({ "id": "AAMk=", "title": "Buy milk" })),
             extension: Some(json!({ "extensionName": EXTENSION_NAME, "opId": "op-1" })),
+            sync_state: "pending".into(),
         };
         let shown = task_entity(&row);
         assert_eq!(shown["id"], "local-1");
         assert_eq!(shown["graph_id"], "AAMk=");
         assert_eq!(shown["list_id"], "list-1");
-        assert_eq!(shown["sync_state"], "synced");
+        assert_eq!(shown["sync_state"], "pending");
         assert_eq!(shown["extensions"][0]["opId"], "op-1");
     }
 

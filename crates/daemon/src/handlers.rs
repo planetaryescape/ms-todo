@@ -1,6 +1,6 @@
 //! What each request does. Reads come from the cache (D-034); writes go
-//! synchronously to Graph and then to the cache; `raw` goes straight to
-//! Graph.
+//! to the cache and the outbox, which sends them to Graph; `raw` goes
+//! straight to Graph.
 
 use std::sync::Arc;
 
@@ -15,16 +15,21 @@ use ms_todo_store::{LISTS_SCOPE, Store, StoreError};
 use serde_json::Value;
 
 use crate::doctor::doctor;
+use crate::events::Events;
 use crate::idempotency::{fingerprint, run_once};
+use crate::outbox::Outbox;
 use crate::reads::{list_lists, list_tasks};
 use crate::sync::{PassOutcome, Syncer};
 use crate::task_writes::{add_task, change_tasks};
+use crate::undo::undo;
 
 pub(crate) struct State {
     pub auth: Arc<Authenticator>,
     pub graph: Arc<GraphClient>,
     pub store: Arc<Store>,
     pub syncer: Syncer,
+    pub outbox: Outbox,
+    pub events: Events,
     pub instance: String,
     pub started_at: i64,
 }
@@ -64,9 +69,13 @@ pub(crate) async fn handle(state: &State, request: Request) -> Response {
             body,
             op_id,
         } => raw_write(state, method, &path, body, op_id).await,
-        request @ (Request::AddTask { .. } | Request::ChangeTasks { .. }) => {
+        request
+        @ (Request::AddTask { .. } | Request::ChangeTasks { .. } | Request::Undo { .. }) => {
             mutate(state, request).await
         }
+        Request::OutboxList { state: wanted } => crate::outbox::list(state, wanted).await,
+        Request::OutboxRetry { op_id } => crate::outbox::retry(state, &op_id).await,
+        Request::OutboxDiscard { op_id } => crate::outbox::discard(state, &op_id).await,
         Request::Bearer => match state.auth.valid_token().await {
             Ok(token) => Ok(ResponseData::Bearer {
                 access_token: token.access_token,
@@ -84,8 +93,8 @@ pub(crate) async fn handle(state: &State, request: Request) -> Response {
     result.into()
 }
 
-/// `tasks add|complete|reopen|edit|delete`, run at most once per
-/// `--idempotency-key` (a dry run never uses the key).
+/// `tasks add|complete|reopen|edit|delete` and `undo`, run at most once
+/// per `--idempotency-key` (a dry run never uses the key).
 async fn mutate(state: &State, request: Request) -> Result<ResponseData, ErrorPayload> {
     let fingerprint = fingerprint(&request);
     match request {
@@ -119,6 +128,23 @@ async fn mutate(state: &State, request: Request) -> Result<ResponseData, ErrorPa
                 op_id.clone(),
             );
             run_once(state, key.as_deref(), &fingerprint, &op_id, operation).await
+        }
+        Request::Undo {
+            target,
+            copy,
+            op_id,
+            idempotency_key,
+        } => {
+            let op_id = op_id.unwrap_or_else(new_op_id);
+            let operation = undo(state, target, copy.as_deref(), op_id.clone());
+            run_once(
+                state,
+                idempotency_key.as_deref(),
+                &fingerprint,
+                &op_id,
+                operation,
+            )
+            .await
         }
         _ => Err(error_payload(
             ErrorKind::Internal,

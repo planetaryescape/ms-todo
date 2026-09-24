@@ -5,7 +5,7 @@ description: Read, add, complete, reopen, edit and delete Microsoft To Do tasks 
 
 # ms-todo
 
-**Skill v1, for ms-todo rung 3b** (instant reads from a local cache kept live by delta sync, synchronous writes; no offline writes, undo or quick-add parsing yet).
+**Skill v2, for ms-todo rung 4** (instant reads from a local cache kept live by delta sync; instant writes that queue offline and are never dropped; undo. No quick-add parsing yet).
 
 `ms-todo` is a terminal client for Microsoft To Do. The CLI is its canonical surface: drive it with shell commands. `mst` is an official alias for the same binary, so either name works; prefer `ms-todo` in scripts because it's more descriptive. A background daemon talks to Microsoft Graph and keeps a local cache; the first command starts it. Reads come from the cache, which the daemon refreshes on start, every 20 seconds while ms-todo is in use (every 5 minutes otherwise) and on `ms-todo sync`.
 
@@ -58,12 +58,36 @@ ms-todo tasks list --list "Groceries" --format ids | ms-todo tasks complete - --
 
 - Due dates are dates only (`YYYY-MM-DD`). A time goes in `--reminder` (`YYYY-MM-DDTHH:MM`, local time).
 - Without `--list`, `tasks add` goes to the default "Tasks" list.
-- Every change returns `{"schema_version", "op_id", "action", "items": [...], "list_ids": [...]}` with each task as Graph returned it, in the same shape as `tasks list` (local `id`, `graph_id`), and the cache is updated at once.
-- Completing a **recurring** task keeps the same task open with its due date moved on, and Microsoft To Do adds the completed occurrence as a new task. The result lists it under `rolled` with `next_due`. That's success, not a failure.
+- Every change returns at once, even with no network: `{"schema_version", "op_id", "action", "items": [...], "list_ids": [...]}`, each task as ms-todo has it now, in the same shape as `tasks list`. The change is queued in the outbox, and the daemon sends it to Microsoft To Do in the background. Until it gets there the task's `sync_state` is `pending`, and a new task's `graph_id` is `null`. Its local `id` never changes, so you can edit or complete it straight away.
+- Completing a **recurring** task keeps the same task open with its due date moved on, and Microsoft To Do adds the completed occurrence as a new task. Once synced, `tasks list` shows the new due date. That's success, not a failure.
+
+## `sync_state`: has the change reached Microsoft To Do?
+
+Every task carries `sync_state`:
+
+| Value | Meaning | What to do |
+|---|---|---|
+| `synced` | Microsoft To Do has it | Nothing |
+| `pending` | Queued or being sent; offline, it waits for the network | Nothing. It goes by itself |
+| `unknown` | It was sent, but no answer said whether Microsoft To Do applied it | **Never retry it or add the task again.** See below |
+| `failed` | Microsoft To Do rejected it; the change was rolled back and kept | Tell the user; see `ms-todo outbox list --state failed` |
+
+`ms-todo outbox list --format json` shows every queued change (`op_id`, `state`, `action`, `changes`, `last_error`, `note`). A rejected add keeps the task's content in `changes`, so nothing is lost: the user can add it again, for example in another list if its list was deleted.
+
+## Undo
+
+```bash
+ms-todo undo --format json            # the latest change not undone yet
+ms-todo undo <OP_ID> --format json    # a change by the op_id it returned
+```
+
+Undo queues the reverse change, which is itself a change with its own `op_id` (so `undo <that op_id>` redoes). Undoing an add deletes the task; an edit, complete or reopen puts back the fields it changed; a delete creates the task again, with the same `id` and a new `graph_id`. A change still `unknown` can't be undone yet.
+
+Undoing a **recurring** completion deletes the completed copy Microsoft To Do made, so you must name it: without `--copy`, `undo` exits 2 with the copies in `candidates` (`id`, `name`, `created_at`, `list_id`). Show them to the user and let them pick, then run `ms-todo undo <OP_ID> --copy <ID> --format json`. Never pick one yourself. "can't undo yet" means the copy hasn't synced: `ms-todo sync --wait`, then try again.
 
 ## Make a change safe to repeat
 
-Pass `--idempotency-key <KEY>` on every change you might need to repeat, with a key unique to that change (for example one you generate per task you add). Repeating the command with the same key returns the first result for 24 hours and doesn't change anything again. The same key with a different change exits 2. A failure that changed nothing frees the key, so you can retry with it.
+Pass `--idempotency-key <KEY>` on every change you might need to repeat, with a key unique to that change (for example one you generate per task you add). Repeating the command with the same key returns the first result and doesn't queue anything again, for as long as the change is unresolved and 24 hours after. The same key with a different change exits 2. A change that failed before it was queued (bad input, not found) frees the key, so you can retry with it.
 
 ```bash
 ms-todo tasks add "Buy milk" --list "Groceries" --idempotency-key add-buy-milk-7f3a --format json
@@ -82,28 +106,27 @@ ms-todo tasks delete <ID> --dry-run --format json
 | Code | Meaning | What to do |
 |---|---|---|
 | 0 | Success | |
-| 1 | Network, Graph 5xx, or `outcome_unknown` | See below for `outcome_unknown`; otherwise report it |
+| 1 | Network, Graph 5xx, `outcome_unknown`, or `database_too_new` | See below for `outcome_unknown`; `database_too_new` means a newer ms-todo upgraded the database, so ask the user to install the latest version; otherwise report it |
 | 2 | Invalid input or an ambiguous name | Fix the arguments, or pick from `candidates` |
 | 3 | Not found | Re-read the IDs with `tasks list` |
 | 4 | Sign-in needed | Ask the user to run `ms-todo auth login` |
-| 5 | Conflict or rejected by Graph | Someone changed the task meanwhile; re-read it and ask |
+| 5 | Conflict or rejected by Graph | Someone changed the task meanwhile; re-read it and ask. (Changes are queued, so a rejection usually shows later as `sync_state: "failed"` instead) |
 | 6 | Rate limited | Wait, then try once more |
 | 7 | Not supported | |
 
-## Never retry `outcome_unknown` automatically
+## Never retry `unknown` (or `outcome_unknown`)
 
-Error kind `outcome_unknown` means the request reached Microsoft Graph but no answer said whether it was applied. Retrying a create can make a duplicate, and retrying a recurring completion can complete the next occurrence too.
+`sync_state: "unknown"` (and outbox state `unknown`) means a change reached Microsoft Graph but no answer said whether it was applied. Retrying a create can make a duplicate, and retrying a recurring completion can complete the next occurrence too.
 
-- Don't retry. Run `ms-todo sync --wait --format json`, then `ms-todo tasks list --list <list> --format json`, and look for the task.
-- A created task carries the error's `op_id` in its `com.planetaryescape.mstodo` extension, which `tasks list` shows under `extensions` once synced: look for an item whose `extensions[0].opId` equals the `op_id`.
-- If it isn't there, tell the user and let them decide whether to add it again. A retry with the same `--idempotency-key` doesn't help here: it returns the same `outcome_unknown`.
+- Don't retry, don't add the task again, and don't `ms-todo outbox retry` it yourself. The daemon looks for the outcome after every sync for 24 hours: a created task carries the change's `op_id` in its extension, and when the daemon finds it, the task becomes `synced` by itself.
+- After 24 hours it's `flagged` in `ms-todo outbox list`. Tell the user; they decide between `ms-todo outbox retry <OP>` (send it again, maybe twice) and `ms-todo outbox discard <OP> --yes` (drop it).
 
-`ms-todo` itself never retries a change after it may have reached Graph.
+Error kind `outcome_unknown` on a command itself means the CLI lost the daemon's answer: the change may or may not have been queued. Check `ms-todo outbox list --format json` for its `op_id` before doing anything else.
 
 ## Debugging
 
 ```bash
-ms-todo doctor --format json                # sign-in, daemon, cache, each list's sync state and last error
+ms-todo doctor --format json                # sign-in, daemon, cache, each list's sync state, the outbox by state
 ms-todo daemon status --format json
 ms-todo raw GET /me/todo/lists              # any Graph v1.0 path
 ms-todo raw PATCH <path> --body '<json>' --yes   # sent once, can't be undone

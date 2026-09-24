@@ -38,6 +38,11 @@ pub enum Command {
     /// Tasks in a list
     #[command(subcommand)]
     Tasks(TasksCommand),
+    /// Writes waiting to reach Microsoft To Do, and those that didn't
+    #[command(subcommand)]
+    Outbox(OutboxCommand),
+    /// Reverse a change: the last one by default, or the one with this op_id
+    Undo(UndoArgs),
     /// Refresh the local cache from Microsoft To Do
     Sync {
         /// Wait until a sync that started after this command has finished
@@ -58,6 +63,56 @@ pub enum Command {
     /// Start, stop or check the background daemon that talks to Microsoft
     #[command(subcommand)]
     Daemon(DaemonCommand),
+}
+
+#[derive(Debug, Subcommand)]
+pub enum OutboxCommand {
+    /// Every queued write, newest first, with its state: pending, inflight,
+    /// unknown (don't resend it yourself), failed or done
+    List {
+        /// Only writes in this state
+        #[arg(long, value_enum)]
+        state: Option<OutboxStateArg>,
+    },
+    /// Send a write again: an unknown one (it may then happen twice), a
+    /// failed one, or a pending one now
+    Retry {
+        /// The write's op_id from `outbox list`
+        #[arg(value_name = "OP")]
+        op: String,
+    },
+    /// Drop a write that isn't done. One that never reached Microsoft To Do
+    /// is undone locally. Asks first in a terminal; anywhere else it needs --yes
+    Discard {
+        /// The write's op_id from `outbox list`
+        #[arg(value_name = "OP")]
+        op: String,
+        /// Discard without asking
+        #[arg(long)]
+        yes: bool,
+    },
+}
+
+#[derive(Clone, Copy, Debug, ValueEnum)]
+pub enum OutboxStateArg {
+    Pending,
+    Inflight,
+    Unknown,
+    Failed,
+    Done,
+}
+
+#[derive(Debug, Args)]
+pub struct UndoArgs {
+    /// The op_id a change printed [default: the latest change not undone yet]
+    #[arg(value_name = "OP_ID")]
+    pub op_id: Option<String>,
+    /// For a completed recurring task: the ID of the completed copy to
+    /// delete, from the candidates `undo` lists without it
+    #[arg(long, value_name = "ID")]
+    pub copy: Option<String>,
+    #[command(flatten)]
+    pub idempotency: IdempotencyArgs,
 }
 
 #[derive(Debug, Subcommand)]

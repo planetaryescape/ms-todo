@@ -113,6 +113,33 @@ expression: pretty
           }
         ]
       },
+      "outbox": {
+        "description": "How many writes are in each state; flagged are unknown for over 24 hours",
+        "properties": {
+          "done": {
+            "type": "integer"
+          },
+          "failed": {
+            "type": "integer"
+          },
+          "flagged": {
+            "type": "integer"
+          },
+          "inflight": {
+            "type": "integer"
+          },
+          "pending": {
+            "type": "integer"
+          },
+          "unknown": {
+            "type": "integer"
+          }
+        },
+        "type": [
+          "object",
+          "null"
+        ]
+      },
       "problems": {
         "items": {
           "type": "string"

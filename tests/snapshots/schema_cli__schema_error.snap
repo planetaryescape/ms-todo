@@ -17,7 +17,15 @@ expression: error
           "description": "What an ambiguous name matched; pick one ID",
           "items": {
             "properties": {
+              "created_at": {
+                "description": "For a task: when Graph created it",
+                "type": "string"
+              },
               "id": {
+                "type": "string"
+              },
+              "list_id": {
+                "description": "For a task: its list's local ID",
                 "type": "string"
               },
               "name": {
@@ -52,7 +60,8 @@ expression: error
             "api",
             "decode",
             "daemon_unavailable",
-            "internal"
+            "internal",
+            "database_too_new"
           ]
         },
         "message": {

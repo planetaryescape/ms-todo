@@ -19,7 +19,13 @@ use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
 
 /// Bumped on any change an older peer can't read.
-pub const PROTOCOL_VERSION: u32 = 2;
+pub const PROTOCOL_VERSION: u32 = 3;
+
+/// The daemon's exit status when its database was upgraded by a newer
+/// ms-todo (a migration this build doesn't know). The client that started
+/// it reports `database_too_new` instead of the daemon's log (78 is
+/// sysexits' `EX_CONFIG`).
+pub const EXIT_DATABASE_TOO_NEW: u8 = 78;
 
 /// A list or task: Graph's JSON with every field kept, except that `id` is
 /// ms-todo's local ID, with Graph's beside it as `graph_id`, and
@@ -112,6 +118,32 @@ pub enum Request {
         #[serde(default)]
         idempotency_key: Option<String>,
     },
+    /// The outbox's operations, newest first, optionally only those in
+    /// `state`.
+    OutboxList {
+        #[serde(default)]
+        state: Option<OutboxState>,
+    },
+    /// Send an `unknown` or `failed` operation again (a resend the user
+    /// chose), or a `pending` one now.
+    OutboxRetry { op_id: String },
+    /// Drop an operation that isn't `done` or `inflight`, undoing its local
+    /// change where it never reached Graph.
+    OutboxDiscard { op_id: String },
+    /// Queue the inverse of `target` (an `op_id` from a mutation; `None`
+    /// is the latest one not undone yet). Undoing a recurring completion
+    /// needs `copy`, the completed copy to delete.
+    Undo {
+        #[serde(default)]
+        target: Option<String>,
+        #[serde(default)]
+        copy: Option<String>,
+        /// The undo's own `op_id`, chosen by the client (see `AddTask`).
+        #[serde(default)]
+        op_id: Option<String>,
+        #[serde(default)]
+        idempotency_key: Option<String>,
+    },
     /// A valid access token, for `auth bearer --reveal-secret`.
     Bearer,
     /// Stop the daemon. It answers `Ack`, then exits.
@@ -163,6 +195,13 @@ pub enum ResponseData {
     Plan(Plan),
     /// What a mutation did.
     Applied(Applied),
+    /// Outbox operations, newest first.
+    Outbox {
+        items: Vec<OutboxOp>,
+    },
+    /// The operation `outbox retry` or `outbox discard` acted on, as it is
+    /// now (as it was, for a discard).
+    OutboxOp(OutboxOp),
     Bearer {
         access_token: String,
         /// Unix seconds.
@@ -239,6 +278,92 @@ pub struct DoctorReport {
     /// Whether a sync pass is running now.
     pub syncing: bool,
     pub scopes: Vec<ScopeStatus>,
+    #[serde(default)]
+    pub outbox: OutboxDepth,
+}
+
+/// How many outbox operations are in each state.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct OutboxDepth {
+    pub pending: u64,
+    pub inflight: u64,
+    pub unknown: u64,
+    pub failed: u64,
+    pub done: u64,
+    /// `unknown` for over 24 hours, or with no way to be attributed: the
+    /// user resolves them with `outbox retry` or `outbox discard`.
+    pub flagged: u64,
+}
+
+/// An outbox operation's state (docs/blueprint/02-data-model.md#outbox-semantics).
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum OutboxState {
+    /// Waiting to be sent, or to be sent again after a temporary failure.
+    Pending,
+    /// Being sent now.
+    Inflight,
+    /// Sent, but nothing says whether Graph applied it. Never resent by
+    /// itself.
+    Unknown,
+    /// Graph rejected it for good; its local change was rolled back.
+    Failed,
+    Done,
+    /// A state from a newer daemon.
+    #[serde(other)]
+    Other,
+}
+
+/// One outbox operation: one change to one task.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct OutboxOp {
+    pub op_id: String,
+    /// The `op_id` the mutation returned. A change to several tasks has one
+    /// operation per task, `<op_id>` then `<op_id>.1`, `<op_id>.2`, ….
+    pub command_id: String,
+    /// `add`, `edit`, `complete`, `reopen` or `delete`.
+    pub action: String,
+    /// The task's local ID.
+    pub task_id: String,
+    pub list_id: String,
+    /// The task's title as ms-todo has it.
+    #[serde(default)]
+    pub title: Option<String>,
+    pub state: OutboxState,
+    pub attempts: u32,
+    /// Unix seconds.
+    pub created_at: i64,
+    #[serde(default)]
+    pub next_attempt_at: Option<i64>,
+    #[serde(default)]
+    pub sent_at: Option<i64>,
+    #[serde(default)]
+    pub unknown_since: Option<i64>,
+    /// The operation this one waits for.
+    #[serde(default)]
+    pub depends_on: Option<String>,
+    /// For an undo: the `op_id` it undoes.
+    #[serde(default)]
+    pub undoes: Option<String>,
+    #[serde(default)]
+    pub last_error: Option<OpError>,
+    /// What was seen while it was `unknown`, for the user.
+    #[serde(default)]
+    pub note: Option<String>,
+    /// It needs the user: `unknown` for over 24 hours.
+    #[serde(default)]
+    pub flagged: bool,
+    /// What it sends: the Graph fields, so a failed add keeps the task's
+    /// content.
+    #[serde(default)]
+    pub changes: Value,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct OpError {
+    /// An `ms_todo_core::ErrorKind` string.
+    pub kind: String,
+    pub message: String,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -288,10 +413,16 @@ pub struct ScopeError {
 }
 
 /// A list or task by its local ID and display name (a task's title).
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Candidate {
     pub id: String,
     pub name: String,
+    /// For a task: when Graph created it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub created_at: Option<String>,
+    /// For a task: its list's local ID.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub list_id: Option<String>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -375,6 +506,7 @@ pub enum TaskAction {
     Reopen,
     Edit,
     Delete,
+    Undo,
     #[serde(other)]
     Unknown,
 }
@@ -421,6 +553,9 @@ pub struct Applied {
     /// date on, and made a completed copy with a new ID (S12).
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub rolled: Vec<Rolled>,
+    /// For an undo: the `op_id` it undoes.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub undoes: Option<String>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -458,6 +593,16 @@ pub enum Event {
     /// Progress of the sync a `Sync { wait: true }` request waits for,
     /// sent with that request's message ID.
     SyncProgress(SyncProgress),
+    /// Graph rejected an outbox operation for good: it's `failed`, and its
+    /// local change was rolled back.
+    WriteRejected(WriteRejected),
     #[serde(other)]
     Unknown,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct WriteRejected {
+    pub op_id: String,
+    pub task_id: String,
+    pub error: OpError,
 }

@@ -120,9 +120,16 @@ pub fn print_applied(format: OutputFormat, applied: &Applied) -> Result<(), CliE
         OutputFormat::Table => {
             let mut stdout = std::io::stdout().lock();
             let done = past_tense(applied.action);
+            if let Some(undone) = &applied.undoes {
+                writeln!(stdout, "Undoing {undone}:")?;
+            }
             for task in &applied.items {
                 let id = text(task, "id");
-                writeln!(stdout, "{done} {:?}  {id}", text(task, "title"))?;
+                let state = match text(task, "sync_state") {
+                    "pending" => "  (queued; it syncs in the background)",
+                    _ => "",
+                };
+                writeln!(stdout, "{done} {:?}  {id}{state}", text(task, "title"))?;
                 if let Some(rolled) = applied.rolled.iter().find(|rolled| rolled.id == id) {
                     writeln!(
                         stdout,
@@ -144,6 +151,7 @@ fn verb(action: TaskAction) -> &'static str {
         TaskAction::Reopen => "reopen",
         TaskAction::Edit => "edit",
         TaskAction::Delete => "delete",
+        TaskAction::Undo => "undo",
         TaskAction::Unknown => "change",
     }
 }
@@ -155,6 +163,7 @@ fn past_tense(action: TaskAction) -> &'static str {
         TaskAction::Reopen => "Reopened",
         TaskAction::Edit => "Updated",
         TaskAction::Delete => "Deleted",
+        TaskAction::Undo => "  Reverting",
         TaskAction::Unknown => "Changed",
     }
 }

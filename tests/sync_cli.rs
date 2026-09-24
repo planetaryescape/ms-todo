@@ -286,8 +286,9 @@ async fn a_task_added_while_a_sync_is_in_flight_is_not_tombstoned_by_it() {
         std::thread::sleep(Duration::from_millis(50));
     }
     let added = env.json(&["tasks", "add", "Buy bread"]);
-    assert_eq!(added["items"][0]["graph_id"], "T-new");
+    assert_eq!(added["items"][0]["sync_state"], "pending");
 
+    env.settled();
     env.wait_until_idle();
     let listed = env.json(&["tasks", "list"]);
     assert_eq!(listed["sync"]["state"], "ready");

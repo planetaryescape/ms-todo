@@ -132,6 +132,11 @@ impl Syncer {
         self.status.borrow().clone()
     }
 
+    /// Watch the status, e.g. for each pass finishing.
+    pub fn subscribe(&self) -> watch::Receiver<SyncStatus> {
+        self.status.subscribe()
+    }
+
     /// Ask for a pass that starts after now, and return its number.
     pub fn request(&self) -> u64 {
         let next = self.status.borrow().started + 1;

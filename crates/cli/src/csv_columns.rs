@@ -21,6 +21,7 @@ pub const TASK_COLUMNS: &[&str] = &[
     "categories",
     "created",
     "modified",
+    "sync_state",
 ];
 
 pub const LIST_COLUMNS: &[&str] = &["id", "name", "wellknown", "is_owner", "is_shared"];
@@ -45,6 +46,7 @@ pub fn task_row(task: &Entity) -> Vec<String> {
             .unwrap_or_default(),
         text(task, "createdDateTime").to_owned(),
         text(task, "lastModifiedDateTime").to_owned(),
+        text(task, "sync_state").to_owned(),
     ]
 }
 

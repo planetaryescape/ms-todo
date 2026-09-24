@@ -25,8 +25,10 @@ use tokio::sync::{Notify, mpsc};
 use tokio::task::JoinSet;
 use tokio_util::codec::Framed;
 
+use crate::events::Events;
 use crate::handlers::{State, error_payload, handle};
 use crate::idempotency::settle_unfinished;
+use crate::outbox::{self, Outbox};
 use crate::sync::{PROGRESS, PassContext, Syncer};
 
 /// Overrides Graph's base URL in debug builds, so tests can point a real
@@ -37,7 +39,22 @@ const GRAPH_URL_ENV: &str = "MS_TODO_GRAPH_URL";
 /// `sun_path` is 104 bytes on macOS (108 on Linux), including the final NUL.
 const MAX_SOCKET_PATH_BYTES: usize = 103;
 
-pub(crate) async fn serve(paths: Paths) -> Result<(), String> {
+/// Why the daemon stopped for good.
+pub(crate) enum Fatal {
+    /// The database has a migration this build doesn't know. The daemon
+    /// exits with `EXIT_DATABASE_TOO_NEW` so the client that started it can
+    /// say so plainly.
+    DatabaseTooNew(String),
+    Other(String),
+}
+
+impl From<String> for Fatal {
+    fn from(message: String) -> Self {
+        Self::Other(message)
+    }
+}
+
+pub(crate) async fn serve(paths: Paths) -> Result<(), Fatal> {
     ensure_private_dir(&paths.run_dir).map_err(|error| describe(&paths.run_dir, &error))?;
 
     // The lock, not the socket, decides who the daemon is. Taking it first
@@ -57,7 +74,7 @@ pub(crate) async fn serve(paths: Paths) -> Result<(), String> {
             socket.display()
         ),
         Err(error) if error.kind() == IoErrorKind::NotFound => {}
-        Err(error) => return Err(describe(&socket, &error)),
+        Err(error) => return Err(describe(&socket, &error).into()),
     }
 
     // Bind before any slow work, so clients can connect and ask `Status`
@@ -67,7 +84,8 @@ pub(crate) async fn serve(paths: Paths) -> Result<(), String> {
             "the socket path {} is longer than the {MAX_SOCKET_PATH_BYTES} bytes Unix sockets allow; \
              use a shorter home or data directory",
             socket.display()
-        ));
+        )
+        .into());
     }
     let listener = UnixListener::bind(&socket).map_err(|error| describe(&socket, &error))?;
     let served = async {
@@ -77,13 +95,17 @@ pub(crate) async fn serve(paths: Paths) -> Result<(), String> {
             .map_err(|error| describe(&paths.pid_file(), &error))?;
         let state = Arc::new(build_state(&paths).await?);
         settle_unfinished(&state).await;
+        // Before anything is sent, so nothing new is mistaken for left over.
+        outbox::recover(&state).await;
         eprintln!(
             "ms-todo daemon {} (pid {}) listening on {}",
             env!("CARGO_PKG_VERSION"),
             std::process::id(),
             socket.display()
         );
-        accept_until_shutdown(listener, state).await
+        accept_until_shutdown(listener, state)
+            .await
+            .map_err(Fatal::Other)
     }
     .await;
 
@@ -94,7 +116,7 @@ pub(crate) async fn serve(paths: Paths) -> Result<(), String> {
     served
 }
 
-async fn build_state(paths: &Paths) -> Result<State, String> {
+async fn build_state(paths: &Paths) -> Result<State, Fatal> {
     let mut endpoints = Endpoints::default();
     if cfg!(debug_assertions)
         && let Ok(url) = std::env::var(GRAPH_URL_ENV)
@@ -110,9 +132,16 @@ async fn build_state(paths: &Paths) -> Result<State, String> {
         .map_err(|error| ms_todo_core::message_with_causes(&error))?;
     // The cache holds the user's tasks: keep its directory private too.
     ensure_private_dir(&paths.data_dir).map_err(|error| describe(&paths.data_dir, &error))?;
-    let store = Store::open(&paths.database_file())
-        .await
-        .map_err(|error| describe_store(&paths.database_file(), &error))?;
+    let store = match Store::open(&paths.database_file()).await {
+        Ok(store) => store,
+        Err(error @ ms_todo_store::StoreError::NewerDatabase) => {
+            return Err(Fatal::DatabaseTooNew(describe_store(
+                &paths.database_file(),
+                &error,
+            )));
+        }
+        Err(error) => return Err(describe_store(&paths.database_file(), &error).into()),
+    };
     // Nothing is running yet, whatever a daemon that died left behind.
     store
         .clear_in_progress()
@@ -123,6 +152,8 @@ async fn build_state(paths: &Paths) -> Result<State, String> {
         graph: Arc::new(graph),
         store: Arc::new(store),
         syncer: Syncer::new(),
+        outbox: Outbox::new(),
+        events: Events::new(),
         instance: paths.instance.label().to_owned(),
         started_at: chrono::Utc::now().timestamp(),
     })
@@ -148,9 +179,11 @@ async fn accept_until_shutdown(listener: UnixListener, state: Arc<State>) -> Res
         let context = PassContext {
             graph: Arc::clone(&syncing.graph),
             store: Arc::clone(&syncing.store),
+            events: syncing.events.clone(),
         };
         syncing.syncer.run(context).await;
     });
+    connections.spawn(outbox::run(Arc::clone(&state)));
     loop {
         tokio::select! {
             accepted = listener.accept() => match accepted {

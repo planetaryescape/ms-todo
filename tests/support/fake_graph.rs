@@ -1,6 +1,6 @@
 //! A Microsoft Graph double for syncs: lists (with the filtered `$expand`),
 //! each list's tasks in pages, `lists/delta` and each list's `tasks/delta`,
-//! a single list's GET, and `$batch` GETs of single tasks with our
+//! a single list's or task's GET, and `$batch` GETs of single tasks with our
 //! extension, chained the way Graph chains them (a failed step makes the
 //! rest 424). Tests change `data` between syncs, as a phone would, and
 //! mount their own mocks for writes.
@@ -159,6 +159,20 @@ impl FakeGraph {
                     _ => not_found(),
                 }
             })
+            .mount(&server)
+            .await;
+
+        // A single task's GET, as the outbox sends while it looks for an
+        // outcome. Below the default priority, so a test's own mock wins.
+        let shared = Arc::clone(&data);
+        Mock::given(method("GET"))
+            .and(path_regex(r"^/v1\.0/me/todo/lists/[^/]+/tasks/[^/]+$"))
+            .respond_with(move |request: &Request| {
+                let relative = request.url.path().trim_start_matches("/v1.0");
+                let (status, body) = answer_get(&lock(&shared), relative);
+                ResponseTemplate::new(status).set_body_json(body)
+            })
+            .with_priority(10)
             .mount(&server)
             .await;
 

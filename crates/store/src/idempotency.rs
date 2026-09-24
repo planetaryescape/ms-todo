@@ -32,8 +32,12 @@ impl Store {
     ) -> Result<Claim, StoreError> {
         let now = now();
         let mut tx = self.writer().begin().await?;
+        // A key stays with its operations until they're resolved, and for
+        // the window after (04, instant local writes).
         sqlx::query(
-            "DELETE FROM idempotency_keys WHERE finished_at IS NOT NULL AND finished_at <= ?",
+            "DELETE FROM idempotency_keys WHERE finished_at IS NOT NULL AND finished_at <= ?1 \
+             AND NOT EXISTS (SELECT 1 FROM outbox WHERE outbox.command_id = idempotency_keys.op_id \
+             AND (outbox.state IN ('pending', 'inflight', 'unknown') OR outbox.finished_at > ?1))",
         )
         .bind(now - IDEMPOTENCY_WINDOW_SECS)
         .execute(&mut *tx)

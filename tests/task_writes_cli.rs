@@ -1,6 +1,7 @@
 //! Writes through the real binary and daemon, against a fake Graph: the
 //! requests Graph gets (bodies, `If-Match`, how many), what the CLI prints,
-//! its exit codes, and that the cache follows.
+//! its exit codes, and that the cache follows. A write answers at once,
+//! `pending`, and the outbox sends it; `env.settled()` waits for that.
 
 mod support;
 
@@ -79,12 +80,18 @@ async fn add_posts_the_literal_title_with_its_op_id_in_our_extension() {
 
     assert_eq!(added["schema_version"], 2);
     assert_eq!(added["action"], "add");
-    assert_eq!(added["items"][0]["graph_id"], "T-new");
+    // Queued: no Graph ID yet.
+    assert_eq!(added["items"][0]["graph_id"], Value::Null);
+    assert_eq!(added["items"][0]["sync_state"], "pending");
     assert_eq!(added["list_ids"], json!([local_list(&env, "L-tasks")]));
     let op_id = added["op_id"].as_str().expect("op_id");
-    // Graph echoed the extension, so the cache has the opId already.
     assert_eq!(added["items"][0]["extensions"][0]["opId"], op_id);
 
+    env.settled();
+    let listed = env.json(&["tasks", "list"]);
+    assert_eq!(listed["items"][0]["id"], added["items"][0]["id"]);
+    assert_eq!(listed["items"][0]["graph_id"], "T-new");
+    assert_eq!(listed["items"][0]["sync_state"], "synced");
     let sent = graph.writes().await;
     assert_eq!(sent.len(), 1);
     let body: Value = serde_json::from_slice(&sent[0].body).expect("json");
@@ -108,7 +115,7 @@ async fn add_posts_the_literal_title_with_its_op_id_in_our_extension() {
 }
 
 #[tokio::test]
-async fn a_create_that_gets_a_5xx_is_outcome_unknown_and_never_resent() {
+async fn a_create_that_gets_a_5xx_stays_unknown_and_is_never_resent() {
     let mut env = Env::new();
     let graph = graph(&mut env).await;
     Mock::given(method("POST"))
@@ -123,22 +130,18 @@ async fn a_create_that_gets_a_5xx_is_outcome_unknown_and_never_resent() {
         .mount(&graph.server)
         .await;
 
-    let failed = env
-        .cmd()
-        .args(["--format", "json", "tasks", "add", "Buy milk"])
-        .assert()
-        .code(1);
+    let added = env.json(&["tasks", "add", "Buy milk"]);
+    let op_id = added["op_id"].as_str().expect("op_id");
 
-    let output = failed.get_output();
-    assert!(output.stdout.is_empty());
-    let error = stderr_json(output);
-    assert_eq!(error["error"]["kind"], "outcome_unknown");
-    assert_eq!(error["error"]["request_id"], "req-503");
-    let op_id = error["error"]["op_id"].as_str().expect("op_id");
-    let message = error["error"]["message"].as_str().expect("message");
-    assert!(message.contains("ms-todo tasks list"), "{message}");
-    assert!(message.contains(op_id), "{message}");
-
+    let op = env.op_in_state(op_id, "unknown");
+    assert_eq!(op["last_error"]["kind"], "outcome_unknown");
+    // Nothing on Graph carries its opId, however often sync looks.
+    env.synced();
+    env.synced();
+    assert_eq!(env.op_in_state(op_id, "unknown")["flagged"], false);
+    let listed = env.json(&["tasks", "list"]);
+    assert_eq!(listed["items"][0]["sync_state"], "unknown");
+    assert_eq!(listed["items"][0]["graph_id"], Value::Null);
     let sent = graph.writes().await;
     assert_eq!(sent.len(), 1, "a create is never resent after a 5xx");
     let body: Value = serde_json::from_slice(&sent[0].body).expect("json");
@@ -163,9 +166,13 @@ async fn a_create_that_gets_a_429_is_resent() {
         .mount(&graph.server)
         .await;
 
-    let added = env.json(&["tasks", "add", "Buy milk"]);
+    env.json(&["tasks", "add", "Buy milk"]);
 
-    assert_eq!(added["items"][0]["graph_id"], "T-new");
+    env.settled();
+    assert_eq!(
+        env.json(&["tasks", "list"])["items"][0]["graph_id"],
+        "T-new"
+    );
     let sent = graph.writes().await;
     assert_eq!(sent.len(), 2, "a 429 proves the create didn't run");
     assert_eq!(sent[0].body, sent[1].body, "the same opId both times");
@@ -198,10 +205,17 @@ async fn complete_and_reopen_send_if_match_with_the_etag_last_read() {
     assert_eq!(completed["items"][0]["status"], "completed");
     assert!(completed["op_id"].as_str().is_some_and(|id| id.len() == 36));
 
-    // The etag from the complete's response, not from the earlier list.
+    // Queued behind the complete, so it's sent with the etag from the
+    // complete's response, not the one read earlier.
     let reopened = env.json(&["tasks", "reopen", "T1"]);
     assert_eq!(reopened["items"][0]["status"], "notStarted");
+    env.settled();
     assert_eq!(graph.writes().await.len(), 2);
+    assert!(
+        env.outbox().iter().all(|op| op["state"] == "done"),
+        "{:?}",
+        env.outbox()
+    );
 }
 
 #[tokio::test]
@@ -244,6 +258,7 @@ async fn a_task_in_any_list_is_found_by_its_graph_or_local_id() {
 
     let reopened = env.json(&["tasks", "reopen", &local]);
     assert_eq!(reopened["items"][0]["graph_id"], "T9");
+    env.settled();
     assert_eq!(graph.writes().await.len(), 2);
 
     let missing = env
@@ -303,6 +318,9 @@ async fn a_412_on_a_field_nobody_else_touched_is_re_sent_with_the_new_etag() {
     let edited = env.json(&["tasks", "edit", "T1", "--title", "Oat milk"]);
 
     assert_eq!(edited["items"][0]["title"], "Oat milk");
+    env.settled();
+    let op = env.op_in_state(edited["op_id"].as_str().expect("op_id"), "done");
+    assert_eq!(op["attempts"], 1);
     let sent = graph.writes().await;
     assert_eq!(sent.len(), 2);
     for request in &sent {
@@ -316,27 +334,25 @@ async fn a_412_on_a_field_nobody_else_touched_is_re_sent_with_the_new_etag() {
 }
 
 #[tokio::test]
-async fn a_412_on_a_field_the_server_changed_too_is_a_conflict() {
+async fn a_412_on_a_field_the_server_changed_too_is_rejected_as_a_conflict() {
     let mut env = Env::new();
     let graph = stale_etag_graph(&mut env, json!({ "title": "Almond milk" })).await;
 
-    let conflict = env
-        .cmd()
-        .args([
-            "--format", "json", "tasks", "edit", "T1", "--title", "Oat milk",
-        ])
-        .assert()
-        .code(5);
+    let edited = env.json(&["tasks", "edit", "T1", "--title", "Oat milk"]);
 
-    let error = stderr_json(conflict.get_output());
-    assert_eq!(error["error"]["kind"], "conflict");
+    let op = env.op_in_state(edited["op_id"].as_str().expect("op_id"), "failed");
+    assert_eq!(op["last_error"]["kind"], "conflict");
     assert!(
-        error["error"]["message"]
+        op["last_error"]["message"]
             .as_str()
             .is_some_and(|message| message.contains("title")),
-        "{error}"
+        "{op}"
     );
     assert_eq!(graph.writes().await.len(), 1, "nothing overwritten");
+    // Rolled back, and marked until the user discards it.
+    let task = &env.json(&["tasks", "list"])["items"][0];
+    assert_eq!(task["title"], "Buy milk");
+    assert_eq!(task["sync_state"], "failed");
 }
 
 #[tokio::test]
@@ -371,6 +387,7 @@ async fn delete_needs_yes_off_a_terminal_and_a_404_counts_as_deleted() {
     let deleted = env.json(&["tasks", "delete", "T1", "--list", "Tasks", "--yes"]);
     assert_eq!(deleted["action"], "delete");
     assert_eq!(deleted["items"][0]["graph_id"], "T1");
+    env.settled();
     let sent = graph.writes().await;
     assert_eq!(sent.len(), 1);
     assert!(
@@ -486,6 +503,7 @@ async fn ids_on_stdin_are_completed_in_order() {
         .filter_map(|task| task["graph_id"].as_str())
         .collect();
     assert_eq!(ids, ["T1", "T2"]);
+    env.settled();
     let paths: Vec<String> = graph
         .writes()
         .await
@@ -565,11 +583,11 @@ async fn completing_a_recurring_task_reports_the_rolled_due_date() {
         .mount(&graph.server)
         .await;
 
-    let completed = env.json(&["tasks", "complete", "T-r"]);
-    assert_eq!(
-        completed["rolled"],
-        json!([{ "id": completed["items"][0]["id"], "next_due": "2026-10-01" }])
-    );
+    let due =
+        |env: &Env| env.json(&["tasks", "list"])["items"][0]["dueDateTime"]["dateTime"].clone();
+    env.json(&["tasks", "complete", "T-r"]);
+    env.settled();
+    assert_eq!(due(&env), "2026-10-01T00:00:00.0000000");
 
     let table = env
         .cmd()
@@ -580,8 +598,12 @@ async fn completing_a_recurring_task_reports_the_rolled_due_date() {
         .stdout
         .clone();
     let table = String::from_utf8(table).expect("utf8");
-    assert!(table.contains("now due 2026-10-08"), "{table}");
-    assert!(table.contains("new, completed task"), "{table}");
+    assert!(table.contains("Completed \"Water plants\""), "{table}");
+    env.settled();
+    assert_eq!(due(&env), "2026-10-08T00:00:00.0000000");
+    let listed = env.json(&["tasks", "list"]);
+    assert_eq!(listed["items"][0]["status"], "notStarted");
+    assert_eq!(listed["items"][0]["sync_state"], "synced");
 }
 
 #[tokio::test]
@@ -599,15 +621,19 @@ async fn completing_a_recurring_task_is_never_resent_after_a_5xx() {
         .mount(&graph.server)
         .await;
 
-    let unknown = env
-        .cmd()
-        .args(["--format", "json", "tasks", "complete", "T-r"])
-        .assert()
-        .code(1);
+    let completed = env.json(&["tasks", "complete", "T-r"]);
 
-    let error = stderr_json(unknown.get_output());
-    assert_eq!(error["error"]["kind"], "outcome_unknown");
-    assert!(error["error"]["op_id"].is_string());
+    let op_id = completed["op_id"].as_str().expect("op_id");
+    env.op_in_state(op_id, "unknown");
+    env.synced();
+    let op = env.op_in_state(op_id, "unknown");
+    // The due date didn't move, and that's recorded for the user.
+    assert!(
+        op["note"]
+            .as_str()
+            .is_some_and(|note| note.contains("hasn't moved")),
+        "{op}"
+    );
     assert_eq!(graph.writes().await.len(), 1);
 }
 

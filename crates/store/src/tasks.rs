@@ -5,9 +5,11 @@
 use std::collections::{HashMap, HashSet};
 
 use serde_json::Value;
+use sqlx::AssertSqlSafe;
 use sqlx::{FromRow, SqliteConnection};
 
 use crate::graph_columns::{TaskColumns, etag, text};
+use crate::outbox::{NO_UNRESOLVED_OPS, SYNC_STATE};
 use crate::pool::next_local_rev;
 use crate::sync_state::{Cursor, checkpoint, record_failure};
 use crate::{Entity, Store, StoreError, new_local_id, now, parse_object, parse_optional, to_json};
@@ -23,16 +25,27 @@ pub struct TaskRow {
     pub raw: Entity,
     /// Our open extension, when the task has one and it has been fetched.
     pub extension: Option<Value>,
+    /// From its outbox operations: `synced`, `pending` (one is waiting or
+    /// being sent), `unknown` (one's outcome is ambiguous) or `failed`
+    /// (Graph rejected one, and it hasn't been discarded)
+    /// (docs/blueprint/07-cli.md#output-contract).
+    pub sync_state: String,
 }
 
 #[derive(FromRow)]
-struct TaskRecord {
+pub(crate) struct TaskRecord {
     local_id: String,
     graph_id: Option<String>,
     list_local_id: String,
     title: String,
     raw_json: String,
     extension_json: Option<String>,
+    sync_state: String,
+}
+
+/// The columns of a [`TaskRecord`], for `SELECT … FROM tasks`.
+pub(crate) fn task_record_columns() -> String {
+    format!("local_id, graph_id, list_local_id, title, raw_json, extension_json, {SYNC_STATE}")
 }
 
 impl TryFrom<TaskRecord> for TaskRow {
@@ -46,6 +59,7 @@ impl TryFrom<TaskRecord> for TaskRow {
             title: record.title,
             raw: parse_object(&record.raw_json)?,
             extension: parse_optional(record.extension_json)?,
+            sync_state: record.sync_state,
         })
     }
 }
@@ -89,10 +103,11 @@ pub struct TasksPass {
 impl Store {
     /// A list's live tasks, oldest first.
     pub async fn tasks_in_list(&self, list_local_id: &str) -> Result<Vec<TaskRow>, StoreError> {
-        let records: Vec<TaskRecord> = sqlx::query_as(
-            "SELECT local_id, graph_id, list_local_id, title, raw_json, extension_json FROM tasks \
+        let records: Vec<TaskRecord> = sqlx::query_as(AssertSqlSafe(format!(
+            "SELECT {} FROM tasks \
              WHERE list_local_id = ? AND deleted_at IS NULL ORDER BY created_at, rowid",
-        )
+            task_record_columns()
+        )))
         .bind(list_local_id)
         .fetch_all(self.reader())
         .await?;
@@ -101,10 +116,10 @@ impl Store {
 
     /// A live task by its local ID or its Graph ID.
     pub async fn task(&self, id: &str) -> Result<Option<TaskRow>, StoreError> {
-        let record: Option<TaskRecord> = sqlx::query_as(
-            "SELECT local_id, graph_id, list_local_id, title, raw_json, extension_json FROM tasks \
-             WHERE (local_id = ?1 OR graph_id = ?1) AND deleted_at IS NULL",
-        )
+        let record: Option<TaskRecord> = sqlx::query_as(AssertSqlSafe(format!(
+            "SELECT {} FROM tasks WHERE (local_id = ?1 OR graph_id = ?1) AND deleted_at IS NULL",
+            task_record_columns()
+        )))
         .bind(id)
         .fetch_optional(self.reader())
         .await?;
@@ -140,8 +155,9 @@ impl Store {
     /// Apply one list's pass in a transaction: upsert what came back,
     /// tombstone what's gone and, after a whole read, every task in the
     /// list that wasn't seen, then checkpoint the scope or record why not.
-    /// Rows the daemon wrote after `pass.rev`, and rows with no Graph ID,
-    /// are left alone.
+    /// Rows the daemon wrote after `pass.rev`, rows with no Graph ID, and
+    /// rows with an outbox operation `pending`, `inflight` or `unknown` are
+    /// left alone (04, instant local writes).
     /// Returns how many rows changed.
     pub async fn apply_tasks(&self, pass: TasksPass) -> Result<i64, StoreError> {
         let mut tx = self.writer().begin().await?;
@@ -159,10 +175,10 @@ impl Store {
         let deleted_at = now();
         for graph_id in &pass.gone {
             seen.remove(graph_id);
-            let result = sqlx::query(
+            let result = sqlx::query(AssertSqlSafe(format!(
                 "UPDATE tasks SET deleted_at = ? \
-                 WHERE graph_id = ? AND deleted_at IS NULL AND local_rev <= ?",
-            )
+                 WHERE graph_id = ? AND deleted_at IS NULL AND local_rev <= ? AND {NO_UNRESOLVED_OPS}"
+            )))
             .bind(deleted_at)
             .bind(graph_id)
             .bind(pass.rev)
@@ -173,10 +189,10 @@ impl Store {
         // A delta round names only what changed; a whole read tombstones
         // what it didn't see.
         if !pass.cursor.replayed {
-            let live: Vec<String> = sqlx::query_scalar(
+            let live: Vec<String> = sqlx::query_scalar(AssertSqlSafe(format!(
                 "SELECT graph_id FROM tasks WHERE list_local_id = ? AND deleted_at IS NULL \
-                 AND graph_id IS NOT NULL AND local_rev <= ?",
-            )
+                 AND graph_id IS NOT NULL AND local_rev <= ? AND {NO_UNRESOLVED_OPS}"
+            )))
             .bind(&pass.list_local_id)
             .bind(pass.rev)
             .fetch_all(&mut *tx)
@@ -233,7 +249,7 @@ impl Store {
             &mut tx,
             &WriteTask {
                 local_id: &local_id,
-                graph_id: &graph_id,
+                graph_id: Some(&graph_id),
                 list_local_id,
                 raw,
                 raw_json: &to_json(raw)?,
@@ -274,6 +290,8 @@ struct Cached {
     hydrated_etag: Option<String>,
     deleted_at: Option<i64>,
     local_rev: i64,
+    /// It has an outbox operation `pending`, `inflight` or `unknown`.
+    busy: bool,
 }
 
 /// Upsert one enumerated task. Returns whether the row changed.
@@ -283,16 +301,16 @@ async fn upsert_seen(
     graph_id: &str,
     task: &SeenTask,
 ) -> Result<bool, StoreError> {
-    let existing: Option<Cached> = sqlx::query_as(
+    let existing: Option<Cached> = sqlx::query_as(AssertSqlSafe(format!(
         "SELECT local_id, list_local_id, raw_json, extension_json, hydrated_etag, deleted_at, \
-         local_rev FROM tasks WHERE graph_id = ?",
-    )
+         local_rev, NOT {NO_UNRESOLVED_OPS} AS busy FROM tasks WHERE graph_id = ?"
+    )))
     .bind(graph_id)
     .fetch_optional(&mut *tx)
     .await?;
     if existing
         .as_ref()
-        .is_some_and(|cached| cached.local_rev > pass.rev)
+        .is_some_and(|cached| cached.local_rev > pass.rev || cached.busy)
     {
         return Ok(false);
     }
@@ -326,7 +344,7 @@ async fn upsert_seen(
         tx,
         &WriteTask {
             local_id: &local_id,
-            graph_id,
+            graph_id: Some(graph_id),
             list_local_id: &pass.list_local_id,
             raw: &task.raw,
             raw_json: &raw_json,
@@ -339,21 +357,25 @@ async fn upsert_seen(
     Ok(changed)
 }
 
-struct WriteTask<'a> {
-    local_id: &'a str,
-    graph_id: &'a str,
-    list_local_id: &'a str,
-    raw: &'a Entity,
+pub(crate) struct WriteTask<'a> {
+    pub local_id: &'a str,
+    /// `None` for a task only ms-todo knows yet: created offline, not sent.
+    pub graph_id: Option<&'a str>,
+    pub list_local_id: &'a str,
+    pub raw: &'a Entity,
     /// `raw` as JSON text.
-    raw_json: &'a str,
-    extension_json: Option<&'a str>,
-    hydrated_etag: Option<&'a str>,
+    pub raw_json: &'a str,
+    pub extension_json: Option<&'a str>,
+    pub hydrated_etag: Option<&'a str>,
     /// 0 keeps the row's current value (a sync write).
-    local_rev: i64,
+    pub local_rev: i64,
 }
 
 /// Insert or overwrite a task row, clearing any tombstone.
-async fn write_task(tx: &mut SqliteConnection, task: &WriteTask<'_>) -> Result<(), StoreError> {
+pub(crate) async fn write_task(
+    tx: &mut SqliteConnection,
+    task: &WriteTask<'_>,
+) -> Result<(), StoreError> {
     let columns = TaskColumns::of(task.raw);
     sqlx::query(
         "INSERT INTO tasks (local_id, graph_id, list_local_id, title, body_content, \

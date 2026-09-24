@@ -1,0 +1,1055 @@
+//! The outbox (docs/blueprint/02-data-model.md#outbox-semantics): each task
+//! write is applied to `tasks` and queued here in one transaction, and the
+//! daemon's worker sends the queue to Graph. What an operation's outcome
+//! means is the daemon's business; this applies each outcome atomically:
+//! the operation's new state together with what it does to the task row.
+//!
+//! A task with an operation `pending`, `inflight` or `unknown` is never
+//! overwritten or tombstoned by a sync pass ([`NO_UNRESOLVED_OPS`]).
+
+use serde_json::Value;
+use sqlx::AssertSqlSafe;
+use sqlx::{FromRow, SqliteConnection};
+
+use crate::graph_columns::{etag, text};
+use crate::pool::next_local_rev;
+use crate::tasks::{TaskRecord, WriteTask, task_record_columns, write_task};
+use crate::{Entity, Store, StoreError, TaskRow, now, parse_object, parse_optional, to_json};
+
+/// How long an `unknown` operation is looked for before it's flagged for
+/// the user (`outbox.unknown_lookup_hours`, 04).
+pub const UNKNOWN_LOOKUP_SECS: i64 = 24 * 60 * 60;
+
+/// The states of an operation not resolved yet, as an SQL list. Its task
+/// stays as ms-todo has it until they're all resolved.
+macro_rules! unresolved {
+    () => {
+        "('pending', 'inflight', 'unknown')"
+    };
+}
+
+/// A condition on `tasks`: no outbox operation of the row is unresolved.
+pub(crate) const NO_UNRESOLVED_OPS: &str = concat!(
+    "NOT EXISTS (SELECT 1 FROM outbox o \
+     WHERE o.entity_local_id = tasks.local_id AND o.state IN ",
+    unresolved!(),
+    ")"
+);
+
+/// A column of `SELECT … FROM tasks`: the row's sync state from its
+/// operations. `unknown` beats `pending`, which beats `failed`.
+pub(crate) const SYNC_STATE: &str = "(SELECT CASE \
+     WHEN SUM(o.state = 'unknown') > 0 THEN 'unknown' \
+     WHEN SUM(o.state IN ('pending', 'inflight')) > 0 THEN 'pending' \
+     WHEN SUM(o.state = 'failed') > 0 THEN 'failed' ELSE 'synced' END \
+     FROM outbox o WHERE o.entity_local_id = tasks.local_id AND o.state != 'done') AS sync_state";
+
+const OP_COLUMNS: &str = "o.op_id, o.seq, o.command_id, o.created_at, o.entity_local_id, \
+     o.list_local_id, o.op, o.action, o.payload_json, o.depends_on_op_id, o.undoes_command_id, \
+     o.attempts, o.next_attempt_at, o.state, o.last_error_kind, o.last_error, o.rollback_json, \
+     o.sent_at, o.unknown_since, o.note, o.finished_at, t.title";
+
+const FROM_OUTBOX: &str = "FROM outbox o LEFT JOIN tasks t ON t.local_id = o.entity_local_id";
+
+/// What an operation sends.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum OpKind {
+    /// A POST that makes the task.
+    Create,
+    /// A PATCH of some of its fields.
+    Update,
+    Delete,
+}
+
+impl OpKind {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Create => "create",
+            Self::Update => "update",
+            Self::Delete => "delete",
+        }
+    }
+
+    fn parse(value: &str) -> Result<Self, StoreError> {
+        match value {
+            "create" => Ok(Self::Create),
+            "update" => Ok(Self::Update),
+            "delete" => Ok(Self::Delete),
+            other => Err(StoreError::Corrupt(format!("unknown outbox op {other:?}"))),
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub enum OpState {
+    Pending,
+    Inflight,
+    Unknown,
+    Failed,
+    Done,
+}
+
+impl OpState {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Pending => "pending",
+            Self::Inflight => "inflight",
+            Self::Unknown => "unknown",
+            Self::Failed => "failed",
+            Self::Done => "done",
+        }
+    }
+
+    fn parse(value: &str) -> Result<Self, StoreError> {
+        match value {
+            "pending" => Ok(Self::Pending),
+            "inflight" => Ok(Self::Inflight),
+            "unknown" => Ok(Self::Unknown),
+            "failed" => Ok(Self::Failed),
+            "done" => Ok(Self::Done),
+            other => Err(StoreError::Corrupt(format!(
+                "unknown outbox state {other:?}"
+            ))),
+        }
+    }
+}
+
+/// One queued operation.
+#[derive(Clone, Debug, PartialEq)]
+pub struct OutboxRow {
+    pub op_id: String,
+    pub seq: i64,
+    pub command_id: String,
+    pub created_at: i64,
+    pub entity_local_id: String,
+    pub list_local_id: String,
+    pub op: OpKind,
+    pub action: String,
+    pub payload: Value,
+    pub depends_on: Option<String>,
+    pub undoes: Option<String>,
+    pub attempts: i64,
+    pub next_attempt_at: i64,
+    pub state: OpState,
+    /// `(ErrorKind string, message)`.
+    pub last_error: Option<(String, String)>,
+    pub rollback: Option<Entity>,
+    pub sent_at: Option<i64>,
+    pub unknown_since: Option<i64>,
+    pub note: Option<String>,
+    pub finished_at: Option<i64>,
+    /// The task's title as cached.
+    pub title: Option<String>,
+}
+
+impl OutboxRow {
+    /// The Graph JSON it sends.
+    pub fn body(&self) -> &Value {
+        &self.payload["body"]
+    }
+
+    /// Whether it completes a recurring task, which is never resent after
+    /// an ambiguous answer (D-028).
+    pub fn is_recurring_completion(&self) -> bool {
+        self.payload["recurring"] == Value::Bool(true)
+    }
+
+    /// `unknown` for longer than the lookup window: the user decides.
+    pub fn is_flagged(&self, now: i64) -> bool {
+        self.state == OpState::Unknown
+            && self
+                .unknown_since
+                .is_some_and(|since| since <= now - UNKNOWN_LOOKUP_SECS)
+    }
+}
+
+#[derive(FromRow)]
+struct OpRecord {
+    op_id: String,
+    seq: i64,
+    command_id: String,
+    created_at: i64,
+    entity_local_id: String,
+    list_local_id: String,
+    op: String,
+    action: String,
+    payload_json: String,
+    depends_on_op_id: Option<String>,
+    undoes_command_id: Option<String>,
+    attempts: i64,
+    next_attempt_at: i64,
+    state: String,
+    last_error_kind: Option<String>,
+    last_error: Option<String>,
+    rollback_json: Option<String>,
+    sent_at: Option<i64>,
+    unknown_since: Option<i64>,
+    note: Option<String>,
+    finished_at: Option<i64>,
+    title: Option<String>,
+}
+
+impl TryFrom<OpRecord> for OutboxRow {
+    type Error = StoreError;
+
+    fn try_from(record: OpRecord) -> Result<Self, StoreError> {
+        Ok(Self {
+            op_id: record.op_id,
+            seq: record.seq,
+            command_id: record.command_id,
+            created_at: record.created_at,
+            entity_local_id: record.entity_local_id,
+            list_local_id: record.list_local_id,
+            op: OpKind::parse(&record.op)?,
+            action: record.action,
+            payload: parse_optional(Some(record.payload_json))?.unwrap_or(Value::Null),
+            depends_on: record.depends_on_op_id,
+            undoes: record.undoes_command_id,
+            attempts: record.attempts,
+            next_attempt_at: record.next_attempt_at,
+            state: OpState::parse(&record.state)?,
+            last_error: record.last_error_kind.zip(record.last_error),
+            rollback: record
+                .rollback_json
+                .as_deref()
+                .map(parse_object)
+                .transpose()?,
+            sent_at: record.sent_at,
+            unknown_since: record.unknown_since,
+            note: record.note,
+            finished_at: record.finished_at,
+            title: record.title,
+        })
+    }
+}
+
+/// An operation to queue, with the local change it makes at once.
+#[derive(Clone, Debug)]
+pub struct NewOp {
+    pub op_id: String,
+    pub entity_local_id: String,
+    pub list_local_id: String,
+    pub op: OpKind,
+    pub action: String,
+    pub payload: Value,
+    pub change: LocalChange,
+}
+
+/// What a queued operation does to the task row now, before Graph has it.
+#[derive(Clone, Debug)]
+pub enum LocalChange {
+    /// A new task only ms-todo knows: no Graph ID yet.
+    Insert {
+        raw: Entity,
+        extension: Option<Value>,
+    },
+    /// The task's JSON becomes `raw`, and it's live.
+    Replace(Entity),
+    /// The payload's `body` goes over the task's JSON as it is when the
+    /// operation is queued, which is also its rollback: a snapshot read
+    /// earlier could undo an answer from Graph recorded meanwhile.
+    Update,
+    /// Tombstone the task; its JSON when queued is the rollback.
+    Tombstone,
+}
+
+/// What a resolved operation does to its task row.
+#[derive(Clone, Debug, PartialEq)]
+pub enum Restore {
+    Nothing,
+    Tombstone,
+    /// The task's JSON becomes this, and it's live.
+    Replace(Entity),
+}
+
+/// Overlay the fields of a PATCH or POST `body` on a task's JSON, as Graph
+/// would apply them. Our extension isn't a field.
+pub fn apply_body(raw: &mut Entity, body: &Value) {
+    if let Value::Object(fields) = body {
+        for (key, value) in fields {
+            if key != "extensions" {
+                raw.insert(key.clone(), value.clone());
+            }
+        }
+    }
+}
+
+impl Store {
+    /// Queue `ops`, one command's, and make each one's local change, all in
+    /// one transaction. Each waits for the latest unresolved operation on
+    /// its task. Returns each task as it is now, tombstoned or not.
+    pub async fn enqueue(
+        &self,
+        command_id: &str,
+        undoes: Option<&str>,
+        ops: Vec<NewOp>,
+    ) -> Result<Vec<TaskRow>, StoreError> {
+        let mut tx = self.writer().begin().await?;
+        let rev = next_local_rev(&mut tx).await?;
+        let now = now();
+        let mut seq: i64 = sqlx::query_scalar("SELECT COALESCE(MAX(seq), 0) FROM outbox")
+            .fetch_one(&mut *tx)
+            .await?;
+        let mut rows = Vec::with_capacity(ops.len());
+        for op in ops {
+            seq += 1;
+            let depends_on: Option<String> = sqlx::query_scalar(concat!(
+                "SELECT op_id FROM outbox WHERE entity_local_id = ? AND state IN ",
+                unresolved!(),
+                " ORDER BY seq DESC LIMIT 1"
+            ))
+            .bind(&op.entity_local_id)
+            .fetch_optional(&mut *tx)
+            .await?;
+            // What a rejection restores and undo inverts: the task before this.
+            let mut rollback = None;
+            match &op.change {
+                LocalChange::Insert { raw, extension } => {
+                    let extension_json = extension.as_ref().map(Value::to_string);
+                    write_task(
+                        &mut tx,
+                        &WriteTask {
+                            local_id: &op.entity_local_id,
+                            graph_id: None,
+                            list_local_id: &op.list_local_id,
+                            raw,
+                            raw_json: &to_json(raw)?,
+                            extension_json: extension_json.as_deref(),
+                            hydrated_etag: None,
+                            local_rev: rev,
+                        },
+                    )
+                    .await?;
+                }
+                LocalChange::Replace(raw) => {
+                    replace_row(&mut tx, &op.entity_local_id, raw, rev).await?;
+                }
+                LocalChange::Update => {
+                    let current =
+                        parse_object(&row_identity(&mut tx, &op.entity_local_id).await?.raw_json)?;
+                    let mut raw = current.clone();
+                    apply_body(&mut raw, &op.payload["body"]);
+                    replace_row(&mut tx, &op.entity_local_id, &raw, rev).await?;
+                    rollback = Some(current);
+                }
+                LocalChange::Tombstone => {
+                    let current =
+                        parse_object(&row_identity(&mut tx, &op.entity_local_id).await?.raw_json)?;
+                    tombstone_row(&mut tx, &op.entity_local_id, rev).await?;
+                    rollback = Some(current);
+                }
+            }
+            sqlx::query(
+                "INSERT INTO outbox (op_id, seq, command_id, created_at, entity_local_id, \
+                 list_local_id, op, action, payload_json, depends_on_op_id, undoes_command_id, \
+                 state, rollback_json) \
+                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?)",
+            )
+            .bind(&op.op_id)
+            .bind(seq)
+            .bind(command_id)
+            .bind(now)
+            .bind(&op.entity_local_id)
+            .bind(&op.list_local_id)
+            .bind(op.op.as_str())
+            .bind(&op.action)
+            .bind(op.payload.to_string())
+            .bind(depends_on)
+            .bind(undoes)
+            .bind(rollback.as_ref().map(to_json).transpose()?)
+            .execute(&mut *tx)
+            .await?;
+            rows.push(
+                fetch_task(&mut tx, &op.entity_local_id)
+                    .await?
+                    .ok_or_else(|| {
+                        StoreError::Corrupt(format!("task {} isn't cached", op.entity_local_id))
+                    })?,
+            );
+        }
+        tx.commit().await?;
+        Ok(rows)
+    }
+
+    /// A task by local ID, tombstoned or not, and whether it's tombstoned.
+    pub async fn task_any(&self, local_id: &str) -> Result<Option<(TaskRow, bool)>, StoreError> {
+        #[derive(FromRow)]
+        struct Any {
+            #[sqlx(flatten)]
+            record: TaskRecord,
+            deleted: bool,
+        }
+        let found: Option<Any> = sqlx::query_as(AssertSqlSafe(format!(
+            "SELECT {}, deleted_at IS NOT NULL AS deleted FROM tasks WHERE local_id = ?",
+            task_record_columns()
+        )))
+        .bind(local_id)
+        .fetch_optional(self.reader())
+        .await?;
+        found
+            .map(|any| Ok((TaskRow::try_from(any.record)?, any.deleted)))
+            .transpose()
+    }
+
+    /// A list's Graph ID and whether it's tombstoned, by local ID.
+    pub async fn list_state(
+        &self,
+        local_id: &str,
+    ) -> Result<Option<(Option<String>, bool)>, StoreError> {
+        Ok(
+            sqlx::query_as("SELECT graph_id, deleted_at IS NOT NULL FROM lists WHERE local_id = ?")
+                .bind(local_id)
+                .fetch_optional(self.reader())
+                .await?,
+        )
+    }
+
+    /// `pending` operations due by `now` whose dependency is resolved, in
+    /// queue order.
+    pub async fn ready_ops(&self, now: i64) -> Result<Vec<OutboxRow>, StoreError> {
+        rows(
+            sqlx::query_as(AssertSqlSafe(ops_sql(concat!(
+                "o.state = 'pending' AND o.next_attempt_at <= ? AND (o.depends_on_op_id IS NULL \
+                 OR NOT EXISTS (SELECT 1 FROM outbox d WHERE d.op_id = o.depends_on_op_id \
+                 AND d.state IN ",
+                unresolved!(),
+                ")) ORDER BY o.seq"
+            ))))
+            .bind(now)
+            .fetch_all(self.reader())
+            .await?,
+        )
+    }
+
+    /// When the next `pending` operation waiting out a backoff is due, if
+    /// any is. One due already that isn't sent waits for another operation
+    /// instead, and is woken by that one's outcome.
+    pub async fn next_attempt_at(&self, now: i64) -> Result<Option<i64>, StoreError> {
+        Ok(sqlx::query_scalar(
+            "SELECT MIN(next_attempt_at) FROM outbox WHERE state = 'pending' AND next_attempt_at > ?",
+        )
+        .bind(now)
+        .fetch_one(self.reader())
+        .await?)
+    }
+
+    pub async fn outbox_op(&self, op_id: &str) -> Result<Option<OutboxRow>, StoreError> {
+        Ok(self.ops_with("o.op_id = ?", op_id).await?.pop())
+    }
+
+    /// Every operation, newest first, or only those in `state`.
+    pub async fn outbox(&self, state: Option<OpState>) -> Result<Vec<OutboxRow>, StoreError> {
+        match state {
+            Some(state) => {
+                self.ops_with("o.state = ? ORDER BY o.seq DESC", state.as_str())
+                    .await
+            }
+            None => rows(
+                sqlx::query_as(AssertSqlSafe(ops_sql("1 ORDER BY o.seq DESC")))
+                    .fetch_all(self.reader())
+                    .await?,
+            ),
+        }
+    }
+
+    /// The operations of the command `id`, or the one operation `id`, in
+    /// queue order.
+    pub async fn command_ops(&self, id: &str) -> Result<Vec<OutboxRow>, StoreError> {
+        let command = self.ops_with("o.command_id = ? ORDER BY o.seq", id).await?;
+        if !command.is_empty() {
+            return Ok(command);
+        }
+        self.ops_with("o.op_id = ?", id).await
+    }
+
+    /// The latest command that isn't an undo and hasn't been undone.
+    pub async fn last_undoable_command(&self) -> Result<Option<String>, StoreError> {
+        Ok(sqlx::query_scalar(
+            "SELECT command_id FROM outbox o WHERE undoes_command_id IS NULL \
+             AND NOT EXISTS (SELECT 1 FROM outbox u WHERE u.undoes_command_id = o.command_id) \
+             GROUP BY command_id ORDER BY MAX(seq) DESC LIMIT 1",
+        )
+        .fetch_optional(self.reader())
+        .await?)
+    }
+
+    /// The command that undid `command_id`, if one did.
+    pub async fn undone_by(&self, command_id: &str) -> Result<Option<String>, StoreError> {
+        Ok(
+            sqlx::query_scalar("SELECT command_id FROM outbox WHERE undoes_command_id = ? LIMIT 1")
+                .bind(command_id)
+                .fetch_optional(self.reader())
+                .await?,
+        )
+    }
+
+    /// Unresolved operations waiting for `op_id`.
+    pub async fn unresolved_dependents(&self, op_id: &str) -> Result<Vec<String>, StoreError> {
+        Ok(sqlx::query_scalar(concat!(
+            "SELECT op_id FROM outbox WHERE depends_on_op_id = ? AND state IN ",
+            unresolved!(),
+            " ORDER BY seq"
+        ))
+        .bind(op_id)
+        .fetch_all(self.reader())
+        .await?)
+    }
+
+    /// How many operations are in each state, and how many `unknown` ones
+    /// are flagged for the user.
+    pub async fn outbox_depth(&self) -> Result<(Vec<(OpState, i64)>, i64), StoreError> {
+        let counts: Vec<(String, i64)> =
+            sqlx::query_as("SELECT state, COUNT(*) FROM outbox GROUP BY state")
+                .fetch_all(self.reader())
+                .await?;
+        let flagged: i64 = sqlx::query_scalar(
+            "SELECT COUNT(*) FROM outbox WHERE state = 'unknown' AND unknown_since <= ?",
+        )
+        .bind(now() - UNKNOWN_LOOKUP_SECS)
+        .fetch_one(self.reader())
+        .await?;
+        let counts = counts
+            .into_iter()
+            .map(|(state, count)| Ok((OpState::parse(&state)?, count)))
+            .collect::<Result<_, StoreError>>()?;
+        Ok((counts, flagged))
+    }
+
+    /// `pending` → `inflight`, counting the attempt. False if the operation
+    /// isn't `pending` any more (discarded, or retried meanwhile).
+    pub async fn mark_inflight(&self, op_id: &str) -> Result<bool, StoreError> {
+        let result = sqlx::query(
+            "UPDATE outbox SET state = 'inflight', attempts = attempts + 1, sent_at = ? \
+             WHERE op_id = ? AND state = 'pending'",
+        )
+        .bind(now())
+        .bind(op_id)
+        .execute(self.writer())
+        .await?;
+        Ok(result.rows_affected() == 1)
+    }
+
+    /// A temporary failure: back to `pending`, and nothing is sent before
+    /// `until`, since whatever stopped this (the network, throttling, the
+    /// sign-in) stops the rest too.
+    pub async fn defer(
+        &self,
+        op_id: &str,
+        until: i64,
+        error: (&str, &str),
+    ) -> Result<(), StoreError> {
+        let mut tx = self.writer().begin().await?;
+        sqlx::query(
+            "UPDATE outbox SET state = 'pending', next_attempt_at = ?, last_error_kind = ?, \
+             last_error = ? WHERE op_id = ?",
+        )
+        .bind(until)
+        .bind(error.0)
+        .bind(error.1)
+        .bind(op_id)
+        .execute(&mut *tx)
+        .await?;
+        sqlx::query(
+            "UPDATE outbox SET next_attempt_at = MAX(next_attempt_at, ?) WHERE state = 'pending'",
+        )
+        .bind(until)
+        .execute(&mut *tx)
+        .await?;
+        tx.commit().await?;
+        Ok(())
+    }
+
+    /// Sent, but nothing says whether Graph applied it.
+    pub async fn mark_unknown(
+        &self,
+        op_id: &str,
+        error: (&str, &str),
+        note: Option<&str>,
+    ) -> Result<(), StoreError> {
+        sqlx::query(
+            "UPDATE outbox SET state = 'unknown', unknown_since = COALESCE(unknown_since, ?), \
+             last_error_kind = ?, last_error = ?, note = COALESCE(?, note) WHERE op_id = ?",
+        )
+        .bind(now())
+        .bind(error.0)
+        .bind(error.1)
+        .bind(note)
+        .bind(op_id)
+        .execute(self.writer())
+        .await?;
+        Ok(())
+    }
+
+    /// What was seen while looking for an `unknown` operation's outcome.
+    pub async fn set_note(&self, op_id: &str, note: &str) -> Result<(), StoreError> {
+        sqlx::query("UPDATE outbox SET note = ? WHERE op_id = ?")
+            .bind(note)
+            .bind(op_id)
+            .execute(self.writer())
+            .await?;
+        Ok(())
+    }
+
+    /// Graph answered operation `op_id` with the task `raw` (and our
+    /// extension, when the answer said): write it to the operation's task,
+    /// with the fields of its later unresolved operations on top, and, if
+    /// `done`, mark the operation `done`. If sync already cached the task
+    /// under another local ID, that row merges into this one (04: the
+    /// atomic identity merge).
+    pub async fn record_sent(
+        &self,
+        op_id: &str,
+        raw: &Entity,
+        extension: Option<Option<Value>>,
+        done: bool,
+    ) -> Result<(), StoreError> {
+        let graph_id = text(raw, "id")
+            .ok_or_else(|| StoreError::Invalid("Graph returned a task with no id".into()))?;
+        let mut tx = self.writer().begin().await?;
+        let rev = next_local_rev(&mut tx).await?;
+        let op = op_in(&mut tx, op_id).await?;
+        let (extension_json, hydrated_etag) = match extension {
+            Some(extension) => (extension.as_ref().map(Value::to_string), etag(raw)),
+            None => sqlx::query_as::<_, (Option<String>, Option<String>)>(
+                "SELECT extension_json, hydrated_etag FROM tasks WHERE local_id = ?",
+            )
+            .bind(&op.entity_local_id)
+            .fetch_optional(&mut *tx)
+            .await?
+            .unwrap_or_default(),
+        };
+        let attributed = Attributed {
+            graph_id: &graph_id,
+            list_local_id: &op.list_local_id,
+            raw: raw.clone(),
+            extension_json,
+            hydrated_etag,
+        };
+        write_attributed(&mut tx, &op, attributed, rev).await?;
+        if done {
+            finish(&mut tx, op_id, OpState::Done, None).await?;
+        }
+        tx.commit().await?;
+        Ok(())
+    }
+
+    /// An `unknown` create found by its `opId` on the cached task
+    /// `found_local_id`, whose list was just confirmed live: that's the
+    /// task it made. Merge it into the operation's own task, which keeps
+    /// its local ID, and mark the operation `done`, in one transaction.
+    pub async fn adopt(&self, op_id: &str, found_local_id: &str) -> Result<(), StoreError> {
+        let mut tx = self.writer().begin().await?;
+        let rev = next_local_rev(&mut tx).await?;
+        let op = op_in(&mut tx, op_id).await?;
+        if found_local_id != op.entity_local_id {
+            let found = row_identity(&mut tx, found_local_id).await?;
+            let graph_id = found.graph_id.ok_or_else(|| {
+                StoreError::Invalid(format!("task {found_local_id} has no Graph ID to adopt"))
+            })?;
+            let attributed = Attributed {
+                graph_id: &graph_id,
+                list_local_id: &found.list_local_id,
+                raw: parse_object(&found.raw_json)?,
+                extension_json: found.extension_json,
+                hydrated_etag: found.hydrated_etag,
+            };
+            write_attributed(&mut tx, &op, attributed, rev).await?;
+        }
+        finish(&mut tx, op_id, OpState::Done, None).await?;
+        tx.commit().await?;
+        Ok(())
+    }
+
+    /// Mark an operation `done` without changing its task (a delete, or a
+    /// create whose task is already recorded).
+    pub async fn mark_done(&self, op_id: &str) -> Result<(), StoreError> {
+        let mut tx = self.writer().begin().await?;
+        finish(&mut tx, op_id, OpState::Done, None).await?;
+        tx.commit().await?;
+        Ok(())
+    }
+
+    /// Graph rejected `op_id` for good: mark it `failed` with `error` and
+    /// roll its task back by `restore`, in one transaction. A failed create
+    /// takes the task's later unresolved operations with it: there's no task
+    /// for them to change. Returns those, also `failed`.
+    pub async fn fail_op(
+        &self,
+        op_id: &str,
+        error: (&str, &str),
+        restore: &Restore,
+    ) -> Result<Vec<String>, StoreError> {
+        let mut tx = self.writer().begin().await?;
+        let rev = next_local_rev(&mut tx).await?;
+        let op = op_in(&mut tx, op_id).await?;
+        apply_restore(&mut tx, &op.entity_local_id, restore, rev).await?;
+        finish(&mut tx, op_id, OpState::Failed, Some(error)).await?;
+        let mut cascaded: Vec<String> = Vec::new();
+        if op.op == OpKind::Create {
+            cascaded = sqlx::query_scalar(concat!(
+                "SELECT op_id FROM outbox WHERE entity_local_id = ? AND seq > ? AND state IN ",
+                unresolved!(),
+                " ORDER BY seq"
+            ))
+            .bind(&op.entity_local_id)
+            .bind(op.seq)
+            .fetch_all(&mut *tx)
+            .await?;
+            let message = format!("the task was never created: its add ({op_id}) failed");
+            for later in &cascaded {
+                finish(
+                    &mut tx,
+                    later,
+                    OpState::Failed,
+                    Some(("rejected", &message)),
+                )
+                .await?;
+            }
+            tombstone_row(&mut tx, &op.entity_local_id, rev).await?;
+        }
+        tx.commit().await?;
+        Ok(cascaded)
+    }
+
+    /// Drop `op_id`, undoing its local change by `restore`. Operations that
+    /// waited for it wait for what it waited for. Its idempotency key is
+    /// kept for 24 hours from now.
+    pub async fn discard_op(&self, op_id: &str, restore: &Restore) -> Result<(), StoreError> {
+        let mut tx = self.writer().begin().await?;
+        let rev = next_local_rev(&mut tx).await?;
+        let op = op_in(&mut tx, op_id).await?;
+        apply_restore(&mut tx, &op.entity_local_id, restore, rev).await?;
+        sqlx::query("UPDATE outbox SET depends_on_op_id = ? WHERE depends_on_op_id = ?")
+            .bind(&op.depends_on)
+            .bind(op_id)
+            .execute(&mut *tx)
+            .await?;
+        sqlx::query("DELETE FROM outbox WHERE op_id = ?")
+            .bind(op_id)
+            .execute(&mut *tx)
+            .await?;
+        sqlx::query(
+            "UPDATE idempotency_keys SET finished_at = ? \
+             WHERE op_id = ? AND finished_at IS NOT NULL",
+        )
+        .bind(now())
+        .bind(&op.command_id)
+        .execute(&mut *tx)
+        .await?;
+        tx.commit().await?;
+        Ok(())
+    }
+
+    /// Queue `op_id` again, now, making `restore` its local change again.
+    pub async fn requeue(&self, op_id: &str, restore: &Restore) -> Result<(), StoreError> {
+        let mut tx = self.writer().begin().await?;
+        let rev = next_local_rev(&mut tx).await?;
+        let op = op_in(&mut tx, op_id).await?;
+        apply_restore(&mut tx, &op.entity_local_id, restore, rev).await?;
+        sqlx::query(
+            "UPDATE outbox SET state = 'pending', next_attempt_at = 0, last_error_kind = NULL, \
+             last_error = NULL, unknown_since = NULL, note = NULL, finished_at = NULL \
+             WHERE op_id = ?",
+        )
+        .bind(op_id)
+        .execute(&mut *tx)
+        .await?;
+        tx.commit().await?;
+        Ok(())
+    }
+
+    /// After a restart, nothing is being sent. A create or a recurring
+    /// completion that was may have reached Graph, so it's `unknown`; any
+    /// other operation is safe to send again, so it's `pending` (04).
+    /// Returns how many became `unknown`.
+    pub async fn recover_inflight(&self) -> Result<u64, StoreError> {
+        let mut tx = self.writer().begin().await?;
+        let unknown = sqlx::query(
+            "UPDATE outbox SET state = 'unknown', unknown_since = ?, \
+             note = 'the daemon stopped while this was being sent' \
+             WHERE state = 'inflight' \
+             AND (op = 'create' OR json_extract(payload_json, '$.recurring') = 1)",
+        )
+        .bind(now())
+        .execute(&mut *tx)
+        .await?
+        .rows_affected();
+        sqlx::query("UPDATE outbox SET state = 'pending' WHERE state = 'inflight'")
+            .execute(&mut *tx)
+            .await?;
+        tx.commit().await?;
+        Ok(unknown)
+    }
+
+    /// Live cached tasks with a Graph ID whose extension carries `opId`
+    /// `op_id`: what an `unknown` create may have made.
+    pub async fn tasks_with_op_id(&self, op_id: &str) -> Result<Vec<TaskRow>, StoreError> {
+        let records: Vec<TaskRecord> = sqlx::query_as(AssertSqlSafe(format!(
+            "SELECT {} FROM tasks WHERE json_extract(extension_json, '$.opId') = ? \
+             AND graph_id IS NOT NULL AND deleted_at IS NULL ORDER BY rowid",
+            task_record_columns()
+        )))
+        .bind(op_id)
+        .fetch_all(self.reader())
+        .await?;
+        records.into_iter().map(TaskRow::try_from).collect()
+    }
+
+    /// Operations matching `condition`, which has one `?`, bound to `value`.
+    async fn ops_with(&self, condition: &str, value: &str) -> Result<Vec<OutboxRow>, StoreError> {
+        rows(
+            sqlx::query_as(AssertSqlSafe(ops_sql(condition)))
+                .bind(value)
+                .fetch_all(self.reader())
+                .await?,
+        )
+    }
+}
+
+fn ops_sql(condition: &str) -> String {
+    format!("SELECT {OP_COLUMNS} {FROM_OUTBOX} WHERE {condition}")
+}
+
+fn rows(records: Vec<OpRecord>) -> Result<Vec<OutboxRow>, StoreError> {
+    records.into_iter().map(OutboxRow::try_from).collect()
+}
+
+/// Fail the `pending` and `unknown` operations of tasks in the list
+/// `list_local_id`, which is gone, and tombstone their tasks, unless one
+/// is still being sent. Returns the operations failed.
+pub(crate) async fn fail_ops_in_list(
+    tx: &mut SqliteConnection,
+    list_local_id: &str,
+) -> Result<Vec<String>, StoreError> {
+    let failed: Vec<(String, String)> = sqlx::query_as(
+        "SELECT op_id, entity_local_id FROM outbox \
+         WHERE list_local_id = ? AND state IN ('pending', 'unknown') ORDER BY seq",
+    )
+    .bind(list_local_id)
+    .fetch_all(&mut *tx)
+    .await?;
+    let rev = next_local_rev(tx).await?;
+    for (op_id, entity) in &failed {
+        finish(
+            tx,
+            op_id,
+            OpState::Failed,
+            Some((
+                "rejected",
+                "the list was deleted on another device, so this was never sent; the task's \
+                 content is kept here",
+            )),
+        )
+        .await?;
+        sqlx::query(
+            "UPDATE tasks SET deleted_at = COALESCE(deleted_at, ?), local_rev = ? \
+             WHERE local_id = ? AND NOT EXISTS (SELECT 1 FROM outbox o \
+             WHERE o.entity_local_id = tasks.local_id AND o.state = 'inflight')",
+        )
+        .bind(now())
+        .bind(rev)
+        .bind(entity)
+        .execute(&mut *tx)
+        .await?;
+    }
+    Ok(failed.into_iter().map(|(op_id, _)| op_id).collect())
+}
+
+async fn op_in(tx: &mut SqliteConnection, op_id: &str) -> Result<OutboxRow, StoreError> {
+    let record: Option<OpRecord> = sqlx::query_as(AssertSqlSafe(ops_sql("o.op_id = ?")))
+        .bind(op_id)
+        .fetch_optional(&mut *tx)
+        .await?;
+    record
+        .map(OutboxRow::try_from)
+        .transpose()?
+        .ok_or_else(|| StoreError::Invalid(format!("no outbox operation {op_id}")))
+}
+
+async fn finish(
+    tx: &mut SqliteConnection,
+    op_id: &str,
+    state: OpState,
+    error: Option<(&str, &str)>,
+) -> Result<(), StoreError> {
+    sqlx::query(
+        "UPDATE outbox SET state = ?, finished_at = ?, last_error_kind = ?, last_error = ? \
+         WHERE op_id = ?",
+    )
+    .bind(state.as_str())
+    .bind(now())
+    .bind(error.map(|(kind, _)| kind))
+    .bind(error.map(|(_, message)| message))
+    .bind(op_id)
+    .execute(&mut *tx)
+    .await?;
+    Ok(())
+}
+
+/// A task as Graph has it, for the operation that made or changed it.
+struct Attributed<'a> {
+    graph_id: &'a str,
+    list_local_id: &'a str,
+    raw: Entity,
+    extension_json: Option<String>,
+    hydrated_etag: Option<String>,
+}
+
+/// Write `task` to `op`'s task row, merging in any other row that has its
+/// Graph ID, with the fields of `op`'s later unresolved operations on top.
+async fn write_attributed(
+    tx: &mut SqliteConnection,
+    op: &OutboxRow,
+    task: Attributed<'_>,
+    rev: i64,
+) -> Result<(), StoreError> {
+    let local_id = &op.entity_local_id;
+    let duplicate: Option<String> =
+        sqlx::query_scalar("SELECT local_id FROM tasks WHERE graph_id = ? AND local_id != ?")
+            .bind(task.graph_id)
+            .bind(local_id)
+            .fetch_optional(&mut *tx)
+            .await?;
+    if let Some(duplicate) = duplicate {
+        sqlx::query("UPDATE outbox SET entity_local_id = ? WHERE entity_local_id = ?")
+            .bind(local_id)
+            .bind(&duplicate)
+            .execute(&mut *tx)
+            .await?;
+        sqlx::query("DELETE FROM tasks WHERE local_id = ?")
+            .bind(&duplicate)
+            .execute(&mut *tx)
+            .await?;
+    }
+    let later: Vec<(String, String)> = sqlx::query_as(concat!(
+        "SELECT op, payload_json FROM outbox WHERE entity_local_id = ? AND seq > ? AND state IN ",
+        unresolved!(),
+        " ORDER BY seq"
+    ))
+    .bind(local_id)
+    .bind(op.seq)
+    .fetch_all(&mut *tx)
+    .await?;
+    let mut raw = task.raw;
+    let mut deleted = false;
+    for (kind, payload) in &later {
+        match OpKind::parse(kind)? {
+            OpKind::Update => {
+                let payload = parse_optional(Some(payload.clone()))?.unwrap_or_default();
+                apply_body(&mut raw, &payload["body"]);
+            }
+            OpKind::Delete => deleted = true,
+            OpKind::Create => {}
+        }
+    }
+    write_task(
+        tx,
+        &WriteTask {
+            local_id,
+            graph_id: Some(task.graph_id),
+            list_local_id: task.list_local_id,
+            raw: &raw,
+            raw_json: &to_json(&raw)?,
+            extension_json: task.extension_json.as_deref(),
+            hydrated_etag: task.hydrated_etag.as_deref(),
+            local_rev: rev,
+        },
+    )
+    .await?;
+    if deleted {
+        tombstone_row(tx, local_id, rev).await?;
+    }
+    Ok(())
+}
+
+async fn apply_restore(
+    tx: &mut SqliteConnection,
+    local_id: &str,
+    restore: &Restore,
+    rev: i64,
+) -> Result<(), StoreError> {
+    match restore {
+        Restore::Nothing => Ok(()),
+        Restore::Tombstone => tombstone_row(tx, local_id, rev).await,
+        Restore::Replace(raw) => replace_row(tx, local_id, raw, rev).await,
+    }
+}
+
+/// Make `raw` the task's JSON, keeping its identity and extension, and
+/// clear any tombstone.
+async fn replace_row(
+    tx: &mut SqliteConnection,
+    local_id: &str,
+    raw: &Entity,
+    rev: i64,
+) -> Result<(), StoreError> {
+    let current = row_identity(tx, local_id).await?;
+    write_task(
+        tx,
+        &WriteTask {
+            local_id,
+            graph_id: current.graph_id.as_deref(),
+            list_local_id: &current.list_local_id,
+            raw,
+            raw_json: &to_json(raw)?,
+            extension_json: current.extension_json.as_deref(),
+            hydrated_etag: current.hydrated_etag.as_deref(),
+            local_rev: rev,
+        },
+    )
+    .await
+}
+
+/// Who a cached task is, apart from its JSON's content.
+#[derive(FromRow)]
+struct RowIdentity {
+    graph_id: Option<String>,
+    list_local_id: String,
+    raw_json: String,
+    extension_json: Option<String>,
+    hydrated_etag: Option<String>,
+}
+
+async fn row_identity(
+    tx: &mut SqliteConnection,
+    local_id: &str,
+) -> Result<RowIdentity, StoreError> {
+    sqlx::query_as(
+        "SELECT graph_id, list_local_id, raw_json, extension_json, hydrated_etag FROM tasks \
+         WHERE local_id = ?",
+    )
+    .bind(local_id)
+    .fetch_optional(tx)
+    .await?
+    .ok_or_else(|| StoreError::Invalid(format!("task {local_id} isn't cached")))
+}
+
+async fn tombstone_row(
+    tx: &mut SqliteConnection,
+    local_id: &str,
+    rev: i64,
+) -> Result<(), StoreError> {
+    sqlx::query(
+        "UPDATE tasks SET deleted_at = COALESCE(deleted_at, ?), local_rev = ? WHERE local_id = ?",
+    )
+    .bind(now())
+    .bind(rev)
+    .bind(local_id)
+    .execute(tx)
+    .await?;
+    Ok(())
+}
+
+async fn fetch_task(
+    connection: &mut SqliteConnection,
+    local_id: &str,
+) -> Result<Option<TaskRow>, StoreError> {
+    let record: Option<TaskRecord> = sqlx::query_as(AssertSqlSafe(format!(
+        "SELECT {} FROM tasks WHERE local_id = ?",
+        task_record_columns()
+    )))
+    .bind(local_id)
+    .fetch_optional(connection)
+    .await?;
+    record.map(TaskRow::try_from).transpose()
+}

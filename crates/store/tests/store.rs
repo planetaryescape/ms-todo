@@ -588,7 +588,10 @@ async fn a_list_found_deleted_takes_its_tasks_and_scope_with_it() {
     whole.cursor = delta("link");
     store.apply_tasks(whole).await.expect("apply");
 
-    assert!(store.remove_list("L1", rev).await.expect("remove"));
+    assert_eq!(
+        store.remove_list("L1", rev).await.expect("remove"),
+        Some(Vec::new())
+    );
     assert!(store.lists().await.expect("lists").is_empty());
     assert!(store.task("T1").await.expect("read").is_none());
     assert!(
@@ -598,7 +601,7 @@ async fn a_list_found_deleted_takes_its_tasks_and_scope_with_it() {
             .expect("read")
             .is_none()
     );
-    assert!(!store.remove_list("L1", rev).await.expect("again"));
+    assert_eq!(store.remove_list("L1", rev).await.expect("again"), None);
 }
 
 #[tokio::test]

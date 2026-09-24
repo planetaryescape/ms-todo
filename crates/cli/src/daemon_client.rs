@@ -29,7 +29,8 @@ use fs2::FileExt;
 use futures_util::{SinkExt, StreamExt};
 use ms_todo_core::{ErrorKind, Paths};
 use ms_todo_protocol::{
-    Codec, DaemonStatus, Event, Message, PROTOCOL_VERSION, Payload, Request, Response, ResponseData,
+    Codec, DaemonStatus, EXIT_DATABASE_TOO_NEW, Event, Message, PROTOCOL_VERSION, Payload, Request,
+    Response, ResponseData,
 };
 use nix::errno::Errno;
 use nix::sys::signal::{Signal, kill};
@@ -361,6 +362,16 @@ async fn start(paths: &Paths) -> Result<(DaemonClient, DaemonStatus), CliError> 
         if let Ok(Some(exit)) = child.try_wait()
             && !exit.success()
         {
+            if exit.code() == Some(i32::from(EXIT_DATABASE_TOO_NEW)) {
+                return Err(CliError::message(
+                    ErrorKind::DatabaseTooNew,
+                    format!(
+                        "this database was upgraded by a newer ms-todo; install the latest \
+                         version ({})",
+                        paths.database_file().display()
+                    ),
+                ));
+            }
             return Err(unavailable(format!(
                 "the daemon exited during startup ({exit}){}",
                 log_tail(paths)

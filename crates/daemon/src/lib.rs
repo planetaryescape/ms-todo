@@ -15,16 +15,19 @@
 
 mod doctor;
 mod entities;
+mod events;
 mod freshness;
 mod handlers;
 mod idempotency;
 mod list_resolution;
+mod outbox;
 mod reads;
 mod server;
 mod sync;
 mod task_fields;
 mod task_resolution;
 mod task_writes;
+mod undo;
 
 use std::process::ExitCode;
 
@@ -47,7 +50,11 @@ pub fn run(paths: Paths) -> ExitCode {
     };
     match runtime.block_on(server::serve(paths)) {
         Ok(()) => ExitCode::SUCCESS,
-        Err(message) => {
+        Err(server::Fatal::DatabaseTooNew(message)) => {
+            eprintln!("ms-todo daemon: {message}");
+            ExitCode::from(ms_todo_protocol::EXIT_DATABASE_TOO_NEW)
+        }
+        Err(server::Fatal::Other(message)) => {
             eprintln!("ms-todo daemon: {message}");
             ExitCode::FAILURE
         }

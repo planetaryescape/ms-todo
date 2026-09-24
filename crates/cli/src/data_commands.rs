@@ -31,7 +31,7 @@ pub const LISTS_TABLE: Table = Table {
 };
 
 pub const TASKS_TABLE: Table = Table {
-    headings: &["DONE", "DUE", "IMPORTANT", "TITLE"],
+    headings: &["DONE", "DUE", "IMPORTANT", "SYNC", "TITLE"],
     row: |task| {
         let done = if text(task, "status") == "completed" {
             "x"
@@ -44,10 +44,16 @@ pub const TASKS_TABLE: Table = Table {
             ""
         };
         let due = csv_columns::local_due(task);
+        // Only what needs attention: a synced task's cell is empty.
+        let sync = match text(task, "sync_state") {
+            "synced" => "",
+            other => other,
+        };
         vec![
             done.to_owned(),
             due,
             important.to_owned(),
+            sync.to_owned(),
             text(task, "title").to_owned(),
         ]
     },

@@ -4,11 +4,13 @@
 use std::collections::HashSet;
 
 use serde_json::Value;
+use sqlx::AssertSqlSafe;
 use sqlx::FromRow;
 
 use crate::graph_columns::{ListColumns, text};
 use sqlx::SqliteConnection;
 
+use crate::outbox::{NO_UNRESOLVED_OPS, fail_ops_in_list};
 use crate::sync_state::{Cursor, LISTS_SCOPE, checkpoint, tasks_scope};
 use crate::{Entity, Store, StoreError, new_local_id, now, parse_object, parse_optional, to_json};
 
@@ -77,6 +79,8 @@ pub struct ListsApplied {
     pub changed: i64,
     /// Graph IDs of the lists it tombstoned, with their tasks.
     pub removed: Vec<String>,
+    /// Outbox operations failed because their list is gone.
+    pub failed_ops: Vec<String>,
 }
 
 impl Store {
@@ -168,7 +172,8 @@ impl Store {
             if seen.contains(&graph_id) {
                 continue;
             }
-            tombstone_list(&mut tx, &local_id, &graph_id, pass.rev).await?;
+            let mut failed = tombstone_list(&mut tx, &local_id, &graph_id, pass.rev).await?;
+            applied.failed_ops.append(&mut failed);
             applied.changed += 1;
             applied.removed.push(graph_id);
         }
@@ -179,8 +184,13 @@ impl Store {
 
     /// Tombstone the list whose Graph ID is `graph_id`, found deleted
     /// outside a lists pass (a 404 on `GET /me/todo/lists/{id}`, S4), with
-    /// its tasks, and drop its tasks scope. Returns whether it was live.
-    pub async fn remove_list(&self, graph_id: &str, rev: i64) -> Result<bool, StoreError> {
+    /// its tasks, and drop its tasks scope. Returns `None` if it wasn't
+    /// live, else the outbox operations failed because it's gone.
+    pub async fn remove_list(
+        &self,
+        graph_id: &str,
+        rev: i64,
+    ) -> Result<Option<Vec<String>>, StoreError> {
         let mut tx = self.writer().begin().await?;
         let live: Option<String> = sqlx::query_scalar(
             "SELECT local_id FROM lists WHERE graph_id = ? AND deleted_at IS NULL AND local_rev <= ?",
@@ -190,33 +200,40 @@ impl Store {
         .fetch_optional(&mut *tx)
         .await?;
         let Some(local_id) = live else {
-            return Ok(false);
+            return Ok(None);
         };
-        tombstone_list(&mut tx, &local_id, graph_id, rev).await?;
+        let failed = tombstone_list(&mut tx, &local_id, graph_id, rev).await?;
         tx.commit().await?;
-        Ok(true)
+        Ok(Some(failed))
     }
 }
 
 /// Tombstone a list and its tasks not written since `rev`, and drop its
 /// tasks scope, cursor and all: a deleted list's tasks delta keeps
 /// answering 200 with nothing (S4), so it would never say so itself.
+///
+/// Its `pending` and `unknown` outbox operations fail, since there's no
+/// list left to write to (04: "Pending operations for a list that gets an
+/// `@removed` fail the same way"), and their tasks go too; the operations
+/// keep the content. An `inflight` one is left to the worker, which sees
+/// the 404 or the ghost-write check. Returns the operations failed.
 async fn tombstone_list(
     tx: &mut SqliteConnection,
     local_id: &str,
     graph_id: &str,
     rev: i64,
-) -> Result<(), StoreError> {
+) -> Result<Vec<String>, StoreError> {
     let deleted_at = now();
     sqlx::query("UPDATE lists SET deleted_at = ? WHERE local_id = ?")
         .bind(deleted_at)
         .bind(local_id)
         .execute(&mut *tx)
         .await?;
-    sqlx::query(
+    let failed = fail_ops_in_list(tx, local_id).await?;
+    sqlx::query(AssertSqlSafe(format!(
         "UPDATE tasks SET deleted_at = ? \
-         WHERE list_local_id = ? AND deleted_at IS NULL AND local_rev <= ?",
-    )
+         WHERE list_local_id = ? AND deleted_at IS NULL AND local_rev <= ? AND {NO_UNRESOLVED_OPS}"
+    )))
     .bind(deleted_at)
     .bind(local_id)
     .bind(rev)
@@ -226,5 +243,5 @@ async fn tombstone_list(
         .bind(tasks_scope(graph_id))
         .execute(&mut *tx)
         .await?;
-    Ok(())
+    Ok(failed)
 }

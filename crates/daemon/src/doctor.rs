@@ -2,9 +2,9 @@
 //! sync state, with its last error.
 
 use ms_todo_protocol::{
-    DoctorReport, ErrorPayload, ResponseData, ScopeError, ScopeStatus, SyncMode,
+    DoctorReport, ErrorPayload, OutboxDepth, ResponseData, ScopeError, ScopeStatus, SyncMode,
 };
-use ms_todo_store::scope_list;
+use ms_todo_store::{OpState, scope_list};
 
 use crate::freshness::sync_info;
 use crate::handlers::{State, store_error};
@@ -44,10 +44,26 @@ pub(crate) async fn doctor(state: &State) -> Result<ResponseData, ErrorPayload> 
             }
         })
         .collect();
+    let (counts, flagged) = state.store.outbox_depth().await.map_err(store_error)?;
+    let mut outbox = OutboxDepth {
+        flagged: u64::try_from(flagged).unwrap_or(0),
+        ..OutboxDepth::default()
+    };
+    for (op_state, count) in counts {
+        let count = u64::try_from(count).unwrap_or(0);
+        match op_state {
+            OpState::Pending => outbox.pending = count,
+            OpState::Inflight => outbox.inflight = count,
+            OpState::Unknown => outbox.unknown = count,
+            OpState::Failed => outbox.failed = count,
+            OpState::Done => outbox.done = count,
+        }
+    }
     Ok(ResponseData::Doctor(DoctorReport {
         database_path: state.store.path().display().to_string(),
         database_bytes: state.store.size_bytes(),
         syncing: state.syncer.status().running(),
         scopes,
+        outbox,
     }))
 }

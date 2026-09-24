@@ -20,11 +20,6 @@ pub(crate) struct Target {
 }
 
 impl Target {
-    /// Graph's ID, for the request.
-    pub fn graph_id(&self) -> &str {
-        self.row.graph_id.as_deref().unwrap_or_default()
-    }
-
     pub fn local_id(&self) -> &str {
         &self.row.local_id
     }
@@ -105,6 +100,7 @@ fn match_in_list<'a>(
                 .map(|task| Candidate {
                     id: task.local_id.clone(),
                     name: task.title.clone(),
+                    ..Candidate::default()
                 })
                 .collect(),
             ..error_payload(
@@ -175,6 +171,7 @@ mod tests {
             title: title.into(),
             raw: Map::new(),
             extension: None,
+            sync_state: "synced".into(),
         }
     }
 

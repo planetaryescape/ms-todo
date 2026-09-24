@@ -10,6 +10,8 @@ Commands:
   auth    Sign in to Microsoft, check the sign-in, or sign out
   lists   Your task lists
   tasks   Tasks in a list
+  outbox  Writes waiting to reach Microsoft To Do, and those that didn't
+  undo    Reverse a change: the last one by default, or the one with this op_id
   sync    Refresh the local cache from Microsoft To Do
   doctor  Check sign-in, the daemon, the local cache and each list's sync
   schema  Print the JSON schemas of a command's input and output (every command's without CMD)
