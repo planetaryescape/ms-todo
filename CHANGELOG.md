@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.1.6](https://github.com/planetaryescape/ms-todo/compare/v0.1.5...v0.1.6) (2026-09-24)
+
+
+### Features
+
+* queue writes offline in an outbox, with undo ([4765995](https://github.com/planetaryescape/ms-todo/commit/4765995859a67beff60e7f2b62d54fbbb56a90e7))
+
+
+### Bug Fixes
+
+* close outbox races and report a too-new database on linux ([5429309](https://github.com/planetaryescape/ms-todo/commit/5429309f4e2d770ca8af5064ec06ba07bdd3dc8d))
+* retry refuses an op whose dependency did not succeed ([ba9a267](https://github.com/planetaryescape/ms-todo/commit/ba9a267a5937da27b2a95afb6711c860821d6f2c))
+
 ## [0.1.5](https://github.com/planetaryescape/ms-todo/compare/v0.1.4...v0.1.5) (2026-09-24)
 
 
