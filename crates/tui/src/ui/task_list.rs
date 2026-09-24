@@ -13,13 +13,13 @@ use crate::glyphs::Glyphs;
 
 pub fn draw(frame: &mut Frame, area: Rect, app: &App) {
     let has_focus = focused(app, Pane::Tasks);
-    let name = app.scope_name(app.shown.as_ref());
+    let name = app.scope_name(app.wanted.as_ref().or(app.shown.as_ref()));
     let title = match &app.filter {
         Some(filter) => format!(" {name} / {filter} "),
         None => format!(" {name} "),
     };
     let block = pane(title, has_focus);
-    if app.tasks.is_empty() {
+    if app.tasks.is_empty() || app.loading() {
         let text = empty_text(app);
         let inner = block.inner(area);
         frame.render_widget(block, area);
@@ -82,7 +82,10 @@ fn empty_text(app: &App) -> String {
     match (&app.connection, app.seeded) {
         (Connection::Lost(why), false) => format!("Can't reach the daemon: {why}"),
         (_, false) => "Connecting to the daemon…".into(),
-        _ if !app.tasks_ready || !app.lists_ready => "Syncing…".into(),
+        _ if !app.lists_ready => "Syncing…".into(),
+        // The rows on hand are another scope's; never show them as this one.
+        _ if app.loading() => "Loading…".into(),
+        _ if !app.tasks_ready => "Syncing…".into(),
         _ => match &app.filter {
             Some(filter) => format!("No task matches \"{filter}\""),
             None => "Nothing here".into(),

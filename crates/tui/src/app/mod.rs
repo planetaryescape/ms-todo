@@ -260,8 +260,30 @@ impl App {
             .collect()
     }
 
+    /// The selected task. `None` while loading: the rows on hand belong to
+    /// another scope, and no action may take its target from them.
     pub fn selected(&self) -> Option<&Task> {
+        if self.loading() {
+            return None;
+        }
         self.tasks.get(self.task_index)
+    }
+
+    /// Whether the scope selected in the sidebar isn't the one the rows
+    /// came from yet: its seed is still on the way.
+    pub fn loading(&self) -> bool {
+        self.wanted.is_some() && self.shown != self.wanted
+    }
+
+    /// Refuse a task action while loading, saying why. True when refused.
+    fn still_loading(&mut self) -> bool {
+        if self.loading() {
+            self.show(
+                Level::Info,
+                "Still loading this list; try again in a moment",
+            );
+        }
+        self.loading()
     }
 
     /// A list's name by local ID.
@@ -382,6 +404,7 @@ impl App {
                 };
                 Vec::new()
             }
+            Action::Add if self.still_loading() => Vec::new(),
             Action::Add => {
                 if self.lists_ready {
                     self.mode = Mode::Adding {
@@ -395,6 +418,7 @@ impl App {
                 }
                 Vec::new()
             }
+            Action::ToggleComplete | Action::Delete if self.still_loading() => Vec::new(),
             Action::ToggleComplete => match self.selected() {
                 Some(task) if task.completed => {
                     vec![change(Write::Reopen, task.id.clone(), TaskChange::Reopen)]
@@ -516,7 +540,7 @@ impl App {
             return Vec::new();
         };
         let title = text.trim();
-        if title.is_empty() {
+        if title.is_empty() || self.still_loading() {
             return Vec::new();
         }
         // A list gets the task; a view adds it to the default list with

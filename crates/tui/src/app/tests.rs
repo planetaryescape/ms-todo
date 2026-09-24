@@ -274,6 +274,7 @@ fn task_entity_pending(id: &str, title: &str) -> ms_todo_protocol::Entity {
 fn adding_from_a_view_gives_the_task_what_puts_it_in_the_view() {
     let mut app = seeded();
     app.shown = Some(Scope::Planned);
+    app.wanted = app.shown.clone();
     act(&mut app, Action::Add);
     app.update(Msg::Char('x'));
     let effects = act(&mut app, Action::Submit);
@@ -284,6 +285,7 @@ fn adding_from_a_view_gives_the_task_what_puts_it_in_the_view() {
     assert_eq!(task.due.as_deref(), Some("2026-09-24"));
 
     app.shown = Some(Scope::Important);
+    app.wanted = app.shown.clone();
     act(&mut app, Action::Add);
     app.update(Msg::Char('y'));
     let effects = act(&mut app, Action::Submit);
@@ -364,6 +366,7 @@ fn x_completes_an_open_task_and_reopens_a_completed_one() {
 fn completing_in_a_view_of_open_tasks_takes_the_row_out() {
     let mut app = seeded();
     app.shown = Some(Scope::All);
+    app.wanted = app.shown.clone();
     let done = task("t2", "Call Sam", json!({ "status": "completed" }));
     app.update(Msg::Response {
         tag: Tag::Write(Write::Complete),
@@ -757,4 +760,63 @@ fn the_views_are_read_ahead_and_a_scope_seen_before_paints_at_once() {
             search: None
         }
     );
+}
+
+#[test]
+fn after_switching_to_a_scope_not_loaded_yet_no_action_takes_the_old_rows() {
+    let mut app = seeded();
+    act(&mut app, Action::FocusLeft);
+    // Home (5) up to Tasks (4), which nothing has read yet.
+    let pending = act(&mut app, Action::MoveUp);
+    act(&mut app, Action::FocusRight);
+    assert!(app.loading());
+    assert_eq!(app.selected(), None, "Home's rows aren't Tasks'");
+    for action in [Action::ToggleComplete, Action::Delete, Action::Add] {
+        assert!(act(&mut app, action).is_empty(), "{action:?}");
+        assert_eq!(app.mode, Mode::Normal, "{action:?}");
+        assert!(
+            app.banner
+                .as_ref()
+                .is_some_and(|banner| banner.text.starts_with("Still loading")),
+            "{action:?}"
+        );
+    }
+    // An event mid-switch rereads the scope being switched to, not Home.
+    let reread = app.update(Msg::Event(Event::ResyncNeeded));
+    assert!(reread.is_empty(), "coalesced behind the seed in flight");
+
+    let tasks = Scope::List { id: "tasks".into() };
+    let mut milk = task("m1", "Buy milk", json!({}));
+    milk.insert("list_id".into(), json!("tasks"));
+    let again = answer_seed(&mut app, &pending[0], seed(tasks.clone(), vec![milk]));
+    assert!(!app.loading());
+    assert_eq!(app.selected().map(|t| t.id.as_str()), Some("m1"));
+    assert_eq!(
+        again[0].request,
+        Request::Seed {
+            scope: Some(tasks),
+            search: None
+        }
+    );
+    let effects = act(&mut app, Action::ToggleComplete);
+    assert!(
+        matches!(&effects[0].request, Request::ChangeTasks { tasks, .. } if tasks == &["m1".to_owned()])
+    );
+}
+
+#[test]
+fn a_refresh_that_reorders_rows_keeps_the_selection_on_the_same_task() {
+    let mut app = seeded();
+    act(&mut app, Action::MoveDown);
+    act(&mut app, Action::MoveDown);
+    assert_eq!(app.selected().map(|t| t.id.as_str()), Some("t4"));
+    // Elsewhere, "Water plants" moved to the top and a task was added.
+    let mut tasks = home_tasks();
+    let water = tasks.remove(3);
+    tasks.insert(0, water);
+    tasks.insert(1, task("t5", "New one", json!({})));
+    let effects = app.update(Msg::Event(Event::ResyncNeeded));
+    answer_seed(&mut app, &effects[0], seed(scope_home(), tasks));
+    assert_eq!(app.task_index, 0);
+    assert_eq!(app.selected().map(|t| t.id.as_str()), Some("t4"));
 }

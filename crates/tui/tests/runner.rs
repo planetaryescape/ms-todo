@@ -215,3 +215,42 @@ async fn keys_drive_the_daemon_and_the_screen_follows() {
     assert_eq!(latency.write.len(), 1);
     daemon.abort();
 }
+
+#[tokio::test]
+async fn a_daemon_that_does_not_know_subscribe_is_reported_as_incompatible() {
+    let dir = tempfile::Builder::new()
+        .prefix("mt")
+        .tempdir_in("/tmp")
+        .expect("tempdir");
+    let socket = dir.path().join("daemon.sock");
+    let listener = UnixListener::bind(&socket).expect("bind");
+    // A protocol 4 daemon: `Subscribe` decodes as an unknown request.
+    tokio::spawn(async move {
+        let (stream, _) = listener.accept().await.expect("accept");
+        let mut framed = Framed::new(stream, Codec::new());
+        while let Some(Ok(message)) = framed.next().await {
+            let error = ms_todo_protocol::ErrorPayload {
+                kind: "unsupported".into(),
+                message: "this daemon doesn't know that request".into(),
+                ..Default::default()
+            };
+            framed
+                .send(Message {
+                    id: message.id,
+                    payload: Payload::Response(Response::Error { error }),
+                })
+                .await
+                .expect("send");
+        }
+    });
+    let (_link, mut messages) = connect(socket);
+    let first = tokio::time::timeout(Duration::from_secs(5), messages.recv())
+        .await
+        .expect("a message")
+        .expect("open");
+    let ms_todo_tui::testing::Msg::Disconnected(why) = first else {
+        unreachable!("{first:?}")
+    };
+    assert!(why.contains("too old or incompatible"), "{why}");
+    assert!(why.contains("ms-todo daemon stop"), "{why}");
+}

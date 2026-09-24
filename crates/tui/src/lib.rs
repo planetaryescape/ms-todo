@@ -144,7 +144,7 @@ fn trace_to(path: &std::path::Path) -> Result<(), TuiError> {
 /// a key stream and the daemon's socket.
 #[doc(hidden)]
 pub mod testing {
-    pub use crate::app::{App, Clock};
+    pub use crate::app::{App, Clock, Msg};
     pub use crate::glyphs::UNICODE;
     pub use crate::ipc::connect;
     pub use crate::runner::run_loop;

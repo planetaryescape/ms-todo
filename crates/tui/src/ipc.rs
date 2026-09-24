@@ -119,8 +119,17 @@ async fn serve(
                     Payload::Event(event) if message.id == subscribe_id => Some(Msg::Event(event)),
                     Payload::Response(Response::Ok { data: ResponseData::Ack })
                         if message.id == subscribe_id => Some(Msg::Connected),
-                    Payload::Response(Response::Error { error }) if message.id == subscribe_id => {
-                        break format!("the daemon refused the subscription: {}", error.message);
+                    // Anything but `Ack` is a daemon that doesn't know
+                    // `Subscribe`: without events the TUI would go stale.
+                    Payload::Response(response) if message.id == subscribe_id => {
+                        let said = match response {
+                            Response::Error { error } => format!(" ({})", error.message),
+                            _ => String::new(),
+                        };
+                        break format!(
+                            "the daemon is too old or incompatible: it didn't accept a \
+                             subscription{said}; restart it with `ms-todo daemon stop`"
+                        );
                     }
                     Payload::Response(response) => waiting
                         .remove(&message.id)
