@@ -18,7 +18,7 @@
                    └────────────┘  └─────────────────┘
 ```
 
-The TUI **may read SQLite directly** for its hot path. It sends every write through the daemon and gets change events from it. The CLI sends everything through the daemon. Only the daemon writes to SQLite and talks to Graph.
+**Every client, the TUI included, reads and writes only over the daemon protocol** (D-031). The TUI starts from a cached snapshot the daemon serves (spotuify's `ClientSeed` pattern), then applies `EntityChanged` events. Only the daemon touches `store` and talks to Graph. A Unix-socket round trip costs about 5–10 µs (vault: `Local IPC vs HTTP`), so the latency budget in [08](08-tui.md) still holds.
 
 ## Why a daemon
 
@@ -35,6 +35,7 @@ mxr and spotuify already handle the known costs: auto-starting the daemon, stale
 ## Daemon lifecycle
 
 - Any client auto-starts the daemon if the socket is missing or dead. It spawns a detached process and waits on a readiness check, following mxr's pattern.
+- **Readiness is not liveness.** The daemon binds the socket before migrations and the first sync. Ready means `Status` answers with a compatible protocol version, and `Status` reports any subsystem still starting (vault: `Daemon Readiness Is Not Process Liveness`).
 - `ms-todo daemon start|stop|status|restart`. A stop only counts as done when the socket is unreachable and the daemon's own PID has exited. That's spotuify's rule, which exists because of stray daemons.
 - Clients and the daemon exchange a protocol version when they connect. If they don't match, the client restarts the daemon (after an upgrade) or reports a clear error.
 - Optional service files for launchd and systemd, like spotuify's `install/`.
@@ -57,11 +58,15 @@ Keep it small. Proposed workspace:
 | `crates/cli` | clap definitions, output formatting, exit codes |
 | `crates/tui` | ratatui app |
 
-Enforce the direction of dependencies with a `tests/workspace_boundaries.rs` like mxr's. `nlp` and `core` must not depend on anything with I/O, and `tui` and `cli` must not depend on `graph`.
+Enforce the direction of dependencies with a `tests/workspace_boundaries.rs` like mxr's. `nlp` and `core` must not depend on anything with I/O, and `tui` and `cli` depend on neither `graph` nor `store` (D-031).
 
 ## Transport
 
-Length-delimited JSON (`tokio_util::codec::LengthDelimitedCodec`) over a Unix socket, with the message envelope `{ id, payload }`. Unknown event tags decode to an `Unknown` variant, and new fields need `#[serde(default)]`, so old clients and newer daemons get along. This is copied from `mxr/crates/protocol/src/codec.rs`, following spotuify's adaptation. Windows isn't a target for v1; ms-todo is macOS-first, with Linux supported.
+Length-delimited JSON (`tokio_util::codec::LengthDelimitedCodec`) over a Unix socket, with the message envelope `{ id, payload }`. Unknown event tags decode to an `Unknown` variant, and new fields need `#[serde(default)]`, so old clients and newer daemons get along. This is copied from `mxr/crates/protocol/src/codec.rs`, following spotuify's adaptation.
+
+**Bounds.** Set the codec's `max_frame_length` explicitly rather than relying on tokio-util's 8 MiB default (vault: `Length-Prefixed Framing`). File bytes never cross IPC: the CLI passes paths, and the daemon reads and writes the files. Events that carry collections hold at most 500 IDs; past that, the daemon sends `ResyncNeeded` instead (vault: `Every Event Payload Needs a Bound`).
+
+**Stalls, not totals.** Long calls (`sync --wait`, the first sync, `tasks move`, attachment transfers) send progress events. A client gives up only after a period with no progress, never on total time (vault: `Deadlines Bound Stalls, Not Work`; spotuify's bounded-timeout rule). Windows isn't a target for v1; ms-todo is macOS-first, with Linux supported.
 
 ## Files
 
@@ -72,4 +77,4 @@ Resolve paths with the `dirs` crate:
   - `ms-todo.db`: SQLite, WAL mode
   - `auth/token.json`: mode 0600
   - `logs/`
-- Runtime: the socket under `<runtime_dir>`, falling back to `<data_dir>/ms-todo/run/`. The path includes the instance name.
+- Runtime: the socket under `<runtime_dir>`, falling back to `<data_dir>/ms-todo/run/`. The path includes the instance name. The socket is mode 0600 inside a 0700 directory (vault: `Local Capability Surfaces Need Defense in Depth`).

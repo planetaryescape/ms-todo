@@ -18,12 +18,86 @@ For each, record the request, the response (with private data removed), the date
 | S10 | `$batch` against To Do endpoints: does it work for GET and for writes? Any limits specific to To Do? | Fan-out strategy | [03](03-graph-provider.md) |
 | S11 | Does setting `dueDateTime` with a time keep the time, or does To Do cut it back to the date? How does the phone show a due date with a time compared with a reminder? | The mapping for "date with a time" | [06](06-natural-language.md) |
 | S12 | Does creating a task with `recurrence` and completing it make Graph create the next occurrence (as the app does), and what does delta return for it? | How recurrence and sync interact | [04](04-sync-cache.md) |
+| S13 | Can a task create carry a unique marker (our extension with the outbox `opId`), and can a lookup find it? (Added after review, 2026-09-24.) | Attributing a create whose outcome is unknown | [04](04-sync-cache.md#unknown-outcome-d-028) |
+| P1 | What is the default page size for task lists and delta, and does `Prefer: odata.maxpagesize` work? (Added during phase 0.) | Pagination, and phase 1's "more than 100 tasks" check | [03](03-graph-provider.md) |
 
 ### S5 result (2026-09-24)
 
 **Confirmed on BK's personal Microsoft account.** A `POST` to `https://login.microsoftonline.com/common/oauth2/v2.0/devicecode` with client ID `48d9179b-67f3-4969-985e-9690aff42435` and scopes `offline_access Tasks.ReadWrite MailboxSettings.ReadWrite User.Read` returned a device code. After interactive sign-in, a `POST` to the matching `/token` endpoint with the device-code grant returned a bearer access token and refresh token. The returned scope included `Tasks.ReadWrite MailboxSettings.ReadWrite User.Read`.
 
 With that access token, `GET https://graph.microsoft.com/v1.0/me/todo/lists` returned HTTP 200 and a `value` array of 29 lists. `GET https://graph.microsoft.com/v1.0/me/outlook/masterCategories` returned HTTP 200 and a `value` array of 7 categories. List and category contents and all tokens are omitted here. This confirms `/common` device-code sign-in, To Do reads and MailboxSettings consent/access for this personal account. It does not test category writes or phone-app behavior (S7).
+
+Evidence for S1–S4, S6–S13 and P1 is in `docs/research/spikes/`. All Graph spikes ran on 2026-09-24 against BK's personal account, on a throwaway list (`ms-todo-spike-2026-09-24`) and two throwaway categories. BK's other lists were read only to count aggregate shapes (S11, S12); none were changed, and no content is recorded. Tokens and deltaLinks are redacted.
+
+### S1 result (2026-09-24)
+
+**Yes. Every change to a checklist item, linked resource or attachment bumps the parent task's `lastModifiedDateTime` and `@odata.etag`, and the task appears in the next `tasks/delta` round.** Checklist items and linked resources come back inline in every task representation, delta included, with no `$expand` (a task with 42 steps returned all 42). Attachments are never inline: only `hasAttachments` flips, and the list needs `GET …/attachments`. Delta accepts `$expand=checklistItems` but it changes nothing. Also found: an empty child collection is absent from the JSON rather than `[]`, and a checklist-item PATCH without `isChecked` resets it to false. Confidence: high. Evidence: [S1](../research/spikes/S1.md). Changed: [04](04-sync-cache.md#children-of-a-task), [02](02-data-model.md#outbox-semantics), D-029.
+
+### S2 result (2026-09-24)
+
+**Delta detects extension changes but never returns their content.** Creating, patching or deleting an open extension bumps the parent's etag, so the list or task appears in delta. `$expand=extensions` is accepted everywhere and silently returns nothing. `$expand=extensions($filter=id eq 'com.planetaryescape.mstodo')` works on GET and on collection GET for lists and tasks, and is a 400 on delta. Extension PATCH replaces the whole document, and POST of an existing name acts as an upsert. **Open:** whether an extension PATCH honours the parent's `If-Match` is untested, so the GET-merge-PATCH in [05](05-custom-features.md) keeps a small race window, tracked in [issue 001](../issues/001-extension-write-race.md). Confidence: high. Evidence: [S2](../research/spikes/S2.md). Changed: [04](04-sync-cache.md#children-of-a-task), [05](05-custom-features.md), D-029.
+
+### S3 result (2026-09-24)
+
+**Confirmed: `$select` is a 400 (`RequestBroker--ParseUri`) on every To Do endpoint we tried, on v1.0 and beta.** The few values that don't fail (`id`, `*`) are ignored. Delta also rejects `$filter` and `$top`. Confidence: high. Evidence: [S3](../research/spikes/S3.md). Changed: [03](03-graph-provider.md#query-options), [04](04-sync-cache.md#delta-sync).
+
+### S4 result (2026-09-24)
+
+**Error shapes are answered; lifetime is open.**
+
+- A malformed or tampered token returns 400 "Badly formed token."; a valid token that Graph no longer accepts, or one from another scope, returns 410 `SyncStateNotFound`. Both mean "reset this cursor".
+- A delta replay also returned a one-off 404 and 500 after a mass delete, then 200 a minute later. Those mean "retry", not "reset".
+- A deleted list's tasks delta returns 200 and an empty page. Only `lists/delta` (`@removed`) or a 404 on `GET /lists/{id}` shows the deletion. A POST into a deleted list still returns 201 for a while, so the write goes to a ghost.
+- **Open: lifetime.** One lists deltaLink died after about 6 minutes for no reason we could find; five others lasted 12–20 minutes, until the observation stopped. Saved deltaLinks (kept outside the repo) are due to be replayed in a few days to measure real lifetime.
+- **Open: how far reads lag behind a write.** Not measured. It no longer risks a duplicate: the [unknown-outcome lookup](04-sync-cache.md#unknown-outcome-d-028) keeps looking for up to 24 hours and never re-sends by itself. A long lag only delays adoption.
+
+Confidence: high on error shapes, low on lifetime. Evidence: [S4](../research/spikes/S4.md). Changed: [04](04-sync-cache.md#reconciliation-after-a-lost-delta-token).
+
+### S6 result (2026-09-24)
+
+**It depends on the call.** `If-Match` is honoured on task PATCH, and on checklist-item PATCH and DELETE (with the parent task's etag): a stale etag gives 412. **Task DELETE and list PATCH ignore it** and apply the change. A malformed `If-Match` (or `*`) gives 500, not 400. DELETE of a task that's already gone gives 404. Any child change moves the parent's etag. Confidence: high. Evidence: [S6](../research/spikes/S6.md). Changed: [03](03-graph-provider.md), [04](04-sync-cache.md#conflicts).
+
+### S7 result (2026-09-24)
+
+**Graph side answered; phone side open.** A category created through Graph can be set on a task, round-trips through delta, and can be filtered on server side. A task can carry a category name with no master category; none is created. Master category names can't be renamed (PATCH returns 200 and changes nothing) and are unique ignoring case (409 `CategoryNameExists`). **`preset4` is Green and `preset3` is Yellow** in Microsoft's mapping, so 05's "preset4, yellowish" was wrong.
+
+**Open: the phone check.** BK checks on the phone whether the tags show on the list row and detail view, which of the two test colours suits My Day, and whether the app can filter by category. The steps are in the evidence file. The spike list and categories stay in place until then.
+
+Confidence: high (Graph), pending (phone). Evidence: [S7](../research/spikes/S7.md). Changed: [05](05-custom-features.md#my-day), D-030.
+
+### S8 result (2026-09-24)
+
+**No crate fits.** On 127 graded phrases, `whichtime-sys` passed 53%, `interim` 24–39%, `chrono-english` 35% and `clockwords` 33%. We'll write a rule-table scanner instead; the reasons are in [06](06-natural-language.md#date-and-time-parsing). Several expected values depend on BK's answers to Q6–Q10 below. Confidence: high on the conclusion. Evidence: [S8](../research/spikes/S8.md), corpus [S8-corpus.tsv](../research/spikes/S8-corpus.tsv). Changed: [06](06-natural-language.md#date-and-time-parsing), [10](10-roadmap.md), D-026.
+
+### S9 result (2026-09-24)
+
+**The cap of 4 holds for To Do.** 4 parallel GETs all returned 200; 8 parallel returned two 429s (`Retry-After` 7 and 8). Sub-requests of a parallel `$batch` count towards the same limit. `Retry-After` (integer seconds) is the only throttle header: no `x-ms-throttle-*` or `x-ms-resource-unit` headers ever appeared. Sequential traffic never throttled. Confidence: high for "4 is safe, 8 isn't"; 5–7 weren't tested. Evidence: [S9](../research/spikes/S9.md). Changed: [03](03-graph-provider.md#http-client).
+
+### S10 result (2026-09-24)
+
+**`$batch` works for To Do reads and writes, with rules.** At most 20 requests (21 is a 400). A batch is either fully sequential or fully parallel; mixing them is a 400. After a failed step in a sequential batch, every later step gets 424. A sub-request can't use the ID created by an earlier one. Sequential batches of 20 never throttled; parallel ones did. Confidence: high. Evidence: [S10](../research/spikes/S10.md). Changed: [03](03-graph-provider.md#http-client).
+
+### S11 result (2026-09-24)
+
+**Graph side answered; phone side open.** `dueDateTime` and `startDateTime` keep only the date: Graph stores midnight in the zone you sent and returns it in UTC. Setting `startDateTime` alone also sets `dueDateTime`. `reminderDateTime` keeps its time. BK's existing due dates are midnight in several zones (23:00Z, 00:00Z and 20:00Z), so reading must round to the nearest local midnight.
+
+**Open: the phone check.** BK checks how the phone shows a due date, a reminder, and both together. The steps are in the evidence file.
+
+**Residual risk:** rounding to the nearest midnight is exact only when the writer's zone is within 12 hours of the reader's; a date written in Pacific/Kiritimati (UTC+14) reads as the previous day in London. The raw value stays in `raw_json` ([02](02-data-model.md#principles)).
+
+Confidence: high (Graph), pending (phone). Evidence: [S11](../research/spikes/S11.md). Changed: [02](02-data-model.md#principles), [06](06-natural-language.md#date-and-time-parsing), D-027.
+
+### S12 result (2026-09-24)
+
+**Completing a recurring task keeps the same ID live and creates a new completed copy.** The PATCH returns 200 with `status: notStarted` and the due date rolled to the next occurrence. A new task with a new ID holds the completed occurrence. Delta returns both. Leaving out `recurrenceTimeZone` moved the due date a day later. After a roll, dates are re-based to UTC midnight. Confidence: high. Evidence: [S12](../research/spikes/S12.md). Changed: [04](04-sync-cache.md#instant-local-writes), [06](06-natural-language.md#recurrence-custom-parser-and-why).
+
+### S13 result (2026-09-24)
+
+**Yes for the create, no for server-side filtering.** A task POST can carry our open extension inline (`"extensions": [{…"extensionName":"com.planetaryescape.mstodo","opId":"…"}]`): it returns 201 with the extension in the response, and a GET with `$expand=extensions($filter=id eq 'com.planetaryescape.mstodo')` returns the `opId`. Filtering on extensions server-side (`$filter=extensions/any(…)`) is a 400, so the match on `opId` happens client-side over a filtered collection GET. Checklist items and linked resources have no extensions, so this doesn't cover them. Confidence: high. Evidence: [S13](../research/spikes/S13.md). Changed: [04](04-sync-cache.md#unknown-outcome-d-028), [02](02-data-model.md#outbox-semantics), D-028.
+
+### P1 result (2026-09-24)
+
+**The default page is 50 tasks, on list and delta.** `Prefer: odata.maxpagesize` works on both, but it isn't carried in the `nextLink`, so it has to be sent on every page. Delta can end with an empty page that carries the `deltaLink`, and `lists/delta` returned a short page mid-stream, so a short page doesn't mean the last one. Phase 1's "more than 100 tasks" check still tests pagination. Confidence: high. Evidence: [P1](../research/spikes/P1.md). Changed: [03](03-graph-provider.md#http-client), [10](10-roadmap.md).
 
 ## Product questions for BK
 
@@ -34,3 +108,13 @@ Answered on 2026-09-24:
 - **Q3. Open.** Keep the original Todoist p1–p4 level in the extension, to avoid losing p2 versus p3 (D-017)? The default until BK decides is no.
 - **Q4. Answered (D-024).** The My Day rollover runs at midnight by default. It's configurable with `my_day.rollover_time` in config.toml.
 - **Q5. Answered (D-025).** Release builds include BK's client ID, so ms-todo works as soon as it's installed. The docs and `auth login` encourage users to register their own app.
+
+Opened on 2026-09-24 by phase 0 (S4, S7, S8) and its review. The placeholders in parentheses are what ms-todo uses until BK answers.
+
+- **Q6. Open.** A bare weekday that is today: does `thursday` typed on a Thursday mean today or next week? (Placeholder: next week, as Todoist does.)
+- **Q7. Open.** What hours do `tonight`, `eod`, `morning` and `evening` mean? (Placeholders: `tonight` is today with no time, `eod` 17:00, `morning` 09:00, `evening` 19:00.)
+- **Q8. Open.** Is D/M the default date order, so `12/10` is 12 October? (Placeholder: yes, UK.)
+- **Q9. Open.** Does lowercase `tom` mean tomorrow? It clashes with the name Tom. (Placeholder: yes, lowercase only, so `Ask Tom` stays in the title.)
+- **Q10. Open.** BK supplies ten of his own phrases for the corpus, [S8-corpus.tsv](../research/spikes/S8-corpus.tsv).
+- **Q11. Open.** My Day colour: `preset3` (Yellow) or `preset4` (Green)? Pending the S7 phone check. (Placeholder: `preset3`, D-030.)
+- **Q12. Open.** A task created into a list that turns out to have been deleted on another device is kept as a `failed` outbox entry ([04](04-sync-cache.md#instant-local-writes)). Should it move to "Tasks" automatically instead? (Placeholder: no, keep it as failed.)

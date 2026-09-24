@@ -12,7 +12,7 @@ Microsoft To Do stays the system of record. The phone and desktop apps keep work
 
 ## Principles
 
-1. **Local-first reads.** Every read the UI does is a local SQLite query. The network is only for sync.
+1. **Local-first reads.** Every read a client does is answered by the daemon from its local SQLite cache, over the protocol (D-031). The network is only for sync.
 2. **Instant writes.** A change shows up in the cache and UI immediately, then goes into an outbox queue for the daemon to send. A write Graph rejects is rolled back, and the user is told why.
 3. **Never lose or truncate silently.** Always follow pagination. Report every Graph error with its code and message. Never delete data as a side effect. Both tools we reviewed failed at this (see [../research/prior-art.md](../research/prior-art.md)).
 4. **Cover the whole API.** If Graph's To Do API can do it, ms-todo can do it. Nothing is left out for being niche.
@@ -36,8 +36,8 @@ Everything below is supported by Graph v1.0 (see the research doc for sources):
 - **Linked resources:** create, read, update, delete.
 - **File attachments:** a single POST for files under 3 MB; an upload session for files up to 25 MB, in chunks under 4 MB each. Also list, get (download) and delete.
 - **Open extensions** on lists and tasks: arbitrary data. The official apps can't see it.
-- **Categories:** the user's Outlook master categories (`/me/outlook/masterCategories`), with create, read, update, delete and colours `preset0` to `preset24`. Needs `MailboxSettings.ReadWrite`.
-- **Query options:** `$filter`, `$orderby`, `$top`, and `$batch` (up to 20 requests per batch).
+- **Categories:** the user's Outlook master categories (`/me/outlook/masterCategories`), with create, read, delete and colour change (`preset0` to `preset24`). Names can't be renamed (S7). Needs `MailboxSettings.ReadWrite`.
+- **Query options:** `$filter`, `$orderby`, `$top`, and `$batch` (up to 20 requests per batch). Not `$select`, which To Do rejects (S3); details in [03](03-graph-provider.md#query-options).
 - **Delta** for lists and for tasks in each list.
 
 Things the official app shows but ms-todo doesn't need: none known. Everything the app does that the API supports is in the list above.
@@ -52,6 +52,7 @@ Things the official app shows but ms-todo doesn't need: none known. Everything t
 | Sharing lists | Only flags (`isShared`) | **Not built.** BK doesn't share lists | [11](11-decision-log.md) D-014 |
 | Moving a task between lists | No move operation | Copy the task completely with all its children, check the copy, then delete the original. The ID changes | [05](05-custom-features.md) |
 | Location-based reminders | No | Not built. BK doesn't use locations (D-023) | [11](11-decision-log.md) |
+| A due date with a time | No: due and start keep the date only (S11) | A time becomes a reminder on the due date (D-027) | [06](06-natural-language.md#date-and-time-parsing) |
 | Suggestions, smart lists | No (they're queries) | Local SQLite views: Important, Planned, All, Completed | [08](08-tui.md) |
 
 ## Non-goals

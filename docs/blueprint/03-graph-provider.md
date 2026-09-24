@@ -21,22 +21,26 @@ The client ID is not a secret; mxr's security audit reached the same conclusion.
 
 **Only the daemon refreshes.** Microsoft replaces the refresh token each time it's used. On `invalid_grant`, return a typed `AuthRevoked` error. The daemon stops syncing, the outbox keeps its operations, and clients get an `AuthRequired` event telling the user to run `ms-todo auth login`.
 
+**A refresh is a compare-and-swap** (vault: `Refresh Token Rotation Is Shared State`). Take the token file lock, reload the file under the lock, and use a newer token if one is already there. Otherwise refresh, save the whole credential, and keep the old refresh token if the response doesn't include one. On `invalid_grant`, delete the stored credential only if the failed refresh token is still the one stored. `auth login` works without a healthy daemon, and the daemon watches `token.json` and clears `AuthRequired` when a new one lands (vault: `Credential Prompts Are Side Effects`).
+
 **Clients never start interactive sign-in by themselves.** `ms-todo auth login` is the only thing that shows a device code. Every other command fails fast with exit code 4 and a message saying to run `ms-todo auth login`. The MCP server we reviewed hangs in this situation instead; that's the failure we're avoiding.
 
-Other auth commands: `auth status` (who is signed in, scopes, token expiry), `auth logout`, and `auth bearer`, which prints the current access token for raw `curl` checks against Graph. That's spotuify's debugging workflow.
+Other auth commands: `auth status` (who is signed in, scopes, token expiry), `auth logout`, and `auth bearer`, which prints the current access token for raw `curl` checks against Graph. That's spotuify's debugging workflow. `auth bearer` needs `--reveal-secret`, so a token never lands in a log by accident (vault: `Local Capability Surfaces Need Defense in Depth`).
 
 ## HTTP client
 
-reqwest with rustls. Base URL `https://graph.microsoft.com/v1.0`. Never use beta unless a spike proves it's needed, and log it if so.
+reqwest with rustls. Base URL `https://graph.microsoft.com/v1.0`. Never use beta unless a spike proves it's needed, and log it if so. Every request has a timeout: 60 seconds by default, longer for upload chunks (vault: `Deadlines Bound Stalls, Not Work`).
 
 **Retry and rate limiting.** Adapt `spotuify/crates/spotuify-spotify/src/rate_limit.rs` (at `d807e5e`, 498 lines), which spotuify itself adapted from mxr:
 
-- A pure `decide_retry(status, headers, attempt)` function, which can be unit tested.
+- A pure `decide_retry(status, headers, attempt, idempotent)` function, which can be unit tested.
 - **429:** honour `Retry-After`, which can be a number of seconds or an HTTP date. If there's no header, back off exponentially with jitter.
-- **5xx and 408:** jittered exponential backoff, at most 3 retries.
+- **5xx, 408 and timeouts:** jittered exponential backoff, at most 3 retries, **for idempotent requests only** (below). We only ever send etags Graph gave us, so a 500 follows these same rules (S6 saw a 500 only for a malformed etag or `*`, which we never send).
 - **401:** refresh the token once and retry once. If that fails, return `AuthExpired`.
 - Keep the backoff state saved so a restarted daemon doesn't hit Graph again straight away.
-- A priority semaphore so interactive writes aren't queued behind a large sync. Graph's documented mailbox limit is **4 concurrent requests** per app and mailbox. Cap concurrency at 4 until a spike shows the To Do limit is different.
+- A priority semaphore so interactive writes aren't queued behind a large sync. **Cap concurrency at 4**, shared by sync, the outbox and `$batch`. S9 confirmed Graph's mailbox limit applies to To Do: 4 parallel requests are fine, and 8 get 429s. The sub-requests of a parallel `$batch` count towards the cap.
+- **Never retry a non-idempotent request automatically after a timeout, 5xx or 408** (D-028). Non-idempotent means every create POST (task, checklist item, linked resource, extension, category, upload-session creation) and any PATCH that completes a recurring task. These are retried only on responses that prove the request didn't run: a 429, a 401 followed by a refresh, or a connection failure before the request was sent. Anything else returns an "outcome unknown" error, and the outbox puts the operation in `unknown` ([04](04-sync-cache.md#unknown-outcome-d-028)). The same rule applies to each sub-request inside a `$batch`. PATCHes that set absolute values, and DELETEs (where a 404 counts as success), keep the normal retry.
+- **`Retry-After` is the only throttle signal.** To Do returns it as integer seconds on a 429 (`activityLimitReached`). It never sent the `x-ms-throttle-*` or `x-ms-resource-unit` headers the Graph docs describe, so don't build on them (S9).
 
 **Errors:** a `thiserror` enum modelled on `spotuify-spotify/src/error.rs`:
 
@@ -45,13 +49,32 @@ reqwest with rustls. Base URL `https://graph.microsoft.com/v1.0`. Never use beta
 - `Api{status, code, message, request_id}`, where `request_id` is Graph's `request-id` header
 - `Network`, `Decode`, `InvalidInput`
 
-Always parse Graph's `{ error: { code, message } }` body. Never hand the user a raw status code or panic on a response you didn't expect.
+Always parse Graph's `{ error: { code, message } }` body. Never hand the user a raw status code or panic on a response you didn't expect. A malformed Graph ID gives 400 `ErrorInvalidIdMalformed`, not 404 (S10).
 
-**Pagination:** every collection call follows `@odata.nextLink` to the end. There's no silent page cap. If a hard safety cap is ever hit, return an error; never return partial results as if they were complete. Use `Prefer: odata.maxpagesize` where it's supported.
+**Pagination:** every collection call follows `@odata.nextLink` to the end. There's no silent page cap. If a hard safety cap is ever hit, return an error; never return partial results as if they were complete. From P1:
 
-**Batch:** use `$batch` (at most 20 requests per batch) for fan-out, such as fetching checklist items for many tasks. A batch returns HTTP 200 even when some requests inside it were throttled, so check each response's status and retry the throttled ones individually. That's MAG&Cie's lesson (`src/graph.ts:246-270`).
+- The default page is 50 tasks, for task lists and for delta.
+- `Prefer: odata.maxpagesize` works on both, but it isn't carried in the `nextLink`. **Send it on every page request**, or page 2 onwards drops back to 50. Use 200 for the first sync.
+- A short or empty page doesn't mean the last one. Delta often ends with an empty page that carries the `@odata.deltaLink`. Stop only when there's no `nextLink` (collections) or a `deltaLink` arrives (delta).
 
-**Concurrency control:** send `If-Match` with the stored `@odata.etag` on PATCH and DELETE where Graph accepts it (spike S6). A 412 means someone else changed it; see [04](04-sync-cache.md).
+**Batch:** use `$batch` for fan-out, such as bulk writes or fetching extensions for many tasks. A batch returns HTTP 200 even when some requests inside it were throttled, so check each response's status and retry the throttled ones individually. That's MAG&Cie's lesson (`src/graph.ts:246-270`). From S10:
+
+- At most 20 requests. 21 is a 400.
+- A batch is **either fully sequential (one `dependsOn` chain) or fully parallel**. Mixing them, for example four independent chains, is a 400.
+- Prefer sequential batches: they save round trips without adding concurrency, and batches of 20 never throttled. A parallel batch runs its sub-requests at once, so it counts as that many requests against the cap of 4; use one only with at most 4 sub-requests and nothing else in flight.
+- In a sequential batch, every step after a failed one gets **424** `FailedDependency`. A 424 step never ran, so it can be retried. The failed step itself follows the same idempotency rule as a single request: a non-idempotent step that got a 5xx or timed out goes to `unknown`, not back into a batch.
+- A sub-request can't refer to an ID created earlier in the same batch. Creating a task with its steps takes a POST, then a batch for the children.
+
+**Concurrency control:** send `If-Match` with the stored `@odata.etag` on the calls that honour it (S6). A 412 means someone else changed it. Which calls honour it, and what to do on a 412, is in [04](04-sync-cache.md#conflicts).
+
+## Query options
+
+From S2 and S3:
+
+- **Never send `$select`.** Every To Do endpoint rejects it with 400 `RequestBroker--ParseUri`, on v1.0 and beta. A task is only 11–15 keys anyway.
+- **Delta takes no query options.** `$select`, `$filter` and `$top` are a 400 on delta. `$expand` is accepted but changes nothing: checklist items and linked resources are inline already, and extensions never come back. Send the plain delta request.
+- **`$expand=extensions` only works with an ID filter:** `$expand=extensions($filter=id eq 'com.planetaryescape.mstodo')`. Without the filter it silently returns nothing. With it, it works on GET and collection GET for lists and tasks, and combines with `$filter=lastModifiedDateTime ge …`. On delta it's a 400.
+- Collection GETs honour `$filter` (including `categories/any(…)`), `$orderby` and `$top`. `$count` is ignored.
 
 ## Endpoints (the whole surface)
 
@@ -69,7 +92,7 @@ todo/lists/{l}/tasks/{t}/checklistItems GET POST        (+ /{c} GET PATCH DELETE
 todo/lists/{l}/tasks/{t}/linkedResources GET POST       (+ /{r} GET PATCH DELETE)
 todo/lists/{l}/tasks/{t}/attachments    GET POST        (+ /{a} GET DELETE, /{a}/$value)
 todo/lists/{l}/tasks/{t}/attachments/createUploadSession POST, then PUT chunks
-todo/lists/{l}/tasks/{t}/extensions     GET POST        (+ /{name} GET PATCH DELETE)
+todo/lists/{l}/tasks/{t}/extensions     POST            (+ /{name} GET PATCH DELETE; the collection GET is a 404, S2)
 outlook/masterCategories                GET POST        (+ /{id} GET PATCH DELETE)
 $batch                                  POST
 ```
@@ -77,8 +100,9 @@ $batch                                  POST
 **Attachments:**
 
 - Under 3 MB: a single POST with `contentBytes` in base64.
-- Up to 25 MB: an upload session. PUT chunks under 4 MB each, in order, and use `nextExpectedRanges` to resume an interrupted upload. The final PUT returns 201 with a `Location` header containing the attachment ID. Cancel with DELETE on the session URL.
+- Up to 25 MB: an upload session. PUT chunks under 4 MB each, in order, and use `nextExpectedRanges` to resume an interrupted upload. The final PUT returns 201 with a `Location` header containing the attachment ID. Cancel with DELETE on the session URL. The final PUT is what commits the attachment, so it's non-idempotent: if its response is lost, the outcome is `unknown` ([04](04-sync-cache.md#unknown-outcome-d-028)), and the upload is never retried or recreated automatically.
 - Refuse anything over 25 MB before uploading, with a clear error.
+- **Downloads are a trust boundary** (vault: `Attachment Writes Are a Trust Boundary`, `Spotuify Security Audit Synthesis`). Strip unsafe characters from the filename, reject `..` and symlinks, keep the result under the chosen directory, write to `<name>.part` and then rename, and use mode 0600.
 
 ## Testing
 

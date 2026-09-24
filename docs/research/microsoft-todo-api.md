@@ -16,11 +16,14 @@ Confirmed against the [todoTask resource page](https://learn.microsoft.com/en-us
 
 - **Task lists** (`todoTaskList`): full CRUD at `/me/todo/lists`.
 - **Tasks** (`todoTask`): full CRUD at `/me/todo/lists/{id}/tasks`. Properties include `title`, `body`, `status`, `importance`, `isReminderOn`, `reminderDateTime`, `dueDateTime`, `startDateTime`, `completedDateTime`, `recurrence`, `categories`. Categories map to the display name of an `outlookCategory` the user has already defined — there's no separate categories-management endpoint scoped to To Do.
+  - *Phase 0 note (2026-09-24, [S7](spikes/S7.md)):* a task accepts a category name with no master category behind it; none is created. Master category names can't be renamed.
 - **Checklist items** (`checklistItem`), the API name for what the To Do UI calls "steps": full CRUD as a `todoTask` sub-resource (`/tasks/{id}/checklistItems`). This is the subtask feature.
 - **Linked resources** (`linkedResource`): full CRUD, used to point a task back at the app or email it came from.
 - **File attachments** (`taskFileAttachment`): full CRUD, including small-file attach, an upload-session flow for large files, get, and delete — see [Create taskFileAttachment](https://learn.microsoft.com/en-us/graph/api/todotask-post-attachments?view=graph-rest-1.0) and [Attach files to a To Do task](https://learn.microsoft.com/en-us/graph/todo-attachments). This is a v1.0 resource. If you'd assumed file attachments were API-inaccessible, that assumption is wrong as of this API — they're fully supported.
 - **Open extensions** (`extension`): `todoTask` explicitly supports open extensions for stashing arbitrary custom data on a task, per the resource page.
+  - *Phase 0 note (2026-09-24, [S2](spikes/S2.md), [S13](spikes/S13.md)):* reading them needs `$expand=extensions($filter=id eq '…')`; delta never returns them; PATCH replaces the whole document; a task POST can carry one inline.
 - **Recurrence, reminders, due dates, importance**: all plain properties on `todoTask`, read/write at v1.0.
+  - *Phase 0 note (2026-09-24, [S11](spikes/S11.md), [S12](spikes/S12.md)):* `dueDateTime` and `startDateTime` keep only the date; a time survives only in `reminderDateTime`. Completing a recurring task rolls the same ID forward and creates a new completed copy.
 - **Delta query**: supported for both `todoTaskList` and `todoTask` (see the delta section below).
 
 Gaps, based on what is and isn't in the documented `todoTask` property/relationship list, not on an explicit Microsoft statement of "unsupported":
@@ -79,6 +82,8 @@ The [general throttling limits page](https://learn.microsoft.com/en-us/graph/thr
 
 On handling 429s, the [throttling guidance page](https://learn.microsoft.com/en-us/graph/throttling-limits) documents a token-bucket model and these response headers: `x-ms-resource-unit` (cost of the request), `x-ms-throttle-limit-percentage` (0.8–1.8, where 1.0 means you've hit your limit and above that increasing percentages of requests get throttled), `x-ms-throttle-scope`, and `x-ms-throttle-information`. Standard advice applies: back off using the `Retry-After` header when present, and reduce request volume/frequency if you keep hitting 429s.
 
+**Observed 2026-09-24 (spike [S9](spikes/S9.md)):** the 4-concurrent limit applies to To Do (8 parallel requests got 429s). The only throttle header To Do returned was `Retry-After`; none of the `x-ms-*` headers above appeared.
+
 ## Change notifications (webhooks)
 
 `todoTask` is a supported subscription resource at `v1.0` — confirmed on the [subscription resource page](https://learn.microsoft.com/en-us/graph/api/resources/subscription?view=graph-rest-1.0), which lists it in both the maximum-subscription-lifetime table (4,230 minutes, under three days, with the note "Webhooks for this resource are only available in the global endpoint and not in the national clouds") and the latency table (less than 2 minutes average, 15 minutes maximum). There's no beta-only asterisk on this row — it's v1.0.
@@ -88,6 +93,8 @@ One wrinkle worth flagging: the Outlook-specific change-notifications overview p
 ## Delta queries
 
 Both `todoTaskList` and `todoTask` support delta query, confirmed on the [To Do overview page](https://learn.microsoft.com/en-us/graph/api/resources/todo-overview?view=graph-rest-1.0): "The following To Do API resources support delta query: todoTask collection in a task list, todoTaskList." Standard delta mechanics apply (`@odata.deltaLink`, `@odata.nextLink`, `$deltatoken`) per the general [delta query overview](https://learn.microsoft.com/en-us/graph/delta-query-overview) — useful for a CLI that wants to keep a local cache in sync without re-listing everything each run.
+
+**Phase 0 note (2026-09-24, [S3](spikes/S3.md), [S4](spikes/S4.md), [P1](spikes/P1.md)):** To Do delta takes no `$select`, `$filter` or `$top`; the page size comes only from `Prefer: odata.maxpagesize`, resent on every page. An expired cursor returns 410 `SyncStateNotFound`, and a tampered one returns 400 "Badly formed token.".
 
 ## SDKs and CLI tooling
 
@@ -113,7 +120,7 @@ All of the following are unofficial or reverse-engineered relative to the Graph 
 - There is no application-permission (daemon) write path, at all, for To Do tasks — every create/update/delete is delegated and needs an interactive sign-in at least once, with silent renewal after that via the refresh token.
 - File attachments are supported by the API (`taskFileAttachment`) — don't assume otherwise; this is one of the areas where the UI-vs-API gap people talk about online doesn't actually exist anymore.
 - My Day and list sharing/task assignment have no corresponding API property or relationship as far as the documented `todoTask`/`todoTaskList` schema shows — this is inferred from what's absent in the schema, not from an explicit Microsoft "not supported" statement.
-- Throttling: general Graph limits (130,000 req/10s per app globally) and Outlook-mailbox-scoped limits (10,000 req/10min, 4 concurrent, 150 MB/5min per app+mailbox) are documented, but no dedicated `todoTask`-specific number was found — the only "To-do tasks API" row in the throttling doc refers to the dead `outlookTask` API, not the current one.
+- Throttling: general Graph limits (130,000 req/10s per app globally) and Outlook-mailbox-scoped limits (10,000 req/10min, 4 concurrent, 150 MB/5min per app+mailbox) are documented, but no dedicated `todoTask`-specific number was found — the only "To-do tasks API" row in the throttling doc refers to the dead `outlookTask` API, not the current one. *Phase 0 note (2026-09-24, [S9](spikes/S9.md)):* To Do follows the 4-concurrent limit and sends only `Retry-After`.
 - `mgc`, the Microsoft Graph CLI, is archived (read-only as of 2025-08-29) and never had To Do commands as far as its README shows. Don't plan around it.
 
 ## A minimal TypeScript example (untested)

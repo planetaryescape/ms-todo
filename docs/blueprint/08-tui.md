@@ -4,15 +4,15 @@ The goal is that the TUI feels instant. That's the reason the cache exists.
 
 ## Latency budget
 
-- Keypress to repaint: **under 16 ms** for navigation, filtering and view switches. These run only against SQLite and memory.
+- Keypress to repaint: **under 16 ms** for navigation, filtering and view switches. These run only against memory and the daemon's cache, over IPC.
 - A mutation should show up in **under 16 ms**: it's applied locally and the daemon confirms it asynchronously.
 - Cold start to the first painted list: **under 150 ms** from the cache.
 - Measure these. Add a `--bench-startup` or tracing span, and track them in phase 4's completion check.
 
 How we get there:
 
-- The TUI reads SQLite directly through a read-only connection pool (WAL allows concurrent readers). It keeps the current view's rows in memory and updates them when `EntityChanged` events arrive from the daemon.
-- It sends writes over IPC.
+- The TUI starts from a snapshot the daemon serves from its cache (spotuify's `ClientSeed` pattern), keeps the current view's rows in memory, and updates them when `EntityChanged` events arrive (D-031). It never opens SQLite itself.
+- It sends writes over IPC too. A Unix-socket round trip is about 5–10 µs (vault: `Local IPC vs HTTP`), well inside the budget.
 - Nothing in the render loop does network I/O.
 
 ## Structure
@@ -44,7 +44,7 @@ This is copied from `mxr/crates/tui/src/{app,ui,runner.rs}`. Avoid spotuify's 11
 
 Use glyphs from a Nerd Font or Unicode symbol set, with an ASCII fallback option. No emoji (BK's rule).
 
-**Smart views** are all local SQLite queries:
+**Smart views** are all queries the daemon answers from its local cache:
 
 - My Day
 - Important (`importance = high`)
@@ -77,10 +77,11 @@ Copy these from mxr, including its keybinding registry:
 - a contextual hint bar
 - `/` for incremental filtering (FTS5)
 - multi-select (`v`)
-- undo of the last mutation (`u`, which queues the inverse operation)
+- undo of the last mutation (`u`, which queues the inverse operation; the same logic as `ms-todo undo`, see [07](07-cli.md#output-contract)). Undoing a recurring-task completion deletes the completed copy and restores the old due date. The TUI never picks the copy itself: it lists the candidates (title, `createdDateTime`, list) and you choose one. With no candidate yet, it says "can't undo yet". See [04](04-sync-cache.md#completing-a-recurring-task)
 - in-place editing of every field
 - a steps editor
 - attachments: add a file path, and open or download one
-- per-row sync markers: pending (dim), failed (red, with a reason on hover or in the detail pane)
+- per-row sync markers: pending (dim), unknown (amber, "outcome unknown: resolve in outbox"), failed (red, with a reason on hover or in the detail pane)
 - a status line showing daemon connection, last sync and outbox depth
+- until a scope's first sync finishes (`sync_state: "initial"`), a "syncing" state instead of an empty list (vault: `First Run Is the Launch Surface`, `Derived State Needs an Unknown State`)
 - a diagnostics page (`ms-todo doctor` output) inside the TUI, like mxr's

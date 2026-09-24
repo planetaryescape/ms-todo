@@ -44,7 +44,7 @@ What's good (this code is worth reading as a reference):
 - Everything is addressed by ID, and IDs are URL-encoded.
 - Destructive tools are annotated as such.
 - Strict `tsc` passes and 50 of 50 vitest tests pass. It has three runtime dependencies. The published npm `dist/` matches a local build, and releases come from tag-triggered CI that checks the version.
-- It records one API quirk worth keeping: Graph rejects `$select` on `/me/todo/lists/{id}/tasks` for personal accounts with a `RequestBroker--ParseUri` 400 (`src/graph.ts:397-399`). **We haven't verified this ourselves yet; see spike S3.**
+- It records one API quirk worth keeping: Graph rejects `$select` on `/me/todo/lists/{id}/tasks` for personal accounts with a `RequestBroker--ParseUri` 400 (`src/graph.ts:397-399`). **Confirmed on 2026-09-24 by spike [S3](spikes/S3.md)**, on every To Do endpoint including delta.
 
 Why we rejected it:
 

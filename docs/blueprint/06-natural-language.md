@@ -24,8 +24,8 @@ pub trait QuickAddParser { fn parse(&self, input: &str, ctx: &ParseContext) -> P
 | `p1` `p2` `p3` `p4` | Importance: p1 is high, p2 and p3 are normal, p4 is low. Graph only has three levels, so p2 and p3 both map to normal (D-017) | `p1` |
 | `!<time or date>` | Reminder | `!9am`, `!tomorrow 8:30` |
 | `*` or `+myday` | Add to My Day | `+myday` |
-| `start <date>` | `startDateTime` | `start monday` |
-| Date and time phrases | Due date (and time) | `tomorrow`, `next fri 5pm`, `in 3 days`, `on 12 oct` |
+| `start <date>` | `startDateTime`. With no due date, Graph sets the due date to the start date too (S11), so the parser adds a warning saying so | `start monday` |
+| Date and time phrases | Due date. A time goes to the reminder (see below) | `tomorrow`, `next fri 5pm`, `in 3 days`, `on 12 oct` |
 | `every …` | Recurrence | see below |
 
 Two more rules:
@@ -35,13 +35,28 @@ Two more rules:
 
 ## Date and time parsing
 
-Use a library; don't write a custom date parser:
+**A custom rule-table scanner in `crates/nlp`** (D-026). This replaces the earlier plan to use `clockwords` with `interim` as a fallback. Spike S8 ran both, plus `chrono-english` and `whichtime-sys`, over 127 graded phrases, and none came close ([S8 evidence](../research/spikes/S8.md)):
 
-- **[`clockwords`](https://lib.rs/crates/clockwords)** (0.4.0, March 2026, Rust 2024 edition) is the main choice. It **finds date and time phrases inside free text and returns their byte spans.** That's exactly what the TUI's live highlighting needs, and it handles timezones.
-- **[`interim`](https://github.com/conradludgate/interim)**, a maintained fork of chrono-english, is a fallback for plain `date -d`-style phrases if clockwords misses them. Pick the UK dialect for "next friday" (the Friday of next week) versus the US meaning (the coming Friday) through the locale setting.
-- Evaluate both in spike S8 against a corpus of about 100 real phrases, before settling. If neither handles one type of phrase, add a small rule for it in the parser.
+- `clockwords` (33%) has no absolute dates (`12 oct`, `27/1`) and no bare or short weekdays (`friday`, `wed`).
+- `interim` (24–39%) and `chrono-english` (35%) parse whole strings, so they give no spans for highlighting. They match any word on its first three letters (`Monitor` → Monday, `Octopus` → October), and they don't roll past dates forward.
+- `whichtime-sys` (53%) needs `chrono::Local`, reads weekdays towards the past, and still takes `Sat nav` as Saturday.
 
-A date without a time sets `dueDateTime` to that date (To Do due dates are effectively dates). A date with a time sets the due date **and** a reminder at that time, which matches how To Do and Todoist behave. There's a setting `nlp.time_sets_reminder` for this, default true.
+Custom code is justified here because the job is narrow and the crates fail at its core: finding a date inside a title without eating the title.
+
+**How it works:**
+
+- **Ordered passes with masking.** Quoted text and escapes first, then `#List`, `@label`, `p1`–`p4`, `every …`, `!` reminders and `start`, and only then bare date and time phrases. Each pass masks the bytes it claimed, so later passes can't reinterpret them. That's what stops `every mon` or `!9am` from also becoming a due date.
+- **Exact word tables**, not prefix matching, so `Monitor` and `Sat nav` stay in the title. A possessive guard leaves `Friday's report` alone.
+- **Rolls forward.** A time already past today means tomorrow, and a day and month already past mean next year.
+- **Spans for every match**, for the TUI's live highlighting.
+- The same scanner reads quick add, the `!` token, `start`, and the `--due`, `--start` and `--reminder` flags, so every surface reads dates the same way.
+- Locale settings (D/M or M/D, UK or US "next friday") come from `ParseContext`. Some phrase meanings are still product questions for BK (Q6–Q10 in [12](12-open-questions.md#product-questions-for-bk)).
+
+**Due and start dates have no time** (S11, D-027). Graph keeps only the date. So:
+
+- A date without a time sets the due date.
+- **A date with a time sets the due date and a reminder at that time** (`isReminderOn: true`). There's no other place to keep a time, so this isn't a setting; the old `nlp.time_sets_reminder` is gone.
+- A time with no date (`5pm`) means the next occurrence of that time, as the due date plus a reminder.
 
 ## Recurrence (custom parser, and why)
 
@@ -59,7 +74,7 @@ None of the date crates parse "every …". We write a small grammar that maps **
 | `every year`, `every 12 oct` | `absoluteYearly`, month and day | |
 | `… until 31 dec` / `… for 10 times` | | `endDate` / `numbered` |
 
-`firstDayOfWeek` comes from the locale. `recurrenceTimeZone` is the user's timezone. If the input also has a date, it becomes the `range.startDate` and the first due date.
+`firstDayOfWeek` comes from the locale. **Always send `range.recurrenceTimeZone`**, set to the user's timezone, the same zone as the due date. Leaving it out moved the due date a day later in S12. If the input also has a date, it becomes the `range.startDate` and the first due date.
 
 ## Agent safety
 
@@ -72,4 +87,4 @@ The agent skill tells agents to use `--no-parse` plus explicit flags for anythin
 
 ## Testing
 
-Table-driven tests with a fixed `now` and timezone, plus `insta` snapshots of `ParsedTask` for the phrase corpus. Add `proptest` checks that parsing never panics and that the title plus the recognised spans cover the whole input.
+Table-driven tests with a fixed `now` and timezone, plus `insta` snapshots of `ParsedTask` for the phrase corpus. Start from S8's corpus, [S8-corpus.tsv](../research/spikes/S8-corpus.tsv). Add `proptest` checks that parsing never panics and that the title plus the recognised spans cover the whole input.

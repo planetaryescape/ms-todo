@@ -1,6 +1,6 @@
 # ms-todo: technical blueprint
 
-> A local-first, keyboard-native terminal client for Microsoft To Do. It has a daemon, a scriptable CLI and a very fast ratatui TUI, all reading from a local SQLite cache that stays in sync with Microsoft Graph.
+> A local-first, keyboard-native terminal client for Microsoft To Do. It has a daemon that keeps a local SQLite cache in sync with Microsoft Graph, and two clients that talk only to the daemon: a scriptable CLI and a very fast ratatui TUI.
 
 The whole project was planned in one session on 2026-09-24, before any code existed. It is meant to be built on another machine by a coding agent that never saw that session, so this blueprint has to carry everything: what we're building, how, what we decided against, and why.
 
@@ -27,16 +27,17 @@ Research behind these decisions:
 
 - [../research/microsoft-todo-api.md](../research/microsoft-todo-api.md): the Graph To Do API's surface, auth, limits and gotchas.
 - [../research/prior-art.md](../research/prior-art.md): code reviews of the existing CLI and MCP server we chose not to adopt.
+- `docs/research/spikes/`: the Phase 0 spike evidence (S1–S4, S6–S13, P1), one file per spike. The results and open items are summarised in [12](12-open-questions.md).
 
 ## Summary
 
 - **Stack:** Rust, tokio, ratatui and crossterm, reqwest, sqlx on SQLite, and clap. It follows the structure of mxr and spotuify, but is much smaller.
 - **Runtime:** a daemon owns sign-in, the cache, sync and the outbox of local writes waiting to be pushed to Graph. The CLI and TUI are clients over a Unix socket.
-- **Speed:** the TUI only ever reads SQLite. Writes show up immediately and are pushed to Graph in the background.
+- **Speed:** the TUI reads the daemon's cache over IPC, never the network. Writes show up immediately and are pushed to Graph in the background. Every client uses the daemon protocol only (D-031).
 - **Sync:** Graph delta queries for lists and tasks. No webhooks.
 - **Sign-in:** device code, through BK's own Entra app registration, `/common` authority, no client secret.
 - **Scope:** everything the Graph To Do API offers, plus features the API lacks, built on top of it:
-  - My Day, done with an Outlook category the phone app also displays
+  - My Day, done with an Outlook category the phone app should also display (pending the S7 phone check)
   - folders, stored as list extensions
   - assignment, stored as a task extension
 - **Quick add:** Todoist-style natural language, parsed deterministically. LLM parsing is deferred.
@@ -46,5 +47,5 @@ Research behind these decisions:
 ## Rules for coding agents
 
 1. **The CLI is the canonical surface.** Anything the TUI can do, a CLI subcommand can do. Agents check their own work through the CLI (the spotuify contract).
-2. **Run the spikes first.** Several design points depend on API behaviour the docs don't cover. Run [12-open-questions.md](12-open-questions.md) before writing the code that depends on them, and update this blueprint with what you find.
+2. **Build on the spike results.** Phase 0 recorded how the real API behaves where the docs are silent ([12-open-questions.md](12-open-questions.md)). Check the open items there before writing code that depends on them, and run a new spike for anything new. Update this blueprint with what you find.
 3. **Update the decision log.** If you change a decision, add an entry to [11-decision-log.md](11-decision-log.md) with the reason. Don't silently change the design.

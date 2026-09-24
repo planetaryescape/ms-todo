@@ -74,6 +74,7 @@ Every decision from the planning session on 2026-09-24, **including the options 
 - **Option 3, rejected:** an extension only. The phone couldn't see it.
 - **Chosen:** the category "My Day" (visible and filterable on the phone; `categories` is a first-class property, so delta sync definitely picks it up), plus `myDay: date` in the ms-todo extension, and a daily rollover in the daemon. The task never leaves its list. Cost: `MailboxSettings.ReadWrite`, which we need anyway for `@label`.
 - The app's own My Day can't be reached through the API and is left alone.
+- Note (2026-09-24): the phone-visibility premise is unverified pending the S7 phone check (see D-030).
 
 ### D-016: Deterministic natural-language parsing; the LLM is deferred. (BK: "leave llm parsing for now")
 - BK wanted Todoist-style quick add: deterministic first, then maybe an optional small local LLM for richer parsing.
@@ -108,3 +109,59 @@ Every decision from the planning session on 2026-09-24, **including the options 
 - Release builds bake in BK's Entra client ID with `option_env!("MS_TODO_CLIENT_ID")` (mxr's `BUNDLED_CLIENT_ID` pattern), so `brew install` then `ms-todo auth login` works immediately. The ID isn't a secret.
 - The README, `docs/`, and the first run of `ms-todo auth login` recommend registering your own app, with a short guide, and explain why: with the bundled ID, users consent to BK's app registration, and its availability depends on BK. `auth.client_id` in config or `MS_TODO_CLIENT_ID` overrides the bundled ID. `ms-todo auth status` shows which one is in use.
 
+
+### D-026: Dates are read by a custom rule-table scanner, not a library. (Phase 0, from S8)
+- **Replaces:** the plan in [06](06-natural-language.md) to use `clockwords`, with `interim` as a fallback. That plan had no entry of its own here. D-016 (deterministic, LLM deferred) still stands.
+- **Options rejected:** (a) `clockwords` 0.4.0, 33% of 127 graded phrases: no absolute dates and no bare weekdays. (b) `interim` 0.2.1, 24–39%: whole-string only with no spans, matches words on three-letter prefixes (`Monitor` → Monday), doesn't roll dates forward. (c) `chrono-english` 0.2.1, 35%: the same flaws as `interim`, and no bare times. (d) `whichtime-sys` 0.1.0, the best at 53%: needs `chrono::Local`, reads weekdays towards the past, and still takes `Sat nav` as a date. (e) A library plus patch rules: the missing pieces are the core of the job (absolute dates, spans, leaving titles alone), not edge cases.
+- **Why:** finding a date inside a task title without eating the title is narrow, well specified and easy to test with a corpus, and no crate does it. A scanner of roughly 500–700 lines, with ordered masking passes, serves quick add, `!`, `start` and the date flags alike. Evidence: [S8](../research/spikes/S8.md).
+
+### D-027: Due and start dates are dates only; a time goes to the reminder. (Phase 0, from S11)
+- **Replaces:** the `nlp.time_sets_reminder` setting in [06](06-natural-language.md), which is dropped. It had no entry of its own here.
+- **Options rejected:** (a) keeping the setting with `false` as an option. Graph throws away the time on `dueDateTime` and `startDateTime`, so `false` would silently lose the time. (b) Storing the time in our extension. The phone couldn't see it, and nothing would remind BK.
+- **Why:** a reminder is the only place Graph keeps a time. So "tomorrow 5pm" sets the due date to tomorrow and a reminder at 17:00. The cache stores due and start as local dates and reads them by rounding to the nearest local midnight, because BK's data holds due dates written as midnight in several zones ([02](02-data-model.md#principles)). `start` without a due date also sets the due date, so the parser warns. Evidence: [S11](../research/spikes/S11.md).
+
+### D-028: The outbox has an "unknown outcome" state. (Phase 0, from the reuse-map check)
+- **Options rejected:** (a) treating every failure as temporary or permanent, as [04](04-sync-cache.md) first did. A create POST that times out or gets a 5xx after Graph accepted it would be retried and make a duplicate task. (b) An idempotency key. Graph To Do doesn't support one. (c) Never retrying creates. An offline or throttled create would then need a person to retry it.
+- **Why:** state `unknown` means "don't resend". The HTTP client never retries a create or a recurring completion automatically after a timeout, 5xx or 408; it retries only on a 429, a 401 then refresh, or a connection failure before sending. Operations still `inflight` at daemon start become `unknown` too. The rule is to adopt only a result we can attribute: a task create carries its `op_id` as `opId` in our extension, inline in the POST (S13), so each sync round's lookup can match it exactly, for up to 24 hours. A recurring completion stays `unknown` for the user even if a GET shows the due date moved, because the phone could have done that; `outbox list` shows what was seen. Checklist-item and linked-resource creates are never matched by content. Anything not attributed goes to the user (`outbox retry` or `outbox discard`); it's never re-sent or deleted automatically. A duplicate `opId` seen in sync raises `DuplicateDetected` for the user. The invariant: not finding something never allows a replay or a delete. This follows mxr's `plans/014-send-outcome-recovery.md` and `plans/023-interrupted-mutation-jobs.md`. Details: [04](04-sync-cache.md#unknown-outcome-d-028).
+
+### D-029: Task children sync through delta alone; extension content is fetched after each round. (Phase 0, from S1 and S2)
+- **Settles:** the open choice between strategies (a) and (b) that [04](04-sync-cache.md) left to S1 and S2.
+- **Options rejected:** (a) as first written: `$expand=checklistItems,extensions` on delta. Checklist items are inline anyway, and delta never returns extensions, with or without `$expand`. (b) Re-fetching children in batches for every changed task, plus a slow background sweep. Not needed: every child change bumps the parent, so delta never misses one.
+- **Why:** checklist items and linked resources arrive inline in delta, attachments flip `hasAttachments`, and extension changes bump the parent without their content. So delta finds every change, and the only extra work is a filtered-`$expand` fetch of extension content after each round. Details: [04](04-sync-cache.md#children-of-a-task). Evidence: [S1](../research/spikes/S1.md), [S2](../research/spikes/S2.md).
+
+### D-030: The My Day category defaults to `preset3` (Yellow). (Proposed; pending BK's phone check)
+- **Replaces:** the `preset4` default in [05](05-custom-features.md), which was chosen as "yellowish". Microsoft's mapping makes `preset4` Green and `preset3` Yellow.
+- **Option rejected:** keeping `preset4`. It's green, which doesn't match To Do's yellow sun icon.
+- **Why:** yellow was the original intent. The doc says the actual colour depends on the Outlook client, so BK compares both test categories on the phone (S7, Q11) before this is final. Evidence: [S7](../research/spikes/S7.md).
+- D-015's premise that the phone shows and filters the My Day category also waits on the S7 phone check.
+
+### D-031: Clients use the daemon protocol only; the TUI doesn't read SQLite. (BK, 2026-09-24)
+- **Replaces:** "the TUI may read SQLite directly" in [01](01-architecture.md), the read-only connection pool in [08](08-tui.md), and "the TUI only ever reads SQLite" in [README](README.md). None had an entry of its own here.
+- **Option rejected:** direct SQLite reads for the TUI's hot path.
+- **Why:** once one client reaches past the protocol, the protocol stops being the product, and the next client can't be built cleanly (vault: `Building Great CLIs`, "can the TUI just reach into the store directly… the answer is no"; `Mxr`). The TUI seeds from a daemon snapshot (spotuify's `ClientSeed`) and then applies `EntityChanged` events. A Unix-socket round trip is about 5–10 µs (vault: `Local IPC vs HTTP`), so the latency budget stands. Only the daemon touches `store`, and the boundary test enforces it.
+
+### D-032: Phase 1 ships a minimal daemon, not a direct-mode CLI. (BK, 2026-09-24)
+- **Replaces:** Phase 1's "CLI without a daemon yet, in direct mode" in [10](10-roadmap.md).
+- **Option rejected:** direct mode first. The CLI would become a second token refresher, breaking "only one process refreshes" in [01](01-architecture.md#why-a-daemon), and it would be built against internals rather than the protocol.
+- **Why:** "Build the CLI client against the documented protocol, not against private daemon internals" (vault: `API-First Design`). Phase 1 builds the protocol, socket server, auto-start and a daemon that owns sign-in and refresh, plus `auth`, `lists list`, `tasks list`, `raw` and `sync` over IPC. Phase 1 syncs by full enumeration only (below); **delta** sync, the outbox and mutations start in Phase 2. Phase 1's completion check is unchanged.
+- **Phase 1's cache:** the daemon runs a full enumeration of lists and tasks on start and on `ms-todo sync` (page to the end, upsert, tombstone what wasn't seen, by [04](04-sync-cache.md#reconciliation-after-a-lost-delta-token)'s rules), and reads are served from the store. Phase 2 adds delta on top, and the enumeration becomes its reset path, so nothing is thrown away.
+
+### D-033: Blueprint aligned with BK's vault notes. (BK approved, 2026-09-24)
+BK checked the blueprint against his Obsidian notes and approved folding these gaps in. Each is a sentence or three in the doc named.
+
+| # | Gap | Where | Vault notes |
+|---|---|---|---|
+| 1 | IPC idempotency: client request ID, `--idempotency-key`, kept 24 h; no re-send after a timeout | [04](04-sync-cache.md#instant-local-writes), [07](07-cli.md#global-flags) | `Agent-Native Interfaces` |
+| 2 | Graph request timeouts (60 s default); progress events; give up on stalls, not total time | [03](03-graph-provider.md#http-client), [01](01-architecture.md#transport) | `Deadlines Bound Stalls, Not Work` |
+| 3 | No file bytes over IPC; explicit frame cap; collection events capped at 500 IDs, then `ResyncNeeded` | [01](01-architecture.md#transport), [07](07-cli.md#output-contract) | `Every Event Payload Needs a Bound`, `Length-Prefixed Framing` |
+| 4 | Token refresh as a compare-and-swap under the file lock; `auth login` without a healthy daemon | [03](03-graph-provider.md#sign-in) | `Refresh Token Rotation Is Shared State`, `Credential Prompts Are Side Effects` |
+| 5 | Socket 0600 in a 0700 directory; `auth bearer --reveal-secret`; safe attachment downloads | [01](01-architecture.md#files), [03](03-graph-provider.md), [07](07-cli.md) | `Local Capability Surfaces Need Defense in Depth`, `Attachment Writes Are a Trust Boundary`, `Spotuify Security Audit Synthesis` |
+| 6 | `op_id` on every mutation; `ms-todo undo [OP_ID]` shares the TUI's undo logic | [07](07-cli.md#output-contract), [08](08-tui.md) | `Building Great CLIs`, `Clean Up Means Archive, Not Delete` |
+| 7 | Dry-run and real run build one typed plan; no prompt off a terminal | [07](07-cli.md#global-flags) | `Same-Code-Path Preview` |
+| 8 | `tasks move` as a resumable outbox job | [05](05-custom-features.md#move-between-lists), [04](04-sync-cache.md#instant-local-writes) | `A Detached Child Outlives Its Supervisor` |
+| 9 | Bind the socket first; ready means a compatible `Status` | [01](01-architecture.md#daemon-lifecycle) | `Daemon Readiness Is Not Process Liveness` |
+| 10 | `sync_state: "initial"` until a scope's first sync; the TUI shows syncing, not empty | [07](07-cli.md#output-contract), [08](08-tui.md) | `First Run Is the Launch Surface`, `Derived State Needs an Unknown State` |
+| 11 | Sync generation counter, `in_progress`, `last_success_at`, `last_changed_count`; `sync --wait` waits on the generation | [04](04-sync-cache.md#freshness-guarantee-for-the-cli), [02](02-data-model.md) | `Zero Change Can Be Success`, `Faster Code Breaks Coarse Clocks` |
+| 12 | `schema_version`, `ms-todo schema`, `--help` snapshots with a CI drift check | [07](07-cli.md#output-contract) | `Building Great CLIs`, `Agent-Native Interfaces`, `Generated Docs as Drift Defense` |
+
+- **Option rejected:** leaving these to be discovered during the build. Each is already written up in BK's notes from earlier projects.
