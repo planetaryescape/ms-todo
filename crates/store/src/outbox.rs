@@ -404,17 +404,17 @@ impl Store {
         )
     }
 
-    /// `pending` operations due by `now` whose dependency is resolved, in
-    /// queue order.
+    /// `pending` operations due by `now` whose dependency, if any, is
+    /// `done`, in queue order. Only `done` unblocks: one queued on a change
+    /// that failed or was discarded would build on something that never
+    /// happened.
     pub async fn ready_ops(&self, now: i64) -> Result<Vec<OutboxRow>, StoreError> {
         rows(
-            sqlx::query_as(AssertSqlSafe(ops_sql(concat!(
+            sqlx::query_as(AssertSqlSafe(ops_sql(
                 "o.state = 'pending' AND o.next_attempt_at <= ? AND (o.depends_on_op_id IS NULL \
-                 OR NOT EXISTS (SELECT 1 FROM outbox d WHERE d.op_id = o.depends_on_op_id \
-                 AND d.state IN ",
-                unresolved!(),
-                ")) ORDER BY o.seq"
-            ))))
+                 OR EXISTS (SELECT 1 FROM outbox d WHERE d.op_id = o.depends_on_op_id \
+                 AND d.state = 'done')) ORDER BY o.seq",
+            )))
             .bind(now)
             .fetch_all(self.reader())
             .await?,

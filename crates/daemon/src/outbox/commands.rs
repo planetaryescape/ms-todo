@@ -41,6 +41,31 @@ pub(crate) async fn list(
 
 pub(crate) async fn retry(state: &State, op_id: &str) -> Result<ResponseData, ErrorPayload> {
     let op = find(state, op_id).await?;
+    if let Some(dependency) = &op.depends_on {
+        let found = state
+            .store
+            .outbox_op(dependency)
+            .await
+            .map_err(store_error)?;
+        let blocked = match &found {
+            Some(found) if found.state == OpState::Done => None,
+            Some(found) => Some(format!("is {}", found.state.as_str())),
+            None => Some("was discarded".to_owned()),
+        };
+        if let Some(why) = blocked {
+            // Resent, it would build on a change that didn't happen: an
+            // undo's re-create of a task whose delete failed would make a
+            // second copy.
+            return Err(error_payload(
+                ErrorKind::Conflict,
+                format!(
+                    "operation {} was queued on {dependency}, which {why}, so it can't be sent \
+                     on its own; retry {dependency} first, or discard {}",
+                    op.op_id, op.op_id
+                ),
+            ));
+        }
+    }
     let restore = match op.state {
         OpState::Unknown => Restore::Nothing,
         OpState::Failed => redo_local(state, &op).await?,

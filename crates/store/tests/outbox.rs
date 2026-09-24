@@ -360,3 +360,25 @@ async fn a_retry_that_loses_the_race_changes_nothing() {
     let op = store.outbox_op("c").await.expect("read").expect("c");
     assert_eq!(op.state, OpState::Inflight);
 }
+
+#[tokio::test]
+async fn only_a_done_dependency_unblocks_an_operation() {
+    let (_dir, store, list) = open().await;
+    chain(&store, &list).await;
+    assert!(store.mark_inflight("c").await.expect("claim"));
+    store
+        .fail_op("c", ("rejected", "no"), &Restore::Tombstone)
+        .await
+        .expect("fail");
+    // Put e1 back to pending, as a retry that skipped the check would.
+    assert!(
+        store
+            .requeue("e1", OpState::Failed, &Restore::Nothing)
+            .await
+            .expect("requeue")
+    );
+
+    let ready = store.ready_ops(i64::MAX).await.expect("ready");
+
+    assert!(ready.iter().all(|op| op.op_id != "e1"), "{ready:?}");
+}

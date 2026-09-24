@@ -744,3 +744,38 @@ async fn undoing_a_delete_graph_then_rejects_never_makes_a_second_copy() {
     assert_eq!(listed.len(), 1, "the task Graph kept is still there");
     assert_eq!(listed[0]["graph_id"], "T1");
 }
+
+#[tokio::test]
+async fn retry_refuses_a_write_queued_on_one_that_failed() {
+    let mut env = Env::new();
+    let graph = graph_with(&mut env, vec![task("T1", "Buy milk", "W/\"e1\"")]).await;
+    Mock::given(method("DELETE"))
+        .and(path(format!("{TASKS}/T1")))
+        .respond_with(
+            ResponseTemplate::new(403)
+                .set_delay(Duration::from_millis(800))
+                .set_body_json(json!({ "error": { "code": "accessDenied", "message": "no" } })),
+        )
+        .mount(&graph.server)
+        .await;
+    Mock::given(method("POST"))
+        .respond_with(created_as("T1-copy"))
+        .mount(&graph.server)
+        .await;
+    env.synced();
+    let deleted = env.json(&["tasks", "delete", "T1", "--yes"]);
+    env.op_in_state(&op_id(&deleted), "inflight");
+    let recreate = op_id(&env.json(&["undo"]));
+    env.op_in_state(&recreate, "failed");
+
+    let refused = env.failure(&["outbox", "retry", &recreate], 5);
+
+    assert_eq!(refused["error"]["kind"], "conflict");
+    let message = refused["error"]["message"].as_str().expect("message");
+    assert!(message.contains(&op_id(&deleted)), "{message}");
+    assert!(message.contains("is failed"), "{message}");
+    assert_eq!(env.op_in_state(&recreate, "failed")["state"], "failed");
+    env.synced();
+    env.settled();
+    assert!(writes_to(&graph, "POST").await.is_empty(), "no second copy");
+}
