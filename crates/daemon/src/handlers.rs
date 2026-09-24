@@ -40,14 +40,24 @@ pub(crate) async fn handle(state: &State, request: Request) -> Response {
             .await
             .map(|body| ResponseData::Raw { body })
             .map_err(graph_error),
-        Request::RawWrite { method, path, body } => raw_write(state, method, &path, body).await,
-        Request::AddTask { task, dry_run } => add_task(state, task, dry_run).await,
+        Request::RawWrite {
+            method,
+            path,
+            body,
+            op_id,
+        } => raw_write(state, method, &path, body, op_id).await,
+        Request::AddTask {
+            task,
+            dry_run,
+            op_id,
+        } => add_task(state, task, dry_run, op_id).await,
         Request::ChangeTasks {
             tasks,
             list,
             change,
             dry_run,
-        } => change_tasks(state, &tasks, list.as_deref(), change, dry_run).await,
+            op_id,
+        } => change_tasks(state, &tasks, list.as_deref(), change, dry_run, op_id).await,
         Request::Bearer => match state.auth.valid_token().await {
             Ok(token) => Ok(ResponseData::Bearer {
                 access_token: token.access_token,
@@ -98,6 +108,7 @@ async fn raw_write(
     method: RawWriteMethod,
     path: &str,
     body: Option<Value>,
+    op_id: Option<String>,
 ) -> Result<ResponseData, ErrorPayload> {
     let method = match method {
         RawWriteMethod::Post => Method::POST,
@@ -111,6 +122,7 @@ async fn raw_write(
                 "{}. The request may or may not have been applied, and ms-todo never resends it; check with `ms-todo raw GET` before sending it again",
                 message_with_causes(&error)
             ),
+            op_id,
             ..graph_error(error)
         }),
         Err(error) => Err(graph_error(error)),

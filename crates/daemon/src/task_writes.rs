@@ -33,6 +33,7 @@ pub(crate) async fn add_task(
     state: &State,
     task: NewTask,
     dry_run: bool,
+    op_id: Option<String>,
 ) -> Result<ResponseData, ErrorPayload> {
     let fields = new_task_fields(&task)?;
     let lists = state.graph.list_lists().await.map_err(graph_error)?;
@@ -46,7 +47,7 @@ pub(crate) async fn add_task(
             changes: body,
         }));
     }
-    let op_id = new_op_id();
+    let op_id = op_id.unwrap_or_else(new_op_id);
     body["extensions"] = json!([{
         "@odata.type": "microsoft.graph.openTypeExtension",
         "extensionName": EXTENSION_NAME,
@@ -89,6 +90,7 @@ pub(crate) async fn change_tasks(
     list: Option<&str>,
     change: TaskChange,
     dry_run: bool,
+    op_id: Option<String>,
 ) -> Result<ResponseData, ErrorPayload> {
     let (action, fields) = match change {
         TaskChange::Complete => (TaskAction::Complete, vec![Field::Status("completed")]),
@@ -125,7 +127,7 @@ pub(crate) async fn change_tasks(
         }));
     }
 
-    let op_id = new_op_id();
+    let op_id = op_id.unwrap_or_else(new_op_id);
     let mut applied = Applied {
         op_id: op_id.clone(),
         action,

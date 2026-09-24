@@ -19,6 +19,7 @@ ms-todo-cli = { workspace = true }
 ms-todo-daemon = { workspace = true }
 
 [dev-dependencies]
+ms-todo-protocol = { workspace = true }
 assert_cmd = { workspace = true }
 insta = { workspace = true }
 serde_json = { workspace = true }

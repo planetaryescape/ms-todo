@@ -93,6 +93,7 @@ fn every_request_and_response_round_trips() {
             method: RawWriteMethod::Patch,
             path: "/me/todo/lists/L".into(),
             body: Some(json!({ "displayName": "x" })),
+            op_id: Some("op-raw".into()),
         }),
         Payload::Request(Request::AddTask {
             task: NewTask {
@@ -104,6 +105,7 @@ fn every_request_and_response_round_trips() {
                 body: None,
             },
             dry_run: true,
+            op_id: None,
         }),
         Payload::Request(Request::ChangeTasks {
             tasks: vec!["T1".into(), "T2".into()],
@@ -115,12 +117,14 @@ fn every_request_and_response_round_trips() {
                 ..TaskEdit::default()
             }),
             dry_run: false,
+            op_id: Some("op-edit".into()),
         }),
         Payload::Request(Request::ChangeTasks {
             tasks: vec!["T1".into()],
             list: None,
             change: TaskChange::Complete,
             dry_run: false,
+            op_id: None,
         }),
         Payload::Response(Response::Ok {
             data: ResponseData::Plan(Plan {

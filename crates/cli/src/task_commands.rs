@@ -32,6 +32,7 @@ pub async fn add(paths: &Paths, args: AddArgs, format: OutputFormat) -> Result<(
             body: args.body,
         },
         dry_run: args.dry_run,
+        op_id: op_id_unless(args.dry_run),
     };
     send(paths, request, format).await
 }
@@ -143,12 +144,14 @@ pub async fn raw(paths: &Paths, args: RawArgs) -> Result<Value, CliError> {
                 .into(),
         ));
     }
+    let op_id = new_op_id();
     let request = Request::RawWrite {
         method,
         path: args.path,
         body,
+        op_id: Some(op_id.clone()),
     };
-    match daemon_client::ask(paths, request).await? {
+    match daemon_client::ask_mutation(paths, request, &op_id, "with `ms-todo raw GET`").await? {
         ResponseData::Raw { body } => Ok(body),
         _ => Err(crate::unexpected_response()),
     }
@@ -165,11 +168,33 @@ fn change_request(
         list,
         change,
         dry_run,
+        op_id: op_id_unless(dry_run),
     }
 }
 
+/// A real run's `op_id`, made here before sending so it can be reported
+/// even if the daemon's answer is lost. A dry run changes nothing, so it
+/// has none.
+fn op_id_unless(dry_run: bool) -> Option<String> {
+    (!dry_run).then(new_op_id)
+}
+
+fn new_op_id() -> String {
+    uuid::Uuid::new_v4().to_string()
+}
+
 async fn send(paths: &Paths, request: Request, format: OutputFormat) -> Result<(), CliError> {
-    match daemon_client::ask(paths, request).await? {
+    let op_id = match &request {
+        Request::AddTask { op_id, .. } | Request::ChangeTasks { op_id, .. } => op_id.clone(),
+        _ => None,
+    };
+    let answer = match op_id {
+        Some(op_id) => {
+            daemon_client::ask_mutation(paths, request, &op_id, "`ms-todo tasks list`").await?
+        }
+        None => daemon_client::ask(paths, request).await?,
+    };
+    match answer {
         ResponseData::Plan(plan) => print_plan(format, &plan),
         ResponseData::Applied(applied) => print_applied(format, &applied),
         _ => Err(crate::unexpected_response()),

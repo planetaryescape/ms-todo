@@ -40,6 +40,7 @@ const QUICK_TIMEOUT: Duration = Duration::from_secs(3);
 /// A data request's ceiling. The daemon bounds each Graph call at 60 s and
 /// its retries and pages, so this only catches a daemon that's stuck.
 const REQUEST_TIMEOUT: Duration = Duration::from_secs(300);
+const REQUEST_TIMEOUT_ENV: &str = "MS_TODO_REQUEST_TIMEOUT_MS";
 const READY_TIMEOUT: Duration = Duration::from_secs(15);
 const EXIT_TIMEOUT: Duration = Duration::from_secs(10);
 const POLL_INTERVAL: Duration = Duration::from_millis(50);
@@ -60,7 +61,7 @@ impl DaemonClient {
     }
 
     pub async fn request(&mut self, request: Request) -> Result<ResponseData, CliError> {
-        self.request_within(request, REQUEST_TIMEOUT).await
+        self.request_within(request, request_timeout()).await
     }
 
     async fn request_within(
@@ -68,47 +69,99 @@ impl DaemonClient {
         request: Request,
         timeout: Duration,
     ) -> Result<ResponseData, CliError> {
-        self.next_id += 1;
-        let id = self.next_id;
-        let response = tokio::time::timeout(timeout, self.exchange(id, request))
-            .await
-            .map_err(|_| {
-                unavailable(format!(
-                    "the daemon didn't answer within {} seconds",
-                    timeout.as_secs()
-                ))
-            })??;
-        match response {
-            Response::Ok { data } => Ok(data),
-            Response::Error { error } => Err(error.into()),
-            Response::Unknown => Err(mismatch(
-                "the daemon sent an answer this version can't read",
-            )),
+        let deadline = Instant::now() + timeout;
+        let id = self.send(request, deadline).await?;
+        into_data(self.reply(id, deadline).await?)
+    }
+
+    /// Send a mutation and wait for its answer. Once the request is on the
+    /// socket the daemon may apply it even if its answer never arrives, so
+    /// from then on any failure is `outcome_unknown` with the CLI's `op_id`,
+    /// never a plain "daemon unavailable" that invites a blind retry.
+    async fn mutate(
+        &mut self,
+        request: Request,
+        op_id: &str,
+        check: &str,
+    ) -> Result<ResponseData, CliError> {
+        let deadline = Instant::now() + request_timeout();
+        let id = self.send(request, deadline).await?;
+        let lost = |why: String| CliError {
+            op_id: Some(op_id.to_owned()),
+            ..CliError::message(
+                ErrorKind::OutcomeUnknown,
+                format!(
+                    "the daemon took the request, but its answer was lost ({why}). The change \
+                     may or may not have been made: check {check} before trying again, or a \
+                     retry can make a duplicate. op_id {op_id}"
+                ),
+            )
+        };
+        match self.reply(id, deadline).await {
+            Ok(Response::Unknown) => Err(lost("it sent an answer this version can't read".into())),
+            Ok(response) => into_data(response),
+            Err(error) => Err(lost(error.message)),
         }
     }
 
-    async fn exchange(&mut self, id: u64, request: Request) -> Result<Response, CliError> {
+    async fn send(&mut self, request: Request, deadline: Instant) -> Result<u64, CliError> {
+        self.next_id += 1;
         let message = Message {
-            id,
+            id: self.next_id,
             payload: Payload::Request(request),
         };
-        self.framed.send(message).await.map_err(ipc_error)?;
-        loop {
-            let frame =
-                self.framed.next().await.ok_or_else(|| {
+        tokio::time::timeout_at(deadline, self.framed.send(message))
+            .await
+            .map_err(|_| unavailable("the daemon didn't take the request in time".into()))?
+            .map_err(ipc_error)?;
+        Ok(self.next_id)
+    }
+
+    async fn reply(&mut self, id: u64, deadline: Instant) -> Result<Response, CliError> {
+        let read = async {
+            loop {
+                let frame = self.framed.next().await.ok_or_else(|| {
                     mismatch("the daemon closed the connection without answering")
                 })?;
-            let message = frame.map_err(ipc_error)?;
-            match message.payload {
-                // Id 0 is the daemon rejecting a frame it couldn't read.
-                Payload::Response(response) if message.id == id || message.id == 0 => {
-                    return Ok(response);
+                let message = frame.map_err(ipc_error)?;
+                match message.payload {
+                    // Id 0 is the daemon rejecting a frame it couldn't read.
+                    Payload::Response(response) if message.id == id || message.id == 0 => {
+                        return Ok(response);
+                    }
+                    // Events, and anything a newer daemon adds, aren't answers.
+                    _ => {}
                 }
-                // Events, and anything a newer daemon adds, aren't answers.
-                _ => {}
             }
-        }
+        };
+        let seconds = deadline.saturating_duration_since(Instant::now()).as_secs();
+        tokio::time::timeout_at(deadline, read).await.map_err(|_| {
+            unavailable(format!("the daemon didn't answer within {seconds} seconds"))
+        })?
     }
+}
+
+fn into_data(response: Response) -> Result<ResponseData, CliError> {
+    match response {
+        Response::Ok { data } => Ok(data),
+        Response::Error { error } => Err(error.into()),
+        Response::Unknown => Err(mismatch(
+            "the daemon sent an answer this version can't read",
+        )),
+    }
+}
+
+/// [`REQUEST_TIMEOUT`], or in debug builds `MS_TODO_REQUEST_TIMEOUT_MS`, so
+/// tests can reach the deadline without waiting five minutes.
+fn request_timeout() -> Duration {
+    if cfg!(debug_assertions)
+        && let Some(millis) = std::env::var(REQUEST_TIMEOUT_ENV)
+            .ok()
+            .and_then(|value| value.parse().ok())
+    {
+        return Duration::from_millis(millis);
+    }
+    REQUEST_TIMEOUT
 }
 
 /// A daemon that's ready for requests, and the status it reported: started
@@ -146,6 +199,18 @@ pub async fn inspect(paths: &Paths) -> Inspection {
 pub async fn ask(paths: &Paths, request: Request) -> Result<ResponseData, CliError> {
     let (mut client, _) = connect(paths).await?;
     client.request(request).await
+}
+
+/// Send one mutation carrying `op_id`. A lost answer after sending is
+/// `outcome_unknown`; `check` says how to look before retrying.
+pub async fn ask_mutation(
+    paths: &Paths,
+    request: Request,
+    op_id: &str,
+    check: &str,
+) -> Result<ResponseData, CliError> {
+    let (mut client, _) = connect(paths).await?;
+    client.mutate(request, op_id, check).await
 }
 
 pub enum Inspection {

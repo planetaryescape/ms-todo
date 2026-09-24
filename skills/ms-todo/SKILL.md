@@ -93,7 +93,7 @@ Error kind `outcome_unknown` means the request reached Microsoft Graph but no an
 ```bash
 ms-todo daemon status --format json
 ms-todo raw GET /me/todo/lists              # any Graph v1.0 path
-ms-todo raw PATCH <path> --body '<json>' --yes   # sent once, no op_id, can't be undone
+ms-todo raw PATCH <path> --body '<json>' --yes   # sent once, can't be undone
 ```
 
 Don't use `raw` writes for normal work: they skip the checks the `tasks` commands make.

@@ -632,7 +632,10 @@ async fn raw_writes_need_yes_off_a_terminal_and_are_never_resent() {
         .code(1);
     let error = stderr_json(unknown.get_output());
     assert_eq!(error["error"]["kind"], "outcome_unknown");
-    assert!(error["error"].get("op_id").is_none(), "raw has no op_id");
+    assert!(
+        error["error"]["op_id"].is_string(),
+        "the op_id the CLI sent"
+    );
     let sent = writes(&graph).await;
     assert_eq!(sent.len(), 1);
     assert_eq!(sent[0].body, body.as_bytes());

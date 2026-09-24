@@ -66,12 +66,19 @@ pub enum Request {
         path: String,
         #[serde(default)]
         body: Option<Value>,
+        /// Chosen by the client before sending (see `AddTask`).
+        #[serde(default)]
+        op_id: Option<String>,
     },
     /// Create a task. With `dry_run`, answers `Plan` and writes nothing.
     AddTask {
         task: NewTask,
         #[serde(default)]
         dry_run: bool,
+        /// Chosen by the client before sending, so it can report it even if
+        /// the answer is lost; the daemon makes one when it's missing.
+        #[serde(default)]
+        op_id: Option<String>,
     },
     /// Apply one change to each task in `tasks`: Graph IDs, or with `list`,
     /// IDs or exact titles within that list. With `dry_run`, answers `Plan`
@@ -83,6 +90,9 @@ pub enum Request {
         change: TaskChange,
         #[serde(default)]
         dry_run: bool,
+        /// Chosen by the client before sending (see `AddTask`).
+        #[serde(default)]
+        op_id: Option<String>,
     },
     /// A valid access token, for `auth bearer --reveal-secret`.
     Bearer,
