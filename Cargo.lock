@@ -1042,7 +1042,7 @@ dependencies = [
 
 [[package]]
 name = "ms-todo"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "assert_cmd",
  "insta",
@@ -1057,7 +1057,7 @@ dependencies = [
 
 [[package]]
 name = "ms-todo-cli"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "chrono",
  "clap",
@@ -1075,7 +1075,7 @@ dependencies = [
 
 [[package]]
 name = "ms-todo-core"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "dirs",
  "thiserror",
@@ -1083,7 +1083,7 @@ dependencies = [
 
 [[package]]
 name = "ms-todo-daemon"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "chrono",
  "fs2",
@@ -1098,7 +1098,7 @@ dependencies = [
 
 [[package]]
 name = "ms-todo-graph"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "chrono",
  "fastrand",
@@ -1116,7 +1116,7 @@ dependencies = [
 
 [[package]]
 name = "ms-todo-protocol"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "bytes",
  "serde",
