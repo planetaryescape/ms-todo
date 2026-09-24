@@ -26,7 +26,7 @@ We first proposed no daemon and then reversed that (see D-006). The reasons for 
 
 1. **Fast CLI and agent calls.** Without a daemon, every CLI call has to sync over the network before reading, or risk reading stale data. With one, the daemon keeps SQLite fresh, and a CLI read is a socket round-trip to local data.
 2. **The outbox needs something that stays running.** Instant writes are queued. Only a long-lived process can reliably send them after the TUI exits, retry them while offline, and roll back ones that are permanently rejected.
-3. **Only one process refreshes the token.** Microsoft replaces the refresh token on each use. If two processes refresh at once, one ends up holding a revoked token.
+3. **One process normally refreshes the token.** Microsoft replaces the refresh token on each use. If two processes refresh at once without coordinating, one ends up holding a revoked token. The daemon does the refreshing; the `auth` commands may refresh too when they need a token, which is safe because every refresh is a compare-and-swap under `auth/token.lock` ([03](03-graph-provider.md#sign-in)).
 4. **Changes are pushed to the TUI.** The daemon sends change events to every connected client, so the TUI never polls.
 5. **Scheduled work.** The daily My Day rollover and periodic sync belong in a process that runs all the time.
 
