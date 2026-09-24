@@ -19,6 +19,12 @@ For each, record the request, the response (with private data removed), the date
 | S11 | Does setting `dueDateTime` with a time keep the time, or does To Do cut it back to the date? How does the phone show a due date with a time compared with a reminder? | The mapping for "date with a time" | [06](06-natural-language.md) |
 | S12 | Does creating a task with `recurrence` and completing it make Graph create the next occurrence (as the app does), and what does delta return for it? | How recurrence and sync interact | [04](04-sync-cache.md) |
 
+### S5 result (2026-09-24)
+
+**Confirmed on BK's personal Microsoft account.** A `POST` to `https://login.microsoftonline.com/common/oauth2/v2.0/devicecode` with client ID `48d9179b-67f3-4969-985e-9690aff42435` and scopes `offline_access Tasks.ReadWrite MailboxSettings.ReadWrite User.Read` returned a device code. After interactive sign-in, a `POST` to the matching `/token` endpoint with the device-code grant returned a bearer access token and refresh token. The returned scope included `Tasks.ReadWrite MailboxSettings.ReadWrite User.Read`.
+
+With that access token, `GET https://graph.microsoft.com/v1.0/me/todo/lists` returned HTTP 200 and a `value` array of 29 lists. `GET https://graph.microsoft.com/v1.0/me/outlook/masterCategories` returned HTTP 200 and a `value` array of 7 categories. List and category contents and all tokens are omitted here. This confirms `/common` device-code sign-in, To Do reads and MailboxSettings consent/access for this personal account. It does not test category writes or phone-app behavior (S7).
+
 ## Product questions for BK
 
 Answered on 2026-09-24:

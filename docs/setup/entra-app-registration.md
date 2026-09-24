@@ -2,6 +2,12 @@
 
 ms-todo signs in to Microsoft Graph through an app registration in Microsoft Entra ID. The registration gives it an **Application (client) ID**. You don't need a client secret: ms-todo is a public client using device-code sign-in.
 
+## Current maintainer registration
+
+BK registered `ms-todo` in his personal Default Directory on 2026-09-24. Its **Application (client) ID is `48d9179b-67f3-4969-985e-9690aff42435`**. This ID is public and is recorded here so a build on another machine can use it. The app supports organizational and personal Microsoft accounts, allows public-client flows, and has delegated `Tasks.ReadWrite`, `MailboxSettings.ReadWrite`, `offline_access` and `User.Read` permissions. It has no redirect URI or client secret.
+
+The ID is also in a local `.env` on the registration machine as `MS_TODO_CLIENT_ID`; that file is ignored by Git and does not travel with a clone. Device-code sign-in and Graph reads succeeded on 2026-09-24; the sanitized results are in [spike S5](../blueprint/12-open-questions.md#s5-result-2026-09-24).
+
 It takes about 10 minutes. You do it once. Release builds of ms-todo include the maintainer's client ID, but we recommend registering your own (see "Why your own" at the end).
 
 Sources: [Register an app](https://learn.microsoft.com/en-us/entra/identity-platform/quickstart-register-app) (updated 2026-06-15), [Device code flow](https://learn.microsoft.com/en-us/entra/identity-platform/v2-oauth2-device-code), [Graph permissions reference](https://learn.microsoft.com/en-us/graph/permissions-reference).
@@ -59,17 +65,18 @@ The permissions you add here are only the list of what the app may request. ms-t
 
 ## Step 4: Save the client ID
 
-The client ID isn't a secret, but keep it in one place:
+The client ID isn't a secret. For this project's maintainer registration, use the ID recorded above. Optionally keep it in your own credential store:
 
 ```sh
-# Store it (BK: 1Password writes need the desktop profile and Touch ID)
+# Replace the vault name with one available in your 1Password account.
+# BK: 1Password writes need the desktop profile and Touch ID.
 op item create --category "API Credential" --title "ms-todo Entra app" \
-  --vault Private "client_id[text]=<GUID>"
+  --vault "Environment Variables" "client_id[text]=<GUID>"
 ```
 
 ms-todo takes it from any of these, highest priority first:
 
-1. the `MS_TODO_CLIENT_ID` environment variable, e.g. `export MS_TODO_CLIENT_ID=$(op read "op://Private/ms-todo Entra app/client_id")`
+1. the `MS_TODO_CLIENT_ID` environment variable, e.g. `export MS_TODO_CLIENT_ID=$(op read "op://Environment Variables/ms-todo Entra app/client_id")`
 2. `auth.client_id` in `<config_dir>/ms-todo/config.toml`
 3. the ID built into release builds
 
@@ -78,21 +85,29 @@ ms-todo takes it from any of these, highest priority first:
 Try the device code flow with `curl`. It's also the start of spike S5:
 
 ```sh
-CID=<your client id>
-curl -s https://login.microsoftonline.com/common/oauth2/v2.0/devicecode \
-  -d client_id=$CID \
-  -d scope="offline_access Tasks.ReadWrite MailboxSettings.ReadWrite User.Read" | tee /tmp/dc.json
+umask 077
+CID=48d9179b-67f3-4969-985e-9690aff42435
+curl -fsS https://login.microsoftonline.com/common/oauth2/v2.0/devicecode \
+  --data-urlencode "client_id=$CID" \
+  --data-urlencode 'scope=offline_access Tasks.ReadWrite MailboxSettings.ReadWrite User.Read' \
+  -o /tmp/dc.json
+jq '{user_code, verification_uri, expires_in, interval}' /tmp/dc.json
 # Open https://microsoft.com/devicelogin, enter the user_code, sign in, and consent.
 # Personal accounts are asked to sign in twice. That's expected (Microsoft's docs note it).
-curl -s https://login.microsoftonline.com/common/oauth2/v2.0/token \
-  -d grant_type=urn:ietf:params:oauth:grant-type:device_code \
-  -d client_id=$CID -d device_code=$(jq -r .device_code /tmp/dc.json) | tee /tmp/tok.json | jq 'del(.access_token,.refresh_token,.id_token)'
-curl -s -H "Authorization: Bearer $(jq -r .access_token /tmp/tok.json)" \
-  https://graph.microsoft.com/v1.0/me/todo/lists | jq '.value[] | {displayName, wellknownListName}'
+curl -sS https://login.microsoftonline.com/common/oauth2/v2.0/token \
+  --data-urlencode 'grant_type=urn:ietf:params:oauth:grant-type:device_code' \
+  --data-urlencode "client_id=$CID" \
+  --data-urlencode "device_code=$(jq -r .device_code /tmp/dc.json)" \
+  -o /tmp/tok.json
+jq '{token_type, expires_in, scope, error, error_description}' /tmp/tok.json
+curl -fsS -H "Authorization: Bearer $(jq -r .access_token /tmp/tok.json)" \
+  https://graph.microsoft.com/v1.0/me/todo/lists | jq '{list_count:(.value|length)}'
+curl -fsS -H "Authorization: Bearer $(jq -r .access_token /tmp/tok.json)" \
+  https://graph.microsoft.com/v1.0/me/outlook/masterCategories | jq '{category_count:(.value|length)}'
 rm /tmp/dc.json /tmp/tok.json   # these contain live tokens
 ```
 
-If you run the second `curl` before finishing sign-in, you get `authorization_pending`. That's normal: run it again after you've signed in. A list of your To Do lists at the end means the registration works.
+If you run the second `curl` before finishing sign-in, you get `authorization_pending`. That's normal: run it again after you've signed in. Successful list and category counts mean the registration and the permissions used by S5 work.
 
 ## Troubleshooting
 
