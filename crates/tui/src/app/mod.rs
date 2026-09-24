@@ -349,9 +349,11 @@ impl App {
         self.scope_name(self.wanted.as_ref().or(self.shown.as_ref()))
     }
 
-    /// The terminal window's title (08-tui.md): which app, and where.
+    /// The terminal window's title (08-tui.md): which app, and where. A
+    /// list's name comes from Graph and the terminal would act on escape
+    /// sequences in it, so control characters are removed.
     pub fn window_title(&self) -> String {
-        format!("ms-todo \u{2014} {}", self.view_name())
+        ms_todo_core::one_line_safe(&format!("ms-todo \u{2014} {}", self.view_name()))
     }
 
     pub fn update(&mut self, msg: Msg) -> Vec<Effect> {

@@ -254,3 +254,43 @@ fn the_detail_cursor_follows_the_rows_on_screen() {
     }
     assert!(rows.is_sorted(), "top to bottom: {rows:?}");
 }
+
+/// Titles, notes, list names and banners come from Graph. ratatui drops
+/// control characters when it fills the buffer (ratatui-core's
+/// `Span::styled_graphemes` and `Buffer::set_stringn`), and the buffer is
+/// all the terminal gets, so an escape sequence in them can't reach it.
+/// This pins that down against a ratatui upgrade.
+#[test]
+fn escape_sequences_from_graph_never_reach_the_terminal() {
+    let mut app = seeded();
+    let evil = "Pay\x1b]52;c;aGk=\x07 rent\u{9b}2J\x7f";
+    app.tasks[0].title = evil.into();
+    app.tasks[0].body = Some(crate::app::task::Body {
+        content: format!("line one\n{evil}"),
+        html: false,
+    });
+    app.lists[1].1 = evil.into();
+    app.show(Level::Error, evil);
+    let mut screens = vec![render(&app)];
+    app.update(Msg::Action(crate::action::Action::Palette));
+    screens.push(render(&app));
+    let mut terminal = Terminal::new(TestBackend::new(110, 16)).expect("terminal");
+    terminal
+        .draw(|frame| super::draw(frame, &app))
+        .expect("draw");
+    let cells: String = terminal
+        .backend()
+        .buffer()
+        .content()
+        .iter()
+        .map(|cell| cell.symbol())
+        .collect();
+    screens.push(cells);
+    for screen in screens {
+        assert!(
+            !screen.contains(['\x1b', '\x07', '\u{9b}', '\x7f']),
+            "{screen}"
+        );
+        assert!(screen.contains("rent"));
+    }
+}

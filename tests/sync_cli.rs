@@ -9,7 +9,7 @@ use std::time::{Duration, Instant};
 
 use serde_json::{Value, json};
 use support::Env;
-use support::fake_graph::{graph_with_tasks, list, task};
+use support::fake_graph::{FakeGraph, graph_with_tasks, list, task};
 use wiremock::matchers::{method, path};
 use wiremock::{Mock, ResponseTemplate};
 
@@ -337,4 +337,44 @@ async fn doctor_reports_sign_in_the_daemon_the_database_and_every_scope() {
     let table = String::from_utf8(table).expect("utf8");
     assert!(table.contains("2 of 2 scopes ready"), "{table}");
     assert!(table.contains("all good"), "{table}");
+}
+
+/// A title or list name from Graph can hold an escape sequence (here OSC
+/// 52, which writes to the clipboard). The table format goes straight to a
+/// terminal, so its control characters are replaced; JSON keeps the text.
+#[tokio::test]
+async fn escape_sequences_in_titles_never_reach_the_terminal_in_a_table() {
+    let evil = "Pay\x1b]52;c;aGk=\x07 rent\u{9b}2J";
+    let mut env = Env::new();
+    let graph = FakeGraph::start(&mut env, vec![list("L-tasks", evil, "defaultList")]).await;
+    graph.edit(|data| {
+        data.tasks
+            .insert("L-tasks".into(), vec![task("T1", evil, "W/\"e1\"")]);
+    });
+    env.synced();
+    assert_eq!(env.json(&["tasks", "list"])["items"][0]["title"], evil);
+
+    for args in [
+        &["tasks", "list"][..],
+        &["search", "rent"][..],
+        &["lists", "list"][..],
+    ] {
+        let output = env
+            .cmd()
+            .args(["--format", "table"])
+            .args(args)
+            .assert()
+            .success()
+            .get_output()
+            .clone();
+        let table = String::from_utf8(output.stdout).expect("utf8");
+        assert!(
+            !table.contains(['\x1b', '\x07', '\u{9b}']),
+            "{args:?}: {table:?}"
+        );
+        assert!(
+            table.contains("Pay\u{fffd}]52;c;aGk=\u{fffd} rent\u{fffd}2J"),
+            "{args:?}: {table}"
+        );
+    }
 }

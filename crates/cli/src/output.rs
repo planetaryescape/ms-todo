@@ -7,7 +7,7 @@
 
 use std::io::{IsTerminal, Write};
 
-use ms_todo_core::ErrorKind;
+use ms_todo_core::{ErrorKind, display_safe};
 use ms_todo_protocol::{Entity, SyncInfo, SyncState};
 use serde::Serialize;
 use serde_json::Value;
@@ -68,7 +68,7 @@ pub fn print_success(format: OutputFormat, value: &impl Render) -> Result<(), Cl
             let width = rows.iter().map(|(label, _)| label.len()).max().unwrap_or(0);
             let mut stdout = std::io::stdout().lock();
             for (label, text) in rows {
-                writeln!(stdout, "{label:<width$}  {text}")?;
+                writeln!(stdout, "{label:<width$}  {}", display_safe(&text))?;
             }
             Ok(())
         }
@@ -231,12 +231,21 @@ fn ids_not_supported() -> CliError {
 }
 
 // Columns padded to the widest cell; the last column isn't padded, so long
-// titles don't leave trailing spaces.
+// titles don't leave trailing spaces. Cells hold Graph's text, which goes
+// straight to a terminal, so control characters are replaced first.
 fn write_table(
     out: &mut impl Write,
     headings: &[String],
     rows: &[Vec<String>],
 ) -> std::io::Result<()> {
+    let rows: Vec<Vec<String>> = rows
+        .iter()
+        .map(|row| {
+            row.iter()
+                .map(|cell| display_safe(cell).into_owned())
+                .collect()
+        })
+        .collect();
     let widths: Vec<usize> = (0..headings.len())
         .map(|column| {
             std::iter::once(&headings[column])
@@ -314,7 +323,8 @@ pub fn print_error(format: OutputFormat, error: &CliError) {
             if let Some(op_id) = &error.op_id {
                 text.push_str(&format!("\nop_id: {op_id}"));
             }
-            writeln!(stderr, "{text}")
+            // Candidates' names and messages can quote Graph's text.
+            writeln!(stderr, "{}", display_safe(&text))
         }
     };
     // Nowhere left to report a failure to write to stderr.
