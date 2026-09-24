@@ -372,18 +372,18 @@ async fn record_split(
         .await
     {
         Ok(row) => Ok(task_entity(&row)),
-        Err(error) => {
-            let failure = store_error(error);
-            Err(ErrorPayload {
-                message: format!(
-                    "the change was made in Microsoft To Do (task {}), but the local cache \
-                     couldn't record it: {}. The next sync picks it up",
-                    raw.get("id").and_then(Value::as_str).unwrap_or_default(),
-                    failure.message,
-                ),
-                ..failure
-            })
-        }
+        // Graph took the change, so it must never look safe to resend: it's
+        // `outcome_unknown`, which the caller doesn't retry blindly, and
+        // which `--idempotency-key` keeps.
+        Err(error) => Err(error_payload(
+            ErrorKind::OutcomeUnknown,
+            format!(
+                "the change was made in Microsoft To Do (task {}), but the local cache couldn't \
+                 record it: {}. The next sync picks it up; don't send the change again",
+                raw.get("id").and_then(Value::as_str).unwrap_or_default(),
+                store_error(error).message,
+            ),
+        )),
     }
 }
 

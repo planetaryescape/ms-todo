@@ -3,6 +3,7 @@
 // Changes: sqlx's own embedded migrator instead of mxr's hand-rolled one,
 // since ms-todo starts with a clean schema history.
 
+use std::os::unix::fs::{DirBuilderExt, OpenOptionsExt, PermissionsExt};
 use std::path::{Path, PathBuf};
 use std::str::FromStr;
 use std::time::Duration;
@@ -28,12 +29,28 @@ pub struct Store {
 
 impl Store {
     /// Open (creating if needed) the database at `path` and run migrations.
+    /// The cache holds the user's tasks, so the database and its WAL and
+    /// shared-memory files are 0600, and existing ones are repaired. The
+    /// caller keeps the directory private (the daemon makes it 0700).
     pub async fn open(path: &Path) -> Result<Self, StoreError> {
         if let Some(dir) = path.parent() {
-            std::fs::create_dir_all(dir).map_err(|error| {
-                StoreError::Invalid(format!("cannot create {}: {error}", dir.display()))
-            })?;
+            std::fs::DirBuilder::new()
+                .recursive(true)
+                .mode(0o700)
+                .create(dir)
+                .map_err(|error| {
+                    StoreError::Invalid(format!("cannot create {}: {error}", dir.display()))
+                })?;
         }
+        // Created 0600 before SQLite opens it: SQLite gives the -wal and
+        // -shm files the database file's mode.
+        std::fs::OpenOptions::new()
+            .create(true)
+            .append(true)
+            .mode(0o600)
+            .open(path)
+            .map_err(|error| describe(path, &error))?;
+        make_private(path)?;
         let url = format!("sqlite:{}", path.display());
         let base = SqliteConnectOptions::from_str(&url)?
             .journal_mode(SqliteJournalMode::Wal)
@@ -49,6 +66,8 @@ impl Store {
             .max_connections(READERS)
             .connect_with(base.read_only(true))
             .await?;
+        // Repairs -wal and -shm files an older build left world-readable.
+        make_private(path)?;
         Ok(Self {
             writer,
             reader,
@@ -62,13 +81,8 @@ impl Store {
 
     /// The database's size on disk, its WAL and shared-memory files included.
     pub fn size_bytes(&self) -> u64 {
-        ["", "-wal", "-shm"]
-            .iter()
-            .filter_map(|suffix| {
-                let mut name = self.path.as_os_str().to_owned();
-                name.push(suffix);
-                std::fs::metadata(PathBuf::from(name)).ok()
-            })
+        database_files(&self.path)
+            .filter_map(|file| std::fs::metadata(file).ok())
             .map(|meta| meta.len())
             .sum()
     }
@@ -90,6 +104,31 @@ impl Store {
                 .await?,
         )
     }
+}
+
+/// The database file and the WAL and shared-memory files beside it.
+fn database_files(path: &Path) -> impl Iterator<Item = PathBuf> + '_ {
+    ["", "-wal", "-shm"].into_iter().map(move |suffix| {
+        let mut name = path.as_os_str().to_owned();
+        name.push(suffix);
+        PathBuf::from(name)
+    })
+}
+
+/// Make each of the database's files that exists 0600.
+fn make_private(path: &Path) -> Result<(), StoreError> {
+    for file in database_files(path) {
+        match std::fs::set_permissions(&file, std::fs::Permissions::from_mode(0o600)) {
+            Ok(()) => {}
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+            Err(error) => return Err(describe(&file, &error)),
+        }
+    }
+    Ok(())
+}
+
+fn describe(path: &Path, error: &std::io::Error) -> StoreError {
+    StoreError::Invalid(format!("{}: {error}", path.display()))
 }
 
 /// Bump the own-write counter inside `tx` and return the new value.

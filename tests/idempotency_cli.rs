@@ -132,3 +132,35 @@ async fn a_failure_that_changed_nothing_frees_the_key() {
     assert_eq!(retried["items"][0]["graph_id"], "T-eggs");
     assert_eq!(graph.writes().await.len(), 2);
 }
+
+#[tokio::test]
+async fn a_create_graph_took_but_the_cache_couldnt_record_keeps_its_key_as_outcome_unknown() {
+    let mut env = Env::new();
+    let graph = graph(&mut env).await;
+    env.synced();
+    // Make the daemon's next task insert fail, as a full disk would.
+    let database = env.json(&["doctor"])["database"]["path"]
+        .as_str()
+        .expect("database path")
+        .to_owned();
+    let mut connection =
+        <sqlx::SqliteConnection as sqlx::Connection>::connect(&format!("sqlite:{database}"))
+            .await
+            .expect("open the daemon's database");
+    sqlx::query(
+        "CREATE TRIGGER refuse_tasks BEFORE INSERT ON tasks \
+         BEGIN SELECT RAISE(ABORT, 'test: the cache refuses writes'); END",
+    )
+    .execute(&mut connection)
+    .await
+    .expect("trigger");
+    let add = ["tasks", "add", "Buy bread", "--idempotency-key", "k"];
+
+    let first = env.failure(&add, 1);
+    let repeat = env.failure(&add, 1);
+
+    assert_eq!(first["error"]["kind"], "outcome_unknown", "{first}");
+    assert!(first["error"]["op_id"].is_string());
+    assert_eq!(repeat, first, "the repeat gets the recorded result");
+    assert_eq!(graph.writes().await.len(), 1, "no second POST");
+}

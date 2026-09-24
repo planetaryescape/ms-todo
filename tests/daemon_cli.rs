@@ -47,6 +47,19 @@ fn start_status_stop_and_the_pid_is_gone() {
         "run dir mode"
     );
 
+    // The cache holds tasks: private like the socket.
+    let database = std::path::PathBuf::from(
+        env.json(&["doctor"])["database"]["path"]
+            .as_str()
+            .expect("database path"),
+    );
+    assert_eq!(mode(&database), 0o600, "database mode");
+    assert_eq!(
+        mode(database.parent().expect("data dir")),
+        0o700,
+        "data dir mode"
+    );
+
     // A second start finds the running daemon rather than starting another.
     assert_eq!(env.json(&["daemon", "start"])["pid"], pid);
 

@@ -108,6 +108,8 @@ async fn build_state(paths: &Paths) -> Result<State, String> {
     );
     let graph = GraphClient::new(Arc::clone(&auth), &graph_base)
         .map_err(|error| ms_todo_core::message_with_causes(&error))?;
+    // The cache holds the user's tasks: keep its directory private too.
+    ensure_private_dir(&paths.data_dir).map_err(|error| describe(&paths.data_dir, &error))?;
     let store = Store::open(&paths.database_file())
         .await
         .map_err(|error| describe_store(&paths.database_file(), &error))?;

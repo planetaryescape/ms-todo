@@ -77,6 +77,41 @@ async fn migrations_run_once_and_the_database_is_in_wal_mode() {
     assert!(store.scopes().await.expect("scopes").is_empty());
 }
 
+fn mode(path: &std::path::Path) -> u32 {
+    use std::os::unix::fs::PermissionsExt;
+    std::fs::metadata(path).expect("stat").permissions().mode() & 0o777
+}
+
+#[tokio::test]
+async fn the_database_and_its_wal_files_are_private_and_repaired_on_open() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let path = dir.path().join("fresh").join("ms-todo.db");
+    let store = Store::open(&path).await.expect("open");
+    store.lists().await.expect("read");
+    assert_eq!(mode(path.parent().expect("dir")), 0o700, "a new directory");
+    for suffix in ["", "-wal", "-shm"] {
+        let file = dir.path().join("fresh").join(format!("ms-todo.db{suffix}"));
+        assert_eq!(mode(&file), 0o600, "{}", file.display());
+    }
+    drop(store);
+
+    // A database an older build left world-readable is repaired.
+    use std::os::unix::fs::PermissionsExt;
+    for suffix in ["", "-wal", "-shm"] {
+        let file = dir.path().join("fresh").join(format!("ms-todo.db{suffix}"));
+        if file.exists() {
+            std::fs::set_permissions(&file, std::fs::Permissions::from_mode(0o644)).expect("chmod");
+        }
+    }
+    let _store = Store::open(&path).await.expect("reopen");
+    for suffix in ["", "-wal", "-shm"] {
+        let file = dir.path().join("fresh").join(format!("ms-todo.db{suffix}"));
+        if file.exists() {
+            assert_eq!(mode(&file), 0o600, "{}", file.display());
+        }
+    }
+}
+
 #[tokio::test]
 async fn lists_are_upserted_with_stable_local_ids_and_unseen_ones_are_tombstoned() {
     let (_dir, store) = open().await;

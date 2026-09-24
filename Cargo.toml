@@ -23,6 +23,8 @@ ms-todo-protocol = { workspace = true }
 assert_cmd = { workspace = true }
 insta = { workspace = true }
 serde_json = { workspace = true }
+# Tests reach into a daemon's database to make its writes fail.
+sqlx = { workspace = true }
 tempfile = { workspace = true }
 tokio = { workspace = true, features = ["rt-multi-thread"] }
 toml = { workspace = true }

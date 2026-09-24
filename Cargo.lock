@@ -1363,6 +1363,7 @@ dependencies = [
  "ms-todo-daemon",
  "ms-todo-protocol",
  "serde_json",
+ "sqlx",
  "tempfile",
  "tokio",
  "toml",
