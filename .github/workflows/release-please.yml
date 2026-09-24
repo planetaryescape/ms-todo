@@ -2,10 +2,17 @@
 # @ d807e5e4f9d2f09878cdc22309af3589623f7785 (action pins, build matrix,
 # packaging and checksums).
 #
-# One workflow on purpose. The repo has no secrets, so release-please runs
-# with GITHUB_TOKEN, and GitHub doesn't start other workflows from events
-# GITHUB_TOKEN creates: a separate tag-triggered release.yml would never run.
-# The build jobs therefore live here, gated on release-please's output.
+# One workflow on purpose. release-please runs with GITHUB_TOKEN, and GitHub
+# doesn't start other workflows from events GITHUB_TOKEN creates: a separate
+# tag-triggered release.yml would never run. The build jobs therefore live
+# here, gated on release-please's output. The one secret,
+# HOMEBREW_TAP_TOKEN, is only for pushing the formula to the tap.
+#
+# The homebrew job is adapted from spotuify .github/workflows/release.yml
+# @ e9ec7f4f3260ba62d6dc49b7a5767259ba64bc2c (render, then clone the tap
+# with x-access-token and push only if the formula changed). Changes: the
+# checksums come from the published release rather than build artifacts,
+# and a new formula file counts as a change.
 #
 # release-please creates the release as a draft (with its tag, via
 # force-tag-creation), and `publish` makes it public only once every build
@@ -115,3 +122,43 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           TAG: ${{ needs.release-please.outputs.tag_name }}
         run: gh release edit "$TAG" --repo "$GITHUB_REPOSITORY" --draft=false --latest
+
+  homebrew:
+    name: Homebrew formula
+    needs: [release-please, publish]
+    if: needs.release-please.outputs.release_created == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v6
+      - name: Download the release's checksums
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ needs.release-please.outputs.tag_name }}
+        run: gh release download "$TAG" --repo "$GITHUB_REPOSITORY" --pattern '*.sha256' --dir checksums
+      - name: Render the formula
+        env:
+          TAG: ${{ needs.release-please.outputs.tag_name }}
+        run: bash scripts/render_homebrew_formula.sh "$TAG" checksums Formula/ms-todo.rb
+      - name: Push it to the tap
+        env:
+          COMMITTER_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+          TAG: ${{ needs.release-please.outputs.tag_name }}
+        run: |
+          set -euo pipefail
+          if [ -z "$COMMITTER_TOKEN" ]; then
+            echo "::error ::HOMEBREW_TAP_TOKEN is required to update the Homebrew tap."
+            exit 1
+          fi
+          git clone "https://x-access-token:${COMMITTER_TOKEN}@github.com/planetaryescape/homebrew-ms-todo.git" tap
+          mkdir -p tap/Formula
+          cp Formula/ms-todo.rb tap/Formula/ms-todo.rb
+          # Untracked counts too: the first release adds the file.
+          if [ -z "$(git -C tap status --porcelain -- Formula/ms-todo.rb)" ]; then
+            echo "No Homebrew formula changes"
+            exit 0
+          fi
+          git -C tap config user.name "github-actions[bot]"
+          git -C tap config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git -C tap add Formula/ms-todo.rb
+          git -C tap commit -m "ms-todo ${TAG#v}"
+          git -C tap push origin HEAD:main
