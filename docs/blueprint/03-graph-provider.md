@@ -2,11 +2,7 @@
 
 ## App registration (BK does this once, by hand)
 
-1. Go to https://entra.microsoft.com. Under **App registrations**, choose **New registration**.
-2. **Supported account types:** "Accounts in any organizational directory and personal Microsoft accounts". That lets `/common` work for both kinds of account.
-3. No redirect URI is needed for device code. Under **Authentication**, set **Allow public client flows** to Yes.
-4. **API permissions** (all delegated): `Tasks.ReadWrite`, `MailboxSettings.ReadWrite` (for categories), `offline_access`, `User.Read` (to show who is signed in).
-5. Copy the **Application (client) ID**. There's no client secret.
+The full step-by-step guide, with troubleshooting and a `curl` check, is in **[../setup/entra-app-registration.md](../setup/entra-app-registration.md)**. The short version: account types are *Any Entra ID Tenant + Personal Microsoft accounts*; turn on **Allow public client flows**; add the delegated permissions `Tasks.ReadWrite`, `MailboxSettings.ReadWrite`, `offline_access` and `User.Read`; no redirect URI; no client secret; register it in a personal directory, not the Contentful tenant.
 
 The client ID is not a secret; mxr's security audit reached the same conclusion. Take it from config (`auth.client_id`) or an environment variable (`MS_TODO_CLIENT_ID`). Release builds bake in BK's client ID with `option_env!("MS_TODO_CLIENT_ID")`, which is mxr's `BUNDLED_CLIENT_ID` pattern (D-025). `auth login` and the README encourage users to register their own app instead, and `auth status` shows which ID is in use. Registering the app may ask for an Azure signup, which can require card verification; see the research doc's registration section.
 

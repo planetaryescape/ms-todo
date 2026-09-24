@@ -4,7 +4,7 @@ Each phase ends with a **completion check that BK or an agent can observe**, run
 
 ## Phase 0: Spikes and setup (before any product code)
 
-- BK registers the Entra app ([03](03-graph-provider.md)) and puts the client ID in 1Password.
+- BK registers the Entra app using [../setup/entra-app-registration.md](../setup/entra-app-registration.md), puts the client ID in 1Password, and runs the guide's step 5 `curl` check, which also covers spike S5.
 - A throwaway spike binary (or `curl` plus `ms-todo`'s future token, or MSAL's device-code sample) runs every spike in [12-open-questions.md](12-open-questions.md) against a throwaway list.
 - Write the findings into `12-open-questions.md` and update the blueprint documents they affect.
 

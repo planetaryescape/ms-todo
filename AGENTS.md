@@ -10,7 +10,7 @@
 
 1. Read `docs/blueprint/README.md`, then the documents in the order listed. Read `11-decision-log.md` before proposing any change of direction. Most alternatives you might think of were already considered and rejected there, with reasons.
 2. Read `docs/research/microsoft-todo-api.md` and `docs/research/prior-art.md`.
-3. Follow `docs/blueprint/KICKOFF.md` for the first session.
+3. Follow `docs/blueprint/KICKOFF.md` for the first session. Registering the Entra app is covered in `docs/setup/entra-app-registration.md`.
 
 ## Rules
 
