@@ -6,7 +6,7 @@ ms-todo signs in to Microsoft Graph through an app registration in Microsoft Ent
 
 BK registered `ms-todo` in his personal Default Directory on 2026-09-24. Its **Application (client) ID is `48d9179b-67f3-4969-985e-9690aff42435`**. This ID is public and is recorded here so a build on another machine can use it. The app supports organizational and personal Microsoft accounts, allows public-client flows, and has delegated `Tasks.ReadWrite`, `MailboxSettings.ReadWrite`, `offline_access` and `User.Read` permissions. It has no redirect URI or client secret.
 
-The ID is also in a local `.env` on the registration machine as `MS_TODO_CLIENT_ID`; that file is ignored by Git and does not travel with a clone. Device-code sign-in and Graph reads succeeded on 2026-09-24; the sanitized results are in [spike S5](../blueprint/12-open-questions.md#s5-result-2026-09-24).
+The ID is also in the `ms-todo Entra app` item in 1Password's `Environment Variables` vault, under `client_id`, and in a local `.env` on the registration machine as `MS_TODO_CLIENT_ID`. The `.env` file is ignored by Git and does not travel with a clone. Device-code sign-in and Graph reads succeeded on 2026-09-24; the sanitized results are in [spike S5](../blueprint/12-open-questions.md#s5-result-2026-09-24).
 
 It takes about 10 minutes. You do it once. Release builds of ms-todo include the maintainer's client ID, but we recommend registering your own (see "Why your own" at the end).
 

@@ -5,7 +5,7 @@ Each phase ends with a **completion check that BK or an agent can observe**, run
 ## Phase 0: Spikes and setup (before any product code)
 
 - **Done (2026-09-24):** BK registered the `ms-todo` Entra app in the personal Default Directory for organizational and personal Microsoft accounts. Public-client flows are enabled; the delegated permissions are `Tasks.ReadWrite`, `MailboxSettings.ReadWrite`, `offline_access` and `User.Read`. The client ID is recorded in [../setup/entra-app-registration.md](../setup/entra-app-registration.md) and in the registration machine's local, Git-ignored `.env`.
-- **Verified (2026-09-24):** device-code sign-in against `/common` returned an access token and refresh token for BK's personal Microsoft account. Graph returned HTTP 200 for `/me/todo/lists` and `/me/outlook/masterCategories`; see [S5 evidence](12-open-questions.md#s5-result-2026-09-24). The client ID has not been copied to 1Password; use the tracked setup guide. Run the remaining spikes below.
+- **Verified (2026-09-24):** device-code sign-in against `/common` returned an access token and refresh token for BK's personal Microsoft account. Graph returned HTTP 200 for `/me/todo/lists` and `/me/outlook/masterCategories`; see [S5 evidence](12-open-questions.md#s5-result-2026-09-24). The client ID is also in the `ms-todo Entra app` item in 1Password's `Environment Variables` vault. Run the remaining spikes below.
 - A throwaway spike binary (or `curl` plus `ms-todo`'s future token, or MSAL's device-code sample) runs every spike in [12-open-questions.md](12-open-questions.md) against a throwaway list.
 - Write the findings into `12-open-questions.md` and update the blueprint documents they affect.
 
