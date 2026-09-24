@@ -18,10 +18,17 @@ use crate::action::Action;
 pub enum Context {
     /// The sidebar.
     Sidebar,
-    /// The task list and the detail pane.
+    /// The task list.
     Tasks,
-    /// Typing a new task or a filter. Other printable keys are text.
+    /// The detail pane, where j and k move between the fields.
+    Detail,
+    /// Typing a new task, a filter or a field's new value. Other printable
+    /// keys are text.
     Prompt,
+    /// The command palette. Other printable keys are its query.
+    Palette,
+    /// The diagnostics page.
+    Diagnostics,
     /// The inline delete confirmation.
     Confirm,
     /// The recurring-completion candidate picker.
@@ -45,10 +52,18 @@ pub struct Binding {
     pub hint: bool,
 }
 
-const BROWSE: &[Context] = &[Context::Sidebar, Context::Tasks];
-const TASKS: &[Context] = &[Context::Tasks];
+const BROWSE: &[Context] = &[Context::Sidebar, Context::Tasks, Context::Detail];
+const TASKS: &[Context] = &[Context::Tasks, Context::Detail];
 const SIDEBAR: &[Context] = &[Context::Sidebar];
-const LISTS: &[Context] = &[Context::Sidebar, Context::Tasks, Context::Picker];
+const LISTS: &[Context] = &[
+    Context::Sidebar,
+    Context::Tasks,
+    Context::Detail,
+    Context::Picker,
+    Context::Diagnostics,
+];
+const PALETTE: &[Context] = &[Context::Palette];
+const DIAGNOSTICS: &[Context] = &[Context::Diagnostics];
 
 /// Every binding, in the order help shows them.
 pub const BINDINGS: &[Binding] = &[
@@ -64,11 +79,23 @@ pub const BINDINGS: &[Binding] = &[
     bind(BROWSE, "Tab", Action::FocusNext, "Next pane", false),
     bind(BROWSE, "a", Action::Add, "Add", true),
     bind(TASKS, "x", Action::ToggleComplete, "Done", true),
+    bind(TASKS, "e", Action::Edit, "Edit", true),
+    bind(&[Context::Detail], "Enter", Action::Edit, "Edit", false),
     bind(TASKS, "d", Action::Delete, "Delete", true),
+    bind(TASKS, "v", Action::ToggleSelect, "Select", true),
+    bind(TASKS, "V", Action::SelectAll, "Select all", false),
     bind(BROWSE, "u", Action::Undo, "Undo", true),
     bind(BROWSE, "/", Action::Filter, "Filter", true),
-    bind(TASKS, "Esc", Action::ClearFilter, "Clear filter", false),
+    bind(
+        TASKS,
+        "Esc",
+        Action::Clear,
+        "Clear selection or filter",
+        false,
+    ),
+    bind(BROWSE, ":", Action::Palette, "Palette", true),
     bind(BROWSE, "r", Action::Sync, "Sync", true),
+    bind(BROWSE, "D", Action::Diagnostics, "Diagnostics", false),
     bind(BROWSE, "?", Action::Help, "Help", true),
     bind(BROWSE, "q", Action::Quit, "Quit", true),
     bind(BROWSE, "Ctrl-c", Action::Quit, "Quit", false),
@@ -99,6 +126,18 @@ pub const BINDINGS: &[Binding] = &[
         true,
     ),
     bind(&[Context::Picker], "Esc", Action::Cancel, "Cancel", true),
+    bind(PALETTE, "Enter", Action::Submit, "Run", true),
+    bind(PALETTE, "Esc", Action::Cancel, "Close", true),
+    bind(PALETTE, "Backspace", Action::Backspace, "Erase", false),
+    bind(PALETTE, "Down", Action::MoveDown, "Down", false),
+    bind(PALETTE, "Up", Action::MoveUp, "Up", false),
+    bind(PALETTE, "Ctrl-n", Action::MoveDown, "Down", false),
+    bind(PALETTE, "Ctrl-p", Action::MoveUp, "Up", false),
+    bind(PALETTE, "Ctrl-c", Action::Cancel, "Close", false),
+    bind(DIAGNOSTICS, "r", Action::Refresh, "Refresh", true),
+    bind(DIAGNOSTICS, "Esc", Action::Cancel, "Back", true),
+    bind(DIAGNOSTICS, "q", Action::Cancel, "Back", false),
+    bind(DIAGNOSTICS, "D", Action::Cancel, "Back", false),
     bind(&[Context::Help], "Esc", Action::Cancel, "Close", true),
     bind(&[Context::Help], "?", Action::Cancel, "Close", false),
     bind(&[Context::Help], "q", Action::Cancel, "Close", false),
@@ -192,28 +231,63 @@ fn normalize(key: &KeyEvent) -> KeyPress {
 
 /// The hint bar's `(keys, label)` pairs for `context`.
 pub fn hints(context: Context) -> Vec<(String, &'static str)> {
-    grouped(|binding| binding.hint && binding.contexts.contains(&context))
+    labelled(grouped(|binding| {
+        binding.hint && binding.contexts.contains(&context)
+    }))
 }
 
 /// Every browsing binding, for the help screen.
 pub fn help_rows() -> Vec<(String, &'static str)> {
-    grouped(|binding| binding.contexts.iter().any(|c| BROWSE.contains(c)))
+    labelled(grouped(|binding| {
+        binding.contexts.iter().any(|c| BROWSE.contains(c))
+    }))
 }
 
-/// The bindings `wanted` picks as `(keys, label)`, one row per label with
-/// its keys joined as `j/Down`, in table order.
-fn grouped(wanted: impl Fn(&Binding) -> bool) -> Vec<(String, &'static str)> {
-    let mut rows: Vec<(String, &'static str)> = Vec::new();
+/// What the command palette offers: every browsing action but moving
+/// around and the palette itself, as `(keys, label, action)`.
+pub fn commands() -> Vec<(String, &'static str, Action)> {
+    let rows = grouped(|binding| {
+        binding.contexts.iter().any(|c| BROWSE.contains(c))
+            && !matches!(
+                binding.action,
+                Action::MoveDown
+                    | Action::MoveUp
+                    | Action::JumpTop
+                    | Action::JumpBottom
+                    | Action::FocusLeft
+                    | Action::FocusRight
+                    | Action::FocusNext
+                    | Action::Palette
+            )
+    });
+    rows.into_iter()
+        .map(|(keys, binding)| (keys, binding.label, binding.action))
+        .collect()
+}
+
+/// The bindings `wanted` picks, one row per label with its keys joined
+/// as `j/Down` and the first binding of that label, in table order.
+fn grouped(wanted: impl Fn(&Binding) -> bool) -> Vec<(String, &'static Binding)> {
+    let mut rows: Vec<(String, &'static Binding)> = Vec::new();
     for binding in BINDINGS.iter().filter(|binding| wanted(binding)) {
-        match rows.iter_mut().find(|(_, label)| *label == binding.label) {
+        match rows
+            .iter_mut()
+            .find(|(_, first)| first.label == binding.label)
+        {
             Some((keys, _)) => {
                 keys.push('/');
                 keys.push_str(binding.key);
             }
-            None => rows.push((binding.key.to_owned(), binding.label)),
+            None => rows.push((binding.key.to_owned(), binding)),
         }
     }
     rows
+}
+
+fn labelled(rows: Vec<(String, &'static Binding)>) -> Vec<(String, &'static str)> {
+    rows.into_iter()
+        .map(|(keys, binding)| (keys, binding.label))
+        .collect()
 }
 
 #[cfg(test)]
@@ -279,5 +353,18 @@ mod tests {
         let help = help_rows();
         assert!(help.contains(&("j/Down".into(), "Down")));
         assert!(help.contains(&("q/Ctrl-c".into(), "Quit")));
+        assert!(help.contains(&("e/Enter".into(), "Edit")));
+    }
+
+    #[test]
+    fn the_palette_offers_actions_not_movement() {
+        let commands = commands();
+        assert!(commands.contains(&("x".into(), "Done", Action::ToggleComplete)));
+        assert!(commands.contains(&("D".into(), "Diagnostics", Action::Diagnostics)));
+        assert!(
+            !commands
+                .iter()
+                .any(|(_, _, action)| matches!(action, Action::MoveDown | Action::Palette))
+        );
     }
 }

@@ -11,9 +11,9 @@ use crate::app::scope::planned_groups;
 use crate::app::{App, Connection, Pane, SyncMarker, Task};
 use crate::glyphs::Glyphs;
 
-pub fn draw(frame: &mut Frame, area: Rect, app: &App) {
+pub fn draw<'a>(frame: &mut Frame, area: Rect, app: &'a App) {
     let has_focus = focused(app, Pane::Tasks);
-    let name = app.scope_name(app.wanted.as_ref().or(app.shown.as_ref()));
+    let name = app.view_name();
     let title = match &app.filter {
         Some(filter) => format!(" {name} / {filter} "),
         None => format!(" {name} "),
@@ -38,7 +38,7 @@ pub fn draw(frame: &mut Frame, area: Rect, app: &App) {
     }
     let glyphs = &app.glyphs;
     let today = app.clock.today;
-    let row = |task| task_row(task, glyphs, today);
+    let row = |task: &'a Task| task_row(task, app.selection.contains(&task.id), glyphs, today);
     // Planned is grouped; a header row goes before each group.
     let (rows, selected) = if app.shown == Some(Scope::Planned) && app.filter.is_none() {
         let mut rows = Vec::new();
@@ -93,7 +93,7 @@ fn empty_text(app: &App) -> String {
     }
 }
 
-fn task_row<'a>(task: &'a Task, glyphs: &Glyphs, today: NaiveDate) -> Row<'a> {
+fn task_row<'a>(task: &'a Task, selected: bool, glyphs: &Glyphs, today: NaiveDate) -> Row<'a> {
     let status = if task.completed {
         glyphs.done
     } else {
@@ -118,7 +118,7 @@ fn task_row<'a>(task: &'a Task, glyphs: &Glyphs, today: NaiveDate) -> Row<'a> {
         },
     );
     let mut flags = Vec::new();
-    if task.important {
+    if task.important() {
         flags.push(Span::styled(glyphs.important, Style::default().fg(AMBER)));
     }
     if task.recurrence.is_some() {
@@ -129,7 +129,17 @@ fn task_row<'a>(task: &'a Task, glyphs: &Glyphs, today: NaiveDate) -> Row<'a> {
     }
     Row::new(vec![
         Cell::from(status),
-        Cell::from(Span::styled(task.title.as_str(), title_style)),
+        Cell::from(if selected {
+            Line::from(vec![
+                Span::styled(
+                    format!("{} ", glyphs.selected),
+                    Style::default().fg(ACCENT).add_modifier(Modifier::BOLD),
+                ),
+                Span::styled(task.title.as_str(), title_style.fg(ACCENT)),
+            ])
+        } else {
+            Line::from(Span::styled(task.title.as_str(), title_style))
+        }),
         Cell::from(Line::from(due).alignment(Alignment::Right)),
         Cell::from(Line::from(flags)),
         Cell::from(sync_marker(task.sync, glyphs)),

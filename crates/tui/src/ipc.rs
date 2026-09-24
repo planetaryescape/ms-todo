@@ -24,6 +24,9 @@ use crate::app::{Effect, Msg, Tag};
 
 /// Between attempts to reach a daemon that went away.
 const RECONNECT_EVERY: Duration = Duration::from_millis(500);
+/// On macOS a connect that races the daemon closing its socket can wait
+/// forever (docs/issues/003-flaky-task-writes-tests.md), so it's bounded.
+const CONNECT_TIMEOUT: Duration = Duration::from_secs(3);
 
 /// Sends requests to the daemon. Dropping it closes the connection.
 #[derive(Clone)]
@@ -53,13 +56,15 @@ async fn run(
     incoming: mpsc::UnboundedSender<Msg>,
 ) {
     loop {
-        let why = match UnixStream::connect(&socket).await {
-            Ok(stream) => {
+        let connected = tokio::time::timeout(CONNECT_TIMEOUT, UnixStream::connect(&socket)).await;
+        let why = match connected {
+            Ok(Ok(stream)) => {
                 // See SOCKET_BUFFER_BYTES; best effort, as the daemon's side.
                 let _ = socket2::SockRef::from(&stream).set_recv_buffer_size(SOCKET_BUFFER_BYTES);
                 serve(stream, &mut requests, &incoming).await
             }
-            Err(error) => Some(format!("cannot reach the daemon: {error}")),
+            Ok(Err(error)) => Some(format!("cannot reach the daemon: {error}")),
+            Err(_) => Some("the daemon didn't accept a connection".to_owned()),
         };
         let Some(why) = why else {
             // The runner is gone.
@@ -172,7 +177,7 @@ fn lost(tag: Tag, why: &str) -> Msg {
         Tag::Write(_) | Tag::Undo => {
             format!("{why}; the change may or may not have been made, so check before trying again")
         }
-        Tag::Seed(_) | Tag::Prefetch | Tag::Sync => why.to_owned(),
+        Tag::Seed(_) | Tag::Prefetch | Tag::Sync | Tag::Diagnostics(_) => why.to_owned(),
     };
     Msg::Response {
         tag,

@@ -21,8 +21,21 @@ pub enum Action {
     Undo,
     /// Filter the current scope by search (D-041).
     Filter,
-    /// Esc in the list: drop the filter.
-    ClearFilter,
+    /// Esc in the list: drop the selection, else the filter.
+    Clear,
+    /// `e`, and Enter in the detail pane: edit the field under the detail
+    /// pane's cursor.
+    Edit,
+    /// `v`: add the task to the selection, or take it out.
+    ToggleSelect,
+    /// `V`: select every task in the view.
+    SelectAll,
+    /// `:`: the command palette.
+    Palette,
+    /// `D`: the diagnostics page.
+    Diagnostics,
+    /// `r` on the diagnostics page: ask the daemon again.
+    Refresh,
     Sync,
     Help,
     Quit,

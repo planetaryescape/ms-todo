@@ -87,18 +87,20 @@ pub(crate) fn home_tasks() -> Vec<ms_todo_protocol::Entity> {
 /// Connected, with Home's tasks drawn, focus on the task list.
 pub(crate) fn seeded() -> App {
     let mut app = App::new(UNICODE, clock());
+    // Fixed, so the snapshots don't change with each release.
+    app.version = "9.9.9";
     let effects = app.update(Msg::Connected);
     assert_eq!(effects.len(), 1);
     answer_seed(&mut app, &effects[0], seed(scope_home(), home_tasks()));
     app
 }
 
-fn scope_home() -> Scope {
+pub(crate) fn scope_home() -> Scope {
     Scope::List { id: "home".into() }
 }
 
 /// Answer `effect`, a seed request, with `seed`.
-fn answer_seed(app: &mut App, effect: &Effect, seed: Seed) -> Vec<Effect> {
+pub(crate) fn answer_seed(app: &mut App, effect: &Effect, seed: Seed) -> Vec<Effect> {
     assert!(matches!(effect.request, Request::Seed { .. }), "{effect:?}");
     app.update(Msg::Response {
         tag: effect.tag,
@@ -106,15 +108,15 @@ fn answer_seed(app: &mut App, effect: &Effect, seed: Seed) -> Vec<Effect> {
     })
 }
 
-fn act(app: &mut App, action: Action) -> Vec<Effect> {
+pub(crate) fn act(app: &mut App, action: Action) -> Vec<Effect> {
     app.update(Msg::Action(action))
 }
 
-fn titles(app: &App) -> Vec<&str> {
+pub(crate) fn titles(app: &App) -> Vec<&str> {
     app.tasks.iter().map(|task| task.title.as_str()).collect()
 }
 
-fn applied(action: TaskAction, items: Vec<ms_todo_protocol::Entity>) -> ResponseData {
+pub(crate) fn applied(action: TaskAction, items: Vec<ms_todo_protocol::Entity>) -> ResponseData {
     ResponseData::Applied(ms_todo_protocol::Applied {
         op_id: "op-1".into(),
         action,
@@ -383,8 +385,8 @@ fn d_asks_first_and_only_y_deletes() {
     assert_eq!(
         app.mode,
         Mode::ConfirmDelete {
-            id: "t2".into(),
-            title: "Call Sam".into()
+            ids: vec!["t2".into()],
+            what: "\"Call Sam\"".into()
         }
     );
     assert_eq!(app.context(), Context::Confirm);
@@ -521,7 +523,7 @@ fn slash_filters_as_you_type_and_escape_clears_it() {
     );
 
     // Esc in the list drops it and reads the whole list again.
-    let effects = act(&mut app, Action::ClearFilter);
+    let effects = act(&mut app, Action::Clear);
     assert_eq!(
         effects[0].request,
         Request::Seed {
@@ -819,4 +821,13 @@ fn a_refresh_that_reorders_rows_keeps_the_selection_on_the_same_task() {
     answer_seed(&mut app, &effects[0], seed(scope_home(), tasks));
     assert_eq!(app.task_index, 0);
     assert_eq!(app.selected().map(|t| t.id.as_str()), Some("t4"));
+}
+
+#[test]
+fn the_window_title_names_the_app_and_the_view() {
+    let mut app = seeded();
+    assert_eq!(app.window_title(), "ms-todo \u{2014} Home");
+    act(&mut app, Action::FocusLeft);
+    act(&mut app, Action::JumpTop);
+    assert_eq!(app.window_title(), "ms-todo \u{2014} Important");
 }

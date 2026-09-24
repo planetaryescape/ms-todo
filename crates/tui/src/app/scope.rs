@@ -44,7 +44,7 @@ pub fn view_name(scope: &Scope) -> &'static str {
 /// Whether `task`, as it is now, is in `scope`.
 pub fn belongs(scope: &Scope, task: &Task) -> bool {
     match scope {
-        Scope::Important => task.important && !task.completed,
+        Scope::Important => task.important() && !task.completed,
         Scope::Planned => task.due.is_some() && !task.completed,
         Scope::All => !task.completed,
         Scope::Completed => task.completed,

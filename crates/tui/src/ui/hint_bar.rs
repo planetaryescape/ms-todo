@@ -1,10 +1,10 @@
 // Adapted from mxr crates/tui/src/ui/hint_bar.rs @ dfb23d10138b1cfc24f8ea7450d3426e5e4da37a:
-// contextual hints from the keybinding registry on the left, the sync
-// state on the right. Changes: a prompt or the delete confirmation takes
-// the bar over, since that's where the typing is.
+// contextual hints from the keybinding registry. Changes: a prompt or the
+// delete confirmation takes the bar over, since that's where the typing
+// is; the sync state is in the title bar instead.
 
 use ratatui::Frame;
-use ratatui::layout::{Constraint, Layout, Rect};
+use ratatui::layout::Rect;
 use ratatui::style::{Modifier, Style};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::Paragraph;
@@ -54,9 +54,17 @@ pub fn draw(frame: &mut Frame, area: Rect, app: &App) {
             }
             Line::from(spans)
         }
-        Mode::ConfirmDelete { title, .. } => {
+        Mode::Editing { field, .. } => {
             let mut spans = vec![Span::styled(
-                format!(" Delete \"{title}\"? "),
+                format!(" Edit {}: ", field.name().to_lowercase()),
+                Style::default().fg(ACCENT),
+            )];
+            spans.extend(hint_spans(app.context()));
+            Line::from(spans)
+        }
+        Mode::ConfirmDelete { what, .. } => {
+            let mut spans = vec![Span::styled(
+                format!(" Delete {what}? "),
                 Style::default().fg(ERROR).add_modifier(Modifier::BOLD),
             )];
             spans.extend(hint_spans(app.context()));
@@ -64,17 +72,5 @@ pub fn draw(frame: &mut Frame, area: Rect, app: &App) {
         }
         _ => Line::from(hint_spans(app.context())),
     };
-    let (dot, state, style) = if app.activity.in_progress {
-        (glyphs.pending, "syncing", Style::default().fg(ACCENT))
-    } else if app.activity.last_error.is_some() {
-        (glyphs.failed, "sync failed", Style::default().fg(ERROR))
-    } else {
-        (glyphs.connected, "synced", Style::default().fg(DIM))
-    };
-    let right = format!("{dot} {state} ");
-    let width = u16::try_from(right.chars().count()).unwrap_or(u16::MAX);
-    let [hints_area, state_area] =
-        Layout::horizontal([Constraint::Min(0), Constraint::Length(width)]).areas(area);
-    frame.render_widget(Paragraph::new(left), hints_area);
-    frame.render_widget(Paragraph::new(right).style(style), state_area);
+    frame.render_widget(Paragraph::new(left), area);
 }

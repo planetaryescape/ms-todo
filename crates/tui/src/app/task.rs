@@ -4,7 +4,7 @@
 
 use chrono::{NaiveDate, NaiveDateTime};
 use ms_todo_core::{local_date_time, local_due_date};
-use ms_todo_protocol::Entity;
+use ms_todo_protocol::{Entity, Importance};
 use serde_json::Value;
 
 /// Wider than any pane, so html notes aren't wrapped twice; the detail
@@ -29,7 +29,7 @@ pub struct Task {
     pub list_id: String,
     pub title: String,
     pub completed: bool,
-    pub important: bool,
+    pub importance: Importance,
     /// Local date (S11).
     pub due: Option<NaiveDate>,
     /// Local time, when the reminder is on.
@@ -73,7 +73,11 @@ impl Task {
             list_id: text("list_id").unwrap_or_default().to_owned(),
             title: text("title").unwrap_or_default().to_owned(),
             completed: text("status") == Some("completed"),
-            important: text("importance") == Some("high"),
+            importance: match text("importance") {
+                Some("high") => Importance::High,
+                Some("low") => Importance::Low,
+                _ => Importance::Normal,
+            },
             due: date_time("dueDateTime").and_then(|(at, zone)| local_due_date(at, zone)),
             reminder: date_time("reminderDateTime")
                 .filter(|_| entity.get("isReminderOn").and_then(Value::as_bool) == Some(true))
@@ -125,6 +129,10 @@ impl Body {
 }
 
 impl Task {
+    pub fn important(&self) -> bool {
+        self.importance == Importance::High
+    }
+
     /// The notes as plain text, html rendered; `None` when there are none.
     /// Rendered when drawn, for the selected task only: rendering every
     /// task's html on each seed cost more than the whole rest of a view
@@ -217,7 +225,7 @@ mod tests {
             "categories": ["Home"],
             "sync_state": "unknown",
         }));
-        assert!(task.completed && task.important);
+        assert!(task.completed && task.important());
         assert_eq!(
             task.due.map(|due| due.to_string()).as_deref(),
             Some("2026-10-01")

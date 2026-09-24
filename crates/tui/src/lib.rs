@@ -91,6 +91,9 @@ pub async fn run(options: Options) -> Result<Option<String>, TuiError> {
         } else {
             (EventStream::new().boxed(), None)
         };
+    // The terminal's own title goes on its title stack (XTWINOPS 22), to be
+    // put back on exit; where that isn't supported, it's cleared instead.
+    let _ = write_to_terminal(TITLE_PUSH);
     let result = runner::run_loop(
         &mut terminal,
         input,
@@ -99,11 +102,27 @@ pub async fn run(options: Options) -> Result<Option<String>, TuiError> {
         app,
         options.started,
         painted,
+        |title| {
+            let _ = crossterm::execute!(std::io::stdout(), crossterm::terminal::SetTitle(title));
+        },
     )
     .await;
     ratatui::restore();
+    let _ = crossterm::execute!(std::io::stdout(), crossterm::terminal::SetTitle(""));
+    let _ = write_to_terminal(TITLE_POP);
     let latency = result?;
     Ok(options.bench_startup.then(|| latency.report()))
+}
+
+/// XTWINOPS: save the window title on the terminal's stack, and restore it.
+const TITLE_PUSH: &str = "\x1b[22;2t";
+const TITLE_POP: &str = "\x1b[23;2t";
+
+fn write_to_terminal(sequence: &str) -> std::io::Result<()> {
+    use std::io::Write;
+    let mut stdout = std::io::stdout();
+    stdout.write_all(sequence.as_bytes())?;
+    stdout.flush()
 }
 
 /// Once the first list is painted: move through the tasks, across to the

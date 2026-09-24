@@ -19,6 +19,8 @@ pub struct Glyphs {
     pub connected: &'static str,
     pub disconnected: &'static str,
     pub cursor: &'static str,
+    /// Marks a task `v` selected.
+    pub selected: &'static str,
 }
 
 pub const UNICODE: Glyphs = Glyphs {
@@ -37,6 +39,7 @@ pub const UNICODE: Glyphs = Glyphs {
     connected: "\u{25cf}",    // ●
     disconnected: "\u{25cb}", // ○
     cursor: "\u{2588}",       // █
+    selected: "\u{25c6}",     // ◆
 };
 
 pub const ASCII: Glyphs = Glyphs {
@@ -55,4 +58,5 @@ pub const ASCII: Glyphs = Glyphs {
     connected: "+",
     disconnected: "-",
     cursor: "_",
+    selected: "*",
 };

@@ -1,20 +1,22 @@
 ---
 source: crates/tui/src/ui/tests.rs
-expression: render(&app)
+expression: "format!(\"{selected}\\n{}\", last(&confirming))"
 ---
 " ms-todo 9.9.9 · Home                                                                                ● synced "
 "╭ Lists ───────────────╮╭ Home ────────────────────────────────────────────╮╭ Detail ────────────────────────╮"
-"│★ Important          1││○ Pay rent                          Oct 1 ★↻      ││Title      Water plants         │"
+"│★ Important          1││○ ◆ Pay rent                        Oct 1 ★↻      ││Title      Water plants         │"
 "│▦ Planned            2││○ Call Sam                                      ◌ ││                                │"
-"│∞ All                3││○ Water plants                                  ✗ ││Status     open                 │"
+"│∞ All                3││○ ◆ Water plants                                ✗ ││Status     open                 │"
 "│✓ Completed          1││✓ Ship blueprint                                  ││List       Home                 │"
 "│≡ Tasks               ││                                                  ││Due        none                 │"
 "│≡ Home               3││                                                  ││Reminder   none                 │"
 "│                      ││                                                  ││Importance normal               │"
 "│                      ││                                                  ││Sync       ✗ failed: Microsoft  │"
 "│                      ││                                                  ││To Do rejected a change         │"
-"│                      ││                                                  ││           the title is too long│"
 "│                      ││                                                  ││                                │"
+"│                      ││                                                  ││Notes      none                 │"
 "╰──────────────────────╯╰──────────────────────────────────────────────────╯╰────────────────────────────────╯"
-" Microsoft To Do rejected a change, which was undone here: the title is too long                              "
+" ◆ 2 selected  ·  ● daemon  ·  synced 12s ago  ·  all changes sent                                            "
 " a Add  x Done  e Edit  d Delete  v Select  u Undo  / Filter  : Palette  r Sync  ? Help  q Quit               "
+
+" Delete 2 tasks?  y Delete  n Keep                                                                            "

@@ -175,6 +175,7 @@ async fn keys_drive_the_daemon_and_the_screen_follows() {
             app,
             Instant::now(),
             Some(painted),
+            |_: &str| {},
         ),
     )
     .await

@@ -35,7 +35,9 @@ pub enum RunError {
 }
 
 /// Run until the user quits or `input` ends. `first_paint` hears once the
-/// first seeded list is on screen. Returns what was measured.
+/// first seeded list is on screen; `set_title` gets the window title each
+/// time it changes. Returns what was measured.
+#[allow(clippy::too_many_arguments)]
 pub async fn run_loop<B, S>(
     terminal: &mut Terminal<B>,
     mut input: S,
@@ -44,17 +46,30 @@ pub async fn run_loop<B, S>(
     mut app: App,
     started: Instant,
     mut first_paint: Option<oneshot::Sender<()>>,
+    mut set_title: impl FnMut(&str),
 ) -> Result<Latency, RunError>
 where
     B: Backend,
     S: Stream<Item = io::Result<TermEvent>> + Unpin,
 {
+    let mut title = String::new();
+    // Every frame goes through here, so the window title never lags the
+    // view; setting it is a write only when the view changed.
+    let mut paint = |terminal: &mut Terminal<B>, app: &App| -> Result<(), RunError> {
+        draw(terminal, app)?;
+        let now = app.window_title();
+        if now != title {
+            set_title(&now);
+            title = now;
+        }
+        Ok(())
+    };
     let mut latency = Latency::default();
     // When the key behind a request was pressed, for the requests whose
     // answer finishes a measurement.
     let mut pressed: HashMap<Tag, Instant> = HashMap::new();
     let mut ticks = tokio::time::interval(TICK);
-    draw(terminal, &app)?;
+    paint(terminal, &app)?;
     loop {
         tokio::select! {
             event = input.next() => {
@@ -75,7 +90,7 @@ where
                                 link.send(effect);
                             }
                         }
-                        draw(terminal, &app)?;
+                        paint(terminal, &app)?;
                         let took = at.elapsed();
                         tracing::info!(micros = took.as_micros(), "keypress rendered");
                         latency.keypress.push(took);
@@ -84,7 +99,7 @@ where
                             latency.view_switch.push(took);
                         }
                     }
-                    TermEvent::Resize(..) => draw(terminal, &app)?,
+                    TermEvent::Resize(..) => paint(terminal, &app)?,
                     _ => {}
                 }
             }
@@ -106,7 +121,7 @@ where
                     }
                     next = daemon.try_recv().ok();
                 }
-                draw(terminal, &app)?;
+                paint(terminal, &app)?;
                 for (tag, at) in finished {
                     let took = at.elapsed();
                     match tag {
@@ -133,7 +148,7 @@ where
                 for effect in app.update(Msg::Tick(Clock::now())) {
                     link.send(effect);
                 }
-                draw(terminal, &app)?;
+                paint(terminal, &app)?;
             }
         }
         if app.should_quit {
@@ -144,7 +159,7 @@ where
 }
 
 /// What a key means now: an action from the registry, or text typed into
-/// a prompt.
+/// a prompt or the palette.
 fn key_msg(app: &App, key: &KeyEvent) -> Option<Msg> {
     if key.kind == KeyEventKind::Release {
         return None;
@@ -154,7 +169,7 @@ fn key_msg(app: &App, key: &KeyEvent) -> Option<Msg> {
         return Some(Msg::Action(action));
     }
     match (context, key.code) {
-        (Context::Prompt, KeyCode::Char(ch))
+        (Context::Prompt | Context::Palette, KeyCode::Char(ch))
             if !key
                 .modifiers
                 .intersects(KeyModifiers::CONTROL | KeyModifiers::ALT) =>

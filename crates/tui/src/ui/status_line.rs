@@ -23,7 +23,15 @@ pub fn draw(frame: &mut Frame, area: Rect, app: &App) {
     }
     let glyphs = &app.glyphs;
     let dim = Style::default().fg(DIM);
-    let mut spans = match &app.connection {
+    let mut spans = Vec::new();
+    if !app.selection.is_empty() {
+        spans.push(Span::styled(
+            format!(" {} {} selected", glyphs.selected, app.selection.len()),
+            Style::default().fg(ACCENT).add_modifier(Modifier::BOLD),
+        ));
+        spans.push(Span::styled("  · ", dim));
+    }
+    spans.extend(match &app.connection {
         Connection::Connected => vec![Span::styled(
             format!(" {} daemon", glyphs.connected),
             Style::default().fg(ACCENT),
@@ -36,7 +44,7 @@ pub fn draw(frame: &mut Frame, area: Rect, app: &App) {
             format!(" {} daemon unreachable: {why}", glyphs.disconnected),
             Style::default().fg(ERROR),
         )],
-    };
+    });
     spans.push(Span::styled("  ·  ", dim));
     let activity = &app.activity;
     spans.push(match (&activity.last_error, activity.in_progress) {
@@ -83,7 +91,7 @@ pub fn draw(frame: &mut Frame, area: Rect, app: &App) {
     frame.render_widget(Paragraph::new(Line::from(spans)), area);
 }
 
-fn ago(seconds: i64) -> String {
+pub(super) fn ago(seconds: i64) -> String {
     match seconds.max(0) {
         seconds if seconds < 60 => format!("{seconds}s ago"),
         seconds if seconds < 3600 => format!("{}m ago", seconds / 60),

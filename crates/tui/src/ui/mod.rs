@@ -8,11 +8,14 @@
 //! does I/O, so a frame is the same for the same state.
 
 mod detail;
+mod diagnostics;
 mod hint_bar;
 mod modals;
+mod palette;
 mod sidebar;
 mod status_line;
 mod task_list;
+mod title_bar;
 
 use ratatui::Frame;
 use ratatui::layout::{Constraint, Layout, Rect};
@@ -27,7 +30,8 @@ const AMBER: Color = Color::Yellow;
 const ERROR: Color = Color::Red;
 
 pub fn draw(frame: &mut Frame, app: &App) {
-    let [main, status, hints] = Layout::vertical([
+    let [title, main, status, hints] = Layout::vertical([
+        Constraint::Length(1),
         Constraint::Min(3),
         Constraint::Length(1),
         Constraint::Length(1),
@@ -39,16 +43,22 @@ pub fn draw(frame: &mut Frame, app: &App) {
         Constraint::Fill(2),
     ])
     .areas(main);
-    sidebar::draw(frame, side, app);
-    task_list::draw(frame, list, app);
-    detail::draw(frame, detail, app);
+    title_bar::draw(frame, title, app);
+    // The diagnostics page covers the panes, so they aren't drawn under it.
+    if app.mode != Mode::Diagnostics {
+        sidebar::draw(frame, side, app);
+        task_list::draw(frame, list, app);
+        detail::draw(frame, detail, app);
+    }
     status_line::draw(frame, status, app);
     hint_bar::draw(frame, hints, app);
     match &app.mode {
-        Mode::Help => modals::help(frame),
+        Mode::Help => modals::help(frame, app),
         Mode::Picker {
             candidates, index, ..
         } => modals::picker(frame, app, candidates, *index),
+        Mode::Palette { query, index } => palette::draw(frame, app, query, *index),
+        Mode::Diagnostics => diagnostics::draw(frame, main, app),
         _ => {}
     }
 }

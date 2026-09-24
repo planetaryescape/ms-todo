@@ -1,6 +1,7 @@
 //! Frames drawn with `TestBackend` for fixed states, as insta snapshots:
 //! the sidebar, the task list and the detail pane, the Planned view's
-//! groups, a banner, the undo picker, help, the syncing state and ASCII.
+//! groups, a banner, the undo picker, help, the syncing state, ASCII,
+//! editing a field, the selection, the palette and the diagnostics page.
 
 use ms_todo_protocol::{Candidate, Scope};
 use ratatui::Terminal;
@@ -39,15 +40,16 @@ fn the_selected_row_is_reversed_in_the_focused_pane_only() {
     terminal
         .draw(|frame| super::draw(frame, &app))
         .expect("draw");
-    // Home is the sidebar's sixth row; "Pay rent" the list's first.
-    assert!(!reversed(&terminal, 2, 6));
-    assert!(reversed(&terminal, 26, 1));
+    // Under the title bar, Home is the sidebar's sixth row; "Pay rent"
+    // the list's first.
+    assert!(!reversed(&terminal, 2, 7));
+    assert!(reversed(&terminal, 26, 2));
     app.focus = Pane::Sidebar;
     terminal
         .draw(|frame| super::draw(frame, &app))
         .expect("draw");
-    assert!(reversed(&terminal, 2, 6));
-    assert!(!reversed(&terminal, 26, 1));
+    assert!(reversed(&terminal, 2, 7));
+    assert!(!reversed(&terminal, 26, 2));
 }
 
 #[test]
@@ -114,7 +116,7 @@ fn the_undo_picker() {
 fn help_lists_every_key() {
     let mut app = seeded();
     app.mode = Mode::Help;
-    let mut terminal = Terminal::new(TestBackend::new(110, 30)).expect("terminal");
+    let mut terminal = Terminal::new(TestBackend::new(110, 34)).expect("terminal");
     terminal
         .draw(|frame| super::draw(frame, &app))
         .expect("draw");
@@ -129,8 +131,8 @@ fn prompts_take_over_the_hint_bar() {
     };
     let adding = render(&app);
     app.mode = Mode::ConfirmDelete {
-        id: "t2".into(),
-        title: "Call Sam".into(),
+        ids: vec!["t2".into()],
+        what: "\"Call Sam\"".into(),
     };
     let confirming = render(&app);
     let last = |frame: &str| frame.lines().last().unwrap_or_default().to_owned();
@@ -140,6 +142,7 @@ fn prompts_take_over_the_hint_bar() {
 #[test]
 fn syncing_before_the_first_sync_not_an_empty_list() {
     let mut app = App::new(crate::glyphs::UNICODE, clock());
+    app.version = "9.9.9";
     app.update(Msg::Connected);
     app.seeded = true;
     app.activity.in_progress = true;
@@ -152,4 +155,102 @@ fn ascii_glyphs() {
     app.glyphs = ASCII;
     let _ = home_tasks();
     insta::assert_snapshot!(render(&app));
+}
+
+#[test]
+fn editing_a_field_shows_the_text_and_why_it_cant_be_sent() {
+    use crate::action::Action;
+    use crate::app::edit::Field;
+    let mut app = seeded();
+    app.update(Msg::Action(Action::FocusRight));
+    app.update(Msg::Action(Action::MoveDown));
+    // The cursor on Due, not yet editing.
+    let cursor = render(&app);
+    app.update(Msg::Action(Action::Edit));
+    for _ in 0.."2026-10-01".len() {
+        app.update(Msg::Action(Action::Backspace));
+    }
+    for ch in "2026-10-5x".chars() {
+        app.update(Msg::Char(ch));
+    }
+    let typing = render(&app);
+    app.update(Msg::Action(Action::Submit));
+    assert!(matches!(
+        app.mode,
+        Mode::Editing {
+            field: Field::Due,
+            error: Some(_),
+            ..
+        }
+    ));
+    insta::assert_snapshot!(format!("{cursor}\n{typing}\n{}", render(&app)));
+}
+
+#[test]
+fn the_selection_is_marked_and_counted() {
+    use crate::action::Action;
+    let mut app = seeded();
+    app.update(Msg::Action(Action::ToggleSelect));
+    app.update(Msg::Action(Action::MoveDown));
+    app.update(Msg::Action(Action::MoveDown));
+    app.update(Msg::Action(Action::ToggleSelect));
+    let selected = render(&app);
+    app.update(Msg::Action(Action::Delete));
+    let confirming = render(&app);
+    let last = |frame: &str| frame.lines().last().unwrap_or_default().to_owned();
+    insta::assert_snapshot!(format!("{selected}\n{}", last(&confirming)));
+}
+
+#[test]
+fn the_palette() {
+    use crate::action::Action;
+    let mut app = seeded();
+    app.update(Msg::Action(Action::Palette));
+    let everything = render(&app);
+    for ch in "go".chars() {
+        app.update(Msg::Char(ch));
+    }
+    app.update(Msg::Action(Action::MoveDown));
+    insta::assert_snapshot!(format!("{everything}\n{}", render(&app)));
+}
+
+#[test]
+fn the_diagnostics_page() {
+    use crate::action::Action;
+    let mut app = seeded();
+    let effects = app.update(Msg::Action(Action::Diagnostics));
+    let checking = render(&app);
+    crate::app::diagnostics::tests::answer(&mut app, &effects);
+    let mut terminal = Terminal::new(TestBackend::new(110, 26)).expect("terminal");
+    terminal
+        .draw(|frame| super::draw(frame, &app))
+        .expect("draw");
+    insta::assert_snapshot!(format!("{checking}\n{}", terminal.backend()));
+}
+
+/// j and k in the detail pane move down and up the rows it draws: the
+/// reversed row is always the field under the cursor.
+#[test]
+fn the_detail_cursor_follows_the_rows_on_screen() {
+    use crate::app::edit::Field;
+    let mut app = seeded();
+    app.focus = Pane::Detail;
+    let mut terminal = Terminal::new(TestBackend::new(110, 20)).expect("terminal");
+    let mut rows = Vec::new();
+    for field in Field::ALL {
+        app.detail_field = field;
+        terminal
+            .draw(|frame| super::draw(frame, &app))
+            .expect("draw");
+        let buffer = terminal.backend().buffer();
+        // The detail pane's first column inside its border.
+        let x = 77;
+        let row = (0..20)
+            .find(|&y| buffer[(x, y)].modifier.contains(Modifier::REVERSED))
+            .expect("a reversed row");
+        let label: String = (x..x + 10).map(|x| buffer[(x, row)].symbol()).collect();
+        assert_eq!(label.trim(), field.name(), "{field:?}");
+        rows.push(row);
+    }
+    assert!(rows.is_sorted(), "top to bottom: {rows:?}");
 }

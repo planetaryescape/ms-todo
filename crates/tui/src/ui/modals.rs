@@ -9,7 +9,7 @@ use crate::app::App;
 use crate::keybindings::help_rows;
 
 /// Every key, from the registry.
-pub fn help(frame: &mut Frame) {
+pub fn help(frame: &mut Frame, app: &App) {
     let rows = help_rows();
     let key_width = rows
         .iter()
@@ -38,7 +38,7 @@ pub fn help(frame: &mut Frame) {
     frame.render_widget(Clear, area);
     frame.render_widget(
         Paragraph::new(lines)
-            .block(pane(" Keys ".into(), true))
+            .block(pane(format!(" ms-todo {} \u{b7} Keys ", app.version), true))
             .wrap(Wrap { trim: false }),
         area,
     );

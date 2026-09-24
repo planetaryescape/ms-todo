@@ -14,10 +14,14 @@
 //! drawn at once; the event that follows it brings the rest (the counts,
 //! the sync marker) up to date.
 
+pub mod diagnostics;
+pub mod edit;
+pub mod palette;
 pub mod scope;
+mod selection;
 pub mod task;
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use chrono::{Local, NaiveDate};
 use ms_todo_protocol::{
@@ -29,6 +33,8 @@ use serde_json::Value;
 use crate::action::Action;
 use crate::glyphs::Glyphs;
 use crate::keybindings::Context;
+use diagnostics::{Diagnostics, Part};
+use edit::Field;
 use scope::{Entry, VIEWS, belongs, order};
 pub use task::{SyncMarker, Task};
 
@@ -53,11 +59,27 @@ pub enum Mode {
     Filtering {
         text: String,
     },
-    /// The inline "Delete …? y/n".
-    ConfirmDelete {
+    /// Typing a new value for one field of a task.
+    Editing {
         id: String,
-        title: String,
+        field: Field,
+        text: String,
+        /// Why the text can't be sent, shown under it.
+        error: Option<String>,
     },
+    /// The inline "Delete …? y/n", for one task or the selection.
+    ConfirmDelete {
+        ids: Vec<String>,
+        /// What's deleted, as the question names it: `"Call Sam"` or
+        /// `3 tasks`.
+        what: String,
+    },
+    /// The command palette: the query typed, and which match is chosen.
+    Palette {
+        query: String,
+        index: usize,
+    },
+    Diagnostics,
     /// Undoing a recurring completion: which completed copy to delete.
     Picker {
         target: String,
@@ -115,6 +137,7 @@ pub enum Tag {
     Write(Write),
     Undo,
     Sync,
+    Diagnostics(Part),
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
@@ -122,6 +145,7 @@ pub enum Write {
     Add,
     Complete,
     Reopen,
+    Edit,
     Delete,
 }
 
@@ -163,6 +187,8 @@ struct Seeds {
 
 pub struct App {
     pub glyphs: Glyphs,
+    /// ms-todo's version, as the title bar and help show it.
+    pub version: &'static str,
     pub focus: Pane,
     pub mode: Mode,
     pub connection: Connection,
@@ -183,6 +209,11 @@ pub struct App {
     pub shown: Option<Scope>,
     pub tasks: Vec<Task>,
     pub task_index: usize,
+    /// The detail pane's cursor: the field `e` and Enter edit.
+    pub detail_field: Field,
+    /// The tasks `v` and `V` selected, by ID; all rows of `tasks`.
+    pub selection: HashSet<String>,
+    pub diagnostics: Diagnostics,
     /// Whether the shown scope has synced once.
     pub tasks_ready: bool,
     /// The applied filter.
@@ -208,6 +239,7 @@ impl App {
     pub fn new(glyphs: Glyphs, clock: Clock) -> Self {
         Self {
             glyphs,
+            version: env!("CARGO_PKG_VERSION"),
             focus: Pane::Tasks,
             mode: Mode::Normal,
             connection: Connection::Connecting,
@@ -222,6 +254,9 @@ impl App {
             shown: None,
             tasks: Vec::new(),
             task_index: 0,
+            detail_field: Field::default(),
+            selection: HashSet::new(),
+            diagnostics: Diagnostics::default(),
             tasks_ready: false,
             filter: None,
             filter_error: None,
@@ -238,12 +273,17 @@ impl App {
     /// Where keys go now.
     pub fn context(&self) -> Context {
         match self.mode {
-            Mode::Adding { .. } | Mode::Filtering { .. } => Context::Prompt,
+            Mode::Adding { .. } | Mode::Filtering { .. } | Mode::Editing { .. } => Context::Prompt,
             Mode::ConfirmDelete { .. } => Context::Confirm,
             Mode::Picker { .. } => Context::Picker,
+            Mode::Palette { .. } => Context::Palette,
+            Mode::Diagnostics => Context::Diagnostics,
             Mode::Help => Context::Help,
-            Mode::Normal if self.focus == Pane::Sidebar => Context::Sidebar,
-            Mode::Normal => Context::Tasks,
+            Mode::Normal => match self.focus {
+                Pane::Sidebar => Context::Sidebar,
+                Pane::Tasks => Context::Tasks,
+                Pane::Detail => Context::Detail,
+            },
         }
     }
 
@@ -303,6 +343,17 @@ impl App {
         }
     }
 
+    /// The name of what the task list shows: the scope asked for, else
+    /// the one on screen.
+    pub fn view_name(&self) -> String {
+        self.scope_name(self.wanted.as_ref().or(self.shown.as_ref()))
+    }
+
+    /// The terminal window's title (08-tui.md): which app, and where.
+    pub fn window_title(&self) -> String {
+        format!("ms-todo \u{2014} {}", self.view_name())
+    }
+
     pub fn update(&mut self, msg: Msg) -> Vec<Effect> {
         match msg {
             Msg::Action(action) => self.act(action),
@@ -349,6 +400,27 @@ impl App {
                 Vec::new()
             }
             (Mode::Picker { .. }, Action::Submit) => self.pick_copy(),
+            (Mode::Palette { .. }, Action::MoveDown | Action::MoveUp) => {
+                self.palette_step(action == Action::MoveDown);
+                Vec::new()
+            }
+            (Mode::Palette { .. }, Action::Submit) => self.run_palette(),
+            (Mode::Palette { query, index }, Action::Backspace) => {
+                query.pop();
+                *index = 0;
+                Vec::new()
+            }
+            (Mode::Diagnostics, Action::MoveDown | Action::MoveUp) => {
+                self.scroll_diagnostics(action == Action::MoveDown);
+                Vec::new()
+            }
+            (Mode::Diagnostics, Action::Refresh) => self.refresh_diagnostics(),
+            (Mode::Editing { .. }, Action::Submit) => self.submit_edit(),
+            (Mode::Editing { text, error, .. }, Action::Backspace) => {
+                text.pop();
+                *error = None;
+                Vec::new()
+            }
             (Mode::Adding { .. }, Action::Submit) => self.submit_add(),
             (Mode::Filtering { .. }, Action::Submit) => {
                 self.mode = Mode::Normal;
@@ -363,10 +435,11 @@ impl App {
                 text.pop();
                 self.filter_typed()
             }
-            (Mode::ConfirmDelete { id, .. }, Action::Confirm) => {
-                let id = id.clone();
+            (Mode::ConfirmDelete { ids, .. }, Action::Confirm) => {
+                let ids = std::mem::take(ids);
                 self.mode = Mode::Normal;
-                vec![change(Write::Delete, id, TaskChange::Delete)]
+                self.selection.clear();
+                vec![change(Write::Delete, ids, TaskChange::Delete)]
             }
             (_, Action::Cancel) => {
                 self.mode = Mode::Normal;
@@ -419,26 +492,32 @@ impl App {
                 Vec::new()
             }
             Action::ToggleComplete | Action::Delete if self.still_loading() => Vec::new(),
-            Action::ToggleComplete => match self.selected() {
-                Some(task) if task.completed => {
-                    vec![change(Write::Reopen, task.id.clone(), TaskChange::Reopen)]
-                }
-                Some(task) => vec![change(
-                    Write::Complete,
-                    task.id.clone(),
-                    TaskChange::Complete,
-                )],
-                None => Vec::new(),
-            },
+            Action::ToggleComplete => self.toggle_complete(),
             Action::Delete => {
-                if let Some(task) = self.selected() {
-                    self.mode = Mode::ConfirmDelete {
-                        id: task.id.clone(),
-                        title: task.title.clone(),
-                    };
-                }
+                let targets = self.targets();
+                let what = match targets.as_slice() {
+                    [] => return Vec::new(),
+                    [task] => format!("\"{}\"", task.title),
+                    many => format!("{} tasks", many.len()),
+                };
+                let ids = targets.iter().map(|task| task.id.clone()).collect();
+                self.mode = Mode::ConfirmDelete { ids, what };
                 Vec::new()
             }
+            Action::Edit => self.start_edit(),
+            Action::ToggleSelect => {
+                self.toggle_select();
+                Vec::new()
+            }
+            Action::SelectAll => {
+                self.select_all();
+                Vec::new()
+            }
+            Action::Palette => {
+                self.open_palette();
+                Vec::new()
+            }
+            Action::Diagnostics => self.open_diagnostics(),
             Action::Undo => vec![Effect {
                 tag: Tag::Undo,
                 request: Request::Undo {
@@ -454,7 +533,11 @@ impl App {
                 };
                 Vec::new()
             }
-            Action::ClearFilter if self.filter.is_some() => self.set_filter(None),
+            Action::Clear if !self.selection.is_empty() => {
+                self.selection.clear();
+                Vec::new()
+            }
+            Action::Clear if self.filter.is_some() => self.set_filter(None),
             Action::Sync => vec![Effect {
                 tag: Tag::Sync,
                 request: Request::Sync { wait: false },
@@ -472,6 +555,16 @@ impl App {
     }
 
     fn navigate(&mut self, action: Action) -> Vec<Effect> {
+        if self.focus == Pane::Detail {
+            self.detail_field = match action {
+                Action::MoveDown => self.detail_field.step(1),
+                Action::MoveUp => self.detail_field.step(-1),
+                Action::JumpTop => Field::ALL[0],
+                Action::JumpBottom => Field::ALL[Field::ALL.len() - 1],
+                _ => self.detail_field,
+            };
+            return Vec::new();
+        }
         let (index, len) = match self.focus {
             Pane::Sidebar => (self.sidebar_index, self.entries().len()),
             Pane::Tasks | Pane::Detail => (self.task_index, self.tasks.len()),
@@ -490,11 +583,19 @@ impl App {
         if moved == self.sidebar_index {
             return Vec::new();
         }
-        self.sidebar_index = moved;
-        // A new scope drops the filter, as To Do's search does.
+        self.open_entry(moved)
+    }
+
+    /// Switch to the sidebar's row `index`: paint it from memory if it was
+    /// read before, and ask for its seed.
+    fn open_entry(&mut self, index: usize) -> Vec<Effect> {
+        self.sidebar_index = index;
+        // A new scope drops the filter, as To Do's search does, and the
+        // selection, which holds the old scope's tasks.
         self.filter = None;
         self.filter_error = None;
-        self.wanted = self.entries().get(moved).map(Entry::scope);
+        self.selection.clear();
+        self.wanted = self.entries().get(index).map(Entry::scope);
         if let Some(cached) = self.wanted.as_ref().and_then(|scope| self.cache.get(scope)) {
             self.tasks = cached.clone();
             self.shown = self.wanted.clone();
@@ -510,8 +611,40 @@ impl App {
                 text.push(ch);
                 self.filter_typed()
             }
+            Mode::Editing { text, error, .. } => {
+                text.push(ch);
+                *error = None;
+                Vec::new()
+            }
+            Mode::Palette { query, index } => {
+                query.push(ch);
+                *index = 0;
+                Vec::new()
+            }
             _ => Vec::new(),
         }
+    }
+
+    /// `x`: complete the open tasks among the targets in one request, or
+    /// reopen them when all are completed.
+    fn toggle_complete(&mut self) -> Vec<Effect> {
+        let targets = self.targets();
+        if targets.is_empty() {
+            return Vec::new();
+        }
+        let open: Vec<String> = targets
+            .iter()
+            .filter(|task| !task.completed)
+            .map(|task| task.id.clone())
+            .collect();
+        let effect = if open.is_empty() {
+            let ids = targets.iter().map(|task| task.id.clone()).collect();
+            change(Write::Reopen, ids, TaskChange::Reopen)
+        } else {
+            change(Write::Complete, open, TaskChange::Complete)
+        };
+        self.selection.clear();
+        vec![effect]
     }
 
     /// After the filter's text changed, search again.
@@ -677,6 +810,10 @@ impl App {
             }
             // Only a head start; the scope's own seed says what's wrong.
             (Tag::Prefetch, _) => Vec::new(),
+            (Tag::Diagnostics(part), result) => {
+                self.diagnosed(part, result);
+                Vec::new()
+            }
             (Tag::Write(write), Ok(ResponseData::Applied(applied))) => {
                 self.apply_write(write, &applied.items);
                 Vec::new()
@@ -746,6 +883,9 @@ impl App {
             }
         }
         let changed_scope = self.shown != seed.scope;
+        if changed_scope {
+            self.selection.clear();
+        }
         self.shown = seed.scope;
         self.tasks = seed.tasks.iter().filter_map(Task::from_entity).collect();
         if let Some(shown) = &self.shown {
@@ -763,6 +903,7 @@ impl App {
             None => 0,
         }
         .min(self.tasks.len().saturating_sub(1));
+        self.prune_selection();
     }
 
     /// Draw a write's `Applied` answer at once, before the event that
@@ -807,6 +948,7 @@ impl App {
             order(&shown, self.filter.is_some(), &mut self.tasks);
         }
         self.task_index = self.task_index.min(self.tasks.len().saturating_sub(1));
+        self.prune_selection();
     }
 
     fn event(&mut self, event: Event) -> Vec<Effect> {
@@ -846,11 +988,11 @@ impl App {
     }
 }
 
-fn change(write: Write, id: String, change: TaskChange) -> Effect {
+fn change(write: Write, ids: Vec<String>, change: TaskChange) -> Effect {
     Effect {
         tag: Tag::Write(write),
         request: Request::ChangeTasks {
-            tasks: vec![id],
+            tasks: ids,
             list: None,
             change,
             dry_run: false,
