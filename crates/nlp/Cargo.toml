@@ -1,0 +1,18 @@
+[package]
+name = "ms-todo-nlp"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish = false
+description = "ms-todo's phrase reader: dates and times as people type them. Pure, no I/O."
+
+[dependencies]
+chrono = { workspace = true }
+regex = { workspace = true }
+thiserror = { workspace = true }
+
+[dev-dependencies]
+proptest = { workspace = true }
+
+[lints]
+workspace = true

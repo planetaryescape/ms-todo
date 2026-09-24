@@ -1,9 +1,9 @@
 // Adapted from mxr tests/workspace_boundaries.rs @ dfb23d10138b1cfc24f8ea7450d3426e5e4da37a
 //
 // Dependency direction for ms-todo's crates (docs/blueprint/01-architecture.md#crates).
-// `core` stays free of I/O. Clients talk to the daemon protocol only (D-031):
+// `core` and `nlp` stay free of I/O. Clients talk to the daemon protocol only (D-031):
 // only `daemon` uses the Graph client for data, and only `daemon` touches
-// the store. The TUI depends on the protocol and core only. `cli` may still use
+// the store. The TUI depends on the protocol, core and nlp only. `cli` may still use
 // `ms_todo_graph::auth`, because `auth login|status|logout` work without a
 // daemon (D-033 item 4), and it never depends on `daemon`, which would bring
 // the Graph client in with it.
@@ -24,34 +24,48 @@ fn dependencies(manifest_path: &str) -> Vec<String> {
         .unwrap_or_default()
 }
 
+const IO_DEPENDENCIES: &[&str] = &[
+    "tokio",
+    "tokio-util",
+    "futures-util",
+    "nix",
+    "reqwest",
+    "hyper",
+    "sqlx",
+    "rusqlite",
+    "fs2",
+];
+
 #[test]
 fn core_has_no_io_dependencies() {
-    const FORBIDDEN: &[&str] = &[
-        "tokio",
-        "tokio-util",
-        "futures-util",
-        "nix",
-        "reqwest",
-        "hyper",
-        "sqlx",
-        "rusqlite",
-        "fs2",
-    ];
     for dependency in dependencies("crates/core/Cargo.toml") {
         assert!(
-            !FORBIDDEN.contains(&dependency.as_str()),
+            !IO_DEPENDENCIES.contains(&dependency.as_str()),
             "crates/core must stay free of I/O, but depends on {dependency}"
         );
     }
 }
 
+// The phrase reader is pure: no I/O, and no other ms-todo crate, which
+// could bring some in.
 #[test]
-fn the_tui_depends_on_the_protocol_and_core_only() {
+fn nlp_has_no_io_dependencies() {
+    for dependency in dependencies("crates/nlp/Cargo.toml") {
+        assert!(
+            !IO_DEPENDENCIES.contains(&dependency.as_str()) && !dependency.starts_with("ms-todo-"),
+            "crates/nlp must stay pure, but depends on {dependency}"
+        );
+    }
+}
+
+#[test]
+fn the_tui_depends_on_the_protocol_core_and_nlp_only() {
     for dependency in dependencies("crates/tui/Cargo.toml") {
         assert!(
             !dependency.starts_with("ms-todo-")
                 || dependency == "ms-todo-protocol"
-                || dependency == "ms-todo-core",
+                || dependency == "ms-todo-core"
+                || dependency == "ms-todo-nlp",
             "crates/tui reads the cache over IPC (D-031), but depends on {dependency}"
         );
     }
@@ -79,6 +93,7 @@ fn only_the_daemon_uses_graph_beyond_auth() {
     let sources = [
         "crates/cli/src",
         "crates/core/src",
+        "crates/nlp/src",
         "crates/protocol/src",
         "crates/tui/src",
         "src",
