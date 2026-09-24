@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.1.4](https://github.com/planetaryescape/ms-todo/compare/v0.1.3...v0.1.4) (2026-09-24)
+
+
+### Features
+
+* keep the cache live with delta sync ([cea04e4](https://github.com/planetaryescape/ms-todo/commit/cea04e4a67e9896b1c0f29d090537ec5933baaa4))
+
+
+### Documentation
+
+* record phone check results and D-037 ([74cf4d7](https://github.com/planetaryescape/ms-todo/commit/74cf4d7720442f57917984f0123763fc8a6268f9))
+
 ## [0.1.3](https://github.com/planetaryescape/ms-todo/compare/v0.1.2...v0.1.3) (2026-09-24)
 
 
