@@ -76,7 +76,7 @@ A named foundation turn: there's nothing to use yet, but it's released and check
 - Task creates carry their `opId` in our extension (S13). The HTTP client never retries a non-idempotent request automatically ([03](03-graph-provider.md#http-client)): an uncertain create or recurring completion returns `outcome_unknown` with its `opId`, and nothing is re-sent. Completing a recurring task follows [04](04-sync-cache.md#completing-a-recurring-task)'s success rule.
 - `--dry-run` from the same typed plan, and `--yes` for destructive commands (exit 2 off a terminal without it).
 - `raw` POST, PATCH and DELETE, as synchronous debug passthroughs ([07](07-cli.md#output-contract)).
-- `ms-todo schema [CMD]` and the `--help` snapshots with a CI drift check.
+- The `--help` snapshots with a CI drift check. (`ms-todo schema` moved to rung 3a, which changes the output contract anyway.)
 - **Known rung 2 limits.** An uncertain create returns error kind `outcome_unknown` with its `opId`; the daemon doesn't retry it, and there's no stored `unknown` state or automatic lookup until rung 4. The CLI never retries a mutation by itself. `--idempotency-key`, and the guarantee that a repeat returns the original result, arrive in rung 3a, when keys persist in the store. Without `--list`, a task the daemon hasn't read or written since it started is found by asking each list for it (Graph has no task path without the list). A 412 on a field someone else also changed is reported as a conflict (exit 5) and nothing is overwritten; [04](04-sync-cache.md#conflicts)'s last-write-wins with a `ConflictOverwritten` event needs the event stream and outbox, so it arrives with them.
 - Agent skill v0, `skills/ms-todo/SKILL.md` ([07](07-cli.md#agent-skill)): literal `tasks add` and Graph IDs, resolved with `lists list` or `tasks list`. And the "Use ms-todo to build ms-todo" section in `AGENTS.md`.
 
@@ -88,7 +88,7 @@ A named foundation turn: there's nothing to use yet, but it's released and check
 
 - A task added with `ms-todo tasks add` shows on the phone, and one completed with `ms-todo tasks complete` shows as completed on the phone.
 - An agent session using only the skill adds and completes a task, with the right exit codes.
-- `schema` output matches its insta snapshots.
+- `--help` output matches its insta snapshots.
 
 **Left out:** the cache (reads still go to Graph), offline writes, undo, natural-language parsing.
 
@@ -101,6 +101,7 @@ A named foundation turn: there's nothing to use yet, but it's released and check
 **Build:**
 
 - `crates/store`: migrations for lists and tasks, upserts, local IDs ([02](02-data-model.md)). This replaces rung 1's Graph-direct read handler (D-034). Entities' `id` becomes the local ID, with `graph_id` alongside, and `schema_version` goes up ([07](07-cli.md#output-contract)).
+- `ms-todo schema [CMD]`: the input and output JSON schemas at the new `schema_version`, snapshotted with insta and checked for drift in CI ([07](07-cli.md#output-contract)). Moved here from rung 2.
 - Full enumeration with hydration and the checkpoint rule ([04](04-sync-cache.md#reconciliation-after-a-lost-delta-token), [04](04-sync-cache.md#children-of-a-task)), run on start, every 5 minutes and on `ms-todo sync`, with tombstones for what it didn't see.
 - Reads served from the cache, with the local filters in [07](07-cli.md) (`--status`, `--due`, `--importance`, `--search` through FTS5, `--sort`, `--limit`), `EntityChanged` events, and the 500-ID cap with `ResyncNeeded`.
 - The sync generation counter, `sync --wait` with progress events, `doctor`, and the `initial` state in the response envelope. `--idempotency-key` with its fingerprints, stored in the store ([04](04-sync-cache.md#instant-local-writes)). The agent skill moves to local IDs.
@@ -115,6 +116,7 @@ A named foundation turn: there's nothing to use yet, but it's released and check
 - `ms-todo tasks list` answers from the cache. Measure it and record the number.
 - After a change on the phone, `ms-todo sync --wait` returns and `tasks list` shows the change.
 - `doctor` reports every subsystem.
+- `ms-todo schema` output matches its insta snapshots, at the new `schema_version`.
 
 **Left out:** delta and background freshness faster than 5 minutes (rung 3b), offline writes, undo, the TUI.
 
