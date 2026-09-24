@@ -6,6 +6,7 @@ use ms_todo_protocol::{Entity, Request, ResponseData};
 use serde::Serialize;
 use serde_json::Value;
 
+use crate::csv_columns::{self, text};
 use crate::daemon_client;
 use crate::error::CliError;
 use crate::output::{Render, Table};
@@ -25,6 +26,8 @@ pub const LISTS_TABLE: Table = Table {
         };
         vec![name, shared.to_owned(), text(list, "id").to_owned()]
     },
+    csv_headings: csv_columns::LIST_COLUMNS,
+    csv_row: csv_columns::list_row,
 };
 
 pub const TASKS_TABLE: Table = Table {
@@ -40,15 +43,7 @@ pub const TASKS_TABLE: Table = Table {
         } else {
             ""
         };
-        // Graph's due date is a date at midnight (S11); show the date part.
-        let due: String = task
-            .get("dueDateTime")
-            .and_then(|due| due.get("dateTime"))
-            .and_then(Value::as_str)
-            .unwrap_or_default()
-            .chars()
-            .take(10)
-            .collect();
+        let due = csv_columns::local_due(task);
         vec![
             done.to_owned(),
             due,
@@ -56,14 +51,9 @@ pub const TASKS_TABLE: Table = Table {
             text(task, "title").to_owned(),
         ]
     },
+    csv_headings: csv_columns::TASK_COLUMNS,
+    csv_row: csv_columns::task_row,
 };
-
-fn text<'a>(entity: &'a Entity, field: &str) -> &'a str {
-    entity
-        .get(field)
-        .and_then(Value::as_str)
-        .unwrap_or_default()
-}
 
 pub async fn lists(paths: &Paths) -> Result<Vec<Entity>, CliError> {
     match daemon_client::ask(paths, Request::ListLists).await? {

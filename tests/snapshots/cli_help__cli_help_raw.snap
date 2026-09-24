@@ -7,11 +7,13 @@ Send an authenticated request straight to Microsoft Graph, for debugging
 Usage: ms-todo raw [OPTIONS] <METHOD> <PATH>
 
 Arguments:
-  <METHOD>  HTTP method. Only GET until writes arrive [possible values: GET]
+  <METHOD>  HTTP method. POST, PATCH and DELETE are never resent once they may have reached Graph [possible values: GET, POST, PATCH, DELETE]
   <PATH>    Path under https://graph.microsoft.com/v1.0, such as /me/todo/lists
 
 Options:
-      --format <FORMAT>  Output format: jsonl is one object per line, ids one ID per line [default: table in a terminal, json when piped] [possible values: table, json, jsonl, ids]
+      --body <JSON>      JSON request body, for POST and PATCH
+      --format <FORMAT>  Output format: jsonl is one object per line, ids one ID per line, csv has a header row [default: table in a terminal, json when piped] [possible values: table, json, jsonl, ids, csv]
       --instance <NAME>  Use a separate copy of ms-todo's data (also MS_TODO_INSTANCE). Builds run from Cargo's target/ directory default to "dev"; "default" is the installed copy
+      --yes              Send a POST, PATCH or DELETE when not in a terminal
   -h, --help             Print help
   -V, --version          Print version

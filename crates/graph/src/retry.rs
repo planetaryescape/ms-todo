@@ -34,6 +34,9 @@ pub enum RetryDecision {
     RefreshToken,
     /// Stop and return the error for this status.
     GiveUp,
+    /// Stop: a request that isn't idempotent got an answer (5xx, 408) that
+    /// doesn't say whether it ran, so resending could apply it twice (D-028).
+    OutcomeUnknown,
 }
 
 /// Decide what to do after a response. `attempt` counts the retries already
@@ -52,6 +55,10 @@ pub fn decide_retry(
     if status == StatusCode::UNAUTHORIZED {
         return RetryDecision::RefreshToken;
     }
+    let transient = status.is_server_error() || status == StatusCode::REQUEST_TIMEOUT;
+    if transient && !idempotent {
+        return RetryDecision::OutcomeUnknown;
+    }
     if attempt >= MAX_RETRIES {
         return RetryDecision::GiveUp;
     }
@@ -63,8 +70,7 @@ pub fn decide_retry(
             None => RetryDecision::Backoff,
         };
     }
-    let transient = status.is_server_error() || status == StatusCode::REQUEST_TIMEOUT;
-    if transient && idempotent {
+    if transient {
         RetryDecision::Backoff
     } else {
         RetryDecision::GiveUp
@@ -182,11 +188,14 @@ mod tests {
                 RetryDecision::Backoff,
                 "{status}"
             );
-            assert_eq!(
-                decide(status, None, 0, false),
-                RetryDecision::GiveUp,
-                "{status}"
-            );
+            // Even after 429 retries have used up the attempts.
+            for attempt in [0, 3] {
+                assert_eq!(
+                    decide(status, None, attempt, false),
+                    RetryDecision::OutcomeUnknown,
+                    "{status}"
+                );
+            }
         }
     }
 

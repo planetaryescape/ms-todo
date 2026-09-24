@@ -2,7 +2,7 @@
 
 A local-first, keyboard-native terminal client for Microsoft To Do. It has a daemon that keeps a local SQLite cache in sync with Microsoft Graph, and two clients of that daemon: a scriptable CLI with stable JSON output and a very fast ratatui TUI.
 
-**Status: rung 1, see my tasks.** ms-todo signs in to your Microsoft account and shows every task in any of your lists, from a terminal or an agent. It's read-only for now: adding and completing tasks arrive in the next release (rung 2 of the [roadmap](docs/blueprint/10-roadmap.md)).
+**Status: rung 2, capture and finish tasks.** ms-todo signs in to your Microsoft account, shows every task in any of your lists, and adds, edits, completes, reopens and deletes tasks, from a terminal or an agent. Every read and write goes straight to Microsoft Graph for now; the local cache, offline writes and undo come in later rungs of the [roadmap](docs/blueprint/10-roadmap.md).
 
 ## Install
 
@@ -34,9 +34,33 @@ ms-todo raw GET /me/todo/lists        # any Graph v1.0 path, authenticated
 ms-todo auth bearer --reveal-secret   # a valid access token, for curl
 ```
 
-Output is a table in a terminal and JSON when piped. `--format json|jsonl|ids|table` picks one. JSON is `{ "schema_version": 1, "items": [...] }`, and each item has every field Graph returns, with Graph's ID as `id`. `--format ids` prints one ID per line. A `--list` name that matches more than one list is an error that lists the candidates; ms-todo never picks one for you.
+Output is a table in a terminal and JSON when piped. `--format json|jsonl|ids|csv|table` picks one. JSON is `{ "schema_version": 1, "items": [...] }`, and each item has every field Graph returns, with Graph's ID as `id`. `--format ids` prints one ID per line. `--format csv` has a header row and fixed columns (tasks: `id,title,status,importance,due,reminder,categories,created,modified`; lists: `id,name,wellknown,is_owner,is_shared`); a task's notes aren't a column, so use JSON for those. A `--list` name that matches more than one list is an error that lists the candidates; ms-todo never picks one for you.
 
-Exit codes: 0 success, 1 network or Graph failure, 2 invalid input (such as an ambiguous list name), 3 not found, 4 sign-in needed (run `ms-todo auth login`), 5 rejected by Graph, 6 rate limited, 7 not supported.
+## Add and finish tasks
+
+```sh
+ms-todo tasks add "Buy milk" --list Groceries --due 2026-09-26
+ms-todo tasks add "Call the dentist" --reminder 2026-09-26T09:30 --importance high --body "re: filling"
+ms-todo tasks complete <ID>...        # IDs from `tasks list --format ids`
+ms-todo tasks reopen <ID>...
+ms-todo tasks edit <ID> --title "Buy oat milk" --due 2026-09-27   # also --clear-due, --reminder, --clear-reminder, --importance, --body
+ms-todo tasks delete <ID>...          # asks first; pass --yes when not in a terminal
+ms-todo tasks list --format ids | ms-todo tasks complete -   # `-` reads IDs from stdin
+```
+
+- The text of `tasks add` is the title, exactly as given. With no `--list`, it goes to "Tasks".
+- Due dates are dates only; put a time in `--reminder`. Dates are written in your local time zone (`TZ`, or the system's).
+- A task can also be named by its exact title, together with `--list`. A title several tasks share is an error listing them.
+- `--dry-run` shows what a command would change, resolved exactly as the real run would, and changes nothing.
+- Completing a recurring task keeps it open with the next due date, and Microsoft To Do adds the occurrence you finished as a new, completed task.
+- Each change prints the task as Graph returned it and an `op_id`. If a create or a recurring completion gets no clear answer from Graph (a timeout or a server error), ms-todo doesn't resend it: it exits 1 with error kind `outcome_unknown` and the `op_id`. Check `ms-todo tasks list` before trying again, or you may get a duplicate.
+- If someone changed the same field on another device since ms-todo last read the task, the change is refused with exit code 5 rather than overwriting theirs.
+
+`ms-todo raw POST|PATCH|DELETE PATH [--body JSON]` sends a request straight to Graph for debugging. It's sent once, never resent, and needs `--yes` when not in a terminal.
+
+Agents can use the skill in [`skills/ms-todo/SKILL.md`](skills/ms-todo/SKILL.md).
+
+Exit codes: 0 success, 1 network or Graph failure (including `outcome_unknown`), 2 invalid input (such as an ambiguous name, or `delete` without `--yes` off a terminal), 3 not found, 4 sign-in needed (run `ms-todo auth login`), 5 conflict or rejected by Graph, 6 rate limited, 7 not supported.
 
 ## The daemon
 
@@ -52,7 +76,7 @@ Its socket is private to your user (0600, in a 0700 directory), and its log is `
 
 ## Plan
 
-The design is in [`docs/blueprint/`](docs/blueprint/README.md), the Phase 0 results are in [`12-open-questions.md`](docs/blueprint/12-open-questions.md), and the evidence is in `docs/research/spikes/`. Still open: the phone halves of spikes S7 and S11, the S4 deltaLink replay, and product questions Q3 and Q6–Q12. The build climbs a ladder of usable releases, starting with a foundation turn (install and sign in) and then rung 1: see my tasks.
+The design is in [`docs/blueprint/`](docs/blueprint/README.md), the Phase 0 results are in [`12-open-questions.md`](docs/blueprint/12-open-questions.md), and the evidence is in `docs/research/spikes/`. Still open: the phone halves of spikes S7 and S11, the S4 deltaLink replay, and product questions Q3 and Q6–Q12. The build climbs a ladder of usable releases: a foundation turn (install and sign in), rung 1 (see my tasks), rung 2 (capture and finish tasks), and next rung 3a (instant reads from a local cache).
 
 What's planned:
 

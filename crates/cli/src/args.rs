@@ -15,8 +15,8 @@ pub struct Cli {
 
 #[derive(Debug, Args)]
 pub struct GlobalArgs {
-    /// Output format: jsonl is one object per line, ids one ID per line
-    /// [default: table in a terminal, json when piped]
+    /// Output format: jsonl is one object per line, ids one ID per line,
+    /// csv has a header row [default: table in a terminal, json when piped]
     #[arg(long, global = true, value_enum)]
     pub format: Option<OutputFormat>,
 
@@ -77,21 +77,135 @@ pub enum TasksCommand {
         #[arg(long, value_name = "NAME|ID")]
         list: Option<String>,
     },
+    /// Add a task. The text is its title, exactly as given
+    Add(AddArgs),
+    /// Mark tasks completed. A recurring task moves on to its next due date
+    Complete(TargetArgs),
+    /// Mark completed tasks as not started again
+    Reopen(TargetArgs),
+    /// Change a task's title, due date, importance, reminder or notes
+    Edit(EditArgs),
+    /// Delete tasks. Asks first in a terminal; anywhere else it needs --yes
+    Delete {
+        #[command(flatten)]
+        targets: TargetArgs,
+        /// Delete without asking
+        #[arg(long)]
+        yes: bool,
+    },
+}
+
+#[derive(Debug, Args)]
+pub struct AddArgs {
+    /// The task's title, taken literally
+    pub text: String,
+    /// The list's exact name or its ID [default: the "Tasks" list]
+    #[arg(long, value_name = "NAME|ID")]
+    pub list: Option<String>,
+    /// Due date. Due dates have no time; put a time in --reminder
+    #[arg(long, value_name = "YYYY-MM-DD")]
+    pub due: Option<String>,
+    /// Remind me at this local time
+    #[arg(long, value_name = "YYYY-MM-DDTHH:MM")]
+    pub reminder: Option<String>,
+    /// How important it is
+    #[arg(long, value_enum)]
+    pub importance: Option<ImportanceArg>,
+    /// Notes, as plain text
+    #[arg(long, value_name = "TEXT")]
+    pub body: Option<String>,
+    /// Show what would be sent without changing anything
+    #[arg(long)]
+    pub dry_run: bool,
+}
+
+#[derive(Debug, Args)]
+pub struct TargetArgs {
+    /// Task IDs from `tasks list`, or exact titles when --list is given.
+    /// `-` reads IDs from stdin, one per line
+    #[arg(required = true, value_name = "TASK")]
+    pub tasks: Vec<String>,
+    /// Look for the tasks in this list (exact name or ID), which also lets
+    /// TASK be an exact title
+    #[arg(long, value_name = "NAME|ID")]
+    pub list: Option<String>,
+    /// Show what would change without changing anything
+    #[arg(long)]
+    pub dry_run: bool,
+}
+
+#[derive(Debug, Args)]
+pub struct EditArgs {
+    /// The task's ID from `tasks list`, or its exact title when --list is given
+    #[arg(value_name = "TASK")]
+    pub task: String,
+    /// Look for the task in this list (exact name or ID), which also lets
+    /// TASK be an exact title
+    #[arg(long, value_name = "NAME|ID")]
+    pub list: Option<String>,
+    /// New title, taken literally
+    #[arg(long)]
+    pub title: Option<String>,
+    /// New due date. Due dates have no time; put a time in --reminder
+    #[arg(long, value_name = "YYYY-MM-DD", conflicts_with = "clear_due")]
+    pub due: Option<String>,
+    /// Remove the due date
+    #[arg(long)]
+    pub clear_due: bool,
+    /// New importance
+    #[arg(long, value_enum)]
+    pub importance: Option<ImportanceArg>,
+    /// Remind me at this local time
+    #[arg(
+        long,
+        value_name = "YYYY-MM-DDTHH:MM",
+        conflicts_with = "clear_reminder"
+    )]
+    pub reminder: Option<String>,
+    /// Turn the reminder off
+    #[arg(long)]
+    pub clear_reminder: bool,
+    /// New notes, as plain text. They replace the old ones
+    #[arg(long, value_name = "TEXT")]
+    pub body: Option<String>,
+    /// Show what would change without changing anything
+    #[arg(long)]
+    pub dry_run: bool,
+}
+
+#[derive(Clone, Copy, Debug, ValueEnum)]
+pub enum ImportanceArg {
+    Low,
+    Normal,
+    High,
 }
 
 #[derive(Debug, Args)]
 pub struct RawArgs {
-    /// HTTP method. Only GET until writes arrive
+    /// HTTP method. POST, PATCH and DELETE are never resent once they may have
+    /// reached Graph
     #[arg(value_enum, ignore_case = true)]
     pub method: RawMethod,
     /// Path under https://graph.microsoft.com/v1.0, such as /me/todo/lists
     pub path: String,
+    /// JSON request body, for POST and PATCH
+    #[arg(long, value_name = "JSON")]
+    pub body: Option<String>,
+    /// Send a POST, PATCH or DELETE when not in a terminal
+    #[arg(long)]
+    pub yes: bool,
 }
 
-#[derive(Clone, Copy, Debug, ValueEnum)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, ValueEnum)]
 pub enum RawMethod {
     #[value(name = "GET")]
     Get,
+    #[value(name = "POST")]
+    Post,
+    #[value(name = "PATCH")]
+    Patch,
+    #[value(name = "DELETE")]
+    Delete,
 }
 
 #[derive(Debug, Subcommand)]

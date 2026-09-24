@@ -59,6 +59,31 @@ pub enum Request {
     RawGet {
         path: String,
     },
+    /// A synchronous POST, PATCH or DELETE of a path under the Graph v1.0
+    /// root. Never resent after it may have reached Graph.
+    RawWrite {
+        method: RawWriteMethod,
+        path: String,
+        #[serde(default)]
+        body: Option<Value>,
+    },
+    /// Create a task. With `dry_run`, answers `Plan` and writes nothing.
+    AddTask {
+        task: NewTask,
+        #[serde(default)]
+        dry_run: bool,
+    },
+    /// Apply one change to each task in `tasks`: Graph IDs, or with `list`,
+    /// IDs or exact titles within that list. With `dry_run`, answers `Plan`
+    /// and writes nothing.
+    ChangeTasks {
+        tasks: Vec<String>,
+        #[serde(default)]
+        list: Option<String>,
+        change: TaskChange,
+        #[serde(default)]
+        dry_run: bool,
+    },
     /// A valid access token, for `auth bearer --reveal-secret`.
     Bearer,
     /// Stop the daemon. It answers `Ack`, then exits.
@@ -93,6 +118,10 @@ pub enum ResponseData {
     Raw {
         body: Value,
     },
+    /// What a mutation would do, from a dry run.
+    Plan(Plan),
+    /// What a mutation did.
+    Applied(Applied),
     Bearer {
         access_token: String,
         /// Unix seconds.
@@ -119,16 +148,151 @@ pub struct DaemonStatus {
     pub signed_in: bool,
 }
 
-/// A list by its ID and display name.
+/// A list or task by its ID and display name (a task's title).
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
-pub struct ListRef {
+pub struct Candidate {
     pub id: String,
     pub name: String,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "UPPERCASE")]
+pub enum RawWriteMethod {
+    Post,
+    Patch,
+    Delete,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Importance {
+    Low,
+    Normal,
+    High,
+}
+
+/// A task to create. The title is taken literally; dates are validated by
+/// the daemon.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct NewTask {
+    pub title: String,
+    /// A list name or ID; `None` is the "Tasks" list (D-022).
+    #[serde(default)]
+    pub list: Option<String>,
+    /// `YYYY-MM-DD`. Due dates are dates only (D-027).
+    #[serde(default)]
+    pub due: Option<String>,
+    /// `YYYY-MM-DDTHH:MM`, local time.
+    #[serde(default)]
+    pub reminder: Option<String>,
+    #[serde(default)]
+    pub importance: Option<Importance>,
+    /// Plain-text notes.
+    #[serde(default)]
+    pub body: Option<String>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "action", rename_all = "snake_case")]
+pub enum TaskChange {
+    Complete,
+    Reopen,
+    Delete,
+    Edit(TaskEdit),
+    #[serde(other)]
+    Unknown,
+}
+
+/// The fields `tasks edit` changes; `None` leaves a field alone.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct TaskEdit {
+    #[serde(default)]
+    pub title: Option<String>,
+    /// `YYYY-MM-DD`.
+    #[serde(default)]
+    pub due: Option<Clearable<String>>,
+    #[serde(default)]
+    pub importance: Option<Importance>,
+    /// `YYYY-MM-DDTHH:MM`, local time.
+    #[serde(default)]
+    pub reminder: Option<Clearable<String>>,
+    #[serde(default)]
+    pub body: Option<String>,
+}
+
+/// A field an edit either sets or clears.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Clearable<T> {
+    Set(T),
+    Clear,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum TaskAction {
+    Add,
+    Complete,
+    Reopen,
+    Edit,
+    Delete,
+    #[serde(other)]
+    Unknown,
+}
+
+/// A mutation's typed plan: the verb and its resolved targets. A dry run
+/// renders it and the real run applies it, so the preview is what runs
+/// (docs/blueprint/07-cli.md#global-flags).
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct Plan {
+    pub action: TaskAction,
+    /// The list a task is added to. Empty for other actions.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub list: Option<Candidate>,
+    /// The tasks changed, in order. Empty for `add`.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub targets: Vec<PlannedTask>,
+    /// The Graph fields each target gets (the POST body for `add`, without
+    /// the `opId` extension a real run adds). Null for `delete`.
+    #[serde(default)]
+    pub changes: Value,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct PlannedTask {
+    pub id: String,
+    pub title: String,
+    pub list_id: String,
+}
+
+/// What a mutation did.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct Applied {
+    /// The create's `opId`, or a fresh UUID for other actions.
+    pub op_id: String,
+    pub action: TaskAction,
+    /// Each task as Graph returned it after the change. For `delete`, as it
+    /// was last read.
+    pub items: Vec<Entity>,
+    /// The list each of `items` is in, in the same order.
+    #[serde(default)]
+    pub list_ids: Vec<String>,
+    /// Recurring tasks this completed: Graph kept the task, moved its due
+    /// date on, and made a completed copy with a new ID (S12).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub rolled: Vec<Rolled>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Rolled {
+    pub id: String,
+    /// `YYYY-MM-DD`, local.
+    pub next_due: String,
+}
+
 /// A failed request. `kind` is an `ms_todo_core::ErrorKind` string; a kind
 /// the client doesn't know is treated as `internal`.
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ErrorPayload {
     pub kind: String,
     pub message: String,
@@ -136,9 +300,15 @@ pub struct ErrorPayload {
     pub graph_code: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub request_id: Option<String>,
-    /// The lists an ambiguous `--list` name matched.
+    /// The lists or tasks an ambiguous name matched.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub candidates: Vec<ListRef>,
+    pub candidates: Vec<Candidate>,
+    /// The mutation's `op_id`, on a failed or `outcome_unknown` mutation.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub op_id: Option<String>,
+    /// Tasks a multi-task mutation changed before it failed.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub applied: Vec<String>,
 }
 
 /// Pushed by the daemon. Rung 1 sends none; the type exists so a client

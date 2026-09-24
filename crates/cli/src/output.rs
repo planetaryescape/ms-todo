@@ -26,6 +26,8 @@ pub enum OutputFormat {
     Jsonl,
     // One ID per line, for piping into another command.
     Ids,
+    // RFC 4180, with a header row; see `csv_columns`.
+    Csv,
 }
 
 impl OutputFormat {
@@ -46,11 +48,12 @@ pub trait Render: Serialize {
     fn table_rows(&self) -> Vec<(&'static str, String)>;
 }
 
+/// A result with `schema_version` beside its own fields.
 #[derive(Serialize)]
-struct Versioned<'a, T: Serialize> {
-    schema_version: u32,
+pub struct Versioned<'a, T: Serialize> {
+    pub schema_version: u32,
     #[serde(flatten)]
-    inner: &'a T,
+    pub inner: &'a T,
 }
 
 pub fn print_success(format: OutputFormat, value: &impl Render) -> Result<(), CliError> {
@@ -69,14 +72,58 @@ pub fn print_success(format: OutputFormat, value: &impl Render) -> Result<(), Cl
             }
             Ok(())
         }
+        OutputFormat::Csv => {
+            let json = serde_json::to_value(value).map_err(std::io::Error::from)?;
+            let Value::Object(fields) = json else {
+                return Err(CliError::message(
+                    ErrorKind::Internal,
+                    "this result isn't a record, so it has no CSV form".into(),
+                ));
+            };
+            let headers: Vec<&str> = fields.keys().map(String::as_str).collect();
+            let row: Vec<String> = fields.values().map(csv_cell).collect();
+            write_csv(&headers, &[row])
+        }
         OutputFormat::Ids => Err(ids_not_supported()),
     }
 }
 
-/// A collection's table: column headings, and a row of cells per item.
+// One flat record's value as a CSV cell: arrays joined with `;`, null empty.
+fn csv_cell(value: &Value) -> String {
+    match value {
+        Value::Null => String::new(),
+        Value::String(text) => text.clone(),
+        Value::Array(items) => items.iter().map(csv_cell).collect::<Vec<_>>().join(";"),
+        other => other.to_string(),
+    }
+}
+
+/// Write RFC 4180 CSV to stdout: the header row, then `rows`.
+pub fn write_csv<H: AsRef<[u8]>>(headers: &[H], rows: &[Vec<String>]) -> Result<(), CliError> {
+    let mut writer = csv::Writer::from_writer(std::io::stdout().lock());
+    let written = writer
+        .write_record(headers)
+        .and_then(|()| rows.iter().try_for_each(|row| writer.write_record(row)));
+    written.map_err(csv_io_error)?;
+    writer.flush()?;
+    Ok(())
+}
+
+// `csv` wraps I/O errors; unwrap them so a closed pipe stays one.
+fn csv_io_error(error: csv::Error) -> std::io::Error {
+    match error.into_kind() {
+        csv::ErrorKind::Io(error) => error,
+        other => std::io::Error::other(format!("{other:?}")),
+    }
+}
+
+/// A collection's table: column headings, and a row of cells per item;
+/// and its CSV columns, which are fuller and fixed (`csv_columns`).
 pub struct Table {
     pub headings: &'static [&'static str],
     pub row: fn(&Entity) -> Vec<String>,
+    pub csv_headings: &'static [&'static str],
+    pub csv_row: fn(&Entity) -> Vec<String>,
 }
 
 #[derive(Serialize)]
@@ -112,12 +159,13 @@ pub fn print_collection(
             Ok(())
         }
         OutputFormat::Ids => {
-            for item in items {
-                if let Some(id) = item.get("id").and_then(Value::as_str) {
-                    writeln!(stdout, "{id}")?;
-                }
-            }
-            Ok(())
+            drop(stdout);
+            print_ids(items.iter().filter_map(|item| item.get("id")?.as_str()))
+        }
+        OutputFormat::Csv => {
+            drop(stdout);
+            let rows: Vec<Vec<String>> = items.iter().map(table.csv_row).collect();
+            write_csv(table.csv_headings, &rows)
         }
         OutputFormat::Table => {
             let rows: Vec<Vec<String>> = items.iter().map(table.row).collect();
@@ -128,16 +176,29 @@ pub fn print_collection(
     }
 }
 
+/// One ID per line.
+pub fn print_ids<'a>(ids: impl IntoIterator<Item = &'a str>) -> Result<(), CliError> {
+    let mut stdout = std::io::stdout().lock();
+    for id in ids {
+        writeln!(stdout, "{id}")?;
+    }
+    Ok(())
+}
+
 /// `raw` prints Graph's body unchanged; a table is pretty JSON too.
 pub fn print_raw(format: OutputFormat, body: &Value) -> Result<(), CliError> {
     match format {
         OutputFormat::Ids => Err(ids_not_supported()),
+        OutputFormat::Csv => Err(CliError::message(
+            ErrorKind::InvalidInput,
+            "`raw` prints Graph's JSON as it came, so it has no CSV form; use --format json".into(),
+        )),
         OutputFormat::Jsonl => print_json(format, body),
         OutputFormat::Json | OutputFormat::Table => print_json(OutputFormat::Json, body),
     }
 }
 
-fn print_json(format: OutputFormat, value: &impl Serialize) -> Result<(), CliError> {
+pub fn print_json(format: OutputFormat, value: &impl Serialize) -> Result<(), CliError> {
     let mut stdout = std::io::stdout().lock();
     let written = if format == OutputFormat::Jsonl {
         serde_json::to_writer(&mut stdout, value)
@@ -203,7 +264,11 @@ struct ErrorBody<'a> {
     #[serde(skip_serializing_if = "Option::is_none")]
     request_id: Option<&'a str>,
     #[serde(skip_serializing_if = "<[_]>::is_empty")]
-    candidates: &'a [ms_todo_protocol::ListRef],
+    candidates: &'a [ms_todo_protocol::Candidate],
+    #[serde(skip_serializing_if = "Option::is_none")]
+    op_id: Option<&'a str>,
+    #[serde(skip_serializing_if = "<[_]>::is_empty")]
+    applied: &'a [String],
 }
 
 /// Errors always go to stderr, so stdout only ever holds a result.
@@ -218,16 +283,24 @@ pub fn print_error(format: OutputFormat, error: &CliError) {
                     graph_code: error.graph_code.as_deref(),
                     request_id: error.request_id.as_deref(),
                     candidates: &error.candidates,
+                    op_id: error.op_id.as_deref(),
+                    applied: &error.applied,
                 },
             };
             serde_json::to_writer(&mut stderr, &envelope)
                 .map_err(std::io::Error::other)
                 .and_then(|()| writeln!(stderr))
         }
-        OutputFormat::Table | OutputFormat::Ids => {
+        OutputFormat::Table | OutputFormat::Ids | OutputFormat::Csv => {
             let mut text = format!("error: {}", error.message);
             for candidate in &error.candidates {
                 text.push_str(&format!("\n  {}  {}", candidate.name, candidate.id));
+            }
+            if !error.applied.is_empty() {
+                text.push_str(&format!("\nalready changed: {}", error.applied.join(" ")));
+            }
+            if let Some(op_id) = &error.op_id {
+                text.push_str(&format!("\nop_id: {op_id}"));
             }
             writeln!(stderr, "{text}")
         }

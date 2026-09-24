@@ -1,6 +1,6 @@
 use ms_todo_core::{ErrorKind, InvalidInstanceName, PathsError, message_with_causes};
 use ms_todo_graph::auth::AuthError;
-use ms_todo_protocol::{ErrorPayload, ListRef};
+use ms_todo_protocol::{Candidate, ErrorPayload};
 
 /// A failure, flattened into what the CLI prints and the exit code it maps to.
 #[derive(Debug)]
@@ -9,8 +9,12 @@ pub struct CliError {
     pub message: String,
     pub graph_code: Option<String>,
     pub request_id: Option<String>,
-    /// The lists an ambiguous `--list` name matched.
-    pub candidates: Vec<ListRef>,
+    /// The lists or tasks an ambiguous name matched.
+    pub candidates: Vec<Candidate>,
+    /// The failed mutation's `op_id`.
+    pub op_id: Option<String>,
+    /// Tasks a multi-task mutation changed before it failed.
+    pub applied: Vec<String>,
     /// Whoever read stdout stopped, as with `ms-todo tasks list | head`.
     /// That's the reader's choice, not a failure, so nothing is reported.
     pub stdout_closed: bool,
@@ -28,6 +32,8 @@ impl CliError {
             graph_code: None,
             request_id: None,
             candidates: Vec::new(),
+            op_id: None,
+            applied: Vec::new(),
             stdout_closed: false,
         }
     }
@@ -53,6 +59,8 @@ impl From<ErrorPayload> for CliError {
             graph_code: error.graph_code,
             request_id: error.request_id,
             candidates: error.candidates,
+            op_id: error.op_id,
+            applied: error.applied,
             stdout_closed: false,
         }
     }

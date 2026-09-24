@@ -6,9 +6,18 @@
 //! Started by `ms-todo daemon start` or automatically by any client, as a
 //! detached `ms-todo daemon run --instance <name>`.
 
+// Handlers fail with the wire type, `ErrorPayload`, which is over clippy's
+// 128 bytes. It's the cold path, once per request, so boxing it everywhere
+// would only add noise.
+#![allow(clippy::result_large_err)]
+
 mod handlers;
+mod known_tasks;
 mod list_resolution;
 mod server;
+mod task_fields;
+mod task_resolution;
+mod task_writes;
 
 use std::process::ExitCode;
 

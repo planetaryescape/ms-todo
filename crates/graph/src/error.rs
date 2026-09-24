@@ -35,6 +35,12 @@ pub enum GraphError {
     Decode(String),
     #[error("{0}")]
     InvalidInput(String),
+    /// A create, a recurring completion or a raw write may have reached
+    /// Graph, but no answer says whether it ran: a timeout, a 5xx or 408, or
+    /// a connection lost after sending. It's never resent automatically
+    /// (D-028).
+    #[error("Microsoft Graph may or may not have applied this change")]
+    OutcomeUnknown(#[source] Box<GraphError>),
     /// Pagination hit the safety cap. Returned instead of partial results.
     #[error("stopped after {pages} pages of {path}; refusing to return a partial collection")]
     PageLimit { path: String, pages: usize },
@@ -61,13 +67,20 @@ impl GraphError {
             Self::Network(_) => ErrorKind::Network,
             Self::Decode(_) => ErrorKind::Decode,
             Self::InvalidInput(_) => ErrorKind::InvalidInput,
+            Self::OutcomeUnknown(_) => ErrorKind::OutcomeUnknown,
             Self::PageLimit { .. } => ErrorKind::Internal,
         }
+    }
+
+    /// The HTTP status Graph answered with, if it answered.
+    pub fn status(&self) -> Option<u16> {
+        self.api_error().map(|error| error.status)
     }
 
     fn api_error(&self) -> Option<&ApiError> {
         match self {
             Self::Api(error) | Self::RateLimited { source: error, .. } => Some(error),
+            Self::OutcomeUnknown(cause) => cause.api_error(),
             _ => None,
         }
     }
@@ -118,6 +131,14 @@ mod tests {
         assert_eq!(api(400).kind(), ErrorKind::Rejected);
         assert_eq!(api(503).kind(), ErrorKind::Api);
         assert_eq!(api(404).request_id(), Some("rid"));
+    }
+
+    #[test]
+    fn an_unknown_outcome_keeps_what_graph_said() {
+        let error = GraphError::OutcomeUnknown(Box::new(api(503)));
+        assert_eq!(error.kind(), ErrorKind::OutcomeUnknown);
+        assert_eq!(error.request_id(), Some("rid"));
+        assert_eq!(error.status(), Some(503));
     }
 
     #[test]

@@ -7,7 +7,7 @@ Every task in a list, completed ones included
 Usage: ms-todo tasks list [OPTIONS]
 
 Options:
-      --format <FORMAT>  Output format: jsonl is one object per line, ids one ID per line [default: table in a terminal, json when piped] [possible values: table, json, jsonl, ids]
+      --format <FORMAT>  Output format: jsonl is one object per line, ids one ID per line, csv has a header row [default: table in a terminal, json when piped] [possible values: table, json, jsonl, ids, csv]
       --list <NAME|ID>   The list's exact name or its ID [default: the "Tasks" list]
       --instance <NAME>  Use a separate copy of ms-todo's data (also MS_TODO_INSTANCE). Builds run from Cargo's target/ directory default to "dev"; "default" is the installed copy
   -h, --help             Print help

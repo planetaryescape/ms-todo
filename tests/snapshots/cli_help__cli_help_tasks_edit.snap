@@ -1,0 +1,25 @@
+---
+source: tests/cli_help.rs
+expression: help_output(args)
+---
+Change a task's title, due date, importance, reminder or notes
+
+Usage: ms-todo tasks edit [OPTIONS] <TASK>
+
+Arguments:
+  <TASK>  The task's ID from `tasks list`, or its exact title when --list is given
+
+Options:
+      --format <FORMAT>              Output format: jsonl is one object per line, ids one ID per line, csv has a header row [default: table in a terminal, json when piped] [possible values: table, json, jsonl, ids, csv]
+      --list <NAME|ID>               Look for the task in this list (exact name or ID), which also lets TASK be an exact title
+      --instance <NAME>              Use a separate copy of ms-todo's data (also MS_TODO_INSTANCE). Builds run from Cargo's target/ directory default to "dev"; "default" is the installed copy
+      --title <TITLE>                New title, taken literally
+      --due <YYYY-MM-DD>             New due date. Due dates have no time; put a time in --reminder
+      --clear-due                    Remove the due date
+      --importance <IMPORTANCE>      New importance [possible values: low, normal, high]
+      --reminder <YYYY-MM-DDTHH:MM>  Remind me at this local time
+      --clear-reminder               Turn the reminder off
+      --body <TEXT>                  New notes, as plain text. They replace the old ones
+      --dry-run                      Show what would change without changing anything
+  -h, --help                         Print help
+  -V, --version                      Print version

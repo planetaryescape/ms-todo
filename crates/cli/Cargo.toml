@@ -13,6 +13,7 @@ ms-todo-protocol = { workspace = true }
 ms-todo-graph = { workspace = true }
 chrono = { workspace = true }
 clap = { workspace = true }
+csv = { workspace = true }
 fs2 = { workspace = true }
 futures-util = { workspace = true }
 nix = { workspace = true }

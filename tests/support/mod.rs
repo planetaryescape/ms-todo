@@ -1,0 +1,99 @@
+#![allow(dead_code, reason = "each test binary uses a different subset")]
+
+//! The test environment for driving the real binary and the daemon it
+//! starts, with HOME, the XDG directories and the runtime directory in a
+//! temp dir, so nothing touches the developer's own sign-in or daemon. Every
+//! test stops its daemon, even when it fails.
+
+use std::path::PathBuf;
+
+use assert_cmd::Command;
+use serde_json::{Value, json};
+
+pub const ACCESS_TOKEN: &str = "test-access-token";
+
+pub struct Env {
+    pub home: tempfile::TempDir,
+    pub graph_url: Option<String>,
+}
+
+impl Env {
+    pub fn new() -> Self {
+        // Under /tmp, not the platform temp dir: macOS caps a socket path at
+        // 104 bytes, and $TMPDIR plus "Library/Application Support/…" is over.
+        let home = tempfile::Builder::new()
+            .prefix("mt")
+            .tempdir_in("/tmp")
+            .expect("tempdir");
+        Self {
+            home,
+            graph_url: None,
+        }
+    }
+
+    pub fn cmd(&self) -> Command {
+        let home = self.home.path();
+        let mut command = Command::cargo_bin("ms-todo").expect("ms-todo binary");
+        command
+            .env("HOME", home)
+            .env("XDG_DATA_HOME", home.join("data"))
+            .env("XDG_CONFIG_HOME", home.join("config"))
+            .env("XDG_RUNTIME_DIR", home.join("run"))
+            .env_remove("MS_TODO_INSTANCE")
+            .env_remove("MS_TODO_CONFIG_DIR")
+            .env_remove("MS_TODO_GRAPH_URL")
+            // Due dates and reminders are written in this zone.
+            .env("TZ", "Europe/London");
+        if let Some(url) = &self.graph_url {
+            command.env("MS_TODO_GRAPH_URL", url);
+        }
+        command
+    }
+
+    pub fn json(&self, args: &[&str]) -> Value {
+        let output = self
+            .cmd()
+            .args(["--format", "json"])
+            .args(args)
+            .assert()
+            .success()
+            .get_output()
+            .stdout
+            .clone();
+        serde_json::from_slice(&output).expect("json output")
+    }
+
+    pub fn socket(&self) -> PathBuf {
+        PathBuf::from(
+            self.json(&["daemon", "status"])["socket"]
+                .as_str()
+                .expect("socket"),
+        )
+    }
+
+    /// A signed-in credential good for an hour, so the daemon never refreshes.
+    pub fn sign_in(&self) {
+        let logout = self.json(&["auth", "logout"]);
+        let token_path = PathBuf::from(logout["token_path"].as_str().expect("token path"));
+        std::fs::create_dir_all(token_path.parent().expect("auth dir")).expect("mkdir");
+        let expires_at = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .expect("clock")
+            .as_secs()
+            + 3600;
+        let token = json!({
+            "access_token": ACCESS_TOKEN,
+            "refresh_token": "test-refresh-token",
+            "expires_at": expires_at,
+            "scopes": ["Tasks.ReadWrite"],
+            "client_id": "test-client"
+        });
+        std::fs::write(token_path, token.to_string()).expect("write token");
+    }
+}
+
+impl Drop for Env {
+    fn drop(&mut self) {
+        let _ = self.cmd().args(["daemon", "stop"]).output();
+    }
+}

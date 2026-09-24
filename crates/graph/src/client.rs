@@ -6,7 +6,8 @@
 use std::sync::Arc;
 use std::time::Duration;
 
-use reqwest::{StatusCode, Url};
+use reqwest::header::IF_MATCH;
+use reqwest::{Method, StatusCode, Url};
 use serde::Deserialize;
 use serde_json::{Map, Value};
 use tokio::sync::Semaphore;
@@ -100,6 +101,85 @@ impl GraphClient {
             .await
     }
 
+    /// `GET /me/todo/lists/{list}/tasks/{task}`.
+    pub async fn get_task(&self, list_id: &str, task_id: &str) -> Result<Entity, GraphError> {
+        let url = self.task_url(list_id, task_id);
+        entity(self.get(url, false).await?)
+    }
+
+    /// `POST /me/todo/lists/{list}/tasks`. A create is never resent after it
+    /// may have reached Graph (D-028), so this can return `OutcomeUnknown`.
+    pub async fn create_task(&self, list_id: &str, body: &Value) -> Result<Entity, GraphError> {
+        let url = self.url(&["me", "todo", "lists", list_id, "tasks"]);
+        entity(
+            self.send(Call {
+                body: Some(body),
+                idempotent: false,
+                ..Call::new(Method::POST, url)
+            })
+            .await?,
+        )
+    }
+
+    /// `PATCH /me/todo/lists/{list}/tasks/{task}` with `If-Match` when an
+    /// etag is known (S6: task PATCH honours it, so a stale one is a 412).
+    /// `idempotent` is false for a PATCH that completes a recurring task: a
+    /// repeat would complete the next occurrence too.
+    pub async fn update_task(
+        &self,
+        list_id: &str,
+        task_id: &str,
+        body: &Value,
+        etag: Option<&str>,
+        idempotent: bool,
+    ) -> Result<Entity, GraphError> {
+        let url = self.task_url(list_id, task_id);
+        entity(
+            self.send(Call {
+                body: Some(body),
+                if_match: etag,
+                idempotent,
+                ..Call::new(Method::PATCH, url)
+            })
+            .await?,
+        )
+    }
+
+    /// `DELETE /me/todo/lists/{list}/tasks/{task}`. A 404 means it's already
+    /// gone, which counts as success (S6). No `If-Match`: task DELETE
+    /// ignores it (S6).
+    pub async fn delete_task(&self, list_id: &str, task_id: &str) -> Result<(), GraphError> {
+        let url = self.task_url(list_id, task_id);
+        let deleted = self.send(Call::new(Method::DELETE, url)).await;
+        match deleted {
+            Ok(_) => Ok(()),
+            Err(error) if error.status() == Some(404) => Ok(()),
+            Err(error) => Err(error),
+        }
+    }
+
+    /// One authenticated POST, PATCH or DELETE of `path`, for `raw`. It's a
+    /// debugging passthrough, so it's treated like a create: never resent
+    /// after it may have reached Graph.
+    pub async fn write_raw(
+        &self,
+        method: Method,
+        path: &str,
+        body: Option<&Value>,
+    ) -> Result<Value, GraphError> {
+        let url = self.raw_url(path)?;
+        self.send(Call {
+            body,
+            idempotent: false,
+            ..Call::new(method, url)
+        })
+        .await
+    }
+
+    fn task_url(&self, list_id: &str, task_id: &str) -> Url {
+        self.url(&["me", "todo", "lists", list_id, "tasks", task_id])
+    }
+
     /// One authenticated GET of `path` under the Graph root, for `raw GET`.
     /// Paths only: an absolute URL could send the token to another host.
     pub async fn get_raw(&self, path: &str) -> Result<Value, GraphError> {
@@ -177,8 +257,20 @@ impl GraphClient {
             .ok_or_else(|| GraphError::Decode(format!("refusing a nextLink outside Graph: {link}")))
     }
 
-    /// One GET with the retry policy. GETs are idempotent.
     async fn get(&self, url: Url, paged: bool) -> Result<Value, GraphError> {
+        self.send(Call {
+            paged,
+            ..Call::new(Method::GET, url)
+        })
+        .await
+    }
+
+    /// One request with the retry policy (docs/blueprint/03-graph-provider.md#http-client).
+    /// A request that isn't idempotent is resent only when the answer proves
+    /// it didn't run: a 429, a 401 before the refresh, or a failed connect.
+    /// Any other failure after it may have reached Graph is `OutcomeUnknown`
+    /// (D-028).
+    async fn send(&self, call: Call<'_>) -> Result<Value, GraphError> {
         let mut attempt = 0;
         let mut refreshed = false;
         let mut token = self.auth.valid_token().await?;
@@ -189,23 +281,45 @@ impl GraphClient {
                     .acquire()
                     .await
                     .map_err(|_| GraphError::Decode("the request limiter was closed".into()))?;
-                let mut request = self.http.get(url.clone()).bearer_auth(&token.access_token);
-                if paged {
+                let mut request = self
+                    .http
+                    .request(call.method.clone(), call.url.clone())
+                    .bearer_auth(&token.access_token);
+                if call.paged {
                     request = request.header("Prefer", PREFER_PAGE_SIZE);
+                }
+                if let Some(etag) = call.if_match {
+                    request = request.header(IF_MATCH, etag);
+                }
+                if let Some(body) = call.body {
+                    request = request.json(body);
                 }
                 read(request).await
             };
             let (status, headers, body) = match sent {
                 Ok(read) => read,
-                Err(error) if retry::decide_network_retry(&error, attempt, true) => {
+                Err(error) if retry::decide_network_retry(&error, attempt, call.idempotent) => {
                     tokio::time::sleep(retry::jittered_backoff(attempt, self.backoff_unit)).await;
                     attempt += 1;
                     continue;
                 }
+                // A failed connect never reached Graph; anything later might have.
+                Err(error) if !call.idempotent && !error.is_connect() => {
+                    return Err(GraphError::OutcomeUnknown(Box::new(error.into())));
+                }
                 Err(error) => return Err(error.into()),
             };
-            match retry::decide_retry(status, &headers, attempt, true) {
-                RetryDecision::Success => return parse_body(&body),
+            match retry::decide_retry(status, &headers, attempt, call.idempotent) {
+                RetryDecision::Success => {
+                    return parse_body(&body).map_err(|error| {
+                        // It ran, but we can't tell what it made.
+                        if call.idempotent {
+                            error
+                        } else {
+                            GraphError::OutcomeUnknown(Box::new(error))
+                        }
+                    });
+                }
                 RetryDecision::RefreshToken if !refreshed => {
                     refreshed = true;
                     token = self.auth.refresh(&token).await?;
@@ -219,12 +333,15 @@ impl GraphClient {
                     tokio::time::sleep(retry::jittered_backoff(attempt, self.backoff_unit)).await;
                     attempt += 1;
                 }
-                RetryDecision::GiveUp => {
+                decision @ (RetryDecision::GiveUp | RetryDecision::OutcomeUnknown) => {
                     let error = ApiError::parse(
                         status.as_u16(),
                         crate::api_error::request_id(&headers),
                         &String::from_utf8_lossy(&body),
                     );
+                    if decision == RetryDecision::OutcomeUnknown {
+                        return Err(GraphError::OutcomeUnknown(Box::new(GraphError::Api(error))));
+                    }
                     if status == StatusCode::TOO_MANY_REQUESTS {
                         return Err(GraphError::RateLimited {
                             retry_after: retry::retry_after(&headers),
@@ -234,6 +351,32 @@ impl GraphClient {
                     return Err(GraphError::Api(error));
                 }
             }
+        }
+    }
+}
+
+/// One request for [`GraphClient::send`].
+struct Call<'a> {
+    method: Method,
+    url: Url,
+    body: Option<&'a Value>,
+    /// An etag Graph gave us; never `*` or anything made up (S6: those are a 500).
+    if_match: Option<&'a str>,
+    paged: bool,
+    /// False for every create and for a PATCH that completes a recurring task.
+    idempotent: bool,
+}
+
+impl Call<'_> {
+    /// An idempotent request with no body, `If-Match` or paging.
+    fn new(method: Method, url: Url) -> Self {
+        Self {
+            method,
+            url,
+            body: None,
+            if_match: None,
+            paged: false,
+            idempotent: true,
         }
     }
 }
@@ -248,6 +391,15 @@ async fn read(request: reqwest::RequestBuilder) -> Result<ReadResponse, reqwest:
     let headers = response.headers().clone();
     let body = response.bytes().await?.to_vec();
     Ok((status, headers, body))
+}
+
+fn entity(value: Value) -> Result<Entity, GraphError> {
+    match value {
+        Value::Object(entity) => Ok(entity),
+        other => Err(GraphError::Decode(format!(
+            "expected a JSON object, got {other}"
+        ))),
+    }
 }
 
 fn parse_body(body: &[u8]) -> Result<Value, GraphError> {

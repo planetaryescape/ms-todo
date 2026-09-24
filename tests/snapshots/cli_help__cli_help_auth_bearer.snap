@@ -7,7 +7,7 @@ Print a valid access token for Microsoft Graph, e.g. for curl. With --format tab
 Usage: ms-todo auth bearer [OPTIONS]
 
 Options:
-      --format <FORMAT>  Output format: jsonl is one object per line, ids one ID per line [default: table in a terminal, json when piped] [possible values: table, json, jsonl, ids]
+      --format <FORMAT>  Output format: jsonl is one object per line, ids one ID per line, csv has a header row [default: table in a terminal, json when piped] [possible values: table, json, jsonl, ids, csv]
       --reveal-secret    Confirm that the token may be printed. Anyone holding it can act as you until it expires
       --instance <NAME>  Use a separate copy of ms-todo's data (also MS_TODO_INSTANCE). Builds run from Cargo's target/ directory default to "dev"; "default" is the installed copy
   -h, --help             Print help

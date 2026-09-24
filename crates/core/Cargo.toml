@@ -7,6 +7,7 @@ publish = false
 description = "Shared error kinds and file locations for ms-todo. No I/O dependencies."
 
 [dependencies]
+chrono = { workspace = true }
 dirs = { workspace = true }
 thiserror = { workspace = true }
 

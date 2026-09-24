@@ -1,0 +1,22 @@
+---
+source: tests/cli_help.rs
+expression: help_output(args)
+---
+Add a task. The text is its title, exactly as given
+
+Usage: ms-todo tasks add [OPTIONS] <TEXT>
+
+Arguments:
+  <TEXT>  The task's title, taken literally
+
+Options:
+      --format <FORMAT>              Output format: jsonl is one object per line, ids one ID per line, csv has a header row [default: table in a terminal, json when piped] [possible values: table, json, jsonl, ids, csv]
+      --list <NAME|ID>               The list's exact name or its ID [default: the "Tasks" list]
+      --due <YYYY-MM-DD>             Due date. Due dates have no time; put a time in --reminder
+      --instance <NAME>              Use a separate copy of ms-todo's data (also MS_TODO_INSTANCE). Builds run from Cargo's target/ directory default to "dev"; "default" is the installed copy
+      --reminder <YYYY-MM-DDTHH:MM>  Remind me at this local time
+      --importance <IMPORTANCE>      How important it is [possible values: low, normal, high]
+      --body <TEXT>                  Notes, as plain text
+      --dry-run                      Show what would be sent without changing anything
+  -h, --help                         Print help
+  -V, --version                      Print version

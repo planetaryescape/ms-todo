@@ -107,6 +107,7 @@ fn build_state(paths: &Paths) -> Result<State, String> {
     Ok(State {
         auth,
         graph,
+        known: Default::default(),
         instance: paths.instance.label().to_owned(),
         started_at: chrono::Utc::now().timestamp(),
     })

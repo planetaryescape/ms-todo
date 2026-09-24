@@ -1,7 +1,8 @@
 use bytes::BytesMut;
 use ms_todo_protocol::{
-    Codec, DaemonStatus, ErrorPayload, Event, ListRef, Message, PROTOCOL_VERSION, Payload, Request,
-    Response, ResponseData,
+    Applied, Candidate, Clearable, Codec, DaemonStatus, ErrorPayload, Event, Importance, Message,
+    NewTask, PROTOCOL_VERSION, Payload, Plan, PlannedTask, RawWriteMethod, Request, Response,
+    ResponseData, Rolled, TaskAction, TaskChange, TaskEdit,
 };
 use serde_json::json;
 use tokio_util::codec::{Decoder, Encoder};
@@ -63,7 +64,7 @@ fn every_request_and_response_round_trips() {
         }),
         Payload::Response(Response::Ok {
             data: ResponseData::Tasks {
-                items: vec![entity],
+                items: vec![entity.clone()],
             },
         }),
         Payload::Response(Response::Ok {
@@ -80,10 +81,80 @@ fn every_request_and_response_round_trips() {
                 message: "two lists are called Groceries".into(),
                 graph_code: None,
                 request_id: None,
-                candidates: vec![ListRef {
+                candidates: vec![Candidate {
                     id: "a".into(),
                     name: "Groceries".into(),
                 }],
+                op_id: None,
+                applied: Vec::new(),
+            },
+        }),
+        Payload::Request(Request::RawWrite {
+            method: RawWriteMethod::Patch,
+            path: "/me/todo/lists/L".into(),
+            body: Some(json!({ "displayName": "x" })),
+        }),
+        Payload::Request(Request::AddTask {
+            task: NewTask {
+                title: "Buy milk".into(),
+                list: None,
+                due: Some("2026-09-26".into()),
+                reminder: None,
+                importance: Some(Importance::High),
+                body: None,
+            },
+            dry_run: true,
+        }),
+        Payload::Request(Request::ChangeTasks {
+            tasks: vec!["T1".into(), "T2".into()],
+            list: Some("Groceries".into()),
+            change: TaskChange::Edit(TaskEdit {
+                title: Some("New".into()),
+                due: Some(Clearable::Clear),
+                reminder: Some(Clearable::Set("2026-09-26T09:00".into())),
+                ..TaskEdit::default()
+            }),
+            dry_run: false,
+        }),
+        Payload::Request(Request::ChangeTasks {
+            tasks: vec!["T1".into()],
+            list: None,
+            change: TaskChange::Complete,
+            dry_run: false,
+        }),
+        Payload::Response(Response::Ok {
+            data: ResponseData::Plan(Plan {
+                action: TaskAction::Delete,
+                list: None,
+                targets: vec![PlannedTask {
+                    id: "T1".into(),
+                    title: "Buy milk".into(),
+                    list_id: "L".into(),
+                }],
+                changes: serde_json::Value::Null,
+            }),
+        }),
+        Payload::Response(Response::Ok {
+            data: ResponseData::Applied(Applied {
+                op_id: "op-1".into(),
+                action: TaskAction::Complete,
+                items: vec![entity.clone()],
+                list_ids: vec!["L".into()],
+                rolled: vec![Rolled {
+                    id: "T1".into(),
+                    next_due: "2026-09-27".into(),
+                }],
+            }),
+        }),
+        Payload::Response(Response::Error {
+            error: ErrorPayload {
+                kind: "outcome_unknown".into(),
+                message: "may or may not".into(),
+                graph_code: None,
+                request_id: Some("r".into()),
+                candidates: Vec::new(),
+                op_id: Some("op-1".into()),
+                applied: vec!["T1".into()],
             },
         }),
     ];

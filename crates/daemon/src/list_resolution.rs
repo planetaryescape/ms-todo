@@ -3,7 +3,7 @@
 //! the first match (docs/blueprint/07-cli.md#global-flags).
 
 use ms_todo_core::ErrorKind;
-use ms_todo_protocol::{Entity, ErrorPayload, ListRef};
+use ms_todo_protocol::{Candidate, Entity, ErrorPayload};
 
 use crate::handlers::error_payload as error;
 
@@ -13,7 +13,7 @@ const DEFAULT_LIST: &str = "defaultList";
 pub(crate) fn resolve_list(
     lists: &[Entity],
     wanted: Option<&str>,
-) -> Result<ListRef, ErrorPayload> {
+) -> Result<Candidate, ErrorPayload> {
     let Some(wanted) = wanted else {
         return lists
             .iter()
@@ -26,11 +26,11 @@ pub(crate) fn resolve_list(
                 )
             });
     };
-    let refs: Vec<ListRef> = lists.iter().filter_map(list_ref).collect();
+    let refs: Vec<Candidate> = lists.iter().filter_map(list_ref).collect();
     if let Some(by_id) = refs.iter().find(|list| list.id == wanted) {
         return Ok(by_id.clone());
     }
-    let mut named: Vec<ListRef> = refs
+    let mut named: Vec<Candidate> = refs
         .into_iter()
         .filter(|list| list.name == wanted)
         .collect();
@@ -50,14 +50,15 @@ pub(crate) fn resolve_list(
     }
 }
 
-fn list_ref(list: &Entity) -> Option<ListRef> {
-    Some(ListRef {
+fn list_ref(list: &Entity) -> Option<Candidate> {
+    Some(Candidate {
         id: field(list, "id")?.to_owned(),
         name: field(list, "displayName").unwrap_or_default().to_owned(),
     })
 }
 
-fn field<'a>(entity: &'a Entity, name: &str) -> Option<&'a str> {
+/// A string property of a Graph entity.
+pub(crate) fn field<'a>(entity: &'a Entity, name: &str) -> Option<&'a str> {
     entity.get(name).and_then(|value| value.as_str())
 }
 

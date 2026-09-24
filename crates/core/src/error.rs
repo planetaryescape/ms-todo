@@ -24,6 +24,10 @@ pub enum ErrorKind {
     Unsupported,
     /// The request never got a usable answer: connection, timeout, TLS.
     Network,
+    /// A write was sent, but no answer says whether Graph applied it (a
+    /// timeout or 5xx on a create or a recurring completion, D-028). Check
+    /// before retrying: a blind retry can duplicate it.
+    OutcomeUnknown,
     /// Graph or the identity platform answered with an error, such as a 5xx
     /// after the retries.
     Api,
@@ -49,6 +53,7 @@ impl ErrorKind {
             Self::RateLimited => "rate_limited",
             Self::Unsupported => "unsupported",
             Self::Network => "network",
+            Self::OutcomeUnknown => "outcome_unknown",
             Self::Api => "api",
             Self::Decode => "decode",
             Self::DaemonUnavailable => "daemon_unavailable",
@@ -70,6 +75,7 @@ impl ErrorKind {
             "rate_limited" => Self::RateLimited,
             "unsupported" => Self::Unsupported,
             "network" => Self::Network,
+            "outcome_unknown" => Self::OutcomeUnknown,
             "api" => Self::Api,
             "decode" => Self::Decode,
             "daemon_unavailable" => Self::DaemonUnavailable,
@@ -87,9 +93,12 @@ impl ErrorKind {
             Self::Conflict | Self::Rejected => 5,
             Self::RateLimited => 6,
             Self::Unsupported => 7,
-            Self::Network | Self::Api | Self::Decode | Self::DaemonUnavailable | Self::Internal => {
-                1
-            }
+            Self::Network
+            | Self::OutcomeUnknown
+            | Self::Api
+            | Self::Decode
+            | Self::DaemonUnavailable
+            | Self::Internal => 1,
         }
     }
 }
@@ -112,7 +121,7 @@ pub fn message_with_causes(error: &dyn std::error::Error) -> String {
 mod tests {
     use super::ErrorKind;
 
-    const ALL: [ErrorKind; 14] = [
+    const ALL: [ErrorKind; 15] = [
         ErrorKind::AuthRequired,
         ErrorKind::AuthExpired,
         ErrorKind::AuthRevoked,
@@ -123,6 +132,7 @@ mod tests {
         ErrorKind::RateLimited,
         ErrorKind::Unsupported,
         ErrorKind::Network,
+        ErrorKind::OutcomeUnknown,
         ErrorKind::Api,
         ErrorKind::Decode,
         ErrorKind::DaemonUnavailable,
@@ -143,6 +153,7 @@ mod tests {
     #[test]
     fn exit_codes_follow_the_cli_table() {
         assert_eq!(ErrorKind::Network.exit_code(), 1);
+        assert_eq!(ErrorKind::OutcomeUnknown.exit_code(), 1);
         assert_eq!(ErrorKind::InvalidInput.exit_code(), 2);
         assert_eq!(ErrorKind::NotFound.exit_code(), 3);
         assert_eq!(ErrorKind::Conflict.exit_code(), 5);

@@ -2,13 +2,22 @@
 //! Commands that need Graph ask the daemon (D-031); only `auth login`,
 //! `status` and `logout` sign in or read the token themselves.
 
+// Commands fail with `CliError`, which carries what the error JSON needs
+// and is over clippy's 128 bytes. It's the cold path, once per command, so
+// boxing it everywhere would only add noise.
+#![allow(clippy::result_large_err)]
+
 mod args;
 mod auth_commands;
+mod confirm;
+mod csv_columns;
 mod daemon_client;
 mod daemon_commands;
 mod data_commands;
 mod error;
 mod output;
+mod task_commands;
+mod task_output;
 mod time;
 
 use std::process::ExitCode;
@@ -16,9 +25,10 @@ use std::process::ExitCode;
 use clap::Parser;
 use ms_todo_core::{Instance, Paths};
 use ms_todo_graph::auth::{Authenticator, Endpoints};
+use ms_todo_protocol::TaskChange;
 
 pub use args::Cli;
-use args::{AuthCommand, Command, DaemonCommand, ListsCommand, RawArgs, RawMethod, TasksCommand};
+use args::{AuthCommand, Command, DaemonCommand, ListsCommand, TasksCommand};
 use error::CliError;
 use output::{OutputFormat, print_collection, print_error, print_raw, print_success};
 
@@ -88,10 +98,18 @@ async fn dispatch(command: Command, paths: &Paths, format: OutputFormat) -> Resu
             let items = data_commands::tasks(paths, list).await?;
             print_collection(format, &items, &data_commands::TASKS_TABLE)
         }
-        Command::Raw(RawArgs {
-            method: RawMethod::Get,
-            path,
-        }) => print_raw(format, &data_commands::raw_get(paths, path).await?),
+        Command::Tasks(TasksCommand::Add(args)) => task_commands::add(paths, args, format).await,
+        Command::Tasks(TasksCommand::Complete(args)) => {
+            task_commands::change(paths, args, TaskChange::Complete, format).await
+        }
+        Command::Tasks(TasksCommand::Reopen(args)) => {
+            task_commands::change(paths, args, TaskChange::Reopen, format).await
+        }
+        Command::Tasks(TasksCommand::Delete { targets, yes }) => {
+            task_commands::delete(paths, targets, yes, format).await
+        }
+        Command::Tasks(TasksCommand::Edit(args)) => task_commands::edit(paths, args, format).await,
+        Command::Raw(args) => print_raw(format, &task_commands::raw(paths, args).await?),
         Command::Daemon(DaemonCommand::Start) => {
             print_success(format, &daemon_commands::start(paths).await?)
         }

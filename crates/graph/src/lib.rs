@@ -15,3 +15,5 @@ pub mod retry;
 pub use api_error::ApiError;
 pub use client::{Entity, GraphClient};
 pub use error::GraphError;
+/// The HTTP method of a `raw` write.
+pub use reqwest::Method;
