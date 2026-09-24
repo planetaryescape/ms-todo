@@ -2,7 +2,7 @@
 
 A local-first, keyboard-native terminal client for Microsoft To Do. It has a daemon that keeps a local SQLite cache in sync with Microsoft Graph, and two clients of that daemon: a scriptable CLI with stable JSON output and a very fast ratatui TUI.
 
-**Status: Rung 4b: search.** ms-todo signs in to your Microsoft account, shows every task in any of your lists, finds any task by the words in it, and adds, edits, completes, reopens and deletes tasks, from a terminal or an agent. Reads come from a local cache the daemon keeps in step with Microsoft To Do through delta sync, so they answer in milliseconds and a change on your phone shows up by itself within about 30 seconds while you're using ms-todo. Writes answer at once too, with or without a network: they're queued and sent in the background, and nothing you write is silently dropped. `ms-todo undo` reverses a change. The TUI and quick-add parsing come in later rungs of the [roadmap](docs/blueprint/10-roadmap.md).
+**Status: Rung 5a: TUI.** ms-todo signs in to your Microsoft account, shows every task in any of your lists, finds any task by the words in it, and adds, edits, completes, reopens and deletes tasks, from a terminal or an agent. Reads come from a local cache the daemon keeps in step with Microsoft To Do through delta sync, so they answer in milliseconds and a change on your phone shows up by itself within about 30 seconds while you're using ms-todo. Writes answer at once too, with or without a network: they're queued and sent in the background, and nothing you write is silently dropped. `ms-todo undo` reverses a change. `mst tui` opens a keyboard-driven view of every list. Field editing in the TUI and quick-add parsing come in later rungs of the [roadmap](docs/blueprint/10-roadmap.md).
 
 ## Install
 
@@ -97,6 +97,30 @@ Agents can use the skill in [`skills/ms-todo/SKILL.md`](skills/ms-todo/SKILL.md)
 
 Exit codes: 0 success, 1 network or Graph failure (including `outcome_unknown` and `database_too_new`), 2 invalid input (such as an ambiguous name, or `delete` without `--yes` off a terminal), 3 not found, 4 sign-in needed (run `ms-todo auth login`), 5 conflict or rejected by Graph, 6 rate limited, 7 not supported.
 
+## The TUI
+
+```sh
+mst tui              # or ms-todo tui
+mst tui --ascii      # plain ASCII instead of Unicode symbols
+```
+
+A sidebar of smart views (Important, Planned, All, Completed) and your lists with their counts, the task list, and a detail pane. It opens from the local cache, and changes made anywhere, the phone included, show up as the daemon syncs them. A change you make shows at once, marked pending (dim) until it reaches Microsoft To Do; unknown outcomes are amber and rejected changes red, with a banner saying why.
+
+| Key | Does |
+| --- | --- |
+| `j` / `k`, `g` / `G` | down, up, top, bottom |
+| `h` / `l`, `Tab` | move between the sidebar, the list and the detail pane |
+| `a` | add a task to the current list; the text is taken literally |
+| `x` | complete, or reopen a completed task |
+| `d` | delete, after a `y` / `n` confirmation |
+| `u` | undo the last change; for a repeating task, pick the completed copy to delete |
+| `/` | filter the current view as you type (the same search as `ms-todo search`); `Esc` clears it |
+| `r` | sync now |
+| `?` | every key |
+| `q` | quit |
+
+Everything the TUI does is also a command, so scripts and agents use the commands. `mst tui --bench-startup` measures the start and a run of keys against your cache and prints the timings; `MS_TODO_TUI_TRACE=<file>` writes every keypress's timing to a file.
+
 ## Keep it fresh
 
 The daemon syncs when it starts, every 20 seconds while you're using ms-todo (a client is connected, or asked for anything in the last 10 minutes), every 5 minutes otherwise, and when asked:
@@ -124,7 +148,7 @@ Its socket is private to your user (0600, in a 0700 directory), and its log is `
 
 ## Plan
 
-The design is in [`docs/blueprint/`](docs/blueprint/README.md), the Phase 0 results are in [`12-open-questions.md`](docs/blueprint/12-open-questions.md), and the evidence is in `docs/research/spikes/`. Still open: the S4 deltaLink replay, and product questions Q3, Q6–Q10 and Q12. The build climbs a ladder of usable releases: a foundation turn (install and sign in), rung 1 (see my tasks), rung 2 (capture and finish tasks), rung 3a (instant reads from a local cache), rung 3b (live sync through delta), rung 4 (offline writes that are never lost, and undo), rung 4b (search), and next rung 5 (a fast TUI).
+The design is in [`docs/blueprint/`](docs/blueprint/README.md), the Phase 0 results are in [`12-open-questions.md`](docs/blueprint/12-open-questions.md), and the evidence is in `docs/research/spikes/`. Still open: the S4 deltaLink replay, and product questions Q3, Q6–Q10 and Q12. The build climbs a ladder of usable releases: a foundation turn (install and sign in), rung 1 (see my tasks), rung 2 (capture and finish tasks), rung 3a (instant reads from a local cache), rung 3b (live sync through delta), rung 4 (offline writes that are never lost, and undo), rung 4b (search), rung 5a (a TUI to browse and act in), and next rung 5b (editing, multi-select and the palette in the TUI, and Homebrew).
 
 What's planned:
 

@@ -4,7 +4,7 @@
 
 Skateboard → scooter → bicycle → car (vault: `Skateboard MVP`). The roadmap is a ladder of **usable releases**, not a list of components. Each rung is a working, installable product that lets BK do something new from start to finish, and it's sized to fit one working session (vault: `Shippable Increment Per Session`). lazydap's roadmap follows the same rule (`~/code/planetaryescape/lazydap/docs/blueprint/14-roadmap.md`, "Build philosophy").
 
-- **Every rung is released and installable.** It goes out through release-please as a GitHub release, and installs with `install.sh`. From rung 5 it installs with Homebrew as well.
+- **Every rung is released and installable.** It goes out through release-please as a GitHub release, and installs with `install.sh`. From rung 5b it installs with Homebrew as well.
 - **Ceremony is named and pulled into the nearest useful turn.** The workspace, the boundary test, CI and the release chain produce nothing to demo on their own.
 - **A few named foundation turns are allowed** (up to about three) when a project can't be usable after its first turn. Each is named as a foundation turn, says what it makes possible, and ends with something runnable or checkable. The plan says which turn delivers the first usable rung; after that it's one usable release per turn. Here there's one: **F1**, and rung 1 (the first usable rung) arrives in turn 2.
 - **At most two new unknowns per rung.** Each rung names its unknowns. If a rung needs a third, split it.
@@ -199,17 +199,42 @@ Added at BK's request (2026-09-24), between rung 4 and rung 5.
 
 ## Rung 5: Motorbike: a fast TUI for daily use
 
-**Previously:** a CLI with instant, offline-safe reads and writes. **Now:** the same, plus a keyboard TUI BK can live in, installable with Homebrew.
+Split in two during the build, because one session couldn't hold it (D-043). 5a is a TUI you can browse and act in; 5b makes it the one BK lives in.
+
+### Rung 5a: Motorbike, part 1: browse and act
+
+**Previously:** a CLI with instant, offline-safe reads and writes, and search. **Now:** the same, plus a keyboard TUI over the same daemon.
+
+**Promise:** "I can open `mst tui`, see all my lists and tasks instantly, and add, complete, reopen, delete and undo from the keyboard, with every change reaching the phone."
+
+**Build:**
+
+- Protocol 5: `Seed` (the lists, the smart views' and lists' counts, and one scope's tasks, from the cache) and `Subscribe` (`EntityChanged` with up to 500 IDs, else `ResyncNeeded`; `WriteRejected`; `SyncState`).
+- `crates/tui` over the protocol only ([08](08-tui.md)): the sidebar with Important, Planned (grouped), All, Completed and the lists; the task list with sync markers; the detail pane; the status line; the hint bar; help. Literal add, complete and reopen, delete with a confirmation, undo with the recurring-completion picker, `/` filtering through search (D-041), `r` to sync.
+- The latency budget, measured: tracing spans and `--bench-startup`.
+
+**Demo:** `mst tui`, move through the sidebar and the smart views, add a task, complete it, undo, and watch its sync marker go from pending to synced.
+
+**Done when:**
+
+- Driven against the real account, every step shows up in Graph (`raw GET`), and the marker goes from pending to synced.
+- The measured latencies meet [08](08-tui.md)'s budget: under 16 ms per keypress and view switch, and under 150 ms for a cold start from the cache.
+
+**Left out (5b):** editing fields, multi-select, the palette, the diagnostics page and Homebrew.
+
+### Rung 5b: Motorbike, part 2: a TUI to live in
+
+**Previously:** a TUI to browse and act in. **Now:** the TUI BK runs his day from, installable with Homebrew.
 
 **Promise:** "I can run my day from `ms-todo tui`."
 
 **Build:**
 
-- The TUI over the protocol ([08](08-tui.md)), seeded from the daemon's snapshot: the sidebar, smart views (Important, Planned, All, Completed), the task list, the detail pane, literal add, complete, editing the title, due date and importance, filter, multi-select, undo, the palette, the hint bar, sync markers and the diagnostics page.
-- The latency budget, measured through tracing.
-- The Homebrew formula.
+- Editing the title, due date, importance, reminder and notes in place.
+- Multi-select (`v`) with the bulk actions, the command palette (`:`), and the diagnostics page (`ms-todo doctor` in the TUI).
+- The Homebrew formula, linking `mst` too (D-039).
 
-**New unknowns:** the ClientSeed-plus-events model under real use; meeting the latency budget over IPC.
+**New unknowns:** the ClientSeed-plus-events model under a day of real use.
 
 **Demo:** `brew install`, then `ms-todo tui`, then a morning's worth of tasks.
 
@@ -217,7 +242,7 @@ Added at BK's request (2026-09-24), between rung 4 and rung 5.
 
 - On a clean machine, `brew install` (or `install.sh`) followed by `ms-todo auth login` and `ms-todo tui` works.
 - BK uses it for a day and every change made in the TUI shows up on the phone.
-- The measured latencies meet [08](08-tui.md)'s budget: under 16 ms per keypress and under 150 ms for a cold start.
+- The latency budget still holds, measured the same way as in 5a.
 
 **Left out:** quick-add parsing and live highlighting, the My Day and Assigned views, folders in the sidebar.
 
