@@ -1,5 +1,22 @@
 # Changelog
 
+## [0.1.8](https://github.com/planetaryescape/ms-todo/compare/v0.1.7...v0.1.8) (2026-09-24)
+
+
+### Features
+
+* browse and act on your tasks in mst tui ([9d57a1a](https://github.com/planetaryescape/ms-todo/commit/9d57a1a193780d6deeeae795e9c83fda1eae8959))
+
+
+### Bug Fixes
+
+* never act on a stale list after switching scope ([135151b](https://github.com/planetaryescape/ms-todo/commit/135151b06f039e94bccf96f3ed0a066a7605165e))
+
+
+### Documentation
+
+* add rungs 5a and 5b, D-043, and the TUI to the README ([9882c5e](https://github.com/planetaryescape/ms-todo/commit/9882c5e35c1faa939a33e7d5c41f3ca4a0ef6bdb))
+
 ## [0.1.7](https://github.com/planetaryescape/ms-todo/compare/v0.1.6...v0.1.7) (2026-09-24)
 
 
