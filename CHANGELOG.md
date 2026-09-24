@@ -1,5 +1,22 @@
 # Changelog
 
+## [0.1.2](https://github.com/planetaryescape/ms-todo/compare/v0.1.1...v0.1.2) (2026-09-24)
+
+
+### Features
+
+* capture and finish tasks from the CLI ([0d67c46](https://github.com/planetaryescape/ms-todo/commit/0d67c460caf85e8f5055f4a32ceaf89f3cfa68e9))
+
+
+### Bug Fixes
+
+* report outcome_unknown when a sent mutation loses its reply ([557d161](https://github.com/planetaryescape/ms-todo/commit/557d1611ab7d8cea3ac12ad3144cb82cdcb91de9))
+
+
+### Documentation
+
+* move schema command to rung 3a ([d4e3738](https://github.com/planetaryescape/ms-todo/commit/d4e3738ce9e094dfa0e89bcd8273bf9ffbd321b1))
+
 ## [0.1.1](https://github.com/planetaryescape/ms-todo/compare/v0.1.0...v0.1.1) (2026-09-24)
 
 
