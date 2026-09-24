@@ -98,6 +98,8 @@ jobs:
           ARCHIVE="ms-todo-${TAG}-${PLATFORM}.tar.gz"
           mkdir -p package
           cp "target/${TARGET}/release/ms-todo" README.md LICENSE-MIT LICENSE-APACHE package/
+          # The official short alias (D-039); tar keeps the symlink.
+          ln -s ms-todo package/mst
           tar czf "$ARCHIVE" -C package .
           shasum -a 256 "$ARCHIVE" > "${ARCHIVE}.sha256"
           gh release upload "$TAG" "$ARCHIVE" "${ARCHIVE}.sha256" \

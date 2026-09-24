@@ -34,8 +34,13 @@ impl Env {
     }
 
     pub fn cmd(&self) -> Command {
+        self.cmd_at(&assert_cmd::cargo::cargo_bin("ms-todo"))
+    }
+
+    /// Like [`Env::cmd`], but runs `program`, such as a symlink to the binary.
+    pub fn cmd_at(&self, program: &std::path::Path) -> Command {
         let home = self.home.path();
-        let mut command = Command::cargo_bin("ms-todo").expect("ms-todo binary");
+        let mut command = Command::new(program);
         command
             .env("HOME", home)
             .env("XDG_DATA_HOME", home.join("data"))

@@ -213,3 +213,8 @@ BK checked the blueprint against his Obsidian notes and approved folding these g
 - **404 and 5xx keep the link.** The Graph client already retries a 5xx with backoff inside the request. After that, or on a 404, the scope fails and the next pass replays the same link. A tasks-delta 404 first checks `GET /me/todo/lists/{id}`: a 404 there tombstones the list and its tasks and drops its cursor (S4).
 - **Cadence:** a pass every 20 seconds while any client is connected or has sent a request in the last 10 minutes, otherwise every 5 minutes, measured from the end of the last pass. The first request after an idle spell brings the next pass forward. No `sync.interval_secs` setting yet.
 - **Not built, and still to be placed:** `--fresh`, the TUI focus hint, attachment metadata (rung 8b), and syncing after the outbox sends (rung 4).
+
+### D-039: `mst` is an official alias of `ms-todo`. (BK, 2026-09-24)
+- **Chosen:** one binary, with `mst` as a symlink to it. `install.sh` creates `mst -> ms-todo` next to the binary (skipped with `MS_TODO_NO_ALIAS=1`, and never over an existing `mst` that isn't that link), and the release tarballs include the symlink. Homebrew will link it too (rung 5).
+- **Option rejected:** a second `[[bin]]`, which would double the release size and the build time.
+- **How the CLI behaves under it:** clap takes the usage name from `argv[0]`, so `mst --help` shows `Usage: mst`. `--version` still prints `ms-todo <version>`, and error hints say `ms-todo`, which always works. The daemon starts from `current_exe()`, and instance detection canonicalizes that path, so an installed `mst` is never mistaken for a `target/` build.

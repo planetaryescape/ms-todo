@@ -17,6 +17,8 @@ it against the .sha256 file published with the GitHub release first.
 Environment:
   MS_TODO_VERSION      Release version, e.g. v0.1.0. Defaults to latest.
   MS_TODO_INSTALL_DIR  Install directory. Defaults to ~/.local/bin.
+  MS_TODO_NO_ALIAS     Set to 1 to skip the mst symlink, the official short
+                       alias for ms-todo.
 EOF
 }
 
@@ -106,6 +108,21 @@ fi
 mkdir -p "$install_dir"
 install -m 0755 "$tmpdir/ms-todo" "$install_dir/ms-todo"
 echo "installed ms-todo $tag to $install_dir/ms-todo"
+
+# `mst` is the official short alias (D-039): a relative symlink, so it follows
+# the install directory if that moves. Never replace someone else's `mst`.
+if [ "${MS_TODO_NO_ALIAS:-0}" != "1" ]; then
+  alias_path="$install_dir/mst"
+  if [ -L "$alias_path" ] && [ "$(readlink "$alias_path")" = "ms-todo" ]; then
+    :
+  elif [ -e "$alias_path" ] || [ -L "$alias_path" ]; then
+    echo "warning: $alias_path already exists and isn't a link to ms-todo; left it alone" >&2
+    echo "         use ms-todo, or remove $alias_path and run this again for the mst alias" >&2
+  else
+    ln -s ms-todo "$alias_path"
+    echo "linked $alias_path -> ms-todo"
+  fi
+fi
 
 case ":$PATH:" in
   *":$install_dir:"*) ;;

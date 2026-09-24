@@ -14,6 +14,8 @@ curl -fsSL https://raw.githubusercontent.com/planetaryescape/ms-todo/main/instal
 
 This installs the latest release to `~/.local/bin/ms-todo` after checking the archive's sha256. Set `MS_TODO_INSTALL_DIR` to install somewhere else. To pin a release, end the command with `| sh -s -- --version v0.1.0`. The binary isn't signed yet, but macOS doesn't quarantine files downloaded with `curl`, so Gatekeeper doesn't block it.
 
+`mst` is an official short alias for `ms-todo`. The installer links `~/.local/bin/mst` to `ms-todo`, and the release archives include the link. It never replaces an existing `mst` that isn't that link, and `MS_TODO_NO_ALIAS=1` skips it.
+
 ## Sign in
 
 ```sh

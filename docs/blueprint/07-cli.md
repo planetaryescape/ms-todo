@@ -1,5 +1,7 @@
 # 07: CLI
 
+> **`mst` is an official alias of `ms-todo`** (D-039 in [11](11-decision-log.md)): a symlink to the same binary, so every command here works as `mst …` too. Help and usage show the name you typed. `--version`, error hints and these docs say `ms-todo`, which always works.
+
 The CLI is the canonical surface (spotuify's contract): **every feature has a CLI subcommand.** A feature that only exists in the TUI isn't finished.
 
 ## Global flags
