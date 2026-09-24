@@ -26,15 +26,19 @@ mod task_output;
 mod time;
 mod tui_command;
 
+use std::io::IsTerminal;
 use std::process::ExitCode;
 
-use clap::Parser;
+use clap::{CommandFactory, FromArgMatches};
 use ms_todo_core::{Instance, Paths};
 use ms_todo_graph::auth::{Authenticator, Endpoints};
 use ms_todo_protocol::TaskChange;
 
 pub use args::Cli;
-use args::{AuthCommand, Command, DaemonCommand, ListsCommand, OutboxCommand, TasksCommand};
+use args::{
+    AuthCommand, Command, DaemonCommand, GlobalArgs, ListsCommand, OutboxCommand, TasksCommand,
+    TuiArgs,
+};
 use error::CliError;
 use output::{OutputFormat, print_collection, print_error, print_raw, print_success};
 
@@ -49,9 +53,30 @@ pub type DaemonEntry = fn(Paths) -> ExitCode;
 pub fn run(daemon: DaemonEntry) -> ExitCode {
     // The TUI's cold start is measured from here.
     let started = std::time::Instant::now();
-    let cli = Cli::parse();
+    // Parsed by hand rather than `Cli::parse()` to keep clap's `Command`:
+    // it has the name as typed (`mst`, D-039) for the help below.
+    let mut definition = Cli::command();
+    let cli = match Cli::from_arg_matches(&definition.get_matches_mut()) {
+        Ok(cli) => cli,
+        Err(error) => error.exit(),
+    };
     let format = OutputFormat::resolve(cli.global.format);
-    match execute(cli, format, daemon, started) {
+    let command = match cli.command {
+        Some(command) => command,
+        None if bare_opens_tui(
+            std::io::stdin().is_terminal(),
+            std::io::stdout().is_terminal(),
+        ) =>
+        {
+            Command::Tui(TuiArgs::default())
+        }
+        None => {
+            // As clap does for a missing subcommand.
+            eprint!("{}", definition.render_help());
+            return ExitCode::from(2);
+        }
+    };
+    match execute(&cli.global, command, format, daemon, started) {
         Ok(code) => code,
         Err(error) if error.stdout_closed => ExitCode::SUCCESS,
         Err(error) => {
@@ -61,25 +86,33 @@ pub fn run(daemon: DaemonEntry) -> ExitCode {
     }
 }
 
+/// Whether `ms-todo` with no command opens the TUI: only when a person is
+/// at the terminal on both ends. A script, a pipe or an agent gets help and
+/// exit 2 instead, as before the TUI existed.
+fn bare_opens_tui(stdin_is_terminal: bool, stdout_is_terminal: bool) -> bool {
+    stdin_is_terminal && stdout_is_terminal
+}
+
 fn execute(
-    cli: Cli,
+    global: &GlobalArgs,
+    command: Command,
     format: OutputFormat,
     daemon: DaemonEntry,
     started: std::time::Instant,
 ) -> Result<ExitCode, CliError> {
-    let instance = Instance::detect(cli.global.instance.as_deref())?;
+    let instance = Instance::detect(global.instance.as_deref())?;
     let paths = Paths::resolve(instance)?;
-    if let Command::Daemon(DaemonCommand::Run) = cli.command {
+    if let Command::Daemon(DaemonCommand::Run) = command {
         return Ok(daemon(paths));
     }
     let runtime = tokio::runtime::Builder::new_current_thread()
         .enable_all()
         .build()?;
-    if let Command::Tui(args) = cli.command {
+    if let Command::Tui(args) = command {
         runtime.block_on(tui_command::tui(&paths, args, started))?;
         return Ok(ExitCode::SUCCESS);
     }
-    runtime.block_on(dispatch(cli.command, &paths, format))?;
+    runtime.block_on(dispatch(command, &paths, format))?;
     Ok(ExitCode::SUCCESS)
 }
 
@@ -167,4 +200,17 @@ fn authenticator(paths: &Paths) -> Result<Authenticator, CliError> {
 /// The daemon answered a request with the wrong kind of data.
 fn unexpected_response() -> CliError {
     daemon_client::mismatch("the daemon sent an unexpected answer")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::bare_opens_tui;
+
+    #[test]
+    fn a_bare_command_opens_the_tui_only_with_a_terminal_on_both_ends() {
+        assert!(bare_opens_tui(true, true));
+        assert!(!bare_opens_tui(true, false), "piped: `mst | less`");
+        assert!(!bare_opens_tui(false, true), "fed: `mst < file`");
+        assert!(!bare_opens_tui(false, false), "an agent or a script");
+    }
 }

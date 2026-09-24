@@ -9,8 +9,10 @@ pub struct Cli {
     #[command(flatten)]
     pub global: GlobalArgs,
 
+    /// With none, a terminal opens the TUI; anything else gets this help
+    /// and exit 2, so a script never blocks on a full-screen view.
     #[command(subcommand)]
-    pub command: Command,
+    pub command: Option<Command>,
 }
 
 #[derive(Debug, Args)]
@@ -345,7 +347,7 @@ pub enum DaemonCommand {
     Run,
 }
 
-#[derive(Debug, Args)]
+#[derive(Debug, Default, Args)]
 pub struct TuiArgs {
     /// Draw with plain ASCII instead of Unicode symbols
     #[arg(long)]

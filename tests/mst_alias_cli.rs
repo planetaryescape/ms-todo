@@ -40,12 +40,22 @@ fn help_through_the_alias_shows_the_typed_name() {
     let env = Env::new();
     let mst = mst(&env);
     let root = stdout(&env, &mst, &["--help"]);
-    assert!(root.contains("Usage: mst [OPTIONS] <COMMAND>"), "{root}");
+    assert!(root.contains("Usage: mst [OPTIONS] [COMMAND]"), "{root}");
     let tasks = stdout(&env, &mst, &["tasks", "--help"]);
     assert!(
         tasks.contains("Usage: mst tasks [OPTIONS] <COMMAND>"),
         "{tasks}"
     );
+}
+
+#[test]
+fn bare_mst_off_a_terminal_prints_help_with_the_typed_name_and_exits_2() {
+    let env = Env::new();
+    let mst = mst(&env);
+    let output = env.cmd_at(&mst).assert().code(2).get_output().clone();
+    assert!(output.stdout.is_empty());
+    let help = String::from_utf8(output.stderr).expect("utf8");
+    assert!(help.contains("Usage: mst [OPTIONS] [COMMAND]"), "{help}");
 }
 
 #[test]

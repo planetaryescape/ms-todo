@@ -4,6 +4,8 @@
 
 The CLI is the canonical surface (spotuify's contract): **every feature has a CLI subcommand.** A feature that only exists in the TUI isn't finished.
 
+**With no command** (`ms-todo` or `mst` alone), the CLI opens the TUI when both stdin and stdout are terminals, the same as `tui` with no flags. Off a terminal (a script, a pipe, an agent) it prints help to stderr and exits 2, so nothing blocks on a full-screen view. Global flags apply to the bare form (`mst --instance work`); TUI flags such as `--ascii` need `tui` (D-044).
+
 ## Global flags
 
 - `--format table|json|jsonl|ids|csv`: default `table` in a terminal and `json` when piped. The format enum is adapted from spotuify's `spotuify-protocol/src/output.rs` (see [09](09-reuse-map.md)), and mxr has the same idea. `csv` is RFC 4180 with a header row, which is its schema (no `schema_version` column), and one fixed column set per entity type: tasks `id,title,status,importance,due,reminder,categories,created,modified,sync_state` (plus `list` on mutation results, which can span lists; `sync_state` since rung 4, D-040), lists `id,name,wellknown,is_owner,is_shared`, search results `id,title,list,status,due,snippet`. Arrays are joined with `;` and dates are ISO 8601. A task's body isn't a column: multi-line text or HTML breaks row-oriented use. Single results (`auth status`, `daemon status`) are one row; mutation results are one row per entity; errors are human text on stderr, as in table mode. (Added in rung 2 at BK's request.)

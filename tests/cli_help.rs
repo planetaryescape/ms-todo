@@ -25,6 +25,29 @@ fn help_output(args: &[&str]) -> String {
     normalized
 }
 
+/// No command off a terminal (assert_cmd gives none): help on stderr and
+/// exit 2, never the TUI, so a script or an agent can't block on it. The
+/// global flags are still read.
+#[test]
+fn a_bare_command_off_a_terminal_prints_help_and_exits_2() {
+    for args in [&[][..], &["--instance", "bare-test"][..]] {
+        let output = Command::cargo_bin("ms-todo")
+            .expect("ms-todo binary")
+            .args(args)
+            .assert()
+            .code(2)
+            .get_output()
+            .clone();
+        assert!(output.stdout.is_empty(), "{args:?}");
+        let help = String::from_utf8(output.stderr).expect("utf8");
+        assert!(
+            help.contains("Usage: ms-todo [OPTIONS] [COMMAND]"),
+            "{args:?}: {help}"
+        );
+        assert!(help.contains("tui "), "{help}");
+    }
+}
+
 #[test]
 fn cli_help_snapshots_cover_all_commands() {
     let cases: &[(&str, &[&str])] = &[

@@ -5,9 +5,9 @@ description: Read, find, add, complete, reopen, edit and delete Microsoft To Do 
 
 # ms-todo
 
-**Skill v3, for ms-todo rung 5a** (instant reads from a local cache kept live by delta sync; search across every list; instant writes that queue offline and are never dropped; undo. No quick-add parsing yet).
+**Skill v3, for ms-todo rung 5b** (instant reads from a local cache kept live by delta sync; search across every list; instant writes that queue offline and are never dropped; undo. No quick-add parsing yet).
 
-`ms-todo tui` (`mst tui`) is a full-screen view for people at a keyboard. Don't use it: it needs a terminal, and everything it does is a command below.
+`ms-todo tui` (`mst tui`) is a full-screen view for people at a keyboard. Don't use it: it needs a terminal, and everything it does is a command below. Always pass a subcommand: a bare `ms-todo` opens the TUI in a terminal, and elsewhere only prints help and exits 2.
 
 `ms-todo` is a terminal client for Microsoft To Do. The CLI is its canonical surface: drive it with shell commands. `mst` is an official alias for the same binary, so either name works; prefer `ms-todo` in scripts because it's more descriptive. A background daemon talks to Microsoft Graph and keeps a local cache; the first command starts it. Reads come from the cache, which the daemon refreshes on start, every 20 seconds while ms-todo is in use (every 5 minutes otherwise) and on `ms-todo sync`.
 

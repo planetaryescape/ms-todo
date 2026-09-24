@@ -4,7 +4,7 @@ expression: help_output(args)
 ---
 A local-first, keyboard-native terminal client for Microsoft To Do
 
-Usage: ms-todo [OPTIONS] <COMMAND>
+Usage: ms-todo [OPTIONS] [COMMAND]
 
 Commands:
   auth    Sign in to Microsoft, check the sign-in, or sign out
