@@ -4,9 +4,9 @@
 
 ## Status
 
-**There's no code yet.** This repo holds a complete blueprint written in the planning session on 2026-09-24. You're probably the agent that builds it, on a different machine from the one where it was planned.
+**Foundation turn F1 is built** (install and sign in): the Cargo workspace (`crates/core`, `crates/graph`, `crates/cli`), `ms-todo auth login|status|logout`, CI, the release-please chain and `install.sh`. The blueprint was written in the planning session on 2026-09-24, on a different machine from the build.
 
-**Phase 0 is done** (2026-09-24). The spike results are in `docs/blueprint/12-open-questions.md` and the evidence in `docs/research/spikes/`. Still open: the phone halves of spikes S7 and S11, the S4 deltaLink replay, and product questions Q3 and Q6–Q12. The next session builds foundation turn F1 of the roadmap (install and sign in); rung 1, the first usable rung, follows (D-034). Every rung of `docs/blueprint/10-roadmap.md` is a usable release.
+**Phase 0 is done** (2026-09-24). The spike results are in `docs/blueprint/12-open-questions.md` and the evidence in `docs/research/spikes/`. Still open: the phone halves of spikes S7 and S11, the S4 deltaLink replay, and product questions Q3 and Q6–Q12. The next session builds rung 1, the first usable rung (D-034). Every rung of `docs/blueprint/10-roadmap.md` is a usable release.
 
 ## Start here
 
