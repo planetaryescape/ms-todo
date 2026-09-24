@@ -100,8 +100,13 @@ pub fn print_collection(
             },
         ),
         OutputFormat::Jsonl => {
+            // No envelope in JSONL, so each record carries the version.
             for item in items {
-                serde_json::to_writer(&mut stdout, item).map_err(std::io::Error::from)?;
+                let record = Versioned {
+                    schema_version: SCHEMA_VERSION,
+                    inner: item,
+                };
+                serde_json::to_writer(&mut stdout, &record).map_err(std::io::Error::from)?;
                 writeln!(stdout)?;
             }
             Ok(())

@@ -263,6 +263,23 @@ async fn lists_and_tasks_come_back_in_the_collection_envelope() {
     let by_id = env.json(&["tasks", "list", "--list", "L-b"]);
     assert_eq!(by_id["items"], json!([]));
 
+    let jsonl = env
+        .cmd()
+        .args(["--format", "jsonl", "lists", "list"])
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+    let records: Vec<Value> = String::from_utf8(jsonl)
+        .expect("utf8")
+        .lines()
+        .map(|line| serde_json::from_str(line).expect("one JSON object per line"))
+        .collect();
+    assert_eq!(records.len(), 3);
+    assert!(records.iter().all(|record| record["schema_version"] == 1));
+    assert_eq!(records[2]["id"], "L-b");
+
     let ids = env
         .cmd()
         .args(["--format", "ids", "lists", "list"])
