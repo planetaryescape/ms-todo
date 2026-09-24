@@ -77,7 +77,7 @@ op item create --category "API Credential" --title "ms-todo Entra app" \
 ms-todo takes it from any of these, highest priority first:
 
 1. the `MS_TODO_CLIENT_ID` environment variable, e.g. `export MS_TODO_CLIENT_ID=$(op read "op://Environment Variables/ms-todo Entra app/client_id")`
-2. `auth.client_id` in `<config_dir>/ms-todo/config.toml`
+2. `auth.client_id` in `~/.config/ms-todo/config.toml` (or `$XDG_CONFIG_HOME/ms-todo/config.toml`, or `$MS_TODO_CONFIG_DIR/config.toml`)
 3. the ID built into release builds
 
 ## Step 5: Check it works (before any ms-todo code exists)

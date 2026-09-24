@@ -2,7 +2,7 @@
 
 A local-first, keyboard-native terminal client for Microsoft To Do. It has a daemon that keeps a local SQLite cache in sync with Microsoft Graph, and two clients of that daemon: a scriptable CLI with stable JSON output and a very fast ratatui TUI.
 
-**Status: F1, install and sign in.** ms-todo installs and signs in to your Microsoft account. Lists and tasks arrive in the next release (rung 1 of the [roadmap](docs/blueprint/10-roadmap.md)).
+**Status: rung 1, see my tasks.** ms-todo signs in to your Microsoft account and shows every task in any of your lists, from a terminal or an agent. It's read-only for now: adding and completing tasks arrive in the next release (rung 2 of the [roadmap](docs/blueprint/10-roadmap.md)).
 
 ## Install
 
@@ -22,7 +22,33 @@ ms-todo auth status   # account, token expiry, client ID and scopes
 ms-todo auth logout
 ```
 
-Release builds sign in through the maintainer's Entra app registration. You can [register your own](docs/setup/entra-app-registration.md) in about 10 minutes and set `MS_TODO_CLIENT_ID`, or `client_id` under `[auth]` in `<config_dir>/ms-todo/config.toml`. `auth status` shows which client ID is in use. Output is a table in a terminal and JSON when piped (`--format table|json`). A command that needs you to sign in exits with code 4.
+Release builds sign in through the maintainer's Entra app registration. You can [register your own](docs/setup/entra-app-registration.md) in about 10 minutes and set `MS_TODO_CLIENT_ID`, or `client_id` under `[auth]` in `~/.config/ms-todo/config.toml` (`$XDG_CONFIG_HOME` and `$MS_TODO_CONFIG_DIR` move it). `auth status` shows which client ID is in use.
+
+## See your tasks
+
+```sh
+ms-todo lists list                    # every list
+ms-todo tasks list                    # every task in "Tasks", completed ones included
+ms-todo tasks list --list Groceries   # by exact name, or by the ID from `lists list`
+ms-todo raw GET /me/todo/lists        # any Graph v1.0 path, authenticated
+ms-todo auth bearer --reveal-secret   # a valid access token, for curl
+```
+
+Output is a table in a terminal and JSON when piped. `--format json|jsonl|ids|table` picks one. JSON is `{ "schema_version": 1, "items": [...] }`, and each item has every field Graph returns, with Graph's ID as `id`. `--format ids` prints one ID per line. A `--list` name that matches more than one list is an error that lists the candidates; ms-todo never picks one for you.
+
+Exit codes: 0 success, 1 network or Graph failure, 2 invalid input (such as an ambiguous list name), 3 not found, 4 sign-in needed (run `ms-todo auth login`), 5 rejected by Graph, 6 rate limited, 7 not supported.
+
+## The daemon
+
+The first command that needs Microsoft Graph starts a small background daemon, which is the only process that talks to Graph and refreshes your sign-in. You don't need to manage it, but you can:
+
+```sh
+ms-todo daemon status
+ms-todo daemon stop    # returns once the daemon's process has exited
+ms-todo daemon start
+```
+
+Its socket is private to your user (0600, in a 0700 directory), and its log is `daemon.log` in the data directory's `logs/`. A newer ms-todo restarts an older daemon by itself.
 
 ## Plan
 

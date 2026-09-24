@@ -4,9 +4,9 @@
 
 ## Status
 
-**Foundation turn F1 is built** (install and sign in): the Cargo workspace (`crates/core`, `crates/graph`, `crates/cli`), `ms-todo auth login|status|logout`, CI, the release-please chain and `install.sh`. The blueprint was written in the planning session on 2026-09-24, on a different machine from the build.
+**Rung 1 is built** (see my tasks), on top of F1 (install and sign in). The workspace is `crates/core`, `crates/protocol`, `crates/graph` (sign-in, the HTTP client, endpoints), `crates/daemon` and `crates/cli`. A minimal daemon reads lists and tasks straight from Graph, with no cache yet (D-034); the CLI has `auth`, `lists list`, `tasks list`, `raw GET` and `daemon start|stop|status`. Rung 2 (capture and finish tasks) is next. The blueprint was written in the planning session on 2026-09-24, on a different machine from the build.
 
-**Phase 0 is done** (2026-09-24). The spike results are in `docs/blueprint/12-open-questions.md` and the evidence in `docs/research/spikes/`. Still open: the phone halves of spikes S7 and S11, the S4 deltaLink replay, and product questions Q3 and Q6–Q12. The next session builds rung 1, the first usable rung (D-034). Every rung of `docs/blueprint/10-roadmap.md` is a usable release.
+**Phase 0 is done** (2026-09-24). The spike results are in `docs/blueprint/12-open-questions.md` and the evidence in `docs/research/spikes/`. Still open: the phone halves of spikes S7 and S11, the S4 deltaLink replay, and product questions Q3 and Q6–Q12. Every rung of `docs/blueprint/10-roadmap.md` is a usable release.
 
 ## Start here
 
@@ -21,6 +21,8 @@
 - **Clients use the daemon protocol only** (D-031). Neither the CLI nor the TUI touches SQLite or Graph directly.
 - **Every feature is in the CLI.** A feature that only exists in the TUI is incomplete. Verify your work by driving the `ms-todo` binary against the real account (dev instance), not only through unit tests.
 - **Reuse before rewriting.** `docs/blueprint/09-reuse-map.md` lists the exact files to adapt from `planetaryescape/mxr` and `planetaryescape/spotuify`, with SHAs. Fetch both and check for newer fixes before copying.
+- **Instances.** Binaries run from `target/{debug,release}` use the `dev` instance (`ms-todo-dev` data, socket and daemon). Installed binaries use the default instance. Pass `--instance default` (or `MS_TODO_INSTANCE=default`) only when you mean to reach the installed copy's sign-in and daemon.
+- **Stopping daemons.** Don't broad-`pkill` ms-todo daemons: stop an instance with `ms-todo [--instance NAME] daemon stop`, so dev and installed daemons don't kill each other. A stop is done only when the socket is unreachable and the daemon's PID has exited; the CLI waits for both. When diagnosing, check the old PID is gone before starting another daemon. (Adapted from spotuify's `AGENTS.md`.)
 - Issues are tracked as markdown in `docs/issues/`, not GitHub Issues.
 - Commits use the format `type: description`. BK is the only author, with no co-author lines.
 

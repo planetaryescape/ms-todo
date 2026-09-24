@@ -70,9 +70,9 @@ Length-delimited JSON (`tokio_util::codec::LengthDelimitedCodec`) over a Unix so
 
 ## Files
 
-Resolve paths with the `dirs` crate:
+Resolve data and runtime paths with the `dirs` crate:
 
-- Config: `<config_dir>/ms-todo/config.toml`
+- Config: `config.toml` in `$MS_TODO_CONFIG_DIR`, else `$XDG_CONFIG_HOME/ms-todo/`, else `~/.config/ms-todo/`, on macOS as well as Linux. Not `dirs::config_dir()`, which is `~/Library/Application Support` on macOS (D-035).
 - Data: `<data_dir>/ms-todo/`, containing:
   - `ms-todo.db`: SQLite, WAL mode
   - `auth/token.json`: mode 0600

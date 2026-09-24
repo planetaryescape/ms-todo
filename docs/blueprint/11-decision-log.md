@@ -174,3 +174,8 @@ BK checked the blueprint against his Obsidian notes and approved folding these g
 - **The ladder:** 1 skateboard (see my tasks), 2 scooter (capture and finish tasks), 3a bicycle (instant reads), 3b live sync, 4 e-bike (offline, never lose a write), 5 motorbike (TUI), 6 car (quick add), 7 convertible (My Day), 8a–8e rocket (the rest of the API, one capability per release).
 - **Foundation turns:** up to about three named foundation turns may come before the first usable rung, each saying what it makes possible and ending with something runnable or checkable. ms-todo has one, F1 (install and sign in), so rung 1 arrives in turn 2.
 - **Trade-off, accepted:** rung 1's daemon reads straight from Graph, and rung 3a replaces that read handler with the cache. Entity `id`s change meaning at rung 3a (Graph ID to local ID), with a `schema_version` bump. That's rework `Skateboard MVP` accepts on purpose: "more re-work in exchange for de-risking". D-031 and D-032 still hold: clients only ever talk to the daemon, and the daemon is the only token refresher.
+
+### D-035: Config lives in `~/.config/ms-todo` (XDG) on every Unix, not the macOS Application Support dir. (BK, 2026-09-24)
+- **Replaces:** `<config_dir>/ms-todo/config.toml` in [01](01-architecture.md#files), which `dirs::config_dir()` put in `~/Library/Application Support` on macOS.
+- **Rule:** `config.toml` in `$MS_TODO_CONFIG_DIR`, else `$XDG_CONFIG_HOME/ms-todo`, else `~/.config/ms-todo`. Data (the token, logs and later the cache) stays in the platform data directory.
+- **Why:** most CLIs keep config there, on macOS too.
