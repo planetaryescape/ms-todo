@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.1.7](https://github.com/planetaryescape/ms-todo/compare/v0.1.6...v0.1.7) (2026-09-24)
+
+
+### Features
+
+* find any task by the words in it with search ([69fa990](https://github.com/planetaryescape/ms-todo/commit/69fa9907e26bf870bd4ed3b4197e3c73ec0765a7))
+
+
+### Documentation
+
+* add rung 4b search, D-041 and D-042 ([59e71eb](https://github.com/planetaryescape/ms-todo/commit/59e71ebdedf3f86d112e51a6713728407e1ab66c))
+
 ## [0.1.6](https://github.com/planetaryescape/ms-todo/compare/v0.1.5...v0.1.6) (2026-09-24)
 
 
