@@ -244,7 +244,9 @@ Split in two during the build, because one session couldn't hold it (D-043). 5a 
 - BK uses it for a day and every change made in the TUI shows up on the phone.
 - The latency budget still holds, measured the same way as in 5a.
 
-**Left out:** quick-add parsing and live highlighting, the My Day and Assigned views, folders in the sidebar.
+**As built (2026-09-25, D-044):** editing, multi-select, the palette and the diagnostics page are driven live on the `livetest` instance: a title, due date, reminder, importance and notes edited in the TUI read back from Graph with `raw GET`, two tasks completed together as one command and then deleted together. `mst` alone opens the TUI in a terminal. The latency budget holds: cold start 5.7 ms, keypress median 1.1 ms (p95 2.3 ms), view switch p95 5.9 ms with `--bench-startup`; in the live session, 383 keypresses p95 0.9 ms and writes drawn p95 4.1 ms. **Still to check:** `brew install` on a clean machine, which needs the first release with the formula (the release workflow pushes it to the tap), and BK's day of use with the phone.
+
+**Left out:** quick-add parsing and live highlighting, the My Day and Assigned views, folders in the sidebar, a multi-line notes editor (existing line breaks are kept, new ones can't be typed yet), and the steps editor.
 
 ## Rung 6: Car: quick add
 
