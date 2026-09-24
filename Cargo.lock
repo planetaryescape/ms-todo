@@ -1388,7 +1388,7 @@ dependencies = [
 
 [[package]]
 name = "ms-todo"
-version = "0.1.6"
+version = "0.1.7"
 dependencies = [
  "assert_cmd",
  "chrono",
@@ -1406,7 +1406,7 @@ dependencies = [
 
 [[package]]
 name = "ms-todo-cli"
-version = "0.1.6"
+version = "0.1.7"
 dependencies = [
  "chrono",
  "clap",
@@ -1426,7 +1426,7 @@ dependencies = [
 
 [[package]]
 name = "ms-todo-core"
-version = "0.1.6"
+version = "0.1.7"
 dependencies = [
  "chrono",
  "dirs",
@@ -1435,7 +1435,7 @@ dependencies = [
 
 [[package]]
 name = "ms-todo-daemon"
-version = "0.1.6"
+version = "0.1.7"
 dependencies = [
  "chrono",
  "fs2",
@@ -1455,7 +1455,7 @@ dependencies = [
 
 [[package]]
 name = "ms-todo-graph"
-version = "0.1.6"
+version = "0.1.7"
 dependencies = [
  "chrono",
  "fastrand",
@@ -1473,7 +1473,7 @@ dependencies = [
 
 [[package]]
 name = "ms-todo-protocol"
-version = "0.1.6"
+version = "0.1.7"
 dependencies = [
  "bytes",
  "serde",
@@ -1484,7 +1484,7 @@ dependencies = [
 
 [[package]]
 name = "ms-todo-store"
-version = "0.1.6"
+version = "0.1.7"
 dependencies = [
  "chrono",
  "html2text",
