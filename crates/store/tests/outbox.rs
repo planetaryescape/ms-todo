@@ -181,10 +181,11 @@ async fn a_rejection_rolls_back_only_what_it_changed_and_restart_settles_infligh
     let t1 = store.task("T1").await.expect("read").expect("T1");
     assert_eq!(t1.title, "Milk");
     assert_eq!(t1.sync_state, "failed");
-    store
-        .discard_op("op-2", &Restore::Tombstone)
+    let discarded = store
+        .discard_op("op-2", OpState::Unknown, &Restore::Tombstone)
         .await
         .expect("discard");
+    assert_eq!(discarded, Some(Vec::new()));
     assert!(store.task("t2").await.expect("read").is_none());
     assert!(store.outbox_op("op-2").await.expect("read").is_none());
 }
@@ -234,4 +235,128 @@ async fn a_failed_create_fails_the_writes_queued_behind_it_and_the_task_stays_go
     assert_eq!(edit.state, OpState::Failed);
     assert!(store.task("t1").await.expect("read").is_none());
     assert!(store.ready_ops(i64::MAX).await.expect("ready").is_empty());
+}
+
+/// A create, then two edits queued on it, each waiting on the one before.
+async fn chain(store: &Store, list: &str) {
+    store
+        .enqueue("c", None, vec![create("c", "t1", list, "Milk")])
+        .await
+        .expect("create");
+    store
+        .enqueue("e1", None, vec![edit("e1", "t1", list, "Oat milk")])
+        .await
+        .expect("edit");
+    store
+        .enqueue("e2", None, vec![edit("e2", "t1", list, "Soy milk")])
+        .await
+        .expect("edit");
+}
+
+#[tokio::test]
+async fn discarding_an_operation_fails_everything_that_waits_on_it() {
+    let (_dir, store, list) = open().await;
+    chain(&store, &list).await;
+
+    let failed = store
+        .discard_op("c", OpState::Pending, &Restore::Tombstone)
+        .await
+        .expect("discard")
+        .expect("it was pending");
+
+    assert_eq!(failed, ["e1", "e2"], "through e1 to e2");
+    for op in ["e1", "e2"] {
+        let op = store.outbox_op(op).await.expect("read").expect("op");
+        assert_eq!(op.state, OpState::Failed);
+        assert!(
+            op.note
+                .as_deref()
+                .is_some_and(|note| note.contains("c, which was discarded"))
+        );
+    }
+    assert!(store.ready_ops(i64::MAX).await.expect("ready").is_empty());
+}
+
+#[tokio::test]
+async fn a_discard_that_loses_the_race_to_the_worker_changes_nothing() {
+    let (_dir, store, list) = open().await;
+    chain(&store, &list).await;
+    // Read as pending; then the worker claims it before the discard runs.
+    assert!(store.mark_inflight("c").await.expect("claim"));
+
+    let discarded = store
+        .discard_op("c", OpState::Pending, &Restore::Tombstone)
+        .await
+        .expect("discard");
+
+    assert_eq!(discarded, None);
+    let op = store
+        .outbox_op("c")
+        .await
+        .expect("read")
+        .expect("still there");
+    assert_eq!(op.state, OpState::Inflight);
+    assert!(
+        store.task("t1").await.expect("read").is_some(),
+        "not rolled back"
+    );
+    let waiting = store.outbox_op("e1").await.expect("read").expect("e1");
+    assert_eq!(waiting.state, OpState::Pending);
+}
+
+#[tokio::test]
+async fn the_worker_cannot_claim_an_operation_discarded_meanwhile() {
+    let (_dir, store, list) = open().await;
+    chain(&store, &list).await;
+    // Read by the worker as ready; then discarded before its claim.
+    assert!(
+        store
+            .ready_ops(i64::MAX)
+            .await
+            .expect("ready")
+            .iter()
+            .any(|op| op.op_id == "c")
+    );
+    store
+        .discard_op("c", OpState::Pending, &Restore::Tombstone)
+        .await
+        .expect("discard")
+        .expect("it was pending");
+
+    assert!(!store.mark_inflight("c").await.expect("claim"));
+}
+
+#[tokio::test]
+async fn a_retry_that_loses_the_race_changes_nothing() {
+    let (_dir, store, list) = open().await;
+    chain(&store, &list).await;
+    assert!(store.mark_inflight("c").await.expect("claim"));
+    store
+        .mark_unknown("c", ("outcome_unknown", "503"), None)
+        .await
+        .expect("unknown");
+
+    // Read as unknown by two retries; the first wins.
+    assert!(
+        store
+            .requeue("c", OpState::Unknown, &Restore::Nothing)
+            .await
+            .expect("retry")
+    );
+    assert!(
+        !store
+            .requeue("c", OpState::Unknown, &Restore::Nothing)
+            .await
+            .expect("retry")
+    );
+    // And one that read it as unknown can't touch it once it's inflight.
+    assert!(store.mark_inflight("c").await.expect("claim"));
+    assert!(
+        !store
+            .requeue("c", OpState::Unknown, &Restore::Nothing)
+            .await
+            .expect("retry")
+    );
+    let op = store.outbox_op("c").await.expect("read").expect("c");
+    assert_eq!(op.state, OpState::Inflight);
 }

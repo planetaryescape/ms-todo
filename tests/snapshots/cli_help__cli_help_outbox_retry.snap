@@ -2,7 +2,7 @@
 source: tests/cli_help.rs
 expression: help_output(args)
 ---
-Send a write again: an unknown one (it may then happen twice), a failed one, or a pending one now
+Send a write again: an unknown one (it may then happen twice) or a failed one
 
 Usage: ms-todo outbox retry [OPTIONS] <OP>
 

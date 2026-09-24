@@ -703,3 +703,44 @@ async fn a_database_from_a_newer_ms_todo_is_refused_plainly() {
     assert!(message.contains("install the latest version"), "{message}");
     assert!(!message.contains("migration"), "no sqlx detail: {message}");
 }
+
+#[tokio::test]
+async fn undoing_a_delete_graph_then_rejects_never_makes_a_second_copy() {
+    let mut env = Env::new();
+    let graph = graph_with(&mut env, vec![task("T1", "Buy milk", "W/\"e1\"")]).await;
+    Mock::given(method("DELETE"))
+        .and(path(format!("{TASKS}/T1")))
+        .respond_with(
+            ResponseTemplate::new(403)
+                .set_delay(Duration::from_millis(800))
+                .set_body_json(json!({ "error": { "code": "accessDenied", "message": "no" } })),
+        )
+        .mount(&graph.server)
+        .await;
+    Mock::given(method("POST"))
+        .respond_with(created_as("T1-copy"))
+        .mount(&graph.server)
+        .await;
+    env.synced();
+
+    let deleted = env.json(&["tasks", "delete", "T1", "--yes"]);
+    env.op_in_state(&op_id(&deleted), "inflight");
+    // Queued behind the delete Graph hasn't answered yet.
+    let undone = env.json(&["undo"]);
+    let recreate = op_id(&undone);
+
+    env.op_in_state(&op_id(&deleted), "failed");
+    let cascaded = env.op_in_state(&recreate, "failed");
+    assert!(
+        cascaded["note"]
+            .as_str()
+            .is_some_and(|note| note.contains(&op_id(&deleted))),
+        "{cascaded}"
+    );
+    env.synced();
+    env.settled();
+    assert!(writes_to(&graph, "POST").await.is_empty(), "no second copy");
+    let listed = tasks(&env, "Tasks");
+    assert_eq!(listed.len(), 1, "the task Graph kept is still there");
+    assert_eq!(listed[0]["graph_id"], "T1");
+}

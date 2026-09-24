@@ -125,7 +125,7 @@ pub enum Request {
         state: Option<OutboxState>,
     },
     /// Send an `unknown` or `failed` operation again (a resend the user
-    /// chose), or a `pending` one now.
+    /// chose). `conflict` if its state changed meanwhile.
     OutboxRetry { op_id: String },
     /// Drop an operation that isn't `done` or `inflight`, undoing its local
     /// change where it never reached Graph.

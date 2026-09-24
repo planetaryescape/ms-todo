@@ -8,7 +8,7 @@ Usage: ms-todo outbox [OPTIONS] <COMMAND>
 
 Commands:
   list     Every queued write, newest first, with its state: pending, inflight, unknown (don't resend it yourself), failed or done
-  retry    Send a write again: an unknown one (it may then happen twice), a failed one, or a pending one now
+  retry    Send a write again: an unknown one (it may then happen twice) or a failed one
   discard  Drop a write that isn't done. One that never reached Microsoft To Do is undone locally. Asks first in a terminal; anywhere else it needs --yes
   help     Print this message or the help of the given subcommand(s)
 

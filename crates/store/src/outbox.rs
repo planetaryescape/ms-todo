@@ -483,18 +483,6 @@ impl Store {
         )
     }
 
-    /// Unresolved operations waiting for `op_id`.
-    pub async fn unresolved_dependents(&self, op_id: &str) -> Result<Vec<String>, StoreError> {
-        Ok(sqlx::query_scalar(concat!(
-            "SELECT op_id FROM outbox WHERE depends_on_op_id = ? AND state IN ",
-            unresolved!(),
-            " ORDER BY seq"
-        ))
-        .bind(op_id)
-        .fetch_all(self.reader())
-        .await?)
-    }
-
     /// How many operations are in each state, and how many `unknown` ones
     /// are flagged for the user.
     pub async fn outbox_depth(&self) -> Result<(Vec<(OpState, i64)>, i64), StoreError> {
@@ -637,8 +625,20 @@ impl Store {
     /// `found_local_id`, whose list was just confirmed live: that's the
     /// task it made. Merge it into the operation's own task, which keeps
     /// its local ID, and mark the operation `done`, in one transaction.
-    pub async fn adopt(&self, op_id: &str, found_local_id: &str) -> Result<(), StoreError> {
+    /// Returns false, changing nothing, if the operation isn't `unknown`
+    /// any more (the user retried or discarded it meanwhile).
+    pub async fn adopt(&self, op_id: &str, found_local_id: &str) -> Result<bool, StoreError> {
         let mut tx = self.writer().begin().await?;
+        let claimed = sqlx::query(
+            "UPDATE outbox SET state = 'done', finished_at = ? WHERE op_id = ? AND state = 'unknown'",
+        )
+        .bind(now())
+        .bind(op_id)
+        .execute(&mut *tx)
+        .await?;
+        if claimed.rows_affected() == 0 {
+            return Ok(false);
+        }
         let rev = next_local_rev(&mut tx).await?;
         let op = op_in(&mut tx, op_id).await?;
         if found_local_id != op.entity_local_id {
@@ -655,9 +655,8 @@ impl Store {
             };
             write_attributed(&mut tx, &op, attributed, rev).await?;
         }
-        finish(&mut tx, op_id, OpState::Done, None).await?;
         tx.commit().await?;
-        Ok(())
+        Ok(true)
     }
 
     /// Mark an operation `done` without changing its task (a delete, or a
@@ -670,9 +669,11 @@ impl Store {
     }
 
     /// Graph rejected `op_id` for good: mark it `failed` with `error` and
-    /// roll its task back by `restore`, in one transaction. A failed create
-    /// takes the task's later unresolved operations with it: there's no task
-    /// for them to change. Returns those, also `failed`.
+    /// roll its task back by `restore`, in one transaction. Every operation
+    /// that waits on it, directly or not, fails with it: each was queued
+    /// on top of a change that won't happen (an undo's re-create of a task
+    /// whose delete was rejected would otherwise make a second copy).
+    /// Returns those.
     pub async fn fail_op(
         &self,
         op_id: &str,
@@ -684,50 +685,44 @@ impl Store {
         let op = op_in(&mut tx, op_id).await?;
         apply_restore(&mut tx, &op.entity_local_id, restore, rev).await?;
         finish(&mut tx, op_id, OpState::Failed, Some(error)).await?;
-        let mut cascaded: Vec<String> = Vec::new();
+        let cause = format!(
+            "not sent: it waited on {op_id}, which Graph rejected ({})",
+            error.1
+        );
+        let cascaded = cascade(&mut tx, op_id, &cause).await?;
         if op.op == OpKind::Create {
-            cascaded = sqlx::query_scalar(concat!(
-                "SELECT op_id FROM outbox WHERE entity_local_id = ? AND seq > ? AND state IN ",
-                unresolved!(),
-                " ORDER BY seq"
-            ))
-            .bind(&op.entity_local_id)
-            .bind(op.seq)
-            .fetch_all(&mut *tx)
-            .await?;
-            let message = format!("the task was never created: its add ({op_id}) failed");
-            for later in &cascaded {
-                finish(
-                    &mut tx,
-                    later,
-                    OpState::Failed,
-                    Some(("rejected", &message)),
-                )
-                .await?;
-            }
+            // Nothing queued after it can bring back a task never created.
             tombstone_row(&mut tx, &op.entity_local_id, rev).await?;
         }
         tx.commit().await?;
         Ok(cascaded)
     }
 
-    /// Drop `op_id`, undoing its local change by `restore`. Operations that
-    /// waited for it wait for what it waited for. Its idempotency key is
-    /// kept for 24 hours from now.
-    pub async fn discard_op(&self, op_id: &str, restore: &Restore) -> Result<(), StoreError> {
+    /// Drop `op_id`, undoing its local change by `restore`, if it's still
+    /// in state `expected`: one conditional delete, so it can't race the
+    /// worker claiming it. Every operation that waits on it fails, in the
+    /// same transaction. Its idempotency key is kept for 24 hours from now.
+    /// Returns the operations failed with it, or `None` if its state moved.
+    pub async fn discard_op(
+        &self,
+        op_id: &str,
+        expected: OpState,
+        restore: &Restore,
+    ) -> Result<Option<Vec<String>>, StoreError> {
         let mut tx = self.writer().begin().await?;
-        let rev = next_local_rev(&mut tx).await?;
         let op = op_in(&mut tx, op_id).await?;
+        let deleted = sqlx::query("DELETE FROM outbox WHERE op_id = ? AND state = ?")
+            .bind(op_id)
+            .bind(expected.as_str())
+            .execute(&mut *tx)
+            .await?;
+        if deleted.rows_affected() == 0 {
+            return Ok(None);
+        }
+        let rev = next_local_rev(&mut tx).await?;
         apply_restore(&mut tx, &op.entity_local_id, restore, rev).await?;
-        sqlx::query("UPDATE outbox SET depends_on_op_id = ? WHERE depends_on_op_id = ?")
-            .bind(&op.depends_on)
-            .bind(op_id)
-            .execute(&mut *tx)
-            .await?;
-        sqlx::query("DELETE FROM outbox WHERE op_id = ?")
-            .bind(op_id)
-            .execute(&mut *tx)
-            .await?;
+        let cause = format!("not sent: it waited on {op_id}, which was discarded");
+        let cascaded = cascade(&mut tx, op_id, &cause).await?;
         sqlx::query(
             "UPDATE idempotency_keys SET finished_at = ? \
              WHERE op_id = ? AND finished_at IS NOT NULL",
@@ -737,25 +732,37 @@ impl Store {
         .execute(&mut *tx)
         .await?;
         tx.commit().await?;
-        Ok(())
+        Ok(Some(cascaded))
     }
 
-    /// Queue `op_id` again, now, making `restore` its local change again.
-    pub async fn requeue(&self, op_id: &str, restore: &Restore) -> Result<(), StoreError> {
+    /// Queue `op_id` again, now, making `restore` its local change again,
+    /// if it's still in state `expected`: one conditional update, so it
+    /// can't race a send. Returns false, changing nothing, if its state
+    /// moved.
+    pub async fn requeue(
+        &self,
+        op_id: &str,
+        expected: OpState,
+        restore: &Restore,
+    ) -> Result<bool, StoreError> {
         let mut tx = self.writer().begin().await?;
+        let requeued = sqlx::query(
+            "UPDATE outbox SET state = 'pending', next_attempt_at = 0, last_error_kind = NULL, \
+             last_error = NULL, unknown_since = NULL, note = NULL, finished_at = NULL \
+             WHERE op_id = ? AND state = ?",
+        )
+        .bind(op_id)
+        .bind(expected.as_str())
+        .execute(&mut *tx)
+        .await?;
+        if requeued.rows_affected() == 0 {
+            return Ok(false);
+        }
         let rev = next_local_rev(&mut tx).await?;
         let op = op_in(&mut tx, op_id).await?;
         apply_restore(&mut tx, &op.entity_local_id, restore, rev).await?;
-        sqlx::query(
-            "UPDATE outbox SET state = 'pending', next_attempt_at = 0, last_error_kind = NULL, \
-             last_error = NULL, unknown_since = NULL, note = NULL, finished_at = NULL \
-             WHERE op_id = ?",
-        )
-        .bind(op_id)
-        .execute(&mut *tx)
-        .await?;
         tx.commit().await?;
-        Ok(())
+        Ok(true)
     }
 
     /// After a restart, nothing is being sent. A create or a recurring
@@ -853,6 +860,34 @@ pub(crate) async fn fail_ops_in_list(
         .await?;
     }
     Ok(failed.into_iter().map(|(op_id, _)| op_id).collect())
+}
+
+/// Fail every operation not yet sent that waits on `op_id`, directly or
+/// through another, with `cause` as its error and note. Returns them.
+async fn cascade(
+    tx: &mut SqliteConnection,
+    op_id: &str,
+    cause: &str,
+) -> Result<Vec<String>, StoreError> {
+    let waiting: Vec<String> = sqlx::query_scalar(
+        "WITH RECURSIVE waiting(op_id) AS ( \
+             SELECT op_id FROM outbox WHERE depends_on_op_id = ?1 \
+             UNION SELECT o.op_id FROM outbox o JOIN waiting w ON o.depends_on_op_id = w.op_id) \
+         SELECT op_id FROM outbox WHERE op_id IN waiting AND state IN ('pending', 'unknown') \
+         ORDER BY seq",
+    )
+    .bind(op_id)
+    .fetch_all(&mut *tx)
+    .await?;
+    for waiter in &waiting {
+        finish(tx, waiter, OpState::Failed, Some(("rejected", cause))).await?;
+        sqlx::query("UPDATE outbox SET note = ? WHERE op_id = ?")
+            .bind(cause)
+            .bind(waiter)
+            .execute(&mut *tx)
+            .await?;
+    }
+    Ok(waiting)
 }
 
 async fn op_in(tx: &mut SqliteConnection, op_id: &str) -> Result<OutboxRow, StoreError> {

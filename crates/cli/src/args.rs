@@ -74,8 +74,8 @@ pub enum OutboxCommand {
         #[arg(long, value_enum)]
         state: Option<OutboxStateArg>,
     },
-    /// Send a write again: an unknown one (it may then happen twice), a
-    /// failed one, or a pending one now
+    /// Send a write again: an unknown one (it may then happen twice) or a
+    /// failed one
     Retry {
         /// The write's op_id from `outbox list`
         #[arg(value_name = "OP")]

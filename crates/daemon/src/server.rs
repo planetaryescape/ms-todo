@@ -77,8 +77,6 @@ pub(crate) async fn serve(paths: Paths) -> Result<(), Fatal> {
         Err(error) => return Err(describe(&socket, &error).into()),
     }
 
-    // Bind before any slow work, so clients can connect and ask `Status`
-    // (vault: `Daemon Readiness Is Not Process Liveness`).
     if socket.as_os_str().len() > MAX_SOCKET_PATH_BYTES {
         return Err(format!(
             "the socket path {} is longer than the {MAX_SOCKET_PATH_BYTES} bytes Unix sockets allow; \
@@ -87,13 +85,32 @@ pub(crate) async fn serve(paths: Paths) -> Result<(), Fatal> {
         )
         .into());
     }
-    let listener = UnixListener::bind(&socket).map_err(|error| describe(&socket, &error))?;
+    // Open the sign-in and the database before binding. A daemon that
+    // can't start (a database a newer ms-todo migrated, say) then never has
+    // a socket: the client that started it sees no connection, only the
+    // process's exit status, on every OS. Bound first, a client could
+    // connect and have the connection reset as the daemon exits, and read
+    // that instead (Linux). Opening both is quick; a slow start is still a
+    // live process, which the client waits for.
+    atomic_write_mode_0600(&paths.pid_file(), std::process::id().to_string().as_bytes())
+        .map_err(|error| describe(&paths.pid_file(), &error))?;
+    let state = match build_state(&paths).await {
+        Ok(state) => Arc::new(state),
+        Err(fatal) => {
+            let _ = std::fs::remove_file(paths.pid_file());
+            return Err(fatal);
+        }
+    };
+    let listener = match UnixListener::bind(&socket) {
+        Ok(listener) => listener,
+        Err(error) => {
+            let _ = std::fs::remove_file(paths.pid_file());
+            return Err(describe(&socket, &error).into());
+        }
+    };
     let served = async {
         std::fs::set_permissions(&socket, std::fs::Permissions::from_mode(0o600))
             .map_err(|error| describe(&socket, &error))?;
-        atomic_write_mode_0600(&paths.pid_file(), std::process::id().to_string().as_bytes())
-            .map_err(|error| describe(&paths.pid_file(), &error))?;
-        let state = Arc::new(build_state(&paths).await?);
         settle_unfinished(&state).await;
         // Before anything is sent, so nothing new is mistaken for left over.
         outbox::recover(&state).await;

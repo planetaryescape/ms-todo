@@ -70,7 +70,7 @@ Every change is applied to the local cache and queued in an outbox in one step, 
 
 ```sh
 ms-todo outbox list                   # every queued change and its state; --state pending|inflight|unknown|failed|done
-ms-todo outbox retry <OP>             # send an unknown or failed change again (you chose to), or a pending one now
+ms-todo outbox retry <OP>             # send an unknown or failed change again (you chose to)
 ms-todo outbox discard <OP> --yes     # drop a change; one that never reached Microsoft To Do is undone locally
 ms-todo undo                          # reverse the latest change; or `ms-todo undo <OP_ID>`
 ```

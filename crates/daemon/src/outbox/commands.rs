@@ -3,13 +3,18 @@
 //! won't decide alone.
 //!
 //! - `retry` sends an `unknown` or `failed` operation again (a resend the
-//!   user chose: an `unknown` create may then exist twice), or a `pending`
-//!   one now. A `failed` one's local change is made again first.
+//!   user chose: an `unknown` create may then exist twice). A `failed`
+//!   one's local change is made again first.
 //! - `discard` drops an operation that isn't `done` or being sent. One that
 //!   never reached Graph (`pending`) has its local change undone; an
 //!   `unknown` create's task goes (Graph's copy, if it exists, arrives by
 //!   sync), and for any other `unknown` one the list is read whole on the
-//!   next pass. A `failed` one was rolled back already.
+//!   next pass. A `failed` one was rolled back already. Whatever waited on
+//!   it fails with it.
+//!
+//! Both act only if the operation is still in the state they read: one
+//! conditional update in the store, so neither races the worker. If it
+//! moved, they change nothing and answer `conflict`.
 
 use ms_todo_core::ErrorKind;
 use ms_todo_protocol::{ErrorPayload, OpError, OutboxOp, OutboxState, ResponseData};
@@ -37,16 +42,28 @@ pub(crate) async fn list(
 pub(crate) async fn retry(state: &State, op_id: &str) -> Result<ResponseData, ErrorPayload> {
     let op = find(state, op_id).await?;
     let restore = match op.state {
-        OpState::Pending | OpState::Unknown => Restore::Nothing,
+        OpState::Unknown => Restore::Nothing,
         OpState::Failed => redo_local(state, &op).await?,
+        OpState::Pending => {
+            return Err(error_payload(
+                ErrorKind::InvalidInput,
+                format!(
+                    "operation {} is queued already; it's sent as soon as it can be",
+                    op.op_id
+                ),
+            ));
+        }
         OpState::Inflight => return Err(being_sent(&op)),
         OpState::Done => return Err(already_done(&op)),
     };
-    state
+    let requeued = state
         .store
-        .requeue(&op.op_id, &restore)
+        .requeue(&op.op_id, op.state, &restore)
         .await
         .map_err(store_error)?;
+    if !requeued {
+        return Err(moved(&op));
+    }
     state.outbox.wake();
     current(state, &op.op_id).await
 }
@@ -57,22 +74,6 @@ pub(crate) async fn discard(state: &State, op_id: &str) -> Result<ResponseData, 
         OpState::Inflight => return Err(being_sent(&op)),
         OpState::Done => return Err(already_done(&op)),
         OpState::Pending | OpState::Unknown | OpState::Failed => {}
-    }
-    if op.op == OpKind::Create && op.state != OpState::Failed {
-        let waiting = state
-            .store
-            .unresolved_dependents(&op.op_id)
-            .await
-            .map_err(store_error)?;
-        if !waiting.is_empty() {
-            return Err(error_payload(
-                ErrorKind::InvalidInput,
-                format!(
-                    "other changes to this task wait for it to be created; discard them first: {}",
-                    waiting.join(", ")
-                ),
-            ));
-        }
     }
     let current = state
         .store
@@ -86,13 +87,20 @@ pub(crate) async fn discard(state: &State, op_id: &str) -> Result<ResponseData, 
         (OpState::Unknown, _) => (Restore::Nothing, true),
         _ => (Restore::Nothing, false),
     };
-    state
+    let cascaded = state
         .store
-        .discard_op(&op.op_id, &restore)
+        .discard_op(&op.op_id, op.state, &restore)
         .await
-        .map_err(store_error)?;
-    if reconcile {
+        .map_err(store_error)?
+        .ok_or_else(|| moved(&op))?;
+    if reconcile || !cascaded.is_empty() {
         reconcile_list(state, &op.list_local_id).await;
+    }
+    let cause = format!("not sent: it waited on {}, which was discarded", op.op_id);
+    for waiter in &cascaded {
+        state
+            .events
+            .write_rejected(waiter, &op.entity_local_id, "rejected", &cause);
     }
     Ok(ResponseData::OutboxOp(outbox_op(&op, now())))
 }
@@ -146,6 +154,19 @@ fn being_sent(op: &OutboxRow) -> ErrorPayload {
         ErrorKind::InvalidInput,
         format!(
             "operation {} is being sent right now; check again in a moment",
+            op.op_id
+        ),
+    )
+}
+
+/// Its state changed between reading it and acting on it: the worker
+/// claimed it, or it was resolved.
+fn moved(op: &OutboxRow) -> ErrorPayload {
+    error_payload(
+        ErrorKind::Conflict,
+        format!(
+            "operation {} changed while this ran (it may be being sent now), so nothing was \
+             done; check `ms-todo outbox list` and try again",
             op.op_id
         ),
     )

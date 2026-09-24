@@ -93,11 +93,15 @@ async fn attribute_create(state: &State, op: &OutboxRow) -> Result<bool, String>
     };
     match state.graph.get_list(&list_graph_id).await {
         Ok(_) => {
-            state
+            let adopted = state
                 .store
                 .adopt(&op.op_id, &task.local_id)
                 .await
                 .map_err(|error| message_with_causes(&error))?;
+            if !adopted {
+                // The user retried or discarded it meanwhile.
+                return Ok(false);
+            }
             eprintln!(
                 "ms-todo daemon: operation {} was found in Microsoft To Do by its opId and adopted",
                 op.op_id
