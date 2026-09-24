@@ -2,17 +2,9 @@
 source: tests/cli_help.rs
 expression: help_output(args)
 ---
-A local-first, keyboard-native terminal client for Microsoft To Do
+Show whether the daemon is running, its PID, version and socket
 
-Usage: ms-todo [OPTIONS] <COMMAND>
-
-Commands:
-  auth    Sign in to Microsoft, check the sign-in, or sign out
-  lists   Your task lists
-  tasks   Tasks in a list
-  raw     Send an authenticated request straight to Microsoft Graph, for debugging
-  daemon  Start, stop or check the background daemon that talks to Microsoft
-  help    Print this message or the help of the given subcommand(s)
+Usage: ms-todo daemon status [OPTIONS]
 
 Options:
       --format <FORMAT>  Output format: jsonl is one object per line, ids one ID per line [default: table in a terminal, json when piped] [possible values: table, json, jsonl, ids]

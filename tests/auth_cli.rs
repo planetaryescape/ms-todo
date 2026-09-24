@@ -10,7 +10,8 @@ fn ms_todo(home: &tempfile::TempDir) -> Command {
         .env("HOME", home.path())
         .env("XDG_DATA_HOME", home.path().join("data"))
         .env("XDG_CONFIG_HOME", home.path().join("config"))
-        .env_remove("MS_TODO_INSTANCE");
+        .env_remove("MS_TODO_INSTANCE")
+        .env_remove("MS_TODO_CONFIG_DIR");
     command
 }
 
@@ -113,4 +114,46 @@ fn invalid_instance_name_is_invalid_input() {
         ])
         .assert()
         .code(2);
+}
+
+#[test]
+fn config_is_read_from_xdg_config_home_on_every_platform() {
+    let home = tempfile::tempdir().expect("tempdir");
+    let config = home
+        .path()
+        .join("config")
+        .join("ms-todo")
+        .join("config.toml");
+    std::fs::create_dir_all(config.parent().expect("dir")).expect("mkdir");
+    // Malformed on purpose: login reports it before any network call.
+    std::fs::write(&config, "[auth\n").expect("write config");
+
+    let assert = ms_todo(&home)
+        .env_remove("MS_TODO_CLIENT_ID")
+        .args(["--format", "json", "auth", "login"])
+        .assert()
+        .code(2);
+
+    let error: Value = serde_json::from_slice(&assert.get_output().stderr).expect("json error");
+    let message = error["error"]["message"].as_str().expect("message");
+    assert!(message.contains(&config.display().to_string()), "{message}");
+}
+
+#[test]
+fn ms_todo_config_dir_overrides_xdg() {
+    let home = tempfile::tempdir().expect("tempdir");
+    let custom = home.path().join("custom");
+    std::fs::create_dir_all(&custom).expect("mkdir");
+    std::fs::write(custom.join("config.toml"), "[auth\n").expect("write config");
+
+    let assert = ms_todo(&home)
+        .env_remove("MS_TODO_CLIENT_ID")
+        .env("MS_TODO_CONFIG_DIR", &custom)
+        .args(["--format", "json", "auth", "login"])
+        .assert()
+        .code(2);
+
+    let error: Value = serde_json::from_slice(&assert.get_output().stderr).expect("json error");
+    let message = error["error"]["message"].as_str().expect("message");
+    assert!(message.contains("custom/config.toml"), "{message}");
 }

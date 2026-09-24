@@ -33,6 +33,16 @@ fn cli_help_snapshots_cover_all_commands() {
         ("cli_help_auth_login", &["auth", "login", "--help"]),
         ("cli_help_auth_status", &["auth", "status", "--help"]),
         ("cli_help_auth_logout", &["auth", "logout", "--help"]),
+        ("cli_help_auth_bearer", &["auth", "bearer", "--help"]),
+        ("cli_help_lists", &["lists", "--help"]),
+        ("cli_help_lists_list", &["lists", "list", "--help"]),
+        ("cli_help_tasks", &["tasks", "--help"]),
+        ("cli_help_tasks_list", &["tasks", "list", "--help"]),
+        ("cli_help_raw", &["raw", "--help"]),
+        ("cli_help_daemon", &["daemon", "--help"]),
+        ("cli_help_daemon_start", &["daemon", "start", "--help"]),
+        ("cli_help_daemon_stop", &["daemon", "stop", "--help"]),
+        ("cli_help_daemon_status", &["daemon", "status", "--help"]),
     ];
     for (name, args) in cases {
         insta::assert_snapshot!(*name, help_output(args));

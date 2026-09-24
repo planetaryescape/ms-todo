@@ -1,11 +1,12 @@
 //! Sign-in: the public auth API. The CLI may use this module and nothing
-//! else in the crate (`tests/workspace_boundaries.rs`).
+//! else in the crate (`tests/workspace_boundaries.rs`). From rung 1 the
+//! daemon is the only caller of `valid_token` and the refresh methods; the
+//! CLI keeps `auth login|status|logout`, which work without a daemon (D-031).
 
 mod account;
 mod client_id;
 mod device_code;
 mod error;
-mod private_file;
 mod refresh;
 mod token_response;
 mod token_store;
@@ -127,6 +128,7 @@ impl Authenticator {
     }
 
     /// Refresh `stale`, unless the stored credential has already moved on.
+    /// The HTTP client also calls this when Graph answers 401.
     pub async fn refresh(&self, stale: &StoredToken) -> Result<StoredToken, AuthError> {
         refresh::refresh_compare_and_swap(&self.http, &self.endpoints.authority, &self.store, stale)
             .await

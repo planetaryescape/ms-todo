@@ -16,8 +16,11 @@ pub(crate) async fn refresh_compare_and_swap(
 ) -> Result<StoredToken, AuthError> {
     let lock = store.lock().await?;
     let current = store.load()?.ok_or(AuthError::NotSignedIn)?;
-    if current.refresh_token != stale.refresh_token || !current.is_near_expiry() {
-        // Another process refreshed, or signed in again, while we waited.
+    // Every refresh and every sign-in changes the access token, so a
+    // different one means another process got there first. Comparing the
+    // access token, not the expiry, also covers a token Graph rejected with
+    // a 401 before its expiry.
+    if current.access_token != stale.access_token {
         return Ok(current);
     }
 

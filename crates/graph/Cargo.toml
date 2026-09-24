@@ -4,17 +4,18 @@ version.workspace = true
 edition.workspace = true
 license.workspace = true
 publish = false
-description = "Microsoft Graph provider for ms-todo. F1: sign-in and the token store."
+description = "Microsoft Graph provider for ms-todo: sign-in, the HTTP client and endpoints."
 
 [dependencies]
 ms-todo-core = { workspace = true }
 chrono = { workspace = true }
+fastrand = { workspace = true }
 fs2 = { workspace = true }
 reqwest = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 thiserror = { workspace = true }
-tokio = { workspace = true }
+tokio = { workspace = true, features = ["sync"] }
 toml = { workspace = true }
 
 [dev-dependencies]

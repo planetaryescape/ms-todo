@@ -5,5 +5,8 @@
 mod error;
 mod paths;
 
-pub use error::ErrorKind;
-pub use paths::{APP_NAME, INSTANCE_ENV, Instance, InvalidInstanceName, Paths, PathsError};
+pub use error::{ErrorKind, message_with_causes};
+pub use paths::{
+    APP_NAME, CONFIG_DIR_ENV, INSTANCE_ENV, Instance, InvalidInstanceName, Paths, PathsError,
+    config_dir_from,
+};

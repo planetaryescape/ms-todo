@@ -3,6 +3,7 @@ use std::path::PathBuf;
 use ms_todo_core::ErrorKind;
 
 use super::SETUP_GUIDE_URL;
+use crate::api_error::ApiError;
 
 const LOGIN_HINT: &str = "run `ms-todo auth login`";
 
@@ -32,13 +33,8 @@ pub enum AuthError {
     #[error("sign-in failed: {code}: {description}")]
     OAuth { code: String, description: String },
     /// Graph answered with a non-success status.
-    #[error("Microsoft Graph returned {status}: {code}: {message}")]
-    Api {
-        status: u16,
-        code: String,
-        message: String,
-        request_id: Option<String>,
-    },
+    #[error(transparent)]
+    Api(ApiError),
     #[error("network error talking to Microsoft")]
     Network(#[source] reqwest::Error),
     #[error("unexpected response from Microsoft: {0}")]
@@ -60,7 +56,7 @@ impl AuthError {
             Self::Expired => ErrorKind::AuthExpired,
             Self::Revoked => ErrorKind::AuthRevoked,
             Self::NoClientId { .. } | Self::Config { .. } => ErrorKind::InvalidInput,
-            Self::OAuth { .. } | Self::Api { .. } => ErrorKind::Api,
+            Self::OAuth { .. } | Self::Api(_) => ErrorKind::Api,
             Self::Network(_) => ErrorKind::Network,
             Self::Decode(_) => ErrorKind::Decode,
             Self::Store { .. } | Self::LockTimeout(_) => ErrorKind::Internal,
@@ -70,7 +66,8 @@ impl AuthError {
     /// The error code from the identity platform or Graph, if there was one.
     pub fn graph_code(&self) -> Option<&str> {
         match self {
-            Self::OAuth { code, .. } | Self::Api { code, .. } => Some(code),
+            Self::OAuth { code, .. } => Some(code),
+            Self::Api(error) => Some(&error.code),
             _ => None,
         }
     }
@@ -78,7 +75,7 @@ impl AuthError {
     /// Graph's `request-id` header, for support requests.
     pub fn request_id(&self) -> Option<&str> {
         match self {
-            Self::Api { request_id, .. } => request_id.as_deref(),
+            Self::Api(error) => error.request_id.as_deref(),
             _ => None,
         }
     }

@@ -10,10 +10,11 @@ Commands:
   login   Sign in with a device code: open the printed URL and enter the code
   status  Show the signed-in account, token expiry, client ID and scopes
   logout  Delete the stored sign-in
+  bearer  Print a valid access token for Microsoft Graph, e.g. for curl. With --format table, prints only the token
   help    Print this message or the help of the given subcommand(s)
 
 Options:
-      --format <FORMAT>  Output format [default: table in a terminal, json when piped] [possible values: table, json]
-      --instance <NAME>  Use a separate copy of ms-todo's data (also MS_TODO_INSTANCE). Builds run from Cargo's target/ directory default to "dev"
+      --format <FORMAT>  Output format: jsonl is one object per line, ids one ID per line [default: table in a terminal, json when piped] [possible values: table, json, jsonl, ids]
+      --instance <NAME>  Use a separate copy of ms-todo's data (also MS_TODO_INSTANCE). Builds run from Cargo's target/ directory default to "dev"; "default" is the installed copy
   -h, --help             Print help
   -V, --version          Print version

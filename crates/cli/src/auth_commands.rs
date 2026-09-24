@@ -10,6 +10,7 @@ use serde::Serialize;
 
 use crate::error::CliError;
 use crate::output::Render;
+use crate::time::rfc3339;
 
 #[derive(Serialize)]
 pub struct AuthStatus {
@@ -28,6 +29,8 @@ pub struct AuthStatus {
     pub token_client_id: Option<String>,
     pub scopes: Vec<String>,
     pub token_path: String,
+    /// Where `auth.client_id` is read from (D-035).
+    pub config_file: String,
     pub instance: String,
 }
 
@@ -54,6 +57,7 @@ impl AuthStatus {
             token_client_id,
             scopes: token.scopes.clone(),
             token_path: auth.token_path().display().to_string(),
+            config_file: paths.config_file.display().to_string(),
             instance: paths.instance.label().to_owned(),
         }
     }
@@ -88,6 +92,7 @@ impl Render for AuthStatus {
         rows.extend([
             ("Scopes", self.scopes.join(" ")),
             ("Token file", self.token_path.clone()),
+            ("Config file", self.config_file.clone()),
             ("Instance", self.instance.clone()),
         ]);
         rows
@@ -156,12 +161,6 @@ pub async fn logout(auth: &Authenticator) -> Result<Logout, CliError> {
         removed,
         token_path: auth.token_path().display().to_string(),
     })
-}
-
-fn rfc3339(unix_seconds: i64) -> String {
-    chrono::DateTime::from_timestamp(unix_seconds, 0)
-        .map(|time| time.to_rfc3339_opts(chrono::SecondsFormat::Secs, true))
-        .unwrap_or_else(|| unix_seconds.to_string())
 }
 
 fn relative(seconds: i64) -> String {

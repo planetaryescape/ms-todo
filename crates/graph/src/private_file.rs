@@ -11,7 +11,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 /// Create `path` (and parents) and make it 0700, repairing a directory that
 /// was left group- or world-readable.
-pub(crate) fn ensure_private_dir(path: &Path) -> std::io::Result<()> {
+pub fn ensure_private_dir(path: &Path) -> std::io::Result<()> {
     if path.as_os_str().is_empty() {
         return Err(std::io::Error::new(
             ErrorKind::InvalidInput,
@@ -48,7 +48,7 @@ pub(crate) fn ensure_private_dir(path: &Path) -> std::io::Result<()> {
 /// Write `bytes` to `path` so a reader sees either the old file or the whole
 /// new one, never a torn write, and the file is never readable by others,
 /// not even for a moment: the temp file is created 0600, then renamed.
-pub(crate) fn atomic_write_mode_0600(path: &Path, bytes: &[u8]) -> std::io::Result<()> {
+pub fn atomic_write_mode_0600(path: &Path, bytes: &[u8]) -> std::io::Result<()> {
     let Some(parent) = path.parent() else {
         return Err(std::io::Error::new(
             ErrorKind::InvalidInput,

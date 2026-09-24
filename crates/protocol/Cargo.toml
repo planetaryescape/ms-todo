@@ -1,0 +1,17 @@
+[package]
+name = "ms-todo-protocol"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish = false
+description = "ms-todo's IPC protocol: request, response and event types, and the frame codec."
+
+[dependencies]
+bytes = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+tokio-util = { workspace = true }
+
+[lints]
+workspace = true

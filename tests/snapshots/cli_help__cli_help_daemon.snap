@@ -2,16 +2,14 @@
 source: tests/cli_help.rs
 expression: help_output(args)
 ---
-A local-first, keyboard-native terminal client for Microsoft To Do
+Start, stop or check the background daemon that talks to Microsoft
 
-Usage: ms-todo [OPTIONS] <COMMAND>
+Usage: ms-todo daemon [OPTIONS] <COMMAND>
 
 Commands:
-  auth    Sign in to Microsoft, check the sign-in, or sign out
-  lists   Your task lists
-  tasks   Tasks in a list
-  raw     Send an authenticated request straight to Microsoft Graph, for debugging
-  daemon  Start, stop or check the background daemon that talks to Microsoft
+  start   Start the daemon if it isn't running, and wait until it's ready
+  stop    Stop the daemon and wait until its process has exited
+  status  Show whether the daemon is running, its PID, version and socket
   help    Print this message or the help of the given subcommand(s)
 
 Options:

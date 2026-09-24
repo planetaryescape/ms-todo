@@ -15,7 +15,7 @@ use fs2::FileExt;
 use serde::{Deserialize, Serialize};
 
 use super::AuthError;
-use super::private_file::{atomic_write_mode_0600, ensure_private_dir};
+use crate::private_file::{atomic_write_mode_0600, ensure_private_dir};
 
 /// Refresh this long before the access token expires (mxr's `REFRESH_MARGIN_SECS`).
 pub(crate) const REFRESH_MARGIN_SECS: i64 = 300;

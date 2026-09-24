@@ -3,6 +3,7 @@
 // scopes, a local deadline from `expires_in`, and a configurable poll unit so
 // tests don't wait real seconds.
 
+use crate::api_error::{ApiError, RAW_BODY_EXCERPT};
 use std::time::{Duration, Instant};
 
 use serde::Deserialize;
@@ -51,11 +52,13 @@ pub(crate) async fn start(
         return Err(serde_json::from_str::<TokenResponse>(&body)
             .ok()
             .and_then(|parsed| parsed.oauth_error())
-            .unwrap_or_else(|| AuthError::Api {
-                status: status.as_u16(),
-                code: "device_code_request_failed".into(),
-                message: body.chars().take(200).collect(),
-                request_id: None,
+            .unwrap_or_else(|| {
+                AuthError::Api(ApiError {
+                    status: status.as_u16(),
+                    code: "device_code_request_failed".into(),
+                    message: body.chars().take(RAW_BODY_EXCERPT).collect(),
+                    request_id: None,
+                })
             }));
     }
     serde_json::from_str(&body).map_err(|error| AuthError::Decode(error.to_string()))

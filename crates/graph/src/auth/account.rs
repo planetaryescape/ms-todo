@@ -3,6 +3,7 @@
 use serde::{Deserialize, Serialize};
 
 use super::AuthError;
+use crate::api_error::ApiError;
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -22,18 +23,6 @@ impl Account {
     }
 }
 
-#[derive(Deserialize)]
-struct GraphErrorBody {
-    error: GraphErrorDetail,
-}
-
-#[derive(Deserialize)]
-struct GraphErrorDetail {
-    code: String,
-    #[serde(default)]
-    message: String,
-}
-
 pub(crate) async fn fetch_me(
     http: &reqwest::Client,
     graph: &str,
@@ -51,20 +40,5 @@ pub(crate) async fn fetch_me(
     if status == reqwest::StatusCode::UNAUTHORIZED {
         return Err(AuthError::Expired);
     }
-    let request_id = response
-        .headers()
-        .get("request-id")
-        .and_then(|value| value.to_str().ok())
-        .map(str::to_owned);
-    let body = response.text().await.unwrap_or_default();
-    let (code, message) = match serde_json::from_str::<GraphErrorBody>(&body) {
-        Ok(parsed) => (parsed.error.code, parsed.error.message),
-        Err(_) => ("unknown".to_owned(), body.chars().take(200).collect()),
-    };
-    Err(AuthError::Api {
-        status: status.as_u16(),
-        code,
-        message,
-        request_id,
-    })
+    Err(AuthError::Api(ApiError::from_response(response).await))
 }

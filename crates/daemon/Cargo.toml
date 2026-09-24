@@ -1,24 +1,20 @@
 [package]
-name = "ms-todo-cli"
+name = "ms-todo-daemon"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
 publish = false
-description = "ms-todo's command line: clap definitions, the daemon client, output formats and exit codes."
+description = "ms-todo's daemon: the socket server, and the only process that talks to Graph and refreshes the token."
 
 [dependencies]
 ms-todo-core = { workspace = true }
 ms-todo-protocol = { workspace = true }
-# Only `ms_todo_graph::auth`, for `auth login|status|logout` (tests/workspace_boundaries.rs).
 ms-todo-graph = { workspace = true }
 chrono = { workspace = true }
-clap = { workspace = true }
 fs2 = { workspace = true }
 futures-util = { workspace = true }
-nix = { workspace = true }
-serde = { workspace = true }
 serde_json = { workspace = true }
-tokio = { workspace = true, features = ["net"] }
+tokio = { workspace = true, features = ["net", "rt-multi-thread", "signal", "sync"] }
 tokio-util = { workspace = true }
 
 [lints]

@@ -1,10 +1,11 @@
 // Adapted from mxr tests/workspace_boundaries.rs @ dfb23d10138b1cfc24f8ea7450d3426e5e4da37a
 //
 // Dependency direction for ms-todo's crates (docs/blueprint/01-architecture.md#crates).
-// F1 checks what exists: `core` stays free of I/O, and `cli` reaches `graph`
-// only through its public auth API. D-031's full rule (clients depend on
-// neither `graph` nor `store`, and talk to the daemon protocol only) starts
-// with the daemon in rung 1; then the `cli` rule becomes "no `graph` at all".
+// `core` stays free of I/O. Clients talk to the daemon protocol only (D-031):
+// only `daemon` uses the Graph client for data. `cli` may still use
+// `ms_todo_graph::auth`, because `auth login|status|logout` work without a
+// daemon (D-033 item 4), and it never depends on `daemon`, which would bring
+// the Graph client in with it.
 
 use std::path::{Path, PathBuf};
 
@@ -27,6 +28,8 @@ fn core_has_no_io_dependencies() {
     const FORBIDDEN: &[&str] = &[
         "tokio",
         "tokio-util",
+        "futures-util",
+        "nix",
         "reqwest",
         "hyper",
         "sqlx",
@@ -41,12 +44,35 @@ fn core_has_no_io_dependencies() {
     }
 }
 
-// Today `auth` is graph's only public module, so visibility already enforces
-// this; the check keeps it true when rung 1 adds public HTTP modules.
 #[test]
-fn cli_uses_only_the_public_auth_api_of_graph() {
+fn clients_and_the_protocol_never_depend_on_the_daemon_or_graph_data() {
+    let cli = dependencies("crates/cli/Cargo.toml");
+    assert!(
+        !cli.iter().any(|dependency| dependency == "ms-todo-daemon"),
+        "crates/cli must reach the daemon over IPC, not link it"
+    );
+    for dependency in dependencies("crates/protocol/Cargo.toml") {
+        assert!(
+            !dependency.starts_with("ms-todo-"),
+            "crates/protocol must stand alone, but depends on {dependency}"
+        );
+    }
+}
+
+// Only `daemon` may use the Graph client; everyone else gets `auth` at most.
+#[test]
+fn only_the_daemon_uses_graph_beyond_auth() {
     let mut offenders = Vec::new();
-    for file in rust_files(&repo_root().join("crates/cli/src")) {
+    let sources = [
+        "crates/cli/src",
+        "crates/core/src",
+        "crates/protocol/src",
+        "src",
+    ];
+    for file in sources
+        .iter()
+        .flat_map(|dir| rust_files(&repo_root().join(dir)))
+    {
         let source = std::fs::read_to_string(&file).expect("read source");
         for (index, line) in source.lines().enumerate() {
             let mut rest = line;
@@ -60,7 +86,7 @@ fn cli_uses_only_the_public_auth_api_of_graph() {
     }
     assert!(
         offenders.is_empty(),
-        "crates/cli may only use ms_todo_graph::auth:\n{}",
+        "only crates/daemon may use ms_todo_graph beyond auth:\n{}",
         offenders.join("\n")
     );
 }
