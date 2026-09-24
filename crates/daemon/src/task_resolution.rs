@@ -119,13 +119,16 @@ async fn resolve_by_id(
     mut lists: Vec<ListRow>,
 ) -> Result<Vec<Target>, ErrorPayload> {
     let mut targets = Vec::with_capacity(ids.len());
-    let mut settled = false;
+    // Asked before any lookup, as `ensure_ready` does: a first sync that
+    // finishes after a lookup missed must still be waited for and looked
+    // in (docs/issues/003-flaky-task-writes-tests.md).
+    let mut ready = all_ready(state).await?;
     for id in ids {
         let mut found = lookup(state, &lists, id).await?;
         // A task in a list whose first sync hasn't finished may just not
         // be cached yet: wait for that, once.
-        if found.is_none() && !settled && !all_ready(state).await? {
-            settled = true;
+        if found.is_none() && !ready {
+            ready = true;
             state.syncer.settle().await;
             lists = state.store.lists().await.map_err(store_error)?;
             found = lookup(state, &lists, id).await?;

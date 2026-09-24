@@ -60,7 +60,7 @@ pub struct DaemonClient {
 
 impl DaemonClient {
     async fn connect(socket: &Path) -> std::io::Result<Self> {
-        let stream = UnixStream::connect(socket).await?;
+        let stream = connect_socket(socket).await?;
         Ok(Self {
             framed: Framed::new(stream, Codec::new()),
             next_id: 0,
@@ -311,10 +311,15 @@ enum Probe {
 }
 
 async fn probe(paths: &Paths) -> Probe {
-    let Ok(mut client) = DaemonClient::connect(&paths.socket_path()).await else {
+    let mut client = match DaemonClient::connect(&paths.socket_path()).await {
+        Ok(client) => client,
+        // Something holds the socket but never accepts: not missing.
+        Err(error) if error.kind() == std::io::ErrorKind::TimedOut => {
+            return Probe::Incompatible(error.to_string());
+        }
         // Missing, or a stale file nobody listens on. A new daemon removes
         // a stale socket itself, under its lock.
-        return Probe::Unreachable;
+        Err(_) => return Probe::Unreachable,
     };
     match client.request_within(Request::Status, QUICK_TIMEOUT).await {
         Ok(ResponseData::Status(status)) => match incompatibility(&status) {
@@ -441,7 +446,7 @@ fn log_tail(paths: &Paths) -> String {
 async fn wait_until_gone(paths: &Paths, pid: u32, timeout: Duration) -> bool {
     let deadline = Instant::now() + timeout;
     loop {
-        let socket_gone = UnixStream::connect(paths.socket_path()).await.is_err();
+        let socket_gone = connect_socket(&paths.socket_path()).await.is_err();
         if socket_gone && !pid_alive(pid) {
             return true;
         }
@@ -450,6 +455,24 @@ async fn wait_until_gone(paths: &Paths, pid: u32, timeout: Duration) -> bool {
         }
         tokio::time::sleep(POLL_INTERVAL).await;
     }
+}
+
+/// Connect to the daemon's socket, giving up after `QUICK_TIMEOUT`. On
+/// macOS a connect that races the daemon closing its socket can wait
+/// forever (seen in `daemon stop`, docs/issues/003-flaky-task-writes-tests.md).
+async fn connect_socket(socket: &Path) -> std::io::Result<UnixStream> {
+    tokio::time::timeout(QUICK_TIMEOUT, UnixStream::connect(socket))
+        .await
+        .map_err(|_| {
+            std::io::Error::new(
+                std::io::ErrorKind::TimedOut,
+                format!(
+                    "{} didn't accept a connection within {} seconds",
+                    socket.display(),
+                    QUICK_TIMEOUT.as_secs()
+                ),
+            )
+        })?
 }
 
 fn pid_alive(pid: u32) -> bool {
