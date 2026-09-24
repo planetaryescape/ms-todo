@@ -18,7 +18,7 @@ The whole project was planned in one session on 2026-09-24, before any code exis
 | 07 | [CLI](07-cli.md) | Command surface, output formats, exit codes, agent skill |
 | 08 | [TUI](08-tui.md) | Views, My Day view, quick add, latency budget |
 | 09 | [Reuse map](09-reuse-map.md) | Exactly what to copy from mxr and spotuify, with SHAs |
-| 10 | [Roadmap](10-roadmap.md) | Phases in build order, each with a completion check you can observe |
+| 10 | [Roadmap](10-roadmap.md) | A ladder of usable releases (D-034), each with a demo and a completion check you can observe |
 | 11 | [Decision log](11-decision-log.md) | Every decision, the options we rejected, and the full story of how we got here |
 | 12 | [Open questions](12-open-questions.md) | Spikes to run against the real API before coding, plus product questions |
 | — | [Kickoff](KICKOFF.md) | The prompt to give the coding agent for the first build session |

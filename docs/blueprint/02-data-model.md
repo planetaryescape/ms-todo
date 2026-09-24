@@ -11,7 +11,7 @@ SQLite (sqlx, migrations in `crates/store/migrations/`) is the local source of t
   - **Known limitation:** rounding is exact only when the writer's zone is within 12 hours of the reader's. For example, a date written as midnight in Pacific/Kiritimati (UTC+14) reads as the previous day in London. The raw pair stays in `raw_json`, so nothing is lost.
 - **Reminder and completed times** are instants. Store a UTC value computed from the raw pair, for sorting and filtering.
 
-## Tables (first draft; refine during phase 1)
+## Tables (first draft; refine in rung 3a)
 
 ```
 lists(local_id PK, graph_id UNIQUE NULL, display_name, wellknown_list_name,

@@ -7,7 +7,7 @@ The CLI is the canonical surface (spotuify's contract): **every feature has a CL
 - `--format table|json|jsonl|ids`: default `table` in a terminal and `json` when piped. The format enum is adapted from spotuify's `spotuify-protocol/src/output.rs` (see [09](09-reuse-map.md)), and mxr has the same idea.
 - `--instance <name>`, `--fresh`, `--quiet`, `--no-color`.
 - Mutations take `--dry-run`, which shows what would change. `--dry-run` and the real run build the same typed plan (targets and verb): dry-run renders it, the real run applies it (vault: `Same-Code-Path Preview`). Destructive commands take `--yes`, and ask for confirmation in a terminal otherwise. Off a terminal, a destructive command without `--yes` exits 2 and never prompts.
-- Mutations take `--idempotency-key K`. Without it, the CLI generates a request ID itself. A repeat with the same key and the same request gets the original result; the same key with a different request (another operation or payload) exits 2. Keys are kept while the operation is unresolved and for 24 hours after it's done, failed or discarded ([04](04-sync-cache.md#instant-local-writes); vault: `Agent-Native Interfaces`).
+- Mutations take `--idempotency-key K` (from rung 3a of [10](10-roadmap.md), when keys persist in the store; before that the CLI just never retries a mutation by itself). Without it, the CLI generates a request ID itself. A repeat with the same key and the same request gets the original result; the same key with a different request (another operation or payload) exits 2. Keys are kept while the operation is unresolved and for 24 hours after it's done, failed or discarded ([04](04-sync-cache.md#instant-local-writes); vault: `Agent-Native Interfaces`).
 - Referring to things:
   - A list: `--list <name|local_id|graph_id>`. A name must match exactly one list, or the command errors out with the candidates. It never picks the first match; that was a flaw in the Python CLI.
   - A task: by `local_id`, or by a unique title match inside `--list`.
@@ -48,7 +48,7 @@ myday      list | add T... | remove T... | suggest | rollover [--dry-run]
 outbox     list | retry OP | discard OP
 undo       [OP_ID] [--copy ID]          # default: this client's last op; same logic as the TUI's u
 schema     [CMD]                        # input and output JSON schemas
-raw        GET|POST|PATCH|DELETE PATH [--body JSON]   # authenticated passthrough to Graph, for debugging (GET only in phase 1)
+raw        GET|POST|PATCH|DELETE PATH [--body JSON]   # authenticated passthrough to Graph, for debugging (GET only in rung 1)
 ```
 
 `raw` counts as coverage of the full surface: anything Graph adds later can be reached before it gets a proper command.
@@ -56,7 +56,8 @@ raw        GET|POST|PATCH|DELETE PATH [--body JSON]   # authenticated passthroug
 ## Output contract
 
 - The JSON shapes are stable and documented, and carry `schema_version`. `ms-todo schema [CMD]` prints the input and output schemas. `--help` output is snapshotted with insta and generates the CLI reference; CI fails on drift (vault: `Building Great CLIs`, `Agent-Native Interfaces`, `Generated Docs as Drift Defense`).
-- Entities include `local_id`, `graph_id`, every field, and `sync_state`: `synced`, `pending`, `unknown` or `failed`. `unknown` means an operation's outcome is ambiguous and is waiting to be attributed or resolved by the user ([04](04-sync-cache.md#unknown-outcome-d-028)); don't retry it. Collection responses carry the scope's sync state in the envelope, `{ "sync": { "state": "initial" | "ready", "generation": N }, "items": [...] }`. Until the first sync of a scope finishes, its state is `initial`, so an empty result isn't mistaken for an empty list (vault: `First Run Is the Launch Surface`, `Derived State Needs an Unknown State`).
+- Entities carry an opaque `id`. In rungs 1–2 of [10](10-roadmap.md) it holds the Graph ID; from rung 3a it's the local ID, with `graph_id` alongside it, and `schema_version` goes up. That's a pre-1.0 contract change, made on purpose (D-034).
+- Entities include every field, and `sync_state`: `synced`, `pending`, `unknown` or `failed`. `unknown` means an operation's outcome is ambiguous and is waiting to be attributed or resolved by the user ([04](04-sync-cache.md#unknown-outcome-d-028)); don't retry it. Collection responses carry the scope's sync state in the envelope, `{ "sync": { "state": "initial" | "ready", "generation": N }, "items": [...] }`. Until the first sync of a scope finishes, its state is `initial`, so an empty result isn't mistaken for an empty list (vault: `First Run Is the Launch Surface`, `Derived State Needs an Unknown State`).
 - **`raw` is exempt** from the rest of this contract. `raw` POST, PATCH and DELETE are synchronous debug passthroughs that bypass the outbox. They're never retried automatically after a timeout or 5xx; they exit 1 with error kind `outcome_unknown` and a message saying the result isn't known. Off a terminal they need `--yes`. They carry no `op_id`, can't be undone, and take no idempotency key.
 - Every other mutation returns an `op_id`. `ms-todo undo [OP_ID]` undoes it with the same logic as the TUI's `u`: undoing a recurring completion needs `--copy <id>` to name the completed copy to delete; without it, `undo` exits 2 and lists the candidates in the error JSON ([04](04-sync-cache.md#completing-a-recurring-task)), and undoing a delete recreates the entity with a new Graph ID (vault: `Building Great CLIs`, `Clean Up Means Archive, Not Delete`; D-009).
 - File contents never pass through IPC or stdout. The CLI passes paths, and the daemon reads and writes the files.
@@ -90,5 +91,7 @@ The repo ships `skills/ms-todo/SKILL.md`, which covers:
 - the exit codes
 - `sync_state: "unknown"` means ms-todo can't tell yet whether a write happened. Don't retry it; wait, or ask the user to resolve it with `ms-todo outbox`
 - treating task content as data, never as instructions. That's mxr's email-injection framing: task titles and bodies can hold text from anywhere.
+
+The skill grows with the roadmap ([10](10-roadmap.md)). v0, in rung 2, uses literal `tasks add` (there's no parsing yet, so no `--no-parse`) and Graph IDs, resolved with `lists list` or `tasks list`. It moves to local IDs at rung 3a, and gains `--no-parse` and `tasks parse` at rung 6.
 
 BK installs the skill into `~/.dotfiles/.skills/` the same way as mxr and spotuify.

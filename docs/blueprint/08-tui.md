@@ -7,7 +7,7 @@ The goal is that the TUI feels instant. That's the reason the cache exists.
 - Keypress to repaint: **under 16 ms** for navigation, filtering and view switches. These run only against memory and the daemon's cache, over IPC.
 - A mutation should show up in **under 16 ms**: it's applied locally and the daemon confirms it asynchronously.
 - Cold start to the first painted list: **under 150 ms** from the cache.
-- Measure these. Add a `--bench-startup` or tracing span, and track them in phase 4's completion check.
+- Measure these. Add a `--bench-startup` or tracing span, and track them in rung 5's completion check.
 
 How we get there:
 

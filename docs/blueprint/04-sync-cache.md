@@ -12,8 +12,8 @@ Goal: the TUI and the CLI read the daemon's SQLite cache (over the protocol, D-0
 
 **How often:**
 
-- While a client is connected, run a delta pass every 15–30 seconds (setting `sync.interval_secs`).
-- With no clients, every 5 minutes.
+- While a client is connected, or for 10 minutes after any client request, run a delta pass every 15–30 seconds (setting `sync.interval_secs`).
+- Otherwise, every 5 minutes.
 - Immediately after the outbox sends something, and on `ms-todo sync`.
 - On app focus, if the TUI tells the daemon it has focus.
 
@@ -75,7 +75,7 @@ A client sends a mutation to the daemon, and the daemon does three things:
 2. Send an `EntityChanged` event right away, so every client re-renders.
 3. Wake the outbox worker.
 
-**Every mutating request carries a client request ID** (vault: `Agent-Native Interfaces`). The CLI generates one, and `--idempotency-key K` lets an agent supply its own. The daemon keeps each ID with its outbox operation and a request fingerprint (the operation plus a hash of its payload) while the operation is unresolved (`pending`, `inflight` or `unknown`), and for 24 hours after it's `done`, `failed` or discarded. A repeat with the same fingerprint gets the original result; a repeat with a different fingerprint is rejected as invalid input (exit code 2). The IPC client never re-sends a mutation after a timeout; it asks the daemon about that request ID instead.
+**Every mutating request carries a client request ID** (vault: `Agent-Native Interfaces`). The CLI generates one, and `--idempotency-key K` lets an agent supply its own. The daemon keeps each ID with its outbox operation and a request fingerprint (the operation plus a hash of its payload) while the operation is unresolved (`pending`, `inflight` or `unknown`), and for 24 hours after it's `done`, `failed` or discarded. A repeat with the same fingerprint gets the original result; a repeat with a different fingerprint is rejected as invalid input (exit code 2). The IPC client never re-sends a mutation after a timeout; it asks the daemon about that request ID instead. (Idempotency keys arrive in rung 3a of [10](10-roadmap.md). In rung 2, before the store and outbox exist, the CLI never retries a mutation, and an uncertain create just returns `outcome_unknown` with its `opId`.)
 
 **Moves are outbox jobs with saved steps** (vault: `A Detached Child Outlives Its Supervisor`). The target task is created with the move job's own `opId`; the source's `opId` is never copied. On start, the daemon resumes or rolls back an unfinished `tasks move`, and still checks the copy before deleting the source. If any copy step's outcome is `unknown` (a checklist item, linked resource or attachment create, or the final upload chunk), the job pauses as unresolved: it keeps the source and the partial target, deletes nothing, and is flagged in `ms-todo outbox list` for the user. Cleaning up a half-built target is allowed only when every step's outcome is known.
 
@@ -136,4 +136,4 @@ Policy: **last write wins at the field level, with a warning when an edit is ove
 
 A read through the daemon returns the cache. `--fresh` forces a delta pass for the relevant lists before answering, and `ms-todo sync --wait` blocks until a full pass finishes. Agents should normally just read. The daemon keeps the cache current.
 
-Each scope has a **sync generation** that only goes up, plus `in_progress`, `last_success_at` and `last_changed_count` ([02](02-data-model.md#tables-first-draft-refine-during-phase-1)). A pass that finds nothing still bumps the generation, and `sync --wait` waits for the generation to move, not for a change or a clock tick (vault: `Zero Change Can Be Success`, `Faster Code Breaks Coarse Clocks`).
+Each scope has a **sync generation** that only goes up, plus `in_progress`, `last_success_at` and `last_changed_count` ([02](02-data-model.md#tables-first-draft-refine-in-rung-3a)). A pass that finds nothing still bumps the generation, and `sync --wait` waits for the generation to move, not for a change or a clock tick (vault: `Zero Change Can Be Success`, `Faster Code Breaks Coarse Clocks`).

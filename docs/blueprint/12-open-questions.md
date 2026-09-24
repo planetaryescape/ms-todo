@@ -19,7 +19,7 @@ For each, record the request, the response (with private data removed), the date
 | S11 | Does setting `dueDateTime` with a time keep the time, or does To Do cut it back to the date? How does the phone show a due date with a time compared with a reminder? | The mapping for "date with a time" | [06](06-natural-language.md) |
 | S12 | Does creating a task with `recurrence` and completing it make Graph create the next occurrence (as the app does), and what does delta return for it? | How recurrence and sync interact | [04](04-sync-cache.md) |
 | S13 | Can a task create carry a unique marker (our extension with the outbox `opId`), and can a lookup find it? (Added after review, 2026-09-24.) | Attributing a create whose outcome is unknown | [04](04-sync-cache.md#unknown-outcome-d-028) |
-| P1 | What is the default page size for task lists and delta, and does `Prefer: odata.maxpagesize` work? (Added during phase 0.) | Pagination, and phase 1's "more than 100 tasks" check | [03](03-graph-provider.md) |
+| P1 | What is the default page size for task lists and delta, and does `Prefer: odata.maxpagesize` work? (Added during phase 0.) | Pagination, and rung 1's "more than 100 tasks" check | [03](03-graph-provider.md) |
 
 ### S5 result (2026-09-24)
 
@@ -97,7 +97,7 @@ Confidence: high (Graph), pending (phone). Evidence: [S11](../research/spikes/S1
 
 ### P1 result (2026-09-24)
 
-**The default page is 50 tasks, on list and delta.** `Prefer: odata.maxpagesize` works on both, but it isn't carried in the `nextLink`, so it has to be sent on every page. Delta can end with an empty page that carries the `deltaLink`, and `lists/delta` returned a short page mid-stream, so a short page doesn't mean the last one. Phase 1's "more than 100 tasks" check still tests pagination. Confidence: high. Evidence: [P1](../research/spikes/P1.md). Changed: [03](03-graph-provider.md#http-client), [10](10-roadmap.md).
+**The default page is 50 tasks, on list and delta.** `Prefer: odata.maxpagesize` works on both, but it isn't carried in the `nextLink`, so it has to be sent on every page. Delta can end with an empty page that carries the `deltaLink`, and `lists/delta` returned a short page mid-stream, so a short page doesn't mean the last one. Rung 1's "more than 100 tasks" check still tests pagination. Confidence: high. Evidence: [P1](../research/spikes/P1.md). Changed: [03](03-graph-provider.md#http-client), [10](10-roadmap.md).
 
 ## Product questions for BK
 

@@ -145,6 +145,7 @@ Every decision from the planning session on 2026-09-24, **including the options 
 - **Option rejected:** direct mode first. The CLI would become a second token refresher, breaking "only one process refreshes" in [01](01-architecture.md#why-a-daemon), and it would be built against internals rather than the protocol.
 - **Why:** "Build the CLI client against the documented protocol, not against private daemon internals" (vault: `API-First Design`). Phase 1 builds the protocol, socket server, auto-start and a daemon that owns sign-in and refresh, plus `auth`, `lists list`, `tasks list`, `raw` and `sync` over IPC. Phase 1 syncs by full enumeration only (below); **delta** sync, the outbox and mutations start in Phase 2. Phase 1's completion check is unchanged.
 - **Phase 1's cache:** the daemon runs a full enumeration of lists and tasks on start and on `ms-todo sync` (page to the end, upsert, tombstone what wasn't seen, by [04](04-sync-cache.md#reconciliation-after-a-lost-delta-token)'s rules), and reads are served from the store. Phase 2 adds delta on top, and the enumeration becomes its reset path, so nothing is thrown away.
+- Note (2026-09-24): the cache now arrives in rung 3a, and rung 1's daemon reads straight from Graph. See D-034.
 
 ### D-033: Blueprint aligned with BK's vault notes. (BK approved, 2026-09-24)
 BK checked the blueprint against his Obsidian notes and approved folding these gaps in. Each is a sentence or three in the doc named.
@@ -165,3 +166,11 @@ BK checked the blueprint against his Obsidian notes and approved folding these g
 | 12 | `schema_version`, `ms-todo schema`, `--help` snapshots with a CI drift check | [07](07-cli.md#output-contract) | `Building Great CLIs`, `Agent-Native Interfaces`, `Generated Docs as Drift Defense` |
 
 - **Option rejected:** leaving these to be discovered during the build. Each is already written up in BK's notes from earlier projects.
+
+### D-034: The roadmap is a ladder of usable releases. (BK, 2026-09-24)
+- **Replaces:** the component phases in [10](10-roadmap.md) (Foundation; Daemon, sync and outbox; Full API surface; TUI; Custom features and natural language; Ship). Phase 0 stays as it was.
+- **Option rejected:** building by component. Nothing would be usable until the TUI phase, and nothing would ship until the last one.
+- **Why:** BK's rule is skateboard → car (vault: `Skateboard MVP`, `Shippable Increment Per Session`). Each rung is a released, installable tool that lets BK do something new from start to finish, and fits one working session. Ceremony is pulled into rung 1, and each rung has at most two new unknowns.
+- **The ladder:** 1 skateboard (see my tasks), 2 scooter (capture and finish tasks), 3a bicycle (instant reads), 3b live sync, 4 e-bike (offline, never lose a write), 5 motorbike (TUI), 6 car (quick add), 7 convertible (My Day), 8a–8e rocket (the rest of the API, one capability per release).
+- **Foundation turns:** up to about three named foundation turns may come before the first usable rung, each saying what it makes possible and ending with something runnable or checkable. ms-todo has one, F1 (install and sign in), so rung 1 arrives in turn 2.
+- **Trade-off, accepted:** rung 1's daemon reads straight from Graph, and rung 3a replaces that read handler with the cache. Entity `id`s change meaning at rung 3a (Graph ID to local ID), with a `schema_version` bump. That's rework `Skateboard MVP` accepts on purpose: "more re-work in exchange for de-risking". D-031 and D-032 still hold: clients only ever talk to the daemon, and the daemon is the only token refresher.
