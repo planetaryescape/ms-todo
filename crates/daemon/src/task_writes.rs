@@ -135,6 +135,9 @@ pub(crate) async fn queue(
         .await
         .map_err(store_error)?;
     state.outbox.wake();
+    state
+        .events
+        .tasks_changed(rows.iter().map(|row| row.local_id.clone()).collect());
     Ok(ResponseData::Applied(Applied {
         op_id: command_id.to_owned(),
         action,

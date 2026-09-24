@@ -51,6 +51,22 @@ pub(crate) async fn ensure_ready(state: &State, scope: &str) -> Result<(), Error
     }
 }
 
+/// The sync state of an answer across every list: `ready` once every list
+/// has synced once, with the lists' generation.
+pub(crate) async fn all_lists_state(
+    state: &State,
+    lists_sync: SyncInfo,
+) -> Result<SyncInfo, ErrorPayload> {
+    Ok(SyncInfo {
+        state: if all_ready(state).await? {
+            SyncState::Ready
+        } else {
+            SyncState::Initial
+        },
+        ..lists_sync
+    })
+}
+
 /// Whether every scope, the lists and each list's tasks, has synced once.
 pub(crate) async fn all_ready(state: &State) -> Result<bool, ErrorPayload> {
     let lists = state.store.lists().await.map_err(store_error)?;

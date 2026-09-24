@@ -1,10 +1,11 @@
-//! Events the daemon pushes to clients (docs/blueprint/04-sync-cache.md#instant-local-writes).
-//! Rung 4 has one, `WriteRejected`, and no client subscribes yet: the TUI
-//! does from rung 5. Until then each event also goes to the daemon's log,
+//! Events the daemon pushes to clients that sent `Subscribe`
+//! (docs/blueprint/04-sync-cache.md#instant-local-writes): what changed in
+//! the cache, and rejected writes. `SyncState` comes from the syncer's own
+//! status instead (`server`). A rejection also goes to the daemon's log,
 //! and a rejected operation stays `failed` in `ms-todo outbox list`, so
 //! nothing is lost for want of a listener.
 
-use ms_todo_protocol::{Event, OpError, WriteRejected};
+use ms_todo_protocol::{EntityChanged, Event, MAX_CHANGED_IDS, OpError, WriteRejected};
 use tokio::sync::broadcast;
 
 /// Events kept for a subscriber that falls behind.
@@ -36,7 +37,22 @@ impl Events {
         }));
     }
 
-    #[cfg(test)]
+    /// These tasks changed in the cache.
+    pub fn tasks_changed(&self, tasks: Vec<String>) {
+        self.changed(Vec::new(), tasks);
+    }
+
+    /// These lists and tasks (local IDs) changed in the cache. Over
+    /// [`MAX_CHANGED_IDS`] is `ResyncNeeded`; nothing is no event.
+    pub fn changed(&self, lists: Vec<String>, tasks: Vec<String>) {
+        let event = match lists.len() + tasks.len() {
+            0 => return,
+            count if count > MAX_CHANGED_IDS => Event::ResyncNeeded,
+            _ => Event::EntityChanged(EntityChanged { lists, tasks }),
+        };
+        let _ = self.sender.send(event);
+    }
+
     pub fn subscribe(&self) -> broadcast::Receiver<Event> {
         self.sender.subscribe()
     }
@@ -45,6 +61,31 @@ impl Events {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn changes_carry_their_ids_up_to_the_cap_and_a_resync_past_it() {
+        let events = Events::new();
+        let mut received = events.subscribe();
+        events.changed(vec!["l1".into()], vec!["t1".into()]);
+        assert_eq!(
+            received.try_recv().expect("an event"),
+            Event::EntityChanged(EntityChanged {
+                lists: vec!["l1".into()],
+                tasks: vec!["t1".into()],
+            })
+        );
+        events.tasks_changed(Vec::new());
+        assert!(received.try_recv().is_err(), "nothing changed, no event");
+
+        let ids = |count: usize| (0..count).map(|n| format!("t{n}")).collect::<Vec<_>>();
+        events.tasks_changed(ids(MAX_CHANGED_IDS));
+        assert!(matches!(
+            received.try_recv().expect("an event"),
+            Event::EntityChanged(changed) if changed.tasks.len() == MAX_CHANGED_IDS
+        ));
+        events.changed(vec!["l1".into()], ids(MAX_CHANGED_IDS));
+        assert_eq!(received.try_recv().expect("an event"), Event::ResyncNeeded);
+    }
 
     #[test]
     fn a_rejection_reaches_a_subscriber() {

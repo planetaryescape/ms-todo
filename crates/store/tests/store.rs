@@ -144,7 +144,8 @@ async fn lists_are_upserted_with_stable_local_ids_and_unseen_ones_are_tombstoned
         })
         .await
         .expect("apply");
-    assert_eq!(applied.changed, 2);
+    assert_eq!(applied.changed.len(), 2);
+    assert!(applied.changed.contains(&groceries));
     let lists = store.lists().await.expect("lists");
     assert_eq!(lists[0].local_id, groceries, "the local ID is stable");
     assert_eq!(lists[0].display_name, "Food");
@@ -193,7 +194,7 @@ async fn lists_are_upserted_with_stable_local_ids_and_unseen_ones_are_tombstoned
         })
         .await
         .expect("apply");
-    assert_eq!(applied.changed, 0);
+    assert!(applied.changed.is_empty());
     let scope = store.scope(LISTS_SCOPE).await.expect("scope").expect("row");
     assert_eq!(scope.generation, 4);
     assert_eq!(scope.last_changed_count, 0);
@@ -216,7 +217,20 @@ async fn tasks_are_upserted_and_what_wasnt_seen_or_is_gone_is_tombstoned() {
         ))
         .await
         .expect("apply");
-    assert_eq!(changed, 3);
+    let local = |graph_id: &str| {
+        let store = &store;
+        let graph_id = graph_id.to_owned();
+        async move {
+            store
+                .task(&graph_id)
+                .await
+                .expect("read")
+                .expect("cached")
+                .local_id
+        }
+    };
+    let (t1_id, t2_id, t3_id) = (local("T1").await, local("T2").await, local("T3").await);
+    assert_eq!(changed, [t1_id.clone(), t2_id.clone(), t3_id.clone()]);
     let t1 = store.task("T1").await.expect("read").expect("T1");
     assert_eq!(
         store.task(&t1.local_id).await.expect("read"),
@@ -233,8 +247,11 @@ async fn tasks_are_upserted_and_what_wasnt_seen_or_is_gone_is_tombstoned() {
         ],
     );
     pass2.gone = vec!["T3".into()];
-    let changed = store.apply_tasks(pass2).await.expect("apply");
-    assert_eq!(changed, 3);
+    let mut changed = store.apply_tasks(pass2).await.expect("apply");
+    changed.sort();
+    let mut expected = [t1_id, t2_id, t3_id];
+    expected.sort();
+    assert_eq!(changed, expected, "changed, gone and unseen, by local ID");
     let live = store.tasks_in_list(&groceries).await.expect("tasks");
     assert_eq!(live.len(), 1);
     assert_eq!(live[0].local_id, t1.local_id, "the local ID is stable");
@@ -491,7 +508,7 @@ async fn a_delta_round_applies_only_what_it_names_and_saves_its_link() {
     round.gone = vec!["T2".into()];
     round.cursor = delta("link-2");
     let changed = store.apply_tasks(round).await.expect("delta round");
-    assert_eq!(changed, 2);
+    assert_eq!(changed.len(), 2);
     let mut titles: Vec<String> = store
         .tasks_in_list(&groceries)
         .await

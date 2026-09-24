@@ -234,6 +234,7 @@ async fn pick_copy(
         }
     };
     Err(ErrorPayload {
+        undo_target: Some(op.command_id.clone()),
         candidates: candidates
             .iter()
             .map(|task| Candidate {

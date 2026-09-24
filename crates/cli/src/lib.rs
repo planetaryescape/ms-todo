@@ -24,6 +24,7 @@ mod sync_commands;
 mod task_commands;
 mod task_output;
 mod time;
+mod tui_command;
 
 use std::process::ExitCode;
 
@@ -46,9 +47,11 @@ pub type DaemonEntry = fn(Paths) -> ExitCode;
 /// docs/blueprint/07-cli.md. clap handles `--help`, `--version` and usage
 /// errors itself (exit 2).
 pub fn run(daemon: DaemonEntry) -> ExitCode {
+    // The TUI's cold start is measured from here.
+    let started = std::time::Instant::now();
     let cli = Cli::parse();
     let format = OutputFormat::resolve(cli.global.format);
-    match execute(cli, format, daemon) {
+    match execute(cli, format, daemon, started) {
         Ok(code) => code,
         Err(error) if error.stdout_closed => ExitCode::SUCCESS,
         Err(error) => {
@@ -58,7 +61,12 @@ pub fn run(daemon: DaemonEntry) -> ExitCode {
     }
 }
 
-fn execute(cli: Cli, format: OutputFormat, daemon: DaemonEntry) -> Result<ExitCode, CliError> {
+fn execute(
+    cli: Cli,
+    format: OutputFormat,
+    daemon: DaemonEntry,
+    started: std::time::Instant,
+) -> Result<ExitCode, CliError> {
     let instance = Instance::detect(cli.global.instance.as_deref())?;
     let paths = Paths::resolve(instance)?;
     if let Command::Daemon(DaemonCommand::Run) = cli.command {
@@ -67,6 +75,10 @@ fn execute(cli: Cli, format: OutputFormat, daemon: DaemonEntry) -> Result<ExitCo
     let runtime = tokio::runtime::Builder::new_current_thread()
         .enable_all()
         .build()?;
+    if let Command::Tui(args) = cli.command {
+        runtime.block_on(tui_command::tui(&paths, args, started))?;
+        return Ok(ExitCode::SUCCESS);
+    }
     runtime.block_on(dispatch(cli.command, &paths, format))?;
     Ok(ExitCode::SUCCESS)
 }
@@ -144,6 +156,7 @@ async fn dispatch(command: Command, paths: &Paths, format: OutputFormat) -> Resu
         Command::Daemon(DaemonCommand::Run) => {
             unreachable!("`daemon run` returns from `execute` before the runtime starts")
         }
+        Command::Tui(_) => unreachable!("`tui` returns from `execute` before `dispatch`"),
     }
 }
 

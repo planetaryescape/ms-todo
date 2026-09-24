@@ -112,6 +112,7 @@ async fn search_with(
             query,
             list_local_id: list,
             status,
+            view: None,
             limit: None,
         })
         .await
@@ -248,6 +249,7 @@ async fn a_malformed_query_is_invalid_query_not_a_database_failure() {
                 query,
                 list_local_id: None,
                 status: StatusFilter::All,
+                view: None,
                 limit: None,
             })
             .await;
@@ -330,6 +332,7 @@ async fn list_status_and_limit_filters() {
             query: "pay",
             list_local_id: None,
             status: StatusFilter::All,
+            view: None,
             limit: Some(2),
         })
         .await

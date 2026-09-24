@@ -3,7 +3,7 @@
 // Dependency direction for ms-todo's crates (docs/blueprint/01-architecture.md#crates).
 // `core` stays free of I/O. Clients talk to the daemon protocol only (D-031):
 // only `daemon` uses the Graph client for data, and only `daemon` touches
-// the store. `cli` may still use
+// the store. The TUI depends on the protocol and core only. `cli` may still use
 // `ms_todo_graph::auth`, because `auth login|status|logout` work without a
 // daemon (D-033 item 4), and it never depends on `daemon`, which would bring
 // the Graph client in with it.
@@ -46,6 +46,18 @@ fn core_has_no_io_dependencies() {
 }
 
 #[test]
+fn the_tui_depends_on_the_protocol_and_core_only() {
+    for dependency in dependencies("crates/tui/Cargo.toml") {
+        assert!(
+            !dependency.starts_with("ms-todo-")
+                || dependency == "ms-todo-protocol"
+                || dependency == "ms-todo-core",
+            "crates/tui reads the cache over IPC (D-031), but depends on {dependency}"
+        );
+    }
+}
+
+#[test]
 fn clients_and_the_protocol_never_depend_on_the_daemon_or_graph_data() {
     let cli = dependencies("crates/cli/Cargo.toml");
     assert!(
@@ -68,6 +80,7 @@ fn only_the_daemon_uses_graph_beyond_auth() {
         "crates/cli/src",
         "crates/core/src",
         "crates/protocol/src",
+        "crates/tui/src",
         "src",
     ];
     for file in sources
@@ -100,6 +113,7 @@ fn only_the_daemon_touches_the_store() {
         "crates/core/Cargo.toml",
         "crates/protocol/Cargo.toml",
         "crates/graph/Cargo.toml",
+        "crates/tui/Cargo.toml",
     ] {
         assert!(
             !dependencies(manifest)
@@ -124,6 +138,7 @@ fn only_the_daemon_touches_the_store() {
         "crates/cli/src",
         "crates/protocol/src",
         "crates/graph/src",
+        "crates/tui/src",
         "src",
     ]
     .iter()

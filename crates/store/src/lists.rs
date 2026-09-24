@@ -76,7 +76,8 @@ pub struct ListsPass {
 /// What applying a [`ListsPass`] did.
 #[derive(Debug, Default, PartialEq, Eq)]
 pub struct ListsApplied {
-    pub changed: i64,
+    /// Local IDs of the lists it added, changed or tombstoned.
+    pub changed: Vec<String>,
     /// Graph IDs of the lists it tombstoned, with their tasks.
     pub removed: Vec<String>,
     /// Outbox operations failed because their list is gone.
@@ -158,7 +159,7 @@ impl Store {
             .bind(&local_id)
             .execute(&mut *tx)
             .await?;
-            applied.changed += 1;
+            applied.changed.push(local_id);
         }
 
         let live: Vec<(String, String)> = sqlx::query_as(
@@ -174,10 +175,11 @@ impl Store {
             }
             let mut failed = tombstone_list(&mut tx, &local_id, &graph_id, pass.rev).await?;
             applied.failed_ops.append(&mut failed);
-            applied.changed += 1;
+            applied.changed.push(local_id);
             applied.removed.push(graph_id);
         }
-        checkpoint(&mut tx, LISTS_SCOPE, applied.changed, &pass.cursor).await?;
+        let count = i64::try_from(applied.changed.len()).unwrap_or(i64::MAX);
+        checkpoint(&mut tx, LISTS_SCOPE, count, &pass.cursor).await?;
         tx.commit().await?;
         Ok(applied)
     }

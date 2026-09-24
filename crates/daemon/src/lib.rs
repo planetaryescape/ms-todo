@@ -22,6 +22,7 @@ mod idempotency;
 mod list_resolution;
 mod outbox;
 mod reads;
+mod seed;
 mod server;
 mod sync;
 mod task_fields;

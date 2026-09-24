@@ -1,10 +1,10 @@
 use bytes::BytesMut;
 use ms_todo_protocol::{
-    Applied, Candidate, Clearable, Codec, DaemonStatus, DoctorReport, ErrorPayload, Event,
-    Importance, Message, NewTask, OpError, OutboxDepth, OutboxOp, OutboxState, PROTOCOL_VERSION,
-    Payload, Plan, PlannedTask, RawWriteMethod, Request, Response, ResponseData, Rolled,
-    ScopeError, ScopeStatus, SearchStatus, SyncInfo, SyncMode, SyncProgress, SyncReport, SyncState,
-    TaskAction, TaskChange, TaskEdit, WriteRejected,
+    Applied, Candidate, Clearable, Codec, Counts, DaemonStatus, DoctorReport, EntityChanged,
+    ErrorPayload, Event, Importance, Message, NewTask, OpError, OutboxDepth, OutboxOp, OutboxState,
+    PROTOCOL_VERSION, Payload, Plan, PlannedTask, RawWriteMethod, Request, Response, ResponseData,
+    Rolled, Scope, ScopeError, ScopeStatus, SearchStatus, Seed, SyncActivity, SyncInfo, SyncMode,
+    SyncProgress, SyncReport, SyncState, TaskAction, TaskChange, TaskEdit, WriteRejected,
 };
 use serde_json::json;
 use tokio_util::codec::{Decoder, Encoder};
@@ -162,6 +162,7 @@ fn every_request_and_response_round_trips() {
                 }],
                 op_id: None,
                 applied: Vec::new(),
+                undo_target: None,
             },
         }),
         Payload::Request(Request::RawWrite {
@@ -238,6 +239,7 @@ fn every_request_and_response_round_trips() {
                 candidates: Vec::new(),
                 op_id: Some("op-1".into()),
                 applied: vec!["T1".into()],
+                undo_target: Some("op-0".into()),
             },
         }),
         Payload::Request(Request::Undo {
@@ -283,6 +285,65 @@ fn every_request_and_response_round_trips() {
                 kind: "rejected".into(),
                 message: "no".into(),
             },
+        })),
+        Payload::Request(Request::Seed {
+            scope: None,
+            search: None,
+        }),
+        Payload::Request(Request::Seed {
+            scope: Some(Scope::List { id: "l1".into() }),
+            search: Some("milk*".into()),
+        }),
+        Payload::Request(Request::Seed {
+            scope: Some(Scope::Planned),
+            search: None,
+        }),
+        Payload::Request(Request::Subscribe),
+        Payload::Response(Response::Ok {
+            data: ResponseData::Seed(Seed {
+                scope: Some(Scope::Important),
+                lists: vec![entity.clone()],
+                lists_sync: SyncInfo {
+                    state: SyncState::Ready,
+                    generation: 2,
+                },
+                counts: Counts {
+                    important: 1,
+                    planned: 2,
+                    all: 3,
+                    completed: 4,
+                    lists: [("l1".to_owned(), 3)].into_iter().collect(),
+                },
+                tasks: vec![entity.clone()],
+                sync: SyncInfo {
+                    state: SyncState::Initial,
+                    generation: 0,
+                },
+                activity: SyncActivity {
+                    generation: 7,
+                    in_progress: true,
+                    last_finished_at: Some(1_790_000_000),
+                    last_error: None,
+                },
+                outbox: OutboxDepth {
+                    pending: 1,
+                    ..OutboxDepth::default()
+                },
+            }),
+        }),
+        Payload::Event(Event::EntityChanged(EntityChanged {
+            lists: vec!["l1".into()],
+            tasks: vec!["t1".into(), "t2".into()],
+        })),
+        Payload::Event(Event::ResyncNeeded),
+        Payload::Event(Event::SyncState(SyncActivity {
+            generation: 8,
+            in_progress: false,
+            last_finished_at: Some(1_790_000_020),
+            last_error: Some(OpError {
+                kind: "network".into(),
+                message: "offline".into(),
+            }),
         })),
     ];
     for (id, payload) in payloads.into_iter().enumerate() {
@@ -369,9 +430,22 @@ fn unknown_tags_decode_to_unknown() {
     );
 
     let event = decode_json(
-        json!({ "id": 0, "payload": { "type": "event", "event": "entity_changed", "ids": [] } }),
+        json!({ "id": 0, "payload": { "type": "event", "event": "duplicate_detected", "ids": [] } }),
     );
     assert_eq!(event.payload, Payload::Event(Event::Unknown));
+
+    // A smart view from a newer client.
+    let seed = decode_json(json!({
+        "id": 0,
+        "payload": { "type": "request", "cmd": "seed", "scope": { "view": "my_day" } }
+    }));
+    assert_eq!(
+        seed.payload,
+        Payload::Request(Request::Seed {
+            scope: Some(Scope::Unknown),
+            search: None
+        })
+    );
 }
 
 #[test]

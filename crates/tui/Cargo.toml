@@ -1,0 +1,33 @@
+[package]
+name = "ms-todo-tui"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish = false
+description = "ms-todo's terminal UI: ratatui over the daemon protocol, seeded from the daemon's cache."
+
+[dependencies]
+# The protocol and core only: the TUI reads the cache over IPC (D-031,
+# tests/workspace_boundaries.rs).
+ms-todo-core = { workspace = true }
+ms-todo-protocol = { workspace = true }
+chrono = { workspace = true }
+crossterm = { workspace = true }
+futures-util = { workspace = true }
+html2text = { workspace = true }
+ratatui = { workspace = true }
+serde_json = { workspace = true }
+socket2 = { workspace = true }
+thiserror = { workspace = true }
+tokio = { workspace = true, features = ["net", "sync"] }
+tokio-util = { workspace = true }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
+
+[dev-dependencies]
+insta = { workspace = true }
+tempfile = { workspace = true }
+tokio = { workspace = true, features = ["rt-multi-thread", "test-util"] }
+
+[lints]
+workspace = true

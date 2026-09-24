@@ -1,0 +1,20 @@
+---
+source: crates/tui/src/ui/tests.rs
+expression: render(&app)
+---
+"╭ Lists ───────────────╮╭ Planned ─────────────────────────────────────────╮╭ Detail ────────────────────────╮"
+"│★ Important          1││  Overdue                                         ││Bins out                        │"
+"│▦ Planned            2││○ Renew passport                   Sun 20         ││                                │"
+"│∞ All                3││  Today                                           ││Status     open                 │"
+"│✓ Completed          1││○ Dentist                           Today         ││List       Home                 │"
+"│≡ Tasks               ││  Tomorrow                                        ││Due        Fri 25 Sep 2026      │"
+"│≡ Home               3││○ Bins out                       Tomorrow         ││(Tomorrow)                      │"
+"│                      ││  This week                                       ││Sync       synced               │"
+"│                      ││○ Book train                       Sun 27         ││                                │"
+"│                      ││  Later                                           ││                                │"
+"│                      ││○ Pay rent                          Oct 1         ││                                │"
+"│                      ││                                                  ││                                │"
+"│                      ││                                                  ││                                │"
+"╰──────────────────────╯╰──────────────────────────────────────────────────╯╰────────────────────────────────╯"
+" ● daemon  ·  synced 12s ago  ·  all changes sent                                                             "
+" a Add  x Done  d Delete  u Undo  / Filter  r Sync  ? Help  q Quit                                   ● synced "

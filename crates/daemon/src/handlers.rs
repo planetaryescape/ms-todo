@@ -81,6 +81,10 @@ pub(crate) async fn handle(state: &State, request: Request) -> Response {
         @ (Request::AddTask { .. } | Request::ChangeTasks { .. } | Request::Undo { .. }) => {
             mutate(state, request).await
         }
+        Request::Seed { scope, search } => crate::seed::seed(state, scope, search.as_deref()).await,
+        // The connection loop answers `Subscribe` itself, and starts the
+        // stream.
+        Request::Subscribe => Ok(ResponseData::Ack),
         Request::OutboxList { state: wanted } => crate::outbox::list(state, wanted).await,
         Request::OutboxRetry { op_id } => crate::outbox::retry(state, &op_id).await,
         Request::OutboxDiscard { op_id } => crate::outbox::discard(state, &op_id).await,

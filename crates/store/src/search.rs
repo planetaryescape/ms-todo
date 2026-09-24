@@ -13,6 +13,7 @@ use sqlx::{AssertSqlSafe, FromRow, Row, SqlitePool};
 
 use crate::graph_columns::body_text;
 use crate::tasks::{TaskRecord, TaskRow, task_record_columns};
+use crate::views::View;
 use crate::{Store, StoreError};
 
 /// Opens and closes each match in a [`SearchHit::snippet`]; the protocol
@@ -42,6 +43,8 @@ pub struct TaskSearch<'a> {
     /// Only this list's tasks.
     pub list_local_id: Option<&'a str>,
     pub status: StatusFilter,
+    /// Only tasks in this smart view.
+    pub view: Option<View>,
     /// At most this many, best first; `None` is every match.
     pub limit: Option<u32>,
 }
@@ -68,6 +71,10 @@ impl Store {
             StatusFilter::Completed => "AND tasks.status = 'completed'",
             StatusFilter::All => "",
         };
+        let view = search
+            .view
+            .map(|view| format!("AND {}", view.condition()))
+            .unwrap_or_default();
         let rows: Vec<SqliteRow> = sqlx::query(AssertSqlSafe(format!(
             "SELECT {}, lists.display_name AS list_name, \
              snippet(tasks_fts, -1, ?1, ?1, '…', ?2) AS snippet \
@@ -75,7 +82,7 @@ impl Store {
              JOIN tasks ON tasks.rowid = tasks_fts.rowid \
              JOIN lists ON lists.local_id = tasks.list_local_id \
              WHERE tasks_fts MATCH ?3 AND tasks.deleted_at IS NULL AND lists.deleted_at IS NULL \
-             AND (?4 IS NULL OR tasks.list_local_id = ?4) {status} \
+             AND (?4 IS NULL OR tasks.list_local_id = ?4) {status} {view} \
              ORDER BY bm25(tasks_fts, ?5, 1.0), tasks.created_at DESC, tasks.rowid \
              LIMIT ?6",
             task_record_columns()

@@ -15,6 +15,7 @@ mod pool;
 mod search;
 mod sync_state;
 mod tasks;
+mod views;
 
 use serde_json::{Map, Value};
 
@@ -27,6 +28,7 @@ pub use pool::Store;
 pub use search::{SearchHit, StatusFilter, TaskSearch};
 pub use sync_state::{Cursor, LISTS_SCOPE, ScopeRow, scope_list, tasks_scope};
 pub use tasks::{Hydration, SeenTask, TaskRow, TasksPass};
+pub use views::{TaskCounts, View};
 
 /// A JSON object from Graph.
 pub type Entity = Map<String, Value>;

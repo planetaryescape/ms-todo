@@ -162,56 +162,58 @@ impl Store {
     /// Rows the daemon wrote after `pass.rev`, rows with no Graph ID, and
     /// rows with an outbox operation `pending`, `inflight` or `unknown` are
     /// left alone (04, instant local writes).
-    /// Returns how many rows changed.
-    pub async fn apply_tasks(&self, pass: TasksPass) -> Result<i64, StoreError> {
+    /// Returns the local IDs of the rows that changed.
+    pub async fn apply_tasks(&self, pass: TasksPass) -> Result<Vec<String>, StoreError> {
         let mut tx = self.writer().begin().await?;
-        let mut changed = 0;
+        let mut changed = Vec::new();
         let mut seen = HashSet::new();
         for task in &pass.seen {
             let Some(graph_id) = text(&task.raw, "id") else {
                 continue;
             };
             seen.insert(graph_id.clone());
-            if upsert_seen(&mut tx, &pass, &graph_id, task).await? {
-                changed += 1;
+            if let Some(local_id) = upsert_seen(&mut tx, &pass, &graph_id, task).await? {
+                changed.push(local_id);
             }
         }
         let deleted_at = now();
         for graph_id in &pass.gone {
             seen.remove(graph_id);
-            let result = sqlx::query(AssertSqlSafe(format!(
+            let mut gone: Vec<String> = sqlx::query_scalar(AssertSqlSafe(format!(
                 "UPDATE tasks SET deleted_at = ? \
-                 WHERE graph_id = ? AND deleted_at IS NULL AND local_rev <= ? AND {NO_UNRESOLVED_OPS}"
+                 WHERE graph_id = ? AND deleted_at IS NULL AND local_rev <= ? AND {NO_UNRESOLVED_OPS} \
+                 RETURNING local_id"
             )))
             .bind(deleted_at)
             .bind(graph_id)
             .bind(pass.rev)
-            .execute(&mut *tx)
+            .fetch_all(&mut *tx)
             .await?;
-            changed += i64::try_from(result.rows_affected()).unwrap_or(0);
+            changed.append(&mut gone);
         }
         // A delta round names only what changed; a whole read tombstones
         // what it didn't see.
         if !pass.cursor.replayed {
-            let live: Vec<String> = sqlx::query_scalar(AssertSqlSafe(format!(
-                "SELECT graph_id FROM tasks WHERE list_local_id = ? AND deleted_at IS NULL \
+            let live: Vec<(String, String)> = sqlx::query_as(AssertSqlSafe(format!(
+                "SELECT graph_id, local_id FROM tasks WHERE list_local_id = ? AND deleted_at IS NULL \
                  AND graph_id IS NOT NULL AND local_rev <= ? AND {NO_UNRESOLVED_OPS}"
             )))
             .bind(&pass.list_local_id)
             .bind(pass.rev)
             .fetch_all(&mut *tx)
             .await?;
-            for graph_id in live.iter().filter(|id| !seen.contains(*id)) {
+            for (graph_id, local_id) in live.into_iter().filter(|(id, _)| !seen.contains(id)) {
                 sqlx::query("UPDATE tasks SET deleted_at = ? WHERE graph_id = ?")
                     .bind(deleted_at)
                     .bind(graph_id)
                     .execute(&mut *tx)
                     .await?;
-                changed += 1;
+                changed.push(local_id);
             }
         }
+        let count = i64::try_from(changed.len()).unwrap_or(i64::MAX);
         match &pass.failure {
-            None => checkpoint(&mut tx, &pass.scope, changed, &pass.cursor).await?,
+            None => checkpoint(&mut tx, &pass.scope, count, &pass.cursor).await?,
             Some((kind, message)) => record_failure(&mut tx, &pass.scope, kind, message).await?,
         }
         tx.commit().await?;
@@ -298,13 +300,13 @@ struct Cached {
     busy: bool,
 }
 
-/// Upsert one enumerated task. Returns whether the row changed.
+/// Upsert one enumerated task. Returns its local ID if the row changed.
 async fn upsert_seen(
     tx: &mut SqliteConnection,
     pass: &TasksPass,
     graph_id: &str,
     task: &SeenTask,
-) -> Result<bool, StoreError> {
+) -> Result<Option<String>, StoreError> {
     let existing: Option<Cached> = sqlx::query_as(AssertSqlSafe(format!(
         "SELECT local_id, list_local_id, raw_json, extension_json, hydrated_etag, deleted_at, \
          local_rev, NOT {NO_UNRESOLVED_OPS} AS busy FROM tasks WHERE graph_id = ?"
@@ -316,7 +318,7 @@ async fn upsert_seen(
         .as_ref()
         .is_some_and(|cached| cached.local_rev > pass.rev || cached.busy)
     {
-        return Ok(false);
+        return Ok(None);
     }
     let raw_json = to_json(&task.raw)?;
     // `(extension_json, hydrated_etag)` when this pass fetched the extension.
@@ -335,7 +337,7 @@ async fn upsert_seen(
                 || cached.extension_json != extension_json
                 || cached.deleted_at.is_some();
             if !changed && cached.hydrated_etag == hydrated_etag {
-                return Ok(false);
+                return Ok(None);
             }
             (cached.local_id, extension_json, hydrated_etag, changed)
         }
@@ -358,7 +360,7 @@ async fn upsert_seen(
         },
     )
     .await?;
-    Ok(changed)
+    Ok(changed.then_some(local_id))
 }
 
 pub(crate) struct WriteTask<'a> {

@@ -1,0 +1,6 @@
+---
+source: crates/tui/src/ui/tests.rs
+expression: "format!(\"{}\\n{}\", last(&adding), last(&confirming))"
+---
+" Add to Home: Buy milk█                                                                              ● synced "
+" Delete "Call Sam"?  y Delete  n Keep                                                                ● synced "

@@ -1,0 +1,20 @@
+---
+source: crates/tui/src/ui/tests.rs
+expression: render(&app)
+---
+"╭ Lists ───────────────╮╭ Home ────────────────────────────────────────────╮╭ Detail ────────────────────────╮"
+"│★ Important          1││○ Pay rent                          Oct 1 ★↻      ││Water plants                    │"
+"│▦ Planned            2││○ Call Sam                                      ◌ ││                                │"
+"│∞ All                3││○ Water plants                                  ✗ ││Status     open                 │"
+"│✓ Completed          1││✓ Ship blueprint                                  ││List       Home                 │"
+"│≡ Tasks               ││                                                  ││Sync       ✗ failed: Microsoft  │"
+"│≡ Home               3││                                                  ││To Do rejected a change         │"
+"│                      ││                                                  ││           the title is too long│"
+"│                      ││                                                  ││                                │"
+"│                      ││                                                  ││                                │"
+"│                      ││                                                  ││                                │"
+"│                      ││                                                  ││                                │"
+"│                      ││                                                  ││                                │"
+"╰──────────────────────╯╰──────────────────────────────────────────────────╯╰────────────────────────────────╯"
+" Microsoft To Do rejected a change, which was undone here: the title is too long                              "
+" a Add  x Done  d Delete  u Undo  / Filter  r Sync  ? Help  q Quit                                   ● synced "

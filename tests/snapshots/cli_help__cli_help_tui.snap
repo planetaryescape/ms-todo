@@ -1,0 +1,15 @@
+---
+source: tests/cli_help.rs
+expression: help_output(args)
+---
+Browse and change your tasks in a full-screen, keyboard-driven view (press ? inside for the keys)
+
+Usage: ms-todo tui [OPTIONS]
+
+Options:
+      --ascii            Draw with plain ASCII instead of Unicode symbols
+      --format <FORMAT>  Output format: jsonl is one object per line, ids one ID per line, csv has a header row [default: table in a terminal, json when piped] [possible values: table, json, jsonl, ids, csv]
+      --bench-startup    Measure the start and a scripted run of keys against your cache, print the timings and quit
+      --instance <NAME>  Use a separate copy of ms-todo's data (also MS_TODO_INSTANCE). Builds run from Cargo's target/ directory default to "dev"; "default" is the installed copy
+  -h, --help             Print help
+  -V, --version          Print version

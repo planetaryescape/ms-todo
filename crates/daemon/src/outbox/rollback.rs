@@ -71,6 +71,7 @@ pub(crate) async fn reject(state: &State, op: &OutboxRow, error: &ErrorPayload) 
         }
     };
     reconcile_list(state, &op.list_local_id).await;
+    state.events.tasks_changed(vec![op.entity_local_id.clone()]);
     state
         .events
         .write_rejected(&op.op_id, &op.entity_local_id, &error.kind, &error.message);

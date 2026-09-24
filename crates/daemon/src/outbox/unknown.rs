@@ -102,6 +102,9 @@ async fn attribute_create(state: &State, op: &OutboxRow) -> Result<bool, String>
                 // The user retried or discarded it meanwhile.
                 return Ok(false);
             }
+            state
+                .events
+                .tasks_changed(vec![op.entity_local_id.clone(), task.local_id.clone()]);
             eprintln!(
                 "ms-todo daemon: operation {} was found in Microsoft To Do by its opId and adopted",
                 op.op_id

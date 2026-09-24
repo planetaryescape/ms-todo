@@ -72,6 +72,8 @@ pub(super) async fn send_ready(state: &State) -> bool {
                 }
             }
             sent = true;
+            // Whatever the outcome, the task's sync state moved.
+            let task_id = op.entity_local_id.clone();
             match attempt(state, &op).await {
                 Ok(Attempt::Created {
                     task,
@@ -106,6 +108,7 @@ pub(super) async fn send_ready(state: &State) -> bool {
                 Err(Failure::Rejected(error)) => reject(state, &op, &error).await,
                 Err(Failure::Unknown(error)) => mark_unknown(state, &op, &error, None).await,
             }
+            state.events.tasks_changed(vec![task_id]);
         }
         for (list_graph_id, ops) in created {
             confirm_list(state, &list_graph_id, &ops).await;
@@ -121,6 +124,7 @@ pub(super) async fn send_ready(state: &State) -> bool {
 /// its list, sent after the 201, answers 200. A 404 rejects it, keeping
 /// the task's content in the `failed` operation.
 async fn confirm_list(state: &State, list_graph_id: &str, ops: &[OutboxRow]) {
+    let tasks = ops.iter().map(|op| op.entity_local_id.clone()).collect();
     match state.graph.get_list(list_graph_id).await {
         Ok(_) => {
             for op in ops {
@@ -150,6 +154,7 @@ async fn confirm_list(state: &State, list_graph_id: &str, ops: &[OutboxRow]) {
             }
         }
     }
+    state.events.tasks_changed(tasks);
 }
 
 async fn attempt(state: &State, op: &OutboxRow) -> Result<Attempt, Failure> {

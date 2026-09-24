@@ -44,6 +44,17 @@ pub(crate) async fn doctor(state: &State) -> Result<ResponseData, ErrorPayload> 
             }
         })
         .collect();
+    Ok(ResponseData::Doctor(DoctorReport {
+        database_path: state.store.path().display().to_string(),
+        database_bytes: state.store.size_bytes(),
+        syncing: state.syncer.status().running(),
+        scopes,
+        outbox: outbox_depth(state).await?,
+    }))
+}
+
+/// How many outbox operations are in each state.
+pub(crate) async fn outbox_depth(state: &State) -> Result<OutboxDepth, ErrorPayload> {
     let (counts, flagged) = state.store.outbox_depth().await.map_err(store_error)?;
     let mut outbox = OutboxDepth {
         flagged: u64::try_from(flagged).unwrap_or(0),
@@ -59,11 +70,5 @@ pub(crate) async fn doctor(state: &State) -> Result<ResponseData, ErrorPayload> 
             OpState::Done => outbox.done = count,
         }
     }
-    Ok(ResponseData::Doctor(DoctorReport {
-        database_path: state.store.path().display().to_string(),
-        database_bytes: state.store.size_bytes(),
-        syncing: state.syncer.status().running(),
-        scopes,
-        outbox,
-    }))
+    Ok(outbox)
 }

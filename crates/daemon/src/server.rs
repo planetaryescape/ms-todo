@@ -17,11 +17,14 @@ use ms_todo_core::{ErrorKind, Paths};
 use ms_todo_graph::GraphClient;
 use ms_todo_graph::auth::{Authenticator, Endpoints};
 use ms_todo_graph::private_file::{atomic_write_mode_0600, ensure_private_dir};
-use ms_todo_protocol::{Codec, Event, FrameTooLarge, Message, Payload, Request, Response};
+use ms_todo_protocol::{
+    Codec, Event, FrameTooLarge, Message, Payload, Request, Response, ResponseData,
+    SOCKET_BUFFER_BYTES,
+};
 use ms_todo_store::Store;
 use tokio::net::{UnixListener, UnixStream};
 use tokio::signal::unix::{SignalKind, signal};
-use tokio::sync::{Notify, mpsc};
+use tokio::sync::{Notify, broadcast, mpsc, watch};
 use tokio::task::JoinSet;
 use tokio_util::codec::Framed;
 
@@ -29,7 +32,7 @@ use crate::events::Events;
 use crate::handlers::{State, error_payload, handle};
 use crate::idempotency::settle_unfinished;
 use crate::outbox::{self, Outbox};
-use crate::sync::{PROGRESS, PassContext, Syncer};
+use crate::sync::{PROGRESS, PassContext, SyncStatus, Syncer};
 
 /// Overrides Graph's base URL in debug builds, so tests can point a real
 /// daemon at a mock server. Release builds ignore it: it would let whoever
@@ -226,8 +229,23 @@ async fn serve_connection(stream: UnixStream, state: Arc<State>, shutdown: Arc<N
     // A connected client, and each request it sends, keep sync polling at
     // the active cadence.
     let _client = state.syncer.client_connected();
+    // See SOCKET_BUFFER_BYTES. Best effort: a small buffer is only slower.
+    let _ = socket2::SockRef::from(&stream).set_send_buffer_size(SOCKET_BUFFER_BYTES);
     let mut framed = Framed::new(stream, Codec::new());
-    while let Some(frame) = framed.next().await {
+    let mut subscription: Option<Subscription> = None;
+    loop {
+        let frame = tokio::select! {
+            frame = framed.next() => frame,
+            Some((id, event)) = pushed(&mut subscription) => {
+                if push(&mut framed, id, event).await.is_err() {
+                    return;
+                }
+                continue;
+            }
+        };
+        let Some(frame) = frame else {
+            return;
+        };
         let message = match frame {
             Ok(message) => message,
             Err(error) => {
@@ -246,6 +264,24 @@ async fn serve_connection(stream: UnixStream, state: Arc<State>, shutdown: Arc<N
             _ => continue,
         };
         state.syncer.client_request();
+        if request == Request::Subscribe {
+            // Subscribed before answering, so nothing that happens after
+            // the `Ack` is missed.
+            let started = Subscription::new(message.id, &state);
+            let first = started.sync.borrow().activity();
+            subscription = Some(started);
+            let answer = Response::Ok {
+                data: ResponseData::Ack,
+            };
+            if send(&mut framed, message.id, answer).await.is_err()
+                || push(&mut framed, message.id, Event::SyncState(first))
+                    .await
+                    .is_err()
+            {
+                return;
+            }
+            continue;
+        }
         let stopping = request == Request::Shutdown;
         // Progress of any sync the request waits for goes back as events
         // with its ID, each resetting the client's stall deadline.
@@ -265,6 +301,12 @@ async fn serve_connection(stream: UnixStream, state: Arc<State>, shutdown: Arc<N
                         return;
                     }
                 }
+                // A slow request doesn't hold up the subscriber's events.
+                Some((id, event)) = pushed(&mut subscription) => {
+                    if push(&mut framed, id, event).await.is_err() {
+                        return;
+                    }
+                }
             }
         };
         if send(&mut framed, message.id, response).await.is_err() {
@@ -275,6 +317,81 @@ async fn serve_connection(stream: UnixStream, state: Arc<State>, shutdown: Arc<N
             return;
         }
     }
+}
+
+/// A connection's `Subscribe`: the daemon's events, and a `SyncState`
+/// whenever a sync pass starts or finishes, all with the `Subscribe`
+/// request's message ID.
+struct Subscription {
+    id: u64,
+    events: broadcast::Receiver<Event>,
+    sync: watch::Receiver<SyncStatus>,
+    /// `(started, finished)` of the last `SyncState` sent: the status
+    /// also changes with each progress update, which isn't one.
+    passes: (u64, u64),
+}
+
+impl Subscription {
+    fn new(id: u64, state: &State) -> Self {
+        let mut sync = state.syncer.subscribe();
+        let passes = {
+            let status = sync.borrow_and_update();
+            (status.started, status.finished)
+        };
+        Self {
+            id,
+            events: state.events.subscribe(),
+            sync,
+            passes,
+        }
+    }
+
+    /// The next event to push. Cancel-safe: both receivers are.
+    async fn next(&mut self) -> Event {
+        loop {
+            tokio::select! {
+                received = self.events.recv() => match received {
+                    Ok(event) => return event,
+                    // It missed some: all it can do is read everything again.
+                    Err(broadcast::error::RecvError::Lagged(_)) => return Event::ResyncNeeded,
+                    // The sender lives as long as the daemon.
+                    Err(broadcast::error::RecvError::Closed) => std::future::pending().await,
+                },
+                changed = self.sync.changed() => {
+                    if changed.is_err() {
+                        std::future::pending::<()>().await;
+                    }
+                    let status = self.sync.borrow_and_update().clone();
+                    let passes = (status.started, status.finished);
+                    if passes != self.passes {
+                        self.passes = passes;
+                        return Event::SyncState(status.activity());
+                    }
+                }
+            }
+        }
+    }
+}
+
+/// The subscriber's next event with its ID, or never without one.
+async fn pushed(subscription: &mut Option<Subscription>) -> Option<(u64, Event)> {
+    match subscription {
+        Some(subscription) => Some((subscription.id, subscription.next().await)),
+        None => std::future::pending().await,
+    }
+}
+
+async fn push(
+    framed: &mut Framed<UnixStream, Codec>,
+    id: u64,
+    event: Event,
+) -> Result<(), std::io::Error> {
+    framed
+        .send(Message {
+            id,
+            payload: Payload::Event(event),
+        })
+        .await
 }
 
 async fn send(

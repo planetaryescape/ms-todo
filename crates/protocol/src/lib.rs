@@ -18,10 +18,20 @@ pub use codec::{Codec, FrameTooLarge, MAX_FRAME_BYTES};
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
 
-/// Bumped on any change an older peer can't read. 4: `ListTasks` gained
-/// `search`, which an older daemon would ignore and answer with the whole
-/// list.
-pub const PROTOCOL_VERSION: u32 = 4;
+/// Bumped on any change an older peer can't read. 5: `Seed` and
+/// `Subscribe`, which the TUI needs from its first request, and the events
+/// a subscription streams.
+pub const PROTOCOL_VERSION: u32 = 5;
+
+/// The socket buffer both ends ask for: room for a large list's `Seed` in
+/// one write. macOS gives a Unix socket 8 KiB, so a 350 KiB seed crossed
+/// in 45 wake-ups of both processes, which cost more than the query.
+pub const SOCKET_BUFFER_BYTES: usize = 1024 * 1024;
+
+/// The most IDs one `EntityChanged` carries. A change to more is sent as
+/// `ResyncNeeded` instead: past this, reading the view again is cheaper
+/// than patching it.
+pub const MAX_CHANGED_IDS: usize = 500;
 
 /// The daemon's exit status when its database was upgraded by a newer
 /// ms-todo (a migration this build doesn't know). The client that started
@@ -164,6 +174,21 @@ pub enum Request {
         #[serde(default)]
         idempotency_key: Option<String>,
     },
+    /// Everything a client needs to draw its first screen, from the cache
+    /// (spotuify's `ClientSeed`): the lists, the smart views' and lists'
+    /// counts, and the tasks of `scope` (the default list when `None`),
+    /// only those matching `search` when given (see `SearchTasks`).
+    Seed {
+        #[serde(default)]
+        scope: Option<Scope>,
+        #[serde(default)]
+        search: Option<String>,
+    },
+    /// Stream events on this connection from now on: `EntityChanged`,
+    /// `ResyncNeeded`, `SyncState` and `WriteRejected`, each with this
+    /// request's message ID. Answered `Ack`, then a `SyncState`. The
+    /// connection still takes requests.
+    Subscribe,
     /// A valid access token, for `auth bearer --reveal-secret`.
     Bearer,
     /// Stop the daemon. It answers `Ack`, then exits.
@@ -234,9 +259,77 @@ pub enum ResponseData {
         /// Unix seconds.
         expires_at: i64,
     },
+    Seed(Seed),
     Ack,
     #[serde(other)]
     Unknown,
+}
+
+/// What a client shows: a smart view over every list, or one list.
+#[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(tag = "view", rename_all = "snake_case")]
+pub enum Scope {
+    /// Open tasks marked important.
+    Important,
+    /// Open tasks with a due date, soonest first.
+    Planned,
+    /// Every open task.
+    All,
+    /// Every completed task, most recently completed first.
+    Completed,
+    /// One list's tasks, open and completed, by its local ID or name.
+    List { id: String },
+    #[serde(other)]
+    Unknown,
+}
+
+/// The answer to `Seed`.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct Seed {
+    /// The scope answered, a list always by its local ID. `None` only for
+    /// the default list before the lists have synced once, when nobody
+    /// knows which list that is yet.
+    pub scope: Option<Scope>,
+    /// Every live list, as `ListLists` gives them.
+    pub lists: Vec<Entity>,
+    /// The lists' own sync state.
+    pub lists_sync: SyncInfo,
+    pub counts: Counts,
+    /// The scope's tasks, as `ListTasks` gives them; best match first with
+    /// `search`.
+    pub tasks: Vec<Entity>,
+    /// The scope's sync state: `initial` until it has synced once, so an
+    /// empty `tasks` isn't mistaken for an empty list.
+    pub sync: SyncInfo,
+    pub activity: SyncActivity,
+    pub outbox: OutboxDepth,
+}
+
+/// How many tasks each smart view and each list holds.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Counts {
+    pub important: u64,
+    pub planned: u64,
+    pub all: u64,
+    pub completed: u64,
+    /// Open tasks by list local ID; a list with none is absent.
+    #[serde(default)]
+    pub lists: std::collections::BTreeMap<String, u64>,
+}
+
+/// Whether the daemon is syncing, and how its last pass went.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SyncActivity {
+    /// Sync passes finished since the daemon started; goes up by one per
+    /// pass, even one that changed nothing.
+    pub generation: u64,
+    pub in_progress: bool,
+    /// Unix seconds: when the last pass finished.
+    #[serde(default)]
+    pub last_finished_at: Option<i64>,
+    /// Why the last pass failed, if it did.
+    #[serde(default)]
+    pub last_error: Option<OpError>,
 }
 
 /// What `Status` reports. Ready means this answers with a compatible
@@ -622,6 +715,10 @@ pub struct ErrorPayload {
     /// Tasks a multi-task mutation changed before it failed.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub applied: Vec<String>,
+    /// For an undo that needs `copy`: the `op_id` it would undo, so the
+    /// retry with the chosen copy undoes that one and no other.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub undo_target: Option<String>,
 }
 
 /// Pushed by the daemon. A client skips events it doesn't know.
@@ -634,8 +731,24 @@ pub enum Event {
     /// Graph rejected an outbox operation for good: it's `failed`, and its
     /// local change was rolled back.
     WriteRejected(WriteRejected),
+    /// These lists or tasks (local IDs) changed in the cache: a write, an
+    /// outbox operation settling, or a sync. At most [`MAX_CHANGED_IDS`].
+    EntityChanged(EntityChanged),
+    /// More changed than an `EntityChanged` carries, or the subscriber fell
+    /// behind and missed events: read everything again.
+    ResyncNeeded,
+    /// A sync pass started or finished.
+    SyncState(SyncActivity),
     #[serde(other)]
     Unknown,
+}
+
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct EntityChanged {
+    #[serde(default)]
+    pub lists: Vec<String>,
+    #[serde(default)]
+    pub tasks: Vec<String>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]

@@ -12,7 +12,7 @@
 use std::future::Future;
 use std::time::Duration;
 
-use ms_todo_protocol::{ErrorPayload, SyncProgress};
+use ms_todo_protocol::{ErrorPayload, OpError, SyncActivity, SyncProgress};
 use tokio::sync::{Notify, mpsc, watch};
 use tokio::time::Instant;
 
@@ -43,11 +43,30 @@ pub(crate) struct SyncStatus {
     pub progress: SyncProgress,
     /// How the last finished pass went.
     pub last: Option<PassOutcome>,
+    /// Unix seconds: when the last pass finished.
+    pub last_finished_at: Option<i64>,
 }
 
 impl SyncStatus {
     pub fn running(&self) -> bool {
         self.started > self.finished
+    }
+
+    /// The status as clients see it (`Seed` and the `SyncState` event).
+    pub fn activity(&self) -> SyncActivity {
+        SyncActivity {
+            generation: self.finished,
+            in_progress: self.running(),
+            last_finished_at: self.last_finished_at,
+            last_error: self
+                .last
+                .as_ref()
+                .and_then(|last| last.failure.as_ref())
+                .map(|failure| OpError {
+                    kind: failure.kind.clone(),
+                    message: failure.message.clone(),
+                }),
+        }
     }
 }
 
@@ -206,6 +225,7 @@ impl Syncer {
             self.status.send_modify(|status| {
                 status.finished = status.started;
                 status.last = Some(outcome);
+                status.last_finished_at = Some(chrono::Utc::now().timestamp());
                 status.progress = SyncProgress::default();
             });
             let finished = Instant::now();

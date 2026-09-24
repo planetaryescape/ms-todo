@@ -89,6 +89,7 @@ pub(crate) async fn retry(state: &State, op_id: &str) -> Result<ResponseData, Er
     if !requeued {
         return Err(moved(&op));
     }
+    state.events.tasks_changed(vec![op.entity_local_id.clone()]);
     state.outbox.wake();
     current(state, &op.op_id).await
 }
@@ -121,6 +122,7 @@ pub(crate) async fn discard(state: &State, op_id: &str) -> Result<ResponseData, 
     if reconcile || !cascaded.is_empty() {
         reconcile_list(state, &op.list_local_id).await;
     }
+    state.events.tasks_changed(vec![op.entity_local_id.clone()]);
     let cause = format!("not sent: it waited on {}, which was discarded", op.op_id);
     for waiter in &cascaded {
         state

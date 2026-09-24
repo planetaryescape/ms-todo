@@ -63,6 +63,9 @@ pub enum Command {
     },
     /// Send an authenticated request straight to Microsoft Graph, for debugging
     Raw(RawArgs),
+    /// Browse and change your tasks in a full-screen, keyboard-driven view
+    /// (press ? inside for the keys)
+    Tui(TuiArgs),
     /// Start, stop or check the background daemon that talks to Microsoft
     #[command(subcommand)]
     Daemon(DaemonCommand),
@@ -340,4 +343,15 @@ pub enum DaemonCommand {
     /// Run the daemon in the foreground (what `start` launches)
     #[command(hide = true)]
     Run,
+}
+
+#[derive(Debug, Args)]
+pub struct TuiArgs {
+    /// Draw with plain ASCII instead of Unicode symbols
+    #[arg(long)]
+    pub ascii: bool,
+    /// Measure the start and a scripted run of keys against your cache,
+    /// print the timings and quit
+    #[arg(long)]
+    pub bench_startup: bool,
 }

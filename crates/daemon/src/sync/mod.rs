@@ -8,4 +8,4 @@ mod pass;
 mod scheduler;
 
 pub(crate) use pass::PassContext;
-pub(crate) use scheduler::{PROGRESS, PassOutcome, Syncer};
+pub(crate) use scheduler::{PROGRESS, PassOutcome, SyncStatus, Syncer};

@@ -156,7 +156,9 @@ async fn sync_lists(context: &PassContext) -> Result<u64, ErrorPayload> {
         .await
         .map_err(store_error)?;
     rejected_with_list(context, &applied.failed_ops).await;
-    Ok(u64::try_from(applied.changed).unwrap_or(0))
+    let count = u64::try_from(applied.changed.len()).unwrap_or(u64::MAX);
+    context.events.changed(applied.changed, Vec::new());
+    Ok(count)
 }
 
 /// Say that `op_ids`, queued for a list found deleted, were rejected.
@@ -185,7 +187,7 @@ async fn sync_list(context: &PassContext, list: &ListRow) -> Result<u64, ErrorPa
     let round = match round(context, &scope, &start).await {
         Ok(round) => round,
         Err(failure) if failure.kind == ErrorKind::NotFound.as_str() => {
-            return list_not_found(context, list_graph_id, &scope, rev, failure).await;
+            return list_not_found(context, list, &scope, rev, failure).await;
         }
         Err(failure) => return Err(fail(store, &scope, failure).await),
     };
@@ -244,9 +246,11 @@ async fn sync_list(context: &PassContext, list: &ListRow) -> Result<u64, ErrorPa
         })
         .await
         .map_err(store_error)?;
+    let count = u64::try_from(changed.len()).unwrap_or(u64::MAX);
+    context.events.tasks_changed(changed);
     match failure {
         Some(failure) => Err(failure),
-        None => Ok(u64::try_from(changed).unwrap_or(0)),
+        None => Ok(count),
     }
 }
 
@@ -307,11 +311,14 @@ async fn round(context: &PassContext, scope: &str, start: &str) -> Result<Round,
 /// drop its cursor. Otherwise the scope fails and keeps its link.
 async fn list_not_found(
     context: &PassContext,
-    list_graph_id: &str,
+    list: &ListRow,
     scope: &str,
     rev: i64,
     failure: ErrorPayload,
 ) -> Result<u64, ErrorPayload> {
+    let Some(list_graph_id) = list.graph_id.as_deref() else {
+        return Err(fail(&context.store, scope, failure).await);
+    };
     match context.graph.get_list(list_graph_id).await {
         Err(error) if error.status() == Some(404) => {
             eprintln!("ms-todo daemon: a list was deleted in Graph; removing it from the cache");
@@ -322,6 +329,9 @@ async fn list_not_found(
                 .map_err(store_error)?;
             if let Some(failed) = &removed {
                 rejected_with_list(context, failed).await;
+                context
+                    .events
+                    .changed(vec![list.local_id.clone()], Vec::new());
             }
             Ok(u64::from(removed.is_some()))
         }

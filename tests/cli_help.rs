@@ -53,6 +53,7 @@ fn cli_help_snapshots_cover_all_commands() {
         ("cli_help_doctor", &["doctor", "--help"]),
         ("cli_help_schema", &["schema", "--help"]),
         ("cli_help_raw", &["raw", "--help"]),
+        ("cli_help_tui", &["tui", "--help"]),
         ("cli_help_daemon", &["daemon", "--help"]),
         ("cli_help_daemon_start", &["daemon", "start", "--help"]),
         ("cli_help_daemon_stop", &["daemon", "stop", "--help"]),

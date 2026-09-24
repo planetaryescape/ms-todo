@@ -22,12 +22,14 @@ ms-todo-daemon = { workspace = true }
 ms-todo-protocol = { workspace = true }
 assert_cmd = { workspace = true }
 chrono = { workspace = true }
+futures-util = { workspace = true }
 insta = { workspace = true }
 serde_json = { workspace = true }
 # Tests reach into a daemon's database to make its writes fail.
 sqlx = { workspace = true }
 tempfile = { workspace = true }
-tokio = { workspace = true, features = ["rt-multi-thread"] }
+tokio = { workspace = true, features = ["rt-multi-thread", "net"] }
+tokio-util = { workspace = true }
 toml = { workspace = true }
 wiremock = { workspace = true }
 
@@ -44,6 +46,7 @@ members = [
     "crates/store",
     "crates/daemon",
     "crates/cli",
+    "crates/tui",
 ]
 
 [workspace.package]
@@ -70,10 +73,12 @@ ms-todo-graph = { path = "crates/graph" }
 ms-todo-store = { path = "crates/store" }
 ms-todo-daemon = { path = "crates/daemon" }
 ms-todo-cli = { path = "crates/cli" }
+ms-todo-tui = { path = "crates/tui" }
 
 bytes = "1"
 chrono = { version = "0.4", default-features = false, features = ["clock", "std"] }
 clap = { version = "4", features = ["derive"] }
+crossterm = { version = "0.29", features = ["event-stream"] }
 csv = "1"
 dirs = "6"
 fastrand = "2"
@@ -82,16 +87,20 @@ html2text = "0.17"
 iana-time-zone = "0.1"
 futures-util = { version = "0.3", default-features = false, features = ["sink", "std"] }
 nix = { version = "0.30", default-features = false, features = ["signal"] }
+ratatui = "0.30"
 reqwest = { version = "0.13", features = ["json", "form"] }  # rustls is the default TLS in 0.13
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 sha2 = "0.10"
+socket2 = "0.6"
 # Runtime queries only: no `query!` macros, so builds need no database.
 sqlx = { version = "0.9", default-features = false, features = ["runtime-tokio", "sqlite-bundled", "migrate", "macros"] }
 thiserror = "2"
 tokio = { version = "1", default-features = false, features = ["rt", "macros", "time"] }
 tokio-util = { version = "0.7", features = ["codec"] }
 toml = "1"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", default-features = false, features = ["fmt", "std"] }
 uuid = { version = "1", features = ["v4"] }
 
 assert_cmd = "2"
