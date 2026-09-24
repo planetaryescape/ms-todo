@@ -1,5 +1,24 @@
 # Changelog
 
+## [0.1.9](https://github.com/planetaryescape/ms-todo/compare/v0.1.8...v0.1.9) (2026-09-24)
+
+
+### Features
+
+* edit fields, act on a selection, run the palette and see diagnostics in the TUI ([443e522](https://github.com/planetaryescape/ms-todo/commit/443e522c11f4fba11fea3ca56a3bc16e6462e73f))
+* open the TUI when ms-todo or mst runs with no command in a terminal ([3292001](https://github.com/planetaryescape/ms-todo/commit/3292001a721dafeb9f4892406266c2ed6f7412ab))
+
+
+### Bug Fixes
+
+* never miss a task cached mid-sync, and never hang connecting to a stopping daemon ([6263706](https://github.com/planetaryescape/ms-todo/commit/6263706be20067bf9622578786d1475aacc3c35a))
+* strip control characters from terminal output ([69251d0](https://github.com/planetaryescape/ms-todo/commit/69251d0329a64753b1c9565985e56c69718a5212))
+
+
+### Documentation
+
+* rung 5b status, keys, Homebrew install, roadmap and D-044 ([e48f3ae](https://github.com/planetaryescape/ms-todo/commit/e48f3aea760854985113db7afb93ee6cc9f08e79))
+
 ## [0.1.8](https://github.com/planetaryescape/ms-todo/compare/v0.1.7...v0.1.8) (2026-09-24)
 
 
