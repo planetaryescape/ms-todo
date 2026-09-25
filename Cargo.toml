@@ -20,6 +20,8 @@ ms-todo-daemon = { workspace = true }
 
 [dev-dependencies]
 ms-todo-protocol = { workspace = true }
+# The Graph double, shared with the demo harness.
+ms-todo-fake-graph = { workspace = true }
 assert_cmd = { workspace = true }
 base64 = { workspace = true }
 chrono = { workspace = true }
@@ -51,6 +53,8 @@ members = [
     "crates/daemon",
     "crates/cli",
     "crates/tui",
+    "crates/fake-graph",
+    "demo/fake-graph",
 ]
 
 [workspace.package]
@@ -79,6 +83,7 @@ ms-todo-store = { path = "crates/store" }
 ms-todo-daemon = { path = "crates/daemon" }
 ms-todo-cli = { path = "crates/cli" }
 ms-todo-tui = { path = "crates/tui" }
+ms-todo-fake-graph = { path = "crates/fake-graph" }
 
 # The nearest 256-colour index for an RGB theme colour, where truecolor is
 # missing.

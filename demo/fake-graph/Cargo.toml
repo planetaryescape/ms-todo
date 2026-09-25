@@ -1,0 +1,24 @@
+[package]
+name = "ms-todo-demo-graph"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+# Dev-only: serves made-up data for the README's recordings. Release builds
+# are `--bin ms-todo`, so this never ships.
+publish = false
+description = "A fake Microsoft Graph with made-up data, for ms-todo's demo recordings."
+
+[[bin]]
+name = "demo-fake-graph"
+path = "src/main.rs"
+
+[dependencies]
+ms-todo-fake-graph = { workspace = true }
+chrono = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+tokio = { workspace = true, features = ["rt-multi-thread"] }
+wiremock = { workspace = true }
+
+[lints]
+workspace = true

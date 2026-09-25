@@ -1,0 +1,125 @@
+{
+  "me": {
+    "displayName": "Alex Rivera",
+    "mail": "alex@example.com",
+    "userPrincipalName": "alex@example.com"
+  },
+  "lists": [
+    {
+      "name": "Tasks",
+      "wellknown": "defaultList",
+      "tasks": [
+        { "title": "Call the plumber back", "due": 0, "importance": "high" },
+        { "title": "Renew passport", "due": -3, "importance": "high", "notes": "Photos are in the desk drawer. The form needs a countersignature." },
+        { "title": "Reply to Sam", "due": 1 },
+        { "title": "Pick up dry cleaning", "due": 0 },
+        { "title": "Back up the laptop" },
+        { "title": "Birthday gift for Mia", "due": 4, "notes": "She mentioned the pottery class." },
+        { "title": "Return library books", "completed": -1 }
+      ]
+    },
+    {
+      "name": "Groceries",
+      "tasks": [
+        { "title": "Oat milk" },
+        { "title": "Coffee beans" },
+        { "title": "Lemons" },
+        { "title": "Sourdough loaf", "completed": 0 }
+      ]
+    },
+    {
+      "name": "Newsletter",
+      "folder": "Projects",
+      "tasks": [
+        {
+          "title": "Draft the first issue",
+          "due": 1,
+          "importance": "high",
+          "steps": [
+            { "title": "Outline three sections", "done": true },
+            { "title": "Write the intro", "done": true },
+            { "title": "Pick three links" },
+            { "title": "Proofread" }
+          ]
+        },
+        { "title": "Pick a newsletter platform", "completed": -2, "notes": "Comparison of the options: https://example.com/newsletter-platforms" },
+        { "title": "Set up the custom domain", "due": -1 },
+        { "title": "Write the welcome email", "due": 2 },
+        { "title": "Design the header image", "due": 3 },
+        { "title": "Invite the first 20 readers", "due": 7 }
+      ]
+    },
+    {
+      "name": "Kitchen refit",
+      "folder": "Projects",
+      "tasks": [
+        { "title": "Get cabinet quotes", "due": -2, "importance": "high" },
+        { "title": "Book the electrician", "due": 1 },
+        { "title": "Choose worktop samples", "due": 5, "notes": "Showroom opens at 10 on Saturdays." },
+        { "title": "Order floor tiles" },
+        { "title": "Measure the window wall", "completed": -3 }
+      ]
+    },
+    {
+      "name": "Finances",
+      "folder": "Areas",
+      "tasks": [
+        {
+          "title": "Pay rent",
+          "due_day_of_month": 1,
+          "importance": "high",
+          "recurrence": { "type": "absoluteMonthly", "interval": 1, "dayOfMonth": 1, "month": 0, "daysOfWeek": [], "firstDayOfWeek": "sunday", "index": "first" }
+        },
+        {
+          "title": "Update the budget",
+          "due": 2,
+          "recurrence": { "type": "weekly", "interval": 1, "daysOfWeek": ["sunday"], "firstDayOfWeek": "sunday", "dayOfMonth": 0, "month": 0, "index": "first" }
+        },
+        { "title": "Check the energy bill", "due": 0 },
+        { "title": "File the tax return", "due": 12, "importance": "high", "notes": "Last year's figures are in the Finances folder on the laptop. Ask about the rent deposit receipt." },
+        { "title": "Top up the holiday fund", "due": 3 },
+        { "title": "Cancel the gym add-on", "completed": -1 }
+      ]
+    },
+    {
+      "name": "Health",
+      "folder": "Areas",
+      "tasks": [
+        { "title": "Refill prescription", "due": -1, "importance": "high" },
+        { "title": "Book a physio appointment", "due": 0 },
+        { "title": "Run 5k", "due": 1 },
+        { "title": "Meal prep for the week", "completed": -2 }
+      ]
+    },
+    {
+      "name": "Work",
+      "folder": "Areas",
+      "tasks": [
+        { "title": "Quarterly review slides", "due": 1, "importance": "high" },
+        { "title": "Prep 1:1 with Jordan", "due": 0 },
+        { "title": "Plan the team offsite", "due": 14 },
+        { "title": "Send the project update", "completed": 0 },
+        { "title": "Review Priya's PR", "completed": -1 }
+      ]
+    },
+    {
+      "name": "Books to read",
+      "folder": "Someday / Maybe",
+      "tasks": [
+        { "title": "Deep Work" },
+        { "title": "Project Hail Mary" },
+        { "title": "Four Thousand Weeks" },
+        { "title": "The Pragmatic Programmer" }
+      ]
+    },
+    {
+      "name": "Trips",
+      "folder": "Someday / Maybe",
+      "tasks": [
+        { "title": "Lisbon in spring" },
+        { "title": "Walk the Cotswold Way" },
+        { "title": "See the northern lights" }
+      ]
+    }
+  ]
+}

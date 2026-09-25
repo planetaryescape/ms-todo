@@ -234,8 +234,17 @@ async fn dispatch(command: Command, paths: &Paths, format: OutputFormat) -> Resu
     }
 }
 
+/// Honours the daemon's debug-only `MS_TODO_GRAPH_URL`, so `auth status`
+/// against a fake Graph (tests, the demo) asks the fake who's signed in
+/// rather than sending a fake token to Microsoft. Release builds ignore it.
 fn authenticator(paths: &Paths) -> Result<Authenticator, CliError> {
-    Ok(Authenticator::new(paths.auth_dir(), Endpoints::default())?)
+    let mut endpoints = Endpoints::default();
+    if cfg!(debug_assertions)
+        && let Ok(url) = std::env::var("MS_TODO_GRAPH_URL")
+    {
+        endpoints.graph = url;
+    }
+    Ok(Authenticator::new(paths.auth_dir(), endpoints)?)
 }
 
 /// The daemon answered a request with the wrong kind of data.

@@ -1,0 +1,18 @@
+[package]
+name = "ms-todo-fake-graph"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+# Dev-only: the integration tests and the demo harness use it, and nothing
+# that ships links it.
+publish = false
+description = "A Microsoft Graph double for ms-todo's integration tests and demo."
+
+[dependencies]
+base64 = { workspace = true }
+chrono = { workspace = true }
+serde_json = { workspace = true }
+wiremock = { workspace = true }
+
+[lints]
+workspace = true
