@@ -4,7 +4,9 @@ Capture and manage Microsoft To Do tasks from Raycast using the local [ms-todo](
 
 ## Setup
 
-1. Install the official ms-todo Homebrew formula on macOS:
+1. Install **Microsoft To Do via ms-todo** from the Raycast Store.
+
+2. Install the official ms-todo Homebrew formula on macOS:
 
    ```sh
    brew install planetaryescape/ms-todo/ms-todo
@@ -12,7 +14,7 @@ Capture and manage Microsoft To Do tasks from Raycast using the local [ms-todo](
 
    You can also [install from source](https://github.com/planetaryescape/ms-todo#install). The release binary is not currently code signed; follow the main project's installation guidance when choosing how to install it.
 
-2. Sign in and check the local cache:
+3. Sign in and check the local cache:
 
    ```sh
    ms-todo auth login
@@ -20,7 +22,7 @@ Capture and manage Microsoft To Do tasks from Raycast using the local [ms-todo](
    ms-todo doctor
    ```
 
-3. Import this folder as a local extension in Raycast, or use `npm install` and `npm run dev` from this folder. The extension looks for `ms-todo` in the standard Homebrew paths, `~/.local/bin`, and Raycast's `PATH`. If it cannot find the binary, set the absolute **ms-todo CLI Path** in extension preferences.
+4. The extension looks for `ms-todo` in the standard Homebrew paths, `~/.local/bin`, and Raycast's `PATH`. If it cannot find the binary, set the absolute **ms-todo CLI Path** in extension preferences.
 
 ## Commands
 
@@ -35,6 +37,8 @@ Reads come from the local cache and may lag Microsoft To Do until the daemon syn
 
 ## Development
 
+To run this folder as a local extension, import it in Raycast or run `npm run dev` after installing dependencies.
+
 ```sh
 npm ci
 npm test
@@ -43,4 +47,4 @@ npm run lint
 npm run build
 ```
 
-The subprocess tests use a fake CLI and do not write to a Microsoft account. The extension is MIT licensed. Store publication is prepared but has not been submitted.
+The subprocess tests use a fake CLI and do not write to a Microsoft account. The extension is MIT licensed.
