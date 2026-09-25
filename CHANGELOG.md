@@ -1,5 +1,23 @@
 # Changelog
 
+## [0.1.17](https://github.com/planetaryescape/ms-todo/compare/v0.1.16...v0.1.17) (2026-09-25)
+
+
+### Features
+
+* move tasks between lists without losing anything (rung 5e) ([592c1d9](https://github.com/planetaryescape/ms-todo/commit/592c1d92c2e0a830bf11222471dcbbf5bb683a5b))
+
+
+### Bug Fixes
+
+* compare timestamps only where they are timestamps, and recheck the source right before delete ([c4e68ba](https://github.com/planetaryescape/ms-todo/commit/c4e68ba1be61dba6c9cf01a10f06b3c42d1648e8))
+* verify every surviving field and recheck before deleting after a restart ([e912600](https://github.com/planetaryescape/ms-todo/commit/e912600644e26001cf8b6d912f148819faa1e9f4))
+
+
+### Documentation
+
+* rung 5e in the README, blueprint, roadmap, S14, D-051 and the skill ([e1bba22](https://github.com/planetaryescape/ms-todo/commit/e1bba224d19b96a97b0c7c22ff54f31250d98539))
+
 ## [0.1.16](https://github.com/planetaryescape/ms-todo/compare/v0.1.15...v0.1.16) (2026-09-25)
 
 
