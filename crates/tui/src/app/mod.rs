@@ -41,6 +41,7 @@ use ms_todo_protocol::{
     Candidate, Counts, ErrorPayload, Event, OutboxDepth, Request, ResponseData, Scope, Seed,
     SyncActivity, SyncState, TaskChange,
 };
+use ratatui::layout::Size;
 
 use crate::action::Action;
 use crate::glyphs::Glyphs;
@@ -157,7 +158,10 @@ pub enum Mode {
         candidates: Vec<Candidate>,
         index: usize,
     },
-    Help,
+    /// The help screen, scrolled down `scroll` rows.
+    Help {
+        scroll: u16,
+    },
     /// The theme picker: the theme under the cursor is drawn as a
     /// preview; `before` is put back on Esc.
     Themes {
@@ -268,6 +272,8 @@ pub enum Msg {
     },
     Event(Event),
     Tick(Clock),
+    /// The terminal's size, at the start and on every resize.
+    Resize(Size),
 }
 
 /// What the runner does on this machine rather than ask the daemon.
@@ -371,6 +377,8 @@ pub struct App {
     pub my_day_date: Option<NaiveDate>,
     /// Where attachments are saved, and how typed paths are read.
     pub places: attachments::Places,
+    /// The terminal's size, for what scrolls by the screenful.
+    pub screen: Size,
 }
 
 impl App {
@@ -415,6 +423,7 @@ impl App {
             list_hint: list_hint::ListHint::default(),
             my_day_date: None,
             places: attachments::Places::default(),
+            screen: Size::new(80, 24),
         }
     }
 
@@ -450,7 +459,7 @@ impl App {
             Mode::Palette { .. } => Context::Palette,
             Mode::MovingTasks { .. } => Context::MoveTo,
             Mode::Diagnostics => Context::Diagnostics,
-            Mode::Help => Context::Help,
+            Mode::Help { .. } => Context::Help,
             Mode::Themes { .. } => Context::Themes,
             Mode::Links { .. } => Context::Links,
             Mode::Normal => match self.focus {
@@ -555,6 +564,13 @@ impl App {
                 self.seeds.again = false;
                 Vec::new()
             }
+            Msg::Resize(size) => {
+                self.screen = size;
+                if let Mode::Help { scroll } = &mut self.mode {
+                    *scroll = (*scroll).min(crate::help::layout(size).max_scroll());
+                }
+                Vec::new()
+            }
             Msg::Response { tag, result } => self.answered(tag, result),
             Msg::Event(event) => self.event(event),
             Msg::Tick(clock) => {
@@ -623,6 +639,28 @@ impl App {
             (Mode::MovingTasks { .. }, Action::Submit) => self.submit_move_tasks(),
             (_, Action::Backspace) => self.edit_with(LineEditor::backspace),
             (Mode::Editing { .. }, Action::Newline) => self.edit_with(LineEditor::newline),
+            (
+                Mode::Help { scroll },
+                Action::MoveDown
+                | Action::MoveUp
+                | Action::PageDown
+                | Action::PageUp
+                | Action::JumpTop
+                | Action::JumpBottom,
+            ) => {
+                // The layout the frame is drawn from, so j stops at the last row.
+                let page = crate::help::layout(self.screen);
+                *scroll = match action {
+                    Action::MoveDown => scroll.saturating_add(1),
+                    Action::MoveUp => scroll.saturating_sub(1),
+                    Action::PageDown => scroll.saturating_add(page.page()),
+                    Action::PageUp => scroll.saturating_sub(page.page()),
+                    Action::JumpTop => 0,
+                    _ => u16::MAX,
+                }
+                .min(page.max_scroll());
+                Vec::new()
+            }
             (Mode::Diagnostics, Action::MoveDown | Action::MoveUp) => {
                 self.scroll_diagnostics(action == Action::MoveDown);
                 Vec::new()
@@ -817,7 +855,7 @@ impl App {
                 request: Request::Sync { wait: false },
             }],
             Action::Help => {
-                self.mode = Mode::Help;
+                self.mode = Mode::Help { scroll: 0 };
                 Vec::new()
             }
             Action::Quit => {

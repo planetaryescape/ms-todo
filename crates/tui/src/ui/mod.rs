@@ -61,7 +61,7 @@ pub fn draw(frame: &mut Frame, app: &App) {
     status_line::draw(frame, status, app);
     hint_bar::draw(frame, hints, app);
     match &app.mode {
-        Mode::Help => modals::help(frame, app),
+        Mode::Help { scroll } => modals::help(frame, app, *scroll),
         Mode::Adding { input, parsed, .. } => add_modal::draw(frame, app, input, parsed.as_ref()),
         Mode::Picker {
             candidates, index, ..

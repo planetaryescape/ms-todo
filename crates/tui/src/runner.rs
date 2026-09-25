@@ -70,6 +70,10 @@ where
     // answer finishes a measurement.
     let mut pressed: HashMap<Tag, Instant> = HashMap::new();
     let mut ticks = tokio::time::interval(TICK);
+    let size = terminal
+        .size()
+        .map_err(|error| RunError::Draw(error.to_string()))?;
+    app.update(Msg::Resize(size));
     paint(terminal, &app)?;
     loop {
         tokio::select! {
@@ -106,7 +110,10 @@ where
                             latency.view_switch.push(took);
                         }
                     }
-                    TermEvent::Resize(..) => paint(terminal, &app)?,
+                    TermEvent::Resize(width, height) => {
+                        app.update(Msg::Resize(ratatui::layout::Size::new(width, height)));
+                        paint(terminal, &app)?;
+                    }
                     _ => {}
                 }
             }

@@ -16,6 +16,7 @@ mod action;
 mod app;
 pub mod downloads;
 mod glyphs;
+mod help;
 mod ipc;
 mod keybindings;
 mod latency;

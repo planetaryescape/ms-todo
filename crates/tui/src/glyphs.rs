@@ -29,6 +29,11 @@ pub struct Glyphs {
     pub selected: &'static str,
     /// A task with attachments, and each attachment in the detail pane.
     pub attachment: &'static str,
+    /// Help's scrollbar thumb, and what it says when rows are past the
+    /// bottom or the top of its box.
+    pub scroll_thumb: &'static str,
+    pub more_below: &'static str,
+    pub more_above: &'static str,
 }
 
 pub const UNICODE: Glyphs = Glyphs {
@@ -53,6 +58,9 @@ pub const UNICODE: Glyphs = Glyphs {
     left_right: "\u{2190}/\u{2192}", // ←/→
     selected: "\u{25c6}",            // ◆
     attachment: "\u{2398}",          // ⎘
+    scroll_thumb: "\u{2503}",        // ┃
+    more_below: "\u{2193} more",     // ↓
+    more_above: "\u{2191} more",     // ↑
 };
 
 pub const ASCII: Glyphs = Glyphs {
@@ -77,4 +85,7 @@ pub const ASCII: Glyphs = Glyphs {
     left_right: "Left/Right",
     selected: "*",
     attachment: "&",
+    scroll_thumb: "#",
+    more_below: "v more",
+    more_above: "^ more",
 };

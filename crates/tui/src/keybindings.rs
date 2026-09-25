@@ -55,6 +55,7 @@ pub enum Context {
     /// Picking the list to move tasks to. Other printable keys are its
     /// query.
     MoveTo,
+    /// The help screen, which scrolls.
     Help,
 }
 
@@ -107,6 +108,7 @@ const FOLDER: &[Context] = &[Context::Folder];
 const LEVELS: &[Context] = &[Context::Importance];
 const DIAGNOSTICS: &[Context] = &[Context::Diagnostics];
 const MOVE_TO: &[Context] = &[Context::MoveTo];
+const HELP: &[Context] = &[Context::Help];
 
 /// Every binding, in the order help shows them.
 pub const BINDINGS: &[Binding] = &[
@@ -286,9 +288,17 @@ pub const BINDINGS: &[Binding] = &[
     bind(DIAGNOSTICS, "Esc", Action::Cancel, "Back", true),
     bind(DIAGNOSTICS, "q", Action::Cancel, "Back", false),
     bind(DIAGNOSTICS, "D", Action::Cancel, "Back", false),
-    bind(&[Context::Help], "Esc", Action::Cancel, "Close", true),
-    bind(&[Context::Help], "?", Action::Cancel, "Close", false),
-    bind(&[Context::Help], "q", Action::Cancel, "Close", false),
+    bind(HELP, "j", Action::MoveDown, "Scroll down", true),
+    bind(HELP, "Down", Action::MoveDown, "Scroll down", false),
+    bind(HELP, "k", Action::MoveUp, "Scroll up", true),
+    bind(HELP, "Up", Action::MoveUp, "Scroll up", false),
+    bind(HELP, "PgDn", Action::PageDown, "Page down", true),
+    bind(HELP, "PgUp", Action::PageUp, "Page up", true),
+    bind(HELP, "g", Action::JumpTop, "Top", false),
+    bind(HELP, "G", Action::JumpBottom, "Bottom", false),
+    bind(HELP, "Esc", Action::Cancel, "Close", true),
+    bind(HELP, "?", Action::Cancel, "Close", false),
+    bind(HELP, "q", Action::Cancel, "Close", false),
 ];
 
 /// What the line editor in every prompt does with the keys the table
@@ -315,7 +325,8 @@ const fn bind(
     }
 }
 
-/// Parse a key string like "j", "G", "Ctrl-c", "Alt-Enter" or "Down".
+/// Parse a key string like "j", "G", "Ctrl-c", "Alt-Enter", "Down" or
+/// "PgDn".
 pub fn parse_key_string(key: &str) -> Result<KeyPress, String> {
     if let Some(rest) = key.strip_prefix("Alt-") {
         let mut press = parse_key_string(rest)?;
@@ -341,6 +352,8 @@ pub fn parse_key_string(key: &str) -> Result<KeyPress, String> {
         "Backspace" => named(KeyCode::Backspace),
         "Up" => named(KeyCode::Up),
         "Down" => named(KeyCode::Down),
+        "PgUp" => named(KeyCode::PageUp),
+        "PgDn" => named(KeyCode::PageDown),
         _ => {
             let mut chars = key.chars();
             let (Some(ch), None) = (chars.next(), chars.next()) else {
@@ -404,13 +417,6 @@ pub fn key_for(context: Context, action: Action) -> Option<&'static str> {
 pub fn hints(context: Context) -> Vec<(String, &'static str)> {
     labelled(grouped(|binding| {
         binding.hint && binding.contexts.contains(&context)
-    }))
-}
-
-/// Every browsing binding, for the help screen.
-pub fn help_rows() -> Vec<(String, &'static str)> {
-    labelled(grouped(|binding| {
-        binding.contexts.iter().any(|c| BROWSE.contains(c))
     }))
 }
 
@@ -545,17 +551,11 @@ mod tests {
     }
 
     #[test]
-    fn hints_and_help_come_from_the_table() {
+    fn hints_come_from_the_table() {
         let hints = hints(Context::Tasks);
         assert!(hints.contains(&("x".into(), "Done")));
         assert!(!hints.iter().any(|(_, label)| *label == "Open"));
-        let help = help_rows();
-        assert!(help.contains(&("j/Down".into(), "Down")));
-        assert!(help.contains(&("q/Ctrl-c".into(), "Quit")));
-        assert!(help.contains(&("e".into(), "Edit")));
-        assert!(help.contains(&("e".into(), "Edit field")));
         assert!(super::hints(Context::Detail).contains(&("e".into(), "Edit field")));
-        assert!(help.contains(&("Enter".into(), "Edit this field")));
     }
 
     #[test]

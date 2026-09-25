@@ -119,6 +119,7 @@ Copy these from mxr, including its keybinding registry:
 - a status line showing daemon connection, last sync and outbox depth
 - until a scope's first sync finishes (`sync_state: "initial"`), a "syncing" state instead of an empty list (vault: `First Run Is the Launch Surface`, `Derived State Needs an Unknown State`)
 - a diagnostics page (`ms-todo doctor` output) inside the TUI, like mxr's
+- a help screen (`?`) that lists every key in the registry, and the line editor's, by where it's pressed: Navigation, Tasks, Detail pane, Prompts and editing, Views and palette. It's two columns when both fit side by side (109 columns and up with today's keys), otherwise one, with a long label wrapped rather than cut off. When it's taller than the terminal it scrolls: `j`/`k`, the arrows, `PgUp`/`PgDn` and `g`/`G`, with a scrollbar and `↓ more` or `↑ more` on its border. `Esc`, `?` or `q` closes it. This replaces D-044's note that help didn't fit a short terminal. A test fails if a binding in the registry is missing from help
 
 ## Editing fields and typing
 

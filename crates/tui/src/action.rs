@@ -8,6 +8,9 @@ pub enum Action {
     MoveUp,
     JumpTop,
     JumpBottom,
+    /// PgDn and PgUp on the help screen: a screenful at a time.
+    PageDown,
+    PageUp,
     /// Enter or Space in the sidebar: collapse or expand a folder, or
     /// open a list or view.
     Open,

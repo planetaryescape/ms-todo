@@ -587,6 +587,57 @@ fn r_syncs_question_mark_helps_and_q_quits() {
     assert!(app.should_quit);
 }
 
+fn help_scroll(app: &App) -> Option<u16> {
+    match app.mode {
+        Mode::Help { scroll } => Some(scroll),
+        _ => None,
+    }
+}
+
+#[test]
+fn help_scrolls_no_further_than_its_last_row() {
+    let small = ratatui::layout::Size::new(80, 24);
+    let page = crate::help::layout(small);
+    let (max, step) = (page.max_scroll(), page.page());
+    assert!(max > step, "help is taller than two screens at 80x24");
+    let mut app = seeded();
+    app.update(Msg::Resize(small));
+    act(&mut app, Action::Help);
+    assert_eq!(help_scroll(&app), Some(0));
+    act(&mut app, Action::MoveUp);
+    assert_eq!(help_scroll(&app), Some(0), "no further up than the top");
+    act(&mut app, Action::MoveDown);
+    assert_eq!(help_scroll(&app), Some(1));
+    act(&mut app, Action::PageUp);
+    assert_eq!(help_scroll(&app), Some(0));
+    act(&mut app, Action::PageDown);
+    assert_eq!(help_scroll(&app), Some(step));
+    act(&mut app, Action::JumpBottom);
+    assert_eq!(help_scroll(&app), Some(max));
+    act(&mut app, Action::MoveDown);
+    act(&mut app, Action::PageDown);
+    assert_eq!(
+        help_scroll(&app),
+        Some(max),
+        "no further down than the last row"
+    );
+    act(&mut app, Action::JumpTop);
+    assert_eq!(help_scroll(&app), Some(0));
+    // Growing the terminal until it all fits takes the scroll with it.
+    act(&mut app, Action::JumpBottom);
+    app.update(Msg::Resize(ratatui::layout::Size::new(200, 200)));
+    assert_eq!(help_scroll(&app), Some(0));
+    act(&mut app, Action::MoveDown);
+    assert_eq!(help_scroll(&app), Some(0));
+    // Closed and opened again, it starts at the top.
+    app.update(Msg::Resize(small));
+    act(&mut app, Action::JumpBottom);
+    act(&mut app, Action::Cancel);
+    assert_eq!(app.mode, Mode::Normal);
+    act(&mut app, Action::Help);
+    assert_eq!(help_scroll(&app), Some(0));
+}
+
 #[test]
 fn changes_reseed_once_per_burst() {
     let mut app = seeded();

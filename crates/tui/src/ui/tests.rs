@@ -155,15 +155,39 @@ fn the_undo_picker() {
     insta::assert_snapshot!(render(&app));
 }
 
-#[test]
-fn help_lists_every_key() {
+/// Help drawn on a `width` by `height` terminal, after `keys`.
+fn help_after(width: u16, height: u16, keys: &[crate::action::Action]) -> String {
     let mut app = seeded();
-    app.mode = Mode::Help;
-    let mut terminal = Terminal::new(TestBackend::new(110, 34)).expect("terminal");
+    app.update(Msg::Resize(ratatui::layout::Size::new(width, height)));
+    app.update(Msg::Action(crate::action::Action::Help));
+    for key in keys {
+        app.update(Msg::Action(*key));
+    }
+    let mut terminal = Terminal::new(TestBackend::new(width, height)).expect("terminal");
     terminal
         .draw(|frame| super::draw(frame, &app))
         .expect("draw");
-    insta::assert_snapshot!(terminal.backend().to_string());
+    terminal.backend().to_string()
+}
+
+#[test]
+fn help_on_a_small_terminal_scrolls_from_the_top() {
+    insta::assert_snapshot!(help_after(80, 24, &[]));
+}
+
+#[test]
+fn help_on_a_small_terminal_scrolls_to_the_last_row() {
+    let bottom = help_after(80, 24, &[crate::action::Action::JumpBottom]);
+    assert!(
+        bottom.contains("Scripts and agents"),
+        "the last row is reachable"
+    );
+    insta::assert_snapshot!(bottom);
+}
+
+#[test]
+fn help_on_a_wide_terminal_has_two_columns() {
+    insta::assert_snapshot!(help_after(140, 40, &[]));
 }
 
 #[test]

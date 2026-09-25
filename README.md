@@ -177,7 +177,7 @@ In the TUI's add box, a likely list shows as `→ Finances? (Ctrl-l to accept)`.
 | `D` | diagnostics: sign-in, daemon, cache, each list's sync and the outbox |
 | `o` / `y` | open or copy the task's link |
 | `r` | sync now |
-| `?` | every key |
+| `?` | every key, grouped by where it's pressed; `j` / `k`, `PgUp` / `PgDn` and `g` / `G` scroll it, `Esc` closes it |
 | `q` | quit |
 
 A due date or reminder takes words (`tomorrow`, `fri 17:30`, `+2w`) and shows the date it resolves to as you type. Editors take the usual line keys; [The TUI](docs/usage.md#the-tui) lists them.

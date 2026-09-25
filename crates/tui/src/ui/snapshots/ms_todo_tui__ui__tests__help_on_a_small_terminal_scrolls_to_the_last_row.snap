@@ -1,0 +1,28 @@
+---
+source: crates/tui/src/ui/tests.rs
+expression: bottom
+---
+" ms-todo 9.9.9 · Home                                                  ● synced "
+"╭ Lists╭ ms-todo 9.9.9 · Keys ─────────────────────────────────────────╮───────╮"
+"│☼ My D│   Up/Ctrl-p         Up                                        │y rent │"
+"│★ Impo│  Move to list (m)                                             │       │"
+"│▦ Plan│   Enter             Move here                                 │en     │"
+"│∞ All │   Esc/Ctrl-c        Cancel                                    │me     │"
+"│✓ Comp│   Backspace         Erase                                     │u 1 Oct│"
+"│≡ Task│   Down/Ctrl-n       Down                                      │       │"
+"│≡ Home│   Up/Ctrl-p         Up                                        │ne     │"
+"│      │  Diagnostics (D)                                              │gh     │"
+"│      │   r                 Refresh                                   │nthly  │"
+"│      │   Esc/q/D           Back                                      │       │"
+"│      │  This help                                                    │ne     │"
+"│      │   j/Down            Scroll down                               │ne     │"
+"│      │   k/Up              Scroll up                                 │ne     │"
+"│      │   PgDn              Page down                                 │nced   │"
+"│      │   PgUp              Page up                                   │       │"
+"│      │   g                 Top                                       │ne     │"
+"│      │   G                 Bottom                                    ┃       │"
+"│      │   Esc/?/q           Close                                     ┃       │"
+"│      │                                                               ┃       │"
+"╰──────│ Scripts and agents: use the `ms-todo` commands.               ┃───────╯"
+" ● daem╰─────────────────────────────────────────────────────── ↑ more ╯        "
+" j Scroll down  k Scroll up  PgDn Page down  PgUp Page up  Esc Close            "
