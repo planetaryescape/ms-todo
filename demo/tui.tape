@@ -10,9 +10,9 @@ Sleep 2s
 Type "h"
 Sleep 300ms
 Type "g"
-Sleep 900ms
+Sleep 700ms
 Type "j"
-Sleep 1.3s
+Sleep 1.1s
 Type@600ms "jjjj"
 Sleep 1.3s
 Type@600ms "jjj"
@@ -28,16 +28,24 @@ Sleep 800ms
 Type "d"
 Sleep 500ms
 Ctrl+U
-Type@110ms "in 2 days"
-Sleep 1.8s
+Type@100ms "in 2 days"
+Sleep 1.5s
 Enter
 Sleep 1.3s
 
 # Done, then undo.
 Type "x"
-Sleep 1.4s
+Sleep 1.2s
 Type "u"
-Sleep 1.4s
+Sleep 1.2s
+
+# Quick add in the centred box: each part lights up as it's read.
+Type "a"
+Sleep 700ms
+Type@110ms "Call mum in 2 days #Tasks p1"
+Sleep 2.5s
+Enter
+Sleep 1.5s
 
 # Filter.
 Type "/"

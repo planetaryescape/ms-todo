@@ -5,12 +5,26 @@ Source demo/common.tape
 Type "mst lists list"
 Sleep 400ms
 Enter
-Sleep 2.5s
+Sleep 2s
 
 Type "mst tasks list --list Finances"
 Sleep 400ms
 Enter
+Sleep 2s
+
+Hide
+Type "clear"
+Enter
+Show
+Type `mst tasks parse "Pay rent every 1st #Finances p1 9am"`
+Sleep 400ms
+Enter
 Sleep 2.5s
+
+Type `mst tasks add "Pay rent every 1st #Finances p1 9am"`
+Sleep 400ms
+Enter
+Sleep 2s
 
 Hide
 Type "clear"
@@ -19,12 +33,12 @@ Show
 Type `mst tasks add "Book dentist" --due "in 2 days" --importance 1`
 Sleep 400ms
 Enter
-Sleep 2s
+Sleep 1.5s
 
 Type "mst search rent"
 Sleep 400ms
 Enter
-Sleep 2.5s
+Sleep 2s
 
 Hide
 Type "clear"
@@ -33,7 +47,7 @@ Show
 Type "mst done --since mon"
 Sleep 400ms
 Enter
-Sleep 3s
+Sleep 2.5s
 
 Hide
 Type "clear"
@@ -42,7 +56,7 @@ Show
 Type "mst tasks list --format json | jq '.items[0]'"
 Sleep 400ms
 Enter
-Sleep 3.5s
+Sleep 3s
 
 Hide
 Type "clear"

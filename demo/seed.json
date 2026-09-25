@@ -4,6 +4,7 @@
     "mail": "alex@example.com",
     "userPrincipalName": "alex@example.com"
   },
+  "categories": ["Errands", "Bills", "Calls"],
   "lists": [
     {
       "name": "Tasks",
@@ -65,7 +66,7 @@
       "folder": "Areas",
       "tasks": [
         {
-          "title": "Pay rent",
+          "title": "Pay council tax",
           "due_day_of_month": 1,
           "importance": "high",
           "recurrence": { "type": "absoluteMonthly", "interval": 1, "dayOfMonth": 1, "month": 0, "daysOfWeek": [], "firstDayOfWeek": "sunday", "index": "first" }
