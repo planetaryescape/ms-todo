@@ -5,7 +5,7 @@ description: Read, find, add, complete, reopen, edit, reschedule, move and delet
 
 # ms-todo
 
-**Skill v6, for ms-todo rung 6a** (instant reads from a local cache kept live by delta sync; search across every list; what was completed, by day; instant writes that queue offline and are never dropped; bulk reschedules and edits; moving tasks between lists without losing anything; undo; quick add, which reads a task's text for its list, dates, recurrence and importance, and which agents turn off with `--no-parse`).
+**Skill v7, for ms-todo rung 6b** (instant reads from a local cache kept live by delta sync; search across every list; what was completed, by day; instant writes that queue offline and are never dropped; bulk reschedules and edits; moving tasks between lists without losing anything; undo; quick add, which reads a task's text for its list, dates, recurrence and importance, and which agents turn off with `--no-parse`; and optional list suggestions for inbox tasks).
 
 `ms-todo tui` (`mst tui`) is a full-screen view for people at a keyboard. Don't use it: it needs a terminal, and everything it does is a command below. Always pass a subcommand: a bare `ms-todo` opens the TUI in a terminal, and elsewhere only prints help and exits 2.
 
@@ -140,6 +140,17 @@ ms-todo tasks move <ID> <ID> --to "Someday" --yes --format json           # seve
 - A move copies the task into the list with every field, its steps, its link, its attachments and ms-todo's own data, checks the copy, and only then deletes the original. The task keeps its `id`; its `graph_id` changes. The answer shows it in the new list with `sync_state: "pending"`; it's `synced` once the move is done (`ms-todo outbox list`: the operation's `action` is `move`).
 - A failure before the delete leaves the original untouched: the operation is `failed` and the task is back in its list. A step with no answer pauses the move as `unknown` and deletes nothing. **Never retry or discard a paused move yourself, and never recreate the task**: tell the user what its `note` says and let them choose `outbox retry` or `outbox discard`. A move of a task already in that list exits 2; an unknown list exits 3.
 - `ms-todo undo <op_id>` moves the tasks back the same way. A task moved or changed since is left alone and listed in `refused`; if all are, undo exits 5.
+
+## Suggest a list for an inbox task
+
+```bash
+ms-todo tasks suggest-list "pay council tax" --format json   # {title, list_id, list_name, confidence}; nulls for no suggestion
+```
+
+- Optional and off by default (`[suggest]` in config.toml). Off, it exits 2 (`invalid_input`) saying how to turn it on; don't turn it on yourself, since it sends task titles and list names to TypeSafe. Ask the user.
+- It only suggests; nothing is filed. Use it when the user asks where inbox tasks belong, then show the suggestions and **move only what the user agrees to**, with `tasks move <ID> --to <list_id>`.
+- Null means no list was likely enough, or TypeSafe couldn't be reached (`ms-todo doctor` says which under `suggest`). Don't retry in a loop, and don't guess a list yourself instead.
+- `tasks add` in JSON never asks for a suggestion; in table output it may print a `note:` on stderr. The task still went where the command said.
 
 ## Folders
 

@@ -66,6 +66,36 @@ mst tasks add "Email Friday's report" --no-parse   # the text as the title, exac
 
 What isn't recognised stays in the title. The date words are whole words only, so `Monitor the build`, `Sat nav update`, `Ask Tom about invoice`, `Call May about the lease`, `Email Friday's report` and `Fix the 9am standup bot` keep their titles; `tom`, `tod` and `sat` count only in lower case. Only the first date counts; others stay in the title with a warning. Flags always win over the text: `--list`, `--due`, `--reminder` and `--importance` replace what it says, and `--due -` or `--reminder -` clears it (a recurrence or a start date needs its due date, so `--due -` with one is refused). A `#List` that two lists share by name is a warning, not a guess. Anything typed but not used (an unknown `#List`, a second date) is a `note:` on stderr, and in `tasks parse`'s `warnings`. An agent's or a script's text should use `--no-parse` with flags, so a title is never read as a date.
 
+## List suggestions
+
+Optional, and off unless you turn it on. For a task headed for the inbox (no `#List`, no `--list`, not added from a list in the TUI), ms-todo asks [TypeSafe](https://typesafe.ai)'s Jev model which of your lists it belongs in, and shows the answer only when the model is at least `min_confidence` sure. It never files a task by itself.
+
+```toml
+# ~/.config/ms-todo/config.toml
+[suggest]
+enabled = true
+min_confidence = 0.8           # 0 to 1; how sure the model must be
+exclude_folders = ["Archive"]  # lists in these folders are never suggested (any case)
+# The API key: TYPESAFE_API_KEY in the daemon's environment, else what this
+# command prints on its first line. It runs directly, never through a shell:
+# an array is the exact argv; a string is split as a shell would (quote words).
+api_key_command = ["op", "read", "op://Private/TypeSafe/credential"]
+```
+
+Run `ms-todo daemon stop` after changing it: the daemon reads it when it starts, and runs the key command once. A password manager that asks you to approve each read may not be able to ask from the background daemon; then start the daemon with `TYPESAFE_API_KEY` set instead.
+
+```sh
+mst tasks suggest-list "pay council tax"          # Finances (0.93), or "no suggestion"
+mst tasks suggest-list "pay council tax" --format json
+#   {"schema_version": 2, "title": …, "list_id": …, "list_name": "Finances", "confidence": 0.93}
+mst tasks add "pay council tax"                   # adds to Tasks, then a note: suggested list: Finances …
+```
+
+- `tasks add` prints the note on stderr only in table, CSV and ids formats; in JSON it doesn't ask. A dry run's note says to add it with `--list` or `#List`; a real add's says how to move it.
+- In the TUI's add box, the suggestion comes a moment after you stop typing, as `→ Finances? (Ctrl-l to accept)`. `Ctrl-l` adds `#Finances` to the text, which you can still edit.
+- What it sends: the task's title, and for each list that isn't built in or in an excluded folder, its folder, name and up to five open task titles. Only the daemon sends it. `ms-todo doctor` shows whether it's on and what it sends.
+- Anything going wrong (no key, no network, TypeSafe slow past 3 seconds or answering with an error) means no suggestion, never a failed command. The daemon log notes it once, and `doctor` lists it as a `suggest: …` problem until a suggestion works again. With it off, `tasks suggest-list` exits 2 and says how to turn it on.
+
 ## Add and finish tasks
 
 ```sh
@@ -237,6 +267,7 @@ An instance other than the default adds its name: `ms-todo-work` for `--instance
 | `MS_TODO_INSTANCE` | Use a separate copy of ms-todo's data, as `--instance` does. Builds run from Cargo's `target/` default to `dev`; `default` is the installed copy |
 | `MS_TODO_CLIENT_ID` | The Entra app to sign in as, over `[auth] client_id` and the ID release builds carry |
 | `MS_TODO_CONFIG_DIR` | Where `config.toml` lives |
+| `TYPESAFE_API_KEY` | The TypeSafe API key for [list suggestions](#list-suggestions), read by the daemon when it starts |
 | `NO_COLOR` | Turn colour off, in the TUI and in `search`'s bold matches |
 | `COLORTERM` | `truecolor` lets the TUI's fixed themes use exact colours; without it they use the nearest of 256 |
 | `TZ` | The time zone dates are read and written in |

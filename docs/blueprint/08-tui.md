@@ -90,6 +90,8 @@ As built (rung 6a, D-052):
 - **Categories:** the first `a` of a session asks the daemon for `raw GET /me/outlook/masterCategories`, once; `@label` then keeps the category's own spelling and warns about one that isn't there. If the answer fails, no label is called unknown. Tab completes from those categories, or else from the categories on the tasks read so far. The TUI never creates a category; the task still gets the name (the CLI's `--create-categories` creates it).
 - Nothing left for the title keeps the modal open with an error banner, pointing at `Ctrl-r`.
 
+**List suggestion, as built (rung 6b, D-053).** When the task is headed for the inbox (no `#List` typed, and the modal wasn't opened from another list), and `[suggest]` is on, the modal asks the daemon for a likely list once typing has paused for two ticks (250–500 ms), never per key, one request at a time, and draws the answer when it comes: a line under the preview, `→ Finances? (Ctrl-l to accept)`, in the `accent` role. `Ctrl-l` appends `#Finances` to the text (quoted if the name has a space), where it's highlighted and can be edited or removed like any typed list; Tab stays completion. The hint is shown only for the title it answered, so it goes as soon as the text changes. The request is an ordinary `Effect` whose answer arrives as a `Msg`, and the daemon answers it out of order, so the modal and the rest of the TUI never wait on TypeSafe; keypress latency is unchanged. An error (suggestions off, or an older daemon) stops asking for the session. Not built: a palette triage of the whole inbox (D-053).
+
 ## Other interactions
 
 Copy these from mxr, including its keybinding registry:

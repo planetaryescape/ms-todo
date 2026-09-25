@@ -132,6 +132,21 @@ Recognised  recurrence "every 1st", list "#Finances", priority "p1", date "9am"
 
 Flags win over the text (`--list`, `--due`, `--reminder`, `--importance`), and `--no-parse` takes the text as the title exactly as given: use it for text you didn't type, such as an agent's. The full syntax is in [Quick add](docs/usage.md#quick-add).
 
+### List suggestions (optional)
+
+Turn this on and ms-todo suggests a list for a task you add to the inbox, using [TypeSafe](https://typesafe.ai)'s Jev model. It only suggests; nothing moves until you say so:
+
+```console
+$ mst tasks add "pay council tax"
+…
+note: suggested list: Finances (0.93) — move it with `ms-todo tasks move <id> --to Finances`
+$ mst tasks suggest-list "watch Dune Part Two"
+Title  watch Dune Part Two
+List   Movies (1.00)
+```
+
+In the TUI's add box, a likely list shows as `→ Finances? (Ctrl-l to accept)`. It's off by default, and when it's on it sends TypeSafe the task's title and, for each list, its folder, name and up to five open task titles. [List suggestions](docs/usage.md#list-suggestions) covers turning it on and the API key.
+
 ### TUI keys
 
 `mst` opens the TUI when it runs in a terminal. From a script or a pipe it prints help and exits 2, so nothing waits on it.
@@ -141,7 +156,7 @@ Flags win over the text (`--list`, `--due`, `--reminder`, `--importance`), and `
 | `j` / `k`, `g` / `G` | down, up, top, bottom |
 | `h` / `l`, `Tab` | move between the sidebar, the task list and the detail pane |
 | `Enter` / `Space` in the sidebar | open a list or view; on a folder, fold or unfold it |
-| `a` | quick add, in a box in the middle of the screen: each part it reads is coloured as you type, with the task it makes underneath. `Tab` completes a `#List` or `@label`, `Ctrl-r` takes the text literally, `Enter` adds |
+| `a` | quick add, in a box in the middle of the screen: each part it reads is coloured as you type, with the task it makes underneath. `Tab` completes a `#List` or `@label`, `Ctrl-r` takes the text literally, `Ctrl-l` takes a suggested list, `Enter` adds |
 | `x` | complete, or reopen a completed task |
 | `e` | edit a field: `t` title, `d` due date, `r` reminder, `i` importance, `n` notes, `I` cycles importance |
 | `Enter` in the detail pane | edit the field under the cursor |
@@ -252,6 +267,7 @@ JSON is `{ "schema_version": 2, "sync": {…}, "items": [...] }`, each item carr
 | `[auth] client_id` | the Entra app to sign in as |
 | `[tui] theme` | the TUI's theme |
 | `[tui.colors]` | single colour roles over the theme |
+| `[suggest]` | optional list suggestions from TypeSafe, off by default ([List suggestions](docs/usage.md#list-suggestions)) |
 
 Environment variables (`MS_TODO_INSTANCE`, `MS_TODO_CLIENT_ID`, `MS_TODO_CONFIG_DIR`, `NO_COLOR`, `COLORTERM` and more) and where ms-todo keeps its data are in [docs/usage.md](docs/usage.md#environment-variables).
 
@@ -397,7 +413,7 @@ Microsoft Graph's To Do API leaves out some things the To Do apps do. ms-todo wo
 
 ## Status and roadmap
 
-ms-todo is at 0.1.18 and built in rungs, each a usable release: rung 6a, quick add, is the latest. The [roadmap](docs/blueprint/10-roadmap.md) lists what's next, and the [decision log](docs/blueprint/11-decision-log.md) says why things are the way they are.
+ms-todo is at 0.1.18 and built in rungs, each a usable release: rung 6b, list suggestions for inbox tasks, is the latest. The [roadmap](docs/blueprint/10-roadmap.md) lists what's next, and the [decision log](docs/blueprint/11-decision-log.md) says why things are the way they are.
 
 ## Contributing
 

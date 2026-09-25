@@ -107,6 +107,10 @@ As built, the grammar also takes `every weekend` (Saturday and Sunday), `every m
 
 The agent skill tells agents to use `--no-parse` plus explicit flags for anything generated (D-018). Otherwise "Email Friday's report" would get a due date of Friday. (As built, the possessive guard keeps that one whole, but `Email report Friday` would still be read, which is the point of the flag.)
 
+## List suggestions (rung 6b)
+
+As built (D-053). Quick add stays deterministic; which list a task *might* belong in is a separate, optional question, answered by TypeSafe's Jev model through the daemon, never by `crates/nlp`. It's asked only for a task headed for the inbox (no `#List`, no `--list`, not added from a list's view), and only when `[suggest] enabled = true` in config.toml. It never files anything: the TUI offers `#List` for `Ctrl-l` to type in, and the CLI prints a `note:` and has `tasks suggest-list`. The options are the lists that are filing targets, each described by its folder, name and up to five open task titles; a forced choice, shown only at confidence ≥ `min_confidence` (0.8, where the calibration was right 7 times in 8). What's sent, the failure rules and the key are in D-053.
+
 ## Testing
 
 Table-driven tests with a fixed `now` and timezone, plus `insta` snapshots of `ParsedTask` for the phrase corpus. Start from S8's corpus, [S8-corpus.tsv](../research/spikes/S8-corpus.tsv). Add `proptest` checks that parsing never panics and that the title plus the recognised spans cover the whole input.

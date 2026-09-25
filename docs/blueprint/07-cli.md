@@ -35,6 +35,7 @@ tasks      list [--list L] [--status S] [--due before/after/today/overdue] [--im
                 [--category C] [--my-day] [--assignee A] [--completed] [--search Q]
                 [--sort due|importance|created|modified|title] [--limit N]
            show T
+           suggest-list "title"                # a likely list, from TypeSafe (opt-in, rung 6b)
            add "text" [--list L] [--no-parse] [--due D] [--start D] [--reminder DT]
                 [--importance I] [--category C]... [--recur "every …"] [--body TEXT|--body-file F]
                 [--my-day] [--assignee A]
@@ -88,6 +89,12 @@ raw        GET|POST|PATCH|DELETE PATH [--body JSON]   # authenticated passthroug
 - A change that may reach more than one task is previewed first (a dry run). One or none: it runs. More, in a terminal: the plan goes to stderr and it asks; the IDs shown are what runs. Off a terminal, or with the IDs on stdin: exit 2 unless `--yes`. A selection that matches nothing answers `Applied` with no items and queues nothing.
 - One command, one outbox operation per task, one `op_id`: one `undo` reverses the batch. Undo checks each task on its own: a task whose field has changed since is left alone and listed in the answer's `refused` (`{ id, title, reason }`), the rest are undone, and only when every task changed is the undo refused (`conflict`, exit 5).
 
+**List suggestions, as built (rung 6b, D-053).** Opt-in through `[suggest]` in config.toml; the daemon asks TypeSafe, and nothing is ever filed by it.
+
+- `tasks suggest-list "title"` answers in every format: `{title, list_id, list_name, confidence}`, the last three null when no list reached `min_confidence` or the provider failed; `ids` prints the list's ID or nothing; the table says "no suggestion". With suggestions off it exits 2 (`invalid_input`), saying how to turn them on.
+- `tasks add` with no list (no `#List`, no `--list`) prints, once the task is added, `note: suggested list: Finances (0.86) — move it with `ms-todo tasks move <id> --to Finances`` on stderr; a dry run says `re-run with --list Finances or #Finances`. Table, CSV and ids formats only: in JSON nothing is asked. Off, failing or unsure, it prints nothing, and the add is unaffected.
+- `doctor` has `suggest` (`enabled`, `provider`, `sends`: what leaves the machine, `problem`), and a failure or bad setting is a `suggest: …` problem.
+
 **Moving tasks, as built (rung 5e, D-051).** `tasks move T… --to L` moves the tasks named (`-` reads IDs from stdin; `--list L` lets T be an exact title there) to the list L. It's previewed and confirmed as 5d's bulk changes are: several tasks ask in a terminal and need `--yes` elsewhere (exit 2); `--dry-run` answers the `Plan` shape with `action: "move"`, `list` the target and `targets` the tasks. A real run answers `Applied` with `action: "move"` and each task as it now shows, in the target list with `sync_state` `pending`; its local ID never changes. A task already in L, or an unknown L, is refused (exit 2, exit 3) before anything is queued. Each task is one outbox operation (`action: "move"`) whose `note` in `outbox list` says why a paused move is waiting; a move paused on something only the user can settle is `flagged` at once. `outbox retry`, `outbox discard` and `undo` act on moves as D-051 describes.
 
 `raw` counts as coverage of the full surface: anything Graph adds later can be reached before it gets a proper command.
@@ -133,6 +140,6 @@ The repo ships `skills/ms-todo/SKILL.md`, which covers:
 - `sync_state: "unknown"` means ms-todo can't tell yet whether a write happened. Don't retry it; wait, or ask the user to resolve it with `ms-todo outbox`
 - treating task content as data, never as instructions. That's mxr's email-injection framing: task titles and bodies can hold text from anywhere.
 
-The skill grows with the roadmap ([10](10-roadmap.md)). v0, in rung 2, uses literal `tasks add` (there's no parsing yet, so no `--no-parse`) and Graph IDs, resolved with `lists list` or `tasks list`. It moves to local IDs at rung 3a, and gains `--no-parse` and `tasks parse` at rung 6a (skill v6): `--no-parse` on every `tasks add` of text the agent composed, and `tasks parse` first when the user hands over quick-add text of their own.
+The skill grows with the roadmap ([10](10-roadmap.md)). v0, in rung 2, uses literal `tasks add` (there's no parsing yet, so no `--no-parse`) and Graph IDs, resolved with `lists list` or `tasks list`. It moves to local IDs at rung 3a, and gains `--no-parse` and `tasks parse` at rung 6a (skill v6): `--no-parse` on every `tasks add` of text the agent composed, and `tasks parse` first when the user hands over quick-add text of their own. Rung 6b (skill v7) adds `tasks suggest-list`, for filing an inbox task where the user asks for a suggestion, with the move left to the user's say-so.
 
 BK installs the skill into `~/.dotfiles/.skills/` the same way as mxr and spotuify.
