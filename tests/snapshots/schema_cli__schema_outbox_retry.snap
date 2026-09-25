@@ -30,7 +30,10 @@ expression: pretty
                 "complete",
                 "reopen",
                 "delete",
-                "move"
+                "move",
+                "my_day_add",
+                "my_day_remove",
+                "my_day_rollover"
               ]
             },
             "attempts": {

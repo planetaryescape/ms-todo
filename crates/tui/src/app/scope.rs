@@ -124,8 +124,9 @@ pub fn sidebar_entries(
 }
 
 /// The smart views, in sidebar order (docs/blueprint/08-tui.md#layout;
-/// My Day and Assigned come in later rungs).
-pub const VIEWS: [Scope; 4] = [
+/// Assigned comes in a later rung).
+pub const VIEWS: [Scope; 5] = [
+    Scope::MyDay,
     Scope::Important,
     Scope::Planned,
     Scope::All,
@@ -134,6 +135,7 @@ pub const VIEWS: [Scope; 4] = [
 
 pub fn view_name(scope: &Scope) -> &'static str {
     match scope {
+        Scope::MyDay => "My Day",
         Scope::Important => "Important",
         Scope::Planned => "Planned",
         Scope::All => "All",
@@ -142,9 +144,13 @@ pub fn view_name(scope: &Scope) -> &'static str {
     }
 }
 
-/// Whether `task`, as it is now, is in `scope`.
-pub fn belongs(scope: &Scope, task: &Task) -> bool {
+/// Whether `task`, as it is now, is in `scope`; `my_day` is My Day's day.
+/// The My Day view also holds its suggestions while they're open and out
+/// of it.
+pub fn belongs(scope: &Scope, task: &Task, my_day: NaiveDate) -> bool {
     match scope {
+        Scope::MyDay if task.suggestion.is_some() => !task.completed && task.my_day != Some(my_day),
+        Scope::MyDay => task.my_day == Some(my_day),
         Scope::Important => task.important() && !task.completed,
         Scope::Planned => task.due.is_some() && !task.completed,
         Scope::All => !task.completed,
@@ -158,6 +164,12 @@ pub fn belongs(scope: &Scope, task: &Task) -> bool {
 /// ones, most recently completed first, as To Do does. Views keep the
 /// daemon's order, and so does a filtered list: best match first.
 pub fn order(scope: &Scope, filtered: bool, tasks: &mut [Task]) {
+    if !filtered && *scope == Scope::MyDay {
+        // Today's tasks, open ones first, then the suggestions. Stable,
+        // so each keeps the daemon's order within.
+        tasks.sort_by_key(|task| (task.suggestion.is_some(), task.completed));
+        return;
+    }
     if filtered || !matches!(scope, Scope::List { .. }) {
         return;
     }
@@ -220,6 +232,18 @@ pub fn planned_groups(tasks: &[Task], today: NaiveDate) -> Vec<(DueGroup, Vec<us
         }
     }
     groups
+}
+
+/// The My Day view's groups: its tasks, then "Suggestions", as indexes
+/// into `tasks`; a group with no tasks is left out.
+pub fn my_day_groups(tasks: &[Task]) -> Vec<(String, Vec<usize>)> {
+    let (suggested, planned): (Vec<usize>, Vec<usize>) =
+        (0..tasks.len()).partition(|&index| tasks[index].suggestion.is_some());
+    [("Today", planned), ("Suggestions", suggested)]
+        .into_iter()
+        .filter(|(_, members)| !members.is_empty())
+        .map(|(heading, members)| (heading.to_owned(), members))
+        .collect()
 }
 
 /// The Completed view's groups, newest day first: each day's heading

@@ -1,8 +1,10 @@
 //! The smart views (docs/blueprint/08-tui.md#layout): queries over every
 //! live list's tasks, and the counts the TUI's sidebar shows.
 
+use std::borrow::Cow;
 use std::collections::BTreeMap;
 
+use chrono::NaiveDate;
 use sqlx::AssertSqlSafe;
 
 use crate::tasks::{TaskRecord, TaskRow, task_record_columns};
@@ -11,6 +13,9 @@ use crate::{Store, StoreError};
 /// A smart view over every list.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum View {
+    /// Tasks in the My Day of this day (`myDay` in our extension), open
+    /// or not.
+    MyDay(NaiveDate),
     /// Open tasks with `importance = high`.
     Important,
     /// Open tasks with a due date.
@@ -23,18 +28,28 @@ pub enum View {
 impl View {
     /// Which tasks are in the view: a condition on `tasks`, the one place
     /// each view is defined (its query, its count and a search in it).
-    pub(crate) fn condition(self) -> &'static str {
+    pub(crate) fn condition(self) -> Cow<'static, str> {
         match self {
-            Self::Important => "tasks.status <> 'completed' AND tasks.importance = 'high'",
-            Self::Planned => "tasks.status <> 'completed' AND tasks.due_date IS NOT NULL",
-            Self::All => "tasks.status <> 'completed'",
-            Self::Completed => "tasks.status = 'completed'",
+            // A date formats as digits and dashes only, so it's safe in SQL.
+            Self::MyDay(date) => Cow::Owned(format!(
+                "{MY_DAY} = '{}'",
+                date.format(ms_todo_core::DATE_FORMAT)
+            )),
+            Self::Important => {
+                Cow::Borrowed("tasks.status <> 'completed' AND tasks.importance = 'high'")
+            }
+            Self::Planned => {
+                Cow::Borrowed("tasks.status <> 'completed' AND tasks.due_date IS NOT NULL")
+            }
+            Self::All => Cow::Borrowed("tasks.status <> 'completed'"),
+            Self::Completed => Cow::Borrowed("tasks.status = 'completed'"),
         }
     }
 
     /// The order the view shows.
     fn order(self) -> &'static str {
         match self {
+            Self::MyDay(_) => "tasks.status = 'completed', tasks.created_at, tasks.rowid",
             Self::Important => {
                 "tasks.due_date IS NULL, tasks.due_date, tasks.created_at, tasks.rowid"
             }
@@ -60,8 +75,12 @@ pub struct TaskCounts {
     pub open_by_list: BTreeMap<String, u64>,
 }
 
+/// A task's My Day date, `YYYY-MM-DD` or null: the expression
+/// `tasks_by_my_day` indexes.
+pub(crate) const MY_DAY: &str = "json_extract(tasks.extension_json, '$.myDay')";
+
 /// Live tasks in live lists.
-const LIVE: &str = "FROM tasks JOIN lists ON lists.local_id = tasks.list_local_id \
+pub(crate) const LIVE: &str = "FROM tasks JOIN lists ON lists.local_id = tasks.list_local_id \
      WHERE tasks.deleted_at IS NULL AND lists.deleted_at IS NULL";
 
 impl Store {

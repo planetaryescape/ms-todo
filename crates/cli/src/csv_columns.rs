@@ -39,6 +39,9 @@ pub const DONE_COLUMNS: &[&str] = &[
     "sync_state",
 ];
 
+/// A My Day suggestion: the task, why, and where it is.
+pub const SUGGESTION_COLUMNS: &[&str] = &["id", "title", "list", "suggestion", "due", "left_from"];
+
 pub const LIST_COLUMNS: &[&str] = &[
     "id",
     "name",
@@ -93,6 +96,17 @@ pub fn done_row(task: &Entity) -> Vec<String> {
         local_due(task),
         text(task, "importance").to_owned(),
         text(task, "sync_state").to_owned(),
+    ]
+}
+
+pub fn suggestion_row(task: &Entity) -> Vec<String> {
+    vec![
+        text(task, "id").to_owned(),
+        text(task, "title").to_owned(),
+        text(task, "list").to_owned(),
+        text(task, "suggestion").to_owned(),
+        local_due(task),
+        text(task, "left_from").to_owned(),
     ]
 }
 

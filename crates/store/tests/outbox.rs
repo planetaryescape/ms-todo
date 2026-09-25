@@ -382,3 +382,80 @@ async fn only_a_done_dependency_unblocks_an_operation() {
 
     assert!(ready.iter().all(|op| op.op_id != "e1"), "{ready:?}");
 }
+
+fn my_day(op_id: &str, local_id: &str, list: &str, fields: Value) -> NewOp {
+    NewOp {
+        op_id: op_id.into(),
+        entity_local_id: local_id.into(),
+        list_local_id: list.into(),
+        op: OpKind::TaskExtension,
+        action: "my_day_add".into(),
+        payload: json!({ "body": fields }),
+        change: LocalChange::Extension,
+    }
+}
+
+#[tokio::test]
+async fn a_task_extension_write_merges_at_once_rolls_back_and_stays_over_graphs_answer() {
+    let (_dir, store, list) = open().await;
+    store
+        .enqueue(
+            "op-1",
+            None,
+            vec![create("op-1", "t1", &list, "Call the bank")],
+        )
+        .await
+        .expect("create");
+    store
+        .record_sent("op-1", &task("T1", "Call the bank", "e1"), None, true)
+        .await
+        .expect("record");
+
+    // Queued: the extension changes at once, other fields kept; the
+    // extension before is the rollback.
+    let rows = store
+        .enqueue(
+            "op-2",
+            None,
+            vec![my_day(
+                "op-2",
+                "t1",
+                &list,
+                json!({ "myDay": "2026-09-25", "myDayDueSet": true }),
+            )],
+        )
+        .await
+        .expect("my day");
+    let extension = rows[0].extension.clone().expect("extension");
+    assert_eq!(extension["myDay"], "2026-09-25");
+    assert_eq!(extension["opId"], "op-1");
+    let op = store.outbox_op("op-2").await.expect("read").expect("op-2");
+    assert_eq!(op.op, OpKind::TaskExtension);
+    assert!(op.rollback.expect("rollback").get("myDay").is_none());
+
+    // Graph answers an earlier write while this one waits: it stays on top.
+    store
+        .record_sent(
+            "op-1",
+            &task("T1", "Call the bank", "e2"),
+            Some(Some(json!({ "opId": "op-1" }))),
+            true,
+        )
+        .await
+        .expect("record again");
+    let row = store.task("t1").await.expect("read").expect("t1");
+    assert_eq!(row.extension.expect("extension")["myDay"], "2026-09-25");
+
+    // Rejected: the extension goes back.
+    let before = entity(json!({ "opId": "op-1" }));
+    store
+        .fail_op("op-2", ("rejected", "no"), &Restore::Replace(before))
+        .await
+        .expect("fail");
+    let row = store.task("t1").await.expect("read").expect("t1");
+    assert_eq!(row.extension, Some(json!({ "opId": "op-1" })));
+    assert_eq!(
+        row.raw["title"], "Call the bank",
+        "the task itself untouched"
+    );
+}

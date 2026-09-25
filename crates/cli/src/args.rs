@@ -46,6 +46,11 @@ pub enum Command {
     /// Tasks in a list
     #[command(subcommand)]
     Tasks(TasksCommand),
+    /// Plan today: the tasks in My Day, what could go in it, and taking
+    /// them in and out. A task with no due date is due today while it's
+    /// there, so the To Do app shows it in its own My Day too
+    #[command(subcommand, name = "myday")]
+    MyDay(MyDayCommand),
     /// Find tasks by the words in their title or notes, in every list, best
     /// match first
     Search(SearchArgs),
@@ -83,6 +88,46 @@ pub enum Command {
     /// Start, stop or check the background daemon that talks to Microsoft
     #[command(subcommand)]
     Daemon(DaemonCommand),
+}
+
+#[derive(Debug, Subcommand)]
+pub enum MyDayCommand {
+    /// Today's My Day, open tasks first. The day starts at
+    /// `my_day.rollover_time` (00:00 unless config.toml says otherwise)
+    List,
+    /// Put tasks in today's My Day. One with no due date is due today too,
+    /// until it leaves My Day
+    Add(MyDayTargetArgs),
+    /// Take tasks out of My Day, and the due date My Day gave them if
+    /// nobody has changed it since
+    Remove(MyDayTargetArgs),
+    /// Open tasks that could go in today's My Day: due today, overdue, and
+    /// those left from an earlier My Day
+    Suggest,
+    /// Take every task out of an earlier day's My Day now, as the daemon
+    /// does each day at `my_day.rollover_time`
+    Rollover {
+        /// Show what would change without changing anything
+        #[arg(long)]
+        dry_run: bool,
+    },
+}
+
+#[derive(Debug, Args)]
+pub struct MyDayTargetArgs {
+    /// Task IDs from `tasks list`, or exact titles when --list is given.
+    /// `-` reads IDs from stdin, one per line
+    #[arg(required = true, value_name = "TASK")]
+    pub tasks: Vec<String>,
+    /// Look for the tasks in this list (exact name or ID), which also lets
+    /// TASK be an exact title
+    #[arg(long, value_name = "NAME|ID")]
+    pub list: Option<String>,
+    /// Show what would change without changing anything
+    #[arg(long)]
+    pub dry_run: bool,
+    #[command(flatten)]
+    pub idempotency: IdempotencyArgs,
 }
 
 #[derive(Debug, Subcommand)]
@@ -270,8 +315,11 @@ pub enum TasksCommand {
     /// Every task in a list, completed ones included
     List {
         /// The list's exact name or its ID [default: the "Tasks" list]
-        #[arg(long, value_name = "NAME|ID")]
+        #[arg(long, value_name = "NAME|ID", conflicts_with = "my_day")]
         list: Option<String>,
+        /// Today's My Day instead of a list, as `myday list` gives it
+        #[arg(long, conflicts_with = "search")]
+        my_day: bool,
         /// Only tasks whose title or notes match, best match first; the
         /// syntax is `search`'s
         #[arg(long, value_name = "QUERY")]
@@ -487,6 +535,10 @@ pub struct AddArgs {
     /// Notes, as plain text
     #[arg(long, value_name = "TEXT")]
     pub body: Option<String>,
+    /// Put it in today's My Day, as +myday or * in the text does. With no
+    /// due date, it's due today too
+    #[arg(long)]
+    pub my_day: bool,
     /// Show what would be sent without changing anything
     #[arg(long)]
     pub dry_run: bool,

@@ -30,6 +30,8 @@ pub enum Action {
     AcceptList,
     /// Complete an open task, or reopen a completed one.
     ToggleComplete,
+    /// `t`: put the tasks in today's My Day, or take them out.
+    ToggleMyDay,
     /// Delete, after an inline confirmation.
     Delete,
     Undo,

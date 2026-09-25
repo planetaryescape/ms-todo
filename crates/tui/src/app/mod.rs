@@ -22,6 +22,7 @@ pub mod line_editor;
 mod links;
 pub mod list_hint;
 pub mod move_tasks;
+pub(crate) mod my_day;
 pub mod palette;
 pub mod quick_add;
 pub mod scope;
@@ -216,6 +217,8 @@ pub enum Write {
     Edit,
     Delete,
     Move,
+    /// Into My Day, or out of it.
+    MyDay,
 }
 
 /// What goes into [`App::update`]. A seed makes `Response` the big one;
@@ -328,6 +331,9 @@ pub struct App {
     pub categories: quick_add::Categories,
     /// Quick add's list suggestion.
     pub list_hint: list_hint::ListHint,
+    /// My Day's day, as the daemon last said (it turns over at
+    /// `my_day.rollover_time`); until then, today.
+    pub my_day_date: Option<NaiveDate>,
 }
 
 impl App {
@@ -368,7 +374,13 @@ impl App {
             painted_from_cache: false,
             categories: quick_add::Categories::default(),
             list_hint: list_hint::ListHint::default(),
+            my_day_date: None,
         }
+    }
+
+    /// My Day's day.
+    pub fn my_day(&self) -> NaiveDate {
+        self.my_day_date.unwrap_or_else(|| self.clock.today())
     }
 
     /// Where keys go now.
@@ -453,7 +465,13 @@ impl App {
     /// The name of what the task list shows: the scope asked for, else
     /// the one on screen.
     pub fn view_name(&self) -> String {
-        self.scope_name(self.wanted.as_ref().or(self.shown.as_ref()))
+        let scope = self.wanted.as_ref().or(self.shown.as_ref());
+        let name = self.scope_name(scope);
+        if scope == Some(&Scope::MyDay) {
+            // The day, since it turns over at the rollover time.
+            return format!("{name} \u{b7} {}", self.my_day().format("%a %-d %b"));
+        }
+        name
     }
 
     /// The terminal window's title (08-tui.md): which app, and where. A
@@ -648,6 +666,7 @@ impl App {
             | Action::SetDue
             | Action::RescheduleOverdue
             | Action::MoveTasks
+            | Action::ToggleMyDay
                 if self.still_loading() =>
             {
                 Vec::new()
@@ -661,6 +680,7 @@ impl App {
                 Vec::new()
             }
             Action::ToggleComplete => self.toggle_complete(),
+            Action::ToggleMyDay => self.toggle_my_day(),
             Action::MoveTasks => {
                 self.start_move_tasks();
                 Vec::new()
@@ -964,8 +984,9 @@ impl App {
                 effects
             }
             (Tag::Prefetch, Ok(ResponseData::Seed(seed))) => {
-                if let Some(scope) = seed.scope {
-                    let tasks = seed.tasks.iter().filter_map(Task::from_entity).collect();
+                if let Some(scope) = seed.scope.clone() {
+                    let mut tasks = seed_tasks(&seed);
+                    order(&scope, false, &mut tasks);
                     self.cache.insert(scope, tasks);
                 }
                 Vec::new()
@@ -990,6 +1011,9 @@ impl App {
                 self.apply_write(write, &applied.items);
                 if write == Write::Move {
                     self.moved(&applied);
+                }
+                if write == Write::MyDay {
+                    self.my_day_changed(&applied);
                 }
                 if write == Write::Edit && applied.items.len() > 1 {
                     let count = applied.items.len();
@@ -1061,6 +1085,7 @@ impl App {
     fn apply_seed(&mut self, seed: Seed) {
         let keep = self.selected().map(|task| task.id.clone());
         let row = self.entries().get(self.sidebar_index).cloned();
+        let tasks = seed_tasks(&seed);
         self.lists = seed
             .lists
             .iter()
@@ -1080,8 +1105,12 @@ impl App {
         if changed_scope {
             self.selection.clear();
         }
+        if let Some(my_day) = &seed.my_day {
+            self.my_day_date =
+                NaiveDate::parse_from_str(&my_day.date, ms_todo_core::DATE_FORMAT).ok();
+        }
+        self.tasks = tasks;
         self.shown = seed.scope;
-        self.tasks = seed.tasks.iter().filter_map(Task::from_entity).collect();
         if let Some(shown) = &self.shown {
             order(shown, self.filter.is_some(), &mut self.tasks);
             if self.filter.is_none() {
@@ -1106,8 +1135,15 @@ impl App {
         let Some(shown) = self.shown.clone() else {
             return;
         };
-        for task in items.iter().filter_map(Task::from_entity) {
+        let my_day = self.my_day();
+        for mut task in items.iter().filter_map(Task::from_entity) {
             let at = self.tasks.iter().position(|row| row.id == task.id);
+            if let Some(at) = at
+                && task.my_day != Some(my_day)
+            {
+                // Still a suggestion, until the view is read again.
+                task.suggestion = self.tasks[at].suggestion.clone();
+            }
             match (write, at) {
                 (Write::Delete, Some(at)) => {
                     self.tasks.remove(at);
@@ -1115,7 +1151,7 @@ impl App {
                 (Write::Delete, None) => {}
                 // A filtered list is the search's to decide.
                 (Write::Add, _) if self.filter.is_some() => {}
-                (Write::Add, _) if belongs(&shown, &task) => {
+                (Write::Add, _) if belongs(&shown, &task, my_day) => {
                     let id = task.id.clone();
                     let open = self.tasks.iter().filter(|row| !row.completed).count();
                     self.tasks.insert(open, task);
@@ -1129,7 +1165,7 @@ impl App {
                     let name = self.list_name(&task.list_id).unwrap_or("Tasks").to_owned();
                     self.show(Level::Info, &format!("Added to {name}"));
                 }
-                (_, Some(at)) if belongs(&shown, &task) => self.tasks[at] = task,
+                (_, Some(at)) if belongs(&shown, &task, my_day) => self.tasks[at] = task,
                 (_, Some(at)) => {
                     self.tasks.remove(at);
                 }
@@ -1180,6 +1216,20 @@ impl App {
             ticks_left: BANNER_TICKS,
         });
     }
+}
+
+/// A seed's tasks as the TUI shows them: for My Day, its suggestions
+/// after its tasks.
+fn seed_tasks(seed: &Seed) -> Vec<Task> {
+    let suggestions = seed
+        .my_day
+        .iter()
+        .flat_map(|my_day| my_day.suggestions.iter());
+    seed.tasks
+        .iter()
+        .chain(suggestions)
+        .filter_map(Task::from_entity)
+        .collect()
 }
 
 pub(super) fn change(write: Write, ids: Vec<String>, change: TaskChange) -> Effect {

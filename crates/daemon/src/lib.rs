@@ -24,6 +24,7 @@ mod idempotency;
 mod list_resolution;
 mod list_scope;
 mod list_writes;
+mod my_day;
 mod outbox;
 mod reads;
 mod seed;

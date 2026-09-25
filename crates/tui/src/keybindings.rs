@@ -158,6 +158,7 @@ pub const BINDINGS: &[Binding] = &[
     // After Quit, so a narrow hint bar loses these first.
     bind(TASKS, "o", Action::OpenLink, "Open link", true),
     bind(TASKS, "y", Action::CopyLink, "Copy link", true),
+    bind(TASKS, "t", Action::ToggleMyDay, "My Day", true),
     bind(&[Context::Prompt], "Enter", Action::Submit, "Done", true),
     bind(ADDING, "Enter", Action::Submit, "Add", true),
     bind(ADDING, "Tab", Action::Complete, "Complete", true),

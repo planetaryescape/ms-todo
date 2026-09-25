@@ -12,7 +12,7 @@ use sqlx::AssertSqlSafe;
 use sqlx::{FromRow, SqliteConnection};
 
 use crate::graph_columns::{etag, text};
-use crate::list_extension::restore_list_extension;
+use crate::list_extension::{merge_extension, restore_list_extension};
 use crate::moves::set_list;
 use crate::pool::next_local_rev;
 use crate::tasks::{TaskRecord, WriteTask, task_record_columns, write_task};
@@ -88,6 +88,10 @@ pub enum OpKind {
     /// A move to another list: a job that copies the task there, checks
     /// the copy and deletes the source, saving each step (`progress`).
     Move,
+    /// A change to some fields of a task's extension (My Day), sent as a
+    /// list's is. Its rollback is the whole extension before, `{}` for
+    /// none.
+    TaskExtension,
 }
 
 impl OpKind {
@@ -98,6 +102,7 @@ impl OpKind {
             Self::Delete => "delete",
             Self::Extension => "extension",
             Self::Move => "move",
+            Self::TaskExtension => "task_extension",
         }
     }
 
@@ -108,6 +113,7 @@ impl OpKind {
             "delete" => Ok(Self::Delete),
             "extension" => Ok(Self::Extension),
             "move" => Ok(Self::Move),
+            "task_extension" => Ok(Self::TaskExtension),
             other => Err(StoreError::Corrupt(format!("unknown outbox op {other:?}"))),
         }
     }
@@ -300,6 +306,9 @@ pub enum LocalChange {
     /// The task shows in the list `to` at once; its JSON when queued is
     /// the rollback. A move puts it there on Graph.
     Move { to: String },
+    /// The payload's `body` goes over the task's extension (a null
+    /// removing a field); the extension when queued is the rollback.
+    Extension,
 }
 
 /// What a resolved operation does to its task row.
@@ -390,6 +399,15 @@ impl Store {
                     let current =
                         parse_object(&row_identity(&mut tx, &op.entity_local_id).await?.raw_json)?;
                     set_list(&mut tx, &op.entity_local_id, to, rev).await?;
+                    rollback = Some(current);
+                }
+                LocalChange::Extension => {
+                    let current = task_extension(&mut tx, &op.entity_local_id).await?;
+                    let mut merged = current.clone();
+                    if let Some(fields) = op.payload["body"].as_object() {
+                        merge_extension(&mut merged, fields);
+                    }
+                    write_task_extension(&mut tx, &op.entity_local_id, &merged, rev).await?;
                     rollback = Some(current);
                 }
             }
@@ -1093,13 +1111,33 @@ async fn write_attributed(
     merge_duplicate(tx, task.graph_id, local_id).await?;
     let mut raw = task.raw;
     let mut deleted = false;
+    let mut extension: Option<Entity> = task
+        .extension_json
+        .as_deref()
+        .map(parse_object)
+        .transpose()?;
+    let mut extension_changed = false;
     for (kind, payload) in later_ops(tx, op).await? {
         match kind {
             OpKind::Update => apply_body(&mut raw, &payload["body"]),
             OpKind::Delete => deleted = true,
+            OpKind::TaskExtension => {
+                if let Some(fields) = payload["body"].as_object() {
+                    merge_extension(extension.get_or_insert_with(Entity::new), fields);
+                    extension_changed = true;
+                }
+            }
             OpKind::Create | OpKind::Extension | OpKind::Move => {}
         }
     }
+    let extension_json = if extension_changed {
+        extension
+            .filter(|extension| !extension.is_empty())
+            .map(|extension| to_json(&extension))
+            .transpose()?
+    } else {
+        task.extension_json
+    };
     write_task(
         tx,
         &WriteTask {
@@ -1108,7 +1146,7 @@ async fn write_attributed(
             list_local_id: task.list_local_id,
             raw: &raw,
             raw_json: &to_json(&raw)?,
-            extension_json: task.extension_json.as_deref(),
+            extension_json: extension_json.as_deref(),
             hydrated_etag: task.hydrated_etag.as_deref(),
             local_rev: rev,
         },
@@ -1159,6 +1197,12 @@ async fn apply_restore(
     let local_id = op.entity_local_id.as_str();
     if op.op == OpKind::Extension {
         return restore_list_extension(tx, local_id, restore, rev).await;
+    }
+    if op.op == OpKind::TaskExtension {
+        return match restore {
+            Restore::Replace(extension) => write_task_extension(tx, local_id, extension, rev).await,
+            Restore::Nothing | Restore::Tombstone | Restore::MoveBack { .. } => Ok(()),
+        };
     }
     match restore {
         Restore::Nothing => Ok(()),
@@ -1222,6 +1266,37 @@ pub(crate) async fn row_identity(
     .fetch_optional(tx)
     .await?
     .ok_or_else(|| StoreError::Invalid(format!("task {local_id} isn't cached")))
+}
+
+/// A task's cached extension, `{}` for none.
+async fn task_extension(tx: &mut SqliteConnection, local_id: &str) -> Result<Entity, StoreError> {
+    Ok(row_identity(tx, local_id)
+        .await?
+        .extension_json
+        .as_deref()
+        .map(parse_object)
+        .transpose()?
+        .unwrap_or_default())
+}
+
+/// Make `extension` the task's cached extension (none when it's empty),
+/// written by the daemon at `rev`, so a pass in flight leaves it alone.
+async fn write_task_extension(
+    tx: &mut SqliteConnection,
+    local_id: &str,
+    extension: &Entity,
+    rev: i64,
+) -> Result<(), StoreError> {
+    let json = (!extension.is_empty())
+        .then(|| to_json(extension))
+        .transpose()?;
+    sqlx::query("UPDATE tasks SET extension_json = ?, local_rev = ? WHERE local_id = ?")
+        .bind(json)
+        .bind(rev)
+        .bind(local_id)
+        .execute(&mut *tx)
+        .await?;
+    Ok(())
 }
 
 async fn tombstone_row(

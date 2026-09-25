@@ -35,6 +35,7 @@ pub async fn add(paths: &Paths, args: AddArgs, format: OutputFormat) -> Result<(
             reminder: phrases::set_only(args.reminder.clone()),
             importance: args.importance,
             body: args.body.clone(),
+            my_day: args.my_day,
             ..NewTask::default()
         }
     } else {
@@ -320,6 +321,7 @@ async fn send_and_print(
     let op_id = match &request {
         Request::AddTask { op_id, .. }
         | Request::ChangeTasks { op_id, .. }
+        | Request::MyDayRollover { op_id, .. }
         | Request::ChangeLists { op_id, .. }
         | Request::Undo { op_id, .. } => op_id.clone(),
         _ => None,

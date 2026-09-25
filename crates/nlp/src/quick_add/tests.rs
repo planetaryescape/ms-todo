@@ -515,16 +515,17 @@ fn quotes_and_escapes_keep_text_literal() {
 }
 
 #[test]
-fn my_day_is_recognised_and_warned_about() {
-    for input in ["Parcel +myday", "Parcel *", "Parcel +MyDay"] {
+fn my_day_is_read_out_of_the_title() {
+    for input in [
+        "Parcel +myday",
+        "Parcel *",
+        "Parcel +MyDay",
+        "+myday Parcel *",
+    ] {
         let parsed = parse(input);
         assert!(parsed.my_day, "{input:?}");
         assert_eq!(parsed.title, "Parcel");
-        assert!(
-            parsed.warnings[0].contains("rung 7"),
-            "{:?}",
-            parsed.warnings
-        );
+        assert!(parsed.warnings.is_empty(), "{:?}", parsed.warnings);
     }
     assert!(!parse("Rate it *****").my_day);
 }

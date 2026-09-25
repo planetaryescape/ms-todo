@@ -2,11 +2,11 @@ use bytes::BytesMut;
 use ms_todo_protocol::{
     Anchor, Applied, Candidate, Clearable, Codec, Counts, DaemonStatus, DoctorReport,
     EntityChanged, ErrorPayload, Event, Folder, Importance, ListChange, ListSuggestion, Message,
-    NewTask, OpError, OutboxDepth, OutboxOp, OutboxState, PROTOCOL_VERSION, Payload, Plan,
-    PlannedList, PlannedTask, RawWriteMethod, Refused, Request, Response, ResponseData, Rolled,
-    Scope, ScopeError, ScopeStatus, SearchStatus, Seed, SuggestStatus, SyncActivity, SyncInfo,
-    SyncMode, SyncProgress, SyncReport, SyncState, TaskAction, TaskChange, TaskEdit, TaskSelect,
-    WriteRejected,
+    MyDay, MyDaySeed, MyDayStatus, NewTask, OpError, OutboxDepth, OutboxOp, OutboxState,
+    PROTOCOL_VERSION, Payload, Plan, PlannedList, PlannedTask, RawWriteMethod, Refused, Request,
+    Response, ResponseData, Rolled, Scope, ScopeError, ScopeStatus, SearchStatus, Seed,
+    SuggestStatus, SyncActivity, SyncInfo, SyncMode, SyncProgress, SyncReport, SyncState,
+    TaskAction, TaskChange, TaskEdit, TaskSelect, WriteRejected,
 };
 use serde_json::json;
 use tokio_util::codec::{Decoder, Encoder};
@@ -146,7 +146,45 @@ fn every_request_and_response_round_trips() {
                     provider: Some("typesafe".into()),
                     problem: Some("TypeSafe answered 500".into()),
                 }),
+                my_day: Some(MyDayStatus {
+                    date: "2026-09-25".into(),
+                    count: 2,
+                    rollover_time: "04:00".into(),
+                    last_rollover: Some("2026-09-25".into()),
+                    problem: None,
+                }),
             }),
+        }),
+        Payload::Request(Request::MyDay),
+        Payload::Request(Request::MyDayRollover {
+            dry_run: true,
+            op_id: None,
+        }),
+        Payload::Response(Response::Ok {
+            data: ResponseData::MyDay(MyDay {
+                date: "2026-09-25".into(),
+                tasks: vec![
+                    json!({ "id": "t1", "title": "Call the bank" })
+                        .as_object()
+                        .cloned()
+                        .expect("object"),
+                ],
+                suggestions: Vec::new(),
+                sync: SyncInfo {
+                    state: SyncState::Ready,
+                    generation: 3,
+                },
+                last_rollover: None,
+            }),
+        }),
+        Payload::Request(Request::ChangeTasks {
+            tasks: vec!["t1".into()],
+            list: None,
+            select: None,
+            change: TaskChange::AddToMyDay,
+            dry_run: false,
+            op_id: Some("op-my-day".into()),
+            idempotency_key: None,
         }),
         Payload::Request(Request::SuggestList {
             title: "pay council tax".into(),
@@ -207,6 +245,7 @@ fn every_request_and_response_round_trips() {
                     "range": { "type": "noEnd", "startDate": "2026-09-26" }
                 })),
                 categories: vec!["Errands".into()],
+                my_day: true,
             },
             dry_run: true,
             op_id: None,
@@ -411,6 +450,7 @@ fn every_request_and_response_round_trips() {
                     generation: 2,
                 },
                 counts: Counts {
+                    my_day: 5,
                     important: 1,
                     planned: 2,
                     all: 3,
@@ -432,6 +472,10 @@ fn every_request_and_response_round_trips() {
                     pending: 1,
                     ..OutboxDepth::default()
                 },
+                my_day: Some(MyDaySeed {
+                    date: "2026-09-25".into(),
+                    suggestions: vec![entity.clone()],
+                }),
             }),
         }),
         Payload::Event(Event::EntityChanged(EntityChanged {
@@ -540,7 +584,7 @@ fn unknown_tags_decode_to_unknown() {
     // A smart view from a newer client.
     let seed = decode_json(json!({
         "id": 0,
-        "payload": { "type": "request", "cmd": "seed", "scope": { "view": "my_day" } }
+        "payload": { "type": "request", "cmd": "seed", "scope": { "view": "assigned" } }
     }));
     assert_eq!(
         seed.payload,

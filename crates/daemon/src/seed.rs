@@ -2,8 +2,9 @@
 //! cache (spotuify's `ClientSeed`; D-031). The TUI starts from it, and
 //! reads it again when events say the cache changed.
 
-use ms_todo_core::ErrorKind;
-use ms_todo_protocol::{Counts, ErrorPayload, ResponseData, Scope, Seed, SyncState};
+use chrono::NaiveDate;
+use ms_todo_core::{DATE_FORMAT, ErrorKind};
+use ms_todo_protocol::{Counts, ErrorPayload, MyDaySeed, ResponseData, Scope, Seed, SyncState};
 use ms_todo_store::{LISTS_SCOPE, StatusFilter, TaskSearch, View};
 
 use crate::doctor::outbox_depth;
@@ -17,10 +18,12 @@ pub(crate) async fn seed(
     scope: Option<Scope>,
     search: Option<&str>,
 ) -> Result<ResponseData, ErrorPayload> {
-    let (lists_sync, outbox, counts, lists) = tokio::try_join!(
+    let today = state.my_day.today();
+    let (lists_sync, outbox, counts, my_day_count, lists) = tokio::try_join!(
         read_state(state, LISTS_SCOPE),
         outbox_depth(state),
         async { state.store.task_counts().await.map_err(store_error) },
+        async { state.store.my_day_count(today).await.map_err(store_error) },
         async { state.store.lists().await.map_err(store_error) },
     )?;
     let activity = state.syncer.status().activity();
@@ -41,7 +44,7 @@ pub(crate) async fn seed(
             (Some(Scope::List { id: list.local_id }), rows, sync)
         }
         Some(scope) => {
-            let view = view_of(&scope).ok_or_else(|| {
+            let view = view_of(&scope, today).ok_or_else(|| {
                 error_payload(
                     ErrorKind::Unsupported,
                     "this daemon doesn't know that view; restart it with `ms-todo daemon stop`"
@@ -66,6 +69,13 @@ pub(crate) async fn seed(
             (Some(scope), rows, all_lists_state(state, lists_sync).await?)
         }
     };
+    let my_day = match &scope {
+        Some(Scope::MyDay) => Some(MyDaySeed {
+            date: today.format(DATE_FORMAT).to_string(),
+            suggestions: crate::my_day::suggestions(state, today, &lists).await?,
+        }),
+        _ => None,
+    };
     Ok(ResponseData::Seed(Seed {
         scope,
         lists: crate::folders::sorted(&lists)
@@ -74,6 +84,7 @@ pub(crate) async fn seed(
             .collect(),
         lists_sync,
         counts: Counts {
+            my_day: my_day_count,
             important: counts.important,
             planned: counts.planned,
             all: counts.all,
@@ -84,11 +95,13 @@ pub(crate) async fn seed(
         sync,
         activity,
         outbox,
+        my_day,
     }))
 }
 
-fn view_of(scope: &Scope) -> Option<View> {
+fn view_of(scope: &Scope, today: NaiveDate) -> Option<View> {
     match scope {
+        Scope::MyDay => Some(View::MyDay(today)),
         Scope::Important => Some(View::Important),
         Scope::Planned => Some(View::Planned),
         Scope::All => Some(View::All),

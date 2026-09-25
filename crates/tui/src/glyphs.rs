@@ -12,6 +12,7 @@ pub struct Glyphs {
     pub pending: &'static str,
     pub unknown: &'static str,
     pub failed: &'static str,
+    pub my_day: &'static str,
     pub planned: &'static str,
     pub all: &'static str,
     pub completed: &'static str,
@@ -37,6 +38,7 @@ pub const UNICODE: Glyphs = Glyphs {
     pending: "\u{25cc}",   // ◌
     unknown: "?",
     failed: "\u{2717}",              // ✗
+    my_day: "\u{263c}",              // ☼
     planned: "\u{25a6}",             // ▦
     all: "\u{221e}",                 // ∞
     completed: "\u{2713}",           // ✓
@@ -59,6 +61,7 @@ pub const ASCII: Glyphs = Glyphs {
     pending: "~",
     unknown: "?",
     failed: "X",
+    my_day: "o",
     planned: "#",
     all: "*",
     completed: "x",

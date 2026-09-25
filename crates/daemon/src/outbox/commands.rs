@@ -155,7 +155,7 @@ async fn redo_local(state: &State, op: &OutboxRow) -> Result<Restore, ErrorPaylo
             Restore::Replace(raw)
         }
         OpKind::Delete => Restore::Tombstone,
-        OpKind::Extension => {
+        OpKind::Extension | OpKind::TaskExtension => {
             let fields = op.body().as_object().cloned().unwrap_or_default();
             let mut extension = current;
             merge_extension(&mut extension, &fields);

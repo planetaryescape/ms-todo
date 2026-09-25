@@ -296,6 +296,24 @@ async fn attempt(state: &State, op: &OutboxRow) -> Result<Attempt, Failure> {
             "the task was never created in Microsoft To Do".into(),
         ));
     };
+    if op.op == OpKind::TaskExtension {
+        return extension_write::send_task(state, &list_graph_id, &graph_id, op).await;
+    }
+    if let Some(expected) = op.payload.get("expect_due") {
+        // My Day's due-date edit: made only while Graph's due date is the
+        // one it was planned from (a day, or null for none).
+        let fetched = state
+            .graph
+            .get_task(&list_graph_id, &graph_id)
+            .await
+            .map_err(classify)?;
+        let (current, extension) = split_extension(fetched);
+        let due = graph_due_date(&current).map(|day| day.format(DATE_FORMAT).to_string());
+        if expected.as_str() != due.as_deref() {
+            return Ok(Attempt::Changed(current, extension));
+        }
+        return patch(state, op, &list_graph_id, &graph_id, &current).await;
+    }
     if op.op == OpKind::Delete {
         // A 404 counts as deleted (the client says so).
         return match state.graph.delete_task(&list_graph_id, &graph_id).await {

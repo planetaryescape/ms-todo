@@ -37,7 +37,10 @@ expression: pretty
               "edit",
               "delete",
               "undo",
-              "move"
+              "move",
+              "my_day_add",
+              "my_day_remove",
+              "my_day_rollover"
             ]
           },
           "items": {

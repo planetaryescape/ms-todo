@@ -223,6 +223,7 @@ fn merge(
         start: parsed.start.map(|day| day.format(DATE_FORMAT).to_string()),
         recurrence: parsed.recurrence.as_ref().map(Recurrence::to_graph),
         categories: parsed.categories.clone(),
+        my_day: parsed.my_day || args.my_day,
     };
     Ok((task, notes))
 }

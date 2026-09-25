@@ -16,9 +16,11 @@ use crate::handlers::State;
 pub(super) fn undo_local(op: &OutboxRow, current: Option<&Entity>) -> Restore {
     match (op.op, current, &op.rollback) {
         (OpKind::Create, ..) => Restore::Tombstone,
-        (OpKind::Update | OpKind::Extension, Some(current), Some(before)) => {
-            Restore::Replace(revert_fields(current, op.body(), before))
-        }
+        (
+            OpKind::Update | OpKind::Extension | OpKind::TaskExtension,
+            Some(current),
+            Some(before),
+        ) => Restore::Replace(revert_fields(current, op.body(), before)),
         (OpKind::Delete, _, Some(before)) => Restore::Replace(before.clone()),
         // A move's is `move_job::move_back`, which needs its saved steps.
         _ => Restore::Nothing,
@@ -85,7 +87,7 @@ pub(crate) async fn reject(state: &State, op: &OutboxRow, error: &ErrorPayload) 
 }
 
 /// What `op`'s local change applies to as it is now: its task's JSON, or
-/// for a folder write its list's extension (`{}` for none). `None` if it's
+/// for an extension write its list's or task's extension (`{}` for none). `None` if it's
 /// not cached, or the list is gone.
 pub(super) async fn current_of(
     state: &State,
@@ -97,6 +99,17 @@ pub(super) async fn current_of(
                 .and_then(|extension| extension.as_object().cloned())
                 .unwrap_or_default()
         }));
+    }
+    if op.op == OpKind::TaskExtension {
+        return Ok(state
+            .store
+            .task_any(&op.entity_local_id)
+            .await?
+            .map(|(row, _)| {
+                row.extension
+                    .and_then(|extension| extension.as_object().cloned())
+                    .unwrap_or_default()
+            }));
     }
     Ok(state
         .store

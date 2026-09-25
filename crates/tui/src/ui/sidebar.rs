@@ -21,6 +21,7 @@ pub fn draw(frame: &mut Frame, area: Rect, app: &App) {
             let (icon, name, count, heading) = match entry {
                 Entry::View(scope) => {
                     let (icon, count) = match scope {
+                        Scope::MyDay => (glyphs.my_day, app.counts.my_day),
                         Scope::Important => (glyphs.important, app.counts.important),
                         Scope::Planned => (glyphs.planned, app.counts.planned),
                         Scope::All => (glyphs.all, app.counts.all),

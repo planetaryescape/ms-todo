@@ -178,6 +178,7 @@ async fn build_state(paths: &Paths) -> Result<State, Fatal> {
         started_at: chrono::Utc::now().timestamp(),
         moves_dir: paths.data_dir.join("moves"),
         suggest: crate::suggest::Suggester::load(&paths.config_file),
+        my_day: crate::my_day::Config::load(&paths.config_file),
     })
 }
 
@@ -206,6 +207,7 @@ async fn accept_until_shutdown(listener: UnixListener, state: Arc<State>) -> Res
         syncing.syncer.run(context).await;
     });
     connections.spawn(outbox::run(Arc::clone(&state)));
+    connections.spawn(crate::my_day::run(Arc::clone(&state)));
     loop {
         tokio::select! {
             accepted = listener.accept() => match accepted {

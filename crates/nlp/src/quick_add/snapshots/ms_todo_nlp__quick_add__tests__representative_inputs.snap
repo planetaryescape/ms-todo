@@ -200,16 +200,14 @@ Pick up parcel +myday
   title: "Pick up parcel"
   my_day: true
   spans: my_day:"+myday"
-  warning: +myday: My Day arrives in rung 7, so the task isn't added to it
-  preview: 
+  preview: My Day
 
 Pick up parcel * p4
   title: "Pick up parcel"
   importance: p4 low
   my_day: true
   spans: my_day:"*" priority:"p4"
-  warning: *: My Day arrives in rung 7, so the task isn't added to it
-  preview: p4
+  preview: p4 · My Day
 
 Take vitamins daily 8am
   title: "Take vitamins"

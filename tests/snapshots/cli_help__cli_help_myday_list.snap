@@ -1,0 +1,13 @@
+---
+source: tests/cli_help.rs
+expression: help_output(args)
+---
+Today's My Day, open tasks first. The day starts at `my_day.rollover_time` (00:00 unless config.toml says otherwise)
+
+Usage: ms-todo myday list [OPTIONS]
+
+Options:
+      --format <FORMAT>  Output format: jsonl is one object per line, ids one ID per line, csv has a header row [default: table in a terminal, json when piped] [possible values: table, json, jsonl, ids, csv]
+      --instance <NAME>  Use a separate copy of ms-todo's data (also MS_TODO_INSTANCE). Builds run from Cargo's target/ directory default to "dev"; "default" is the installed copy
+  -h, --help             Print help
+  -V, --version          Print version

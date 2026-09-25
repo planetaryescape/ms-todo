@@ -10,6 +10,7 @@ Options:
       --format <FORMAT>  Output format: jsonl is one object per line, ids one ID per line, csv has a header row [default: table in a terminal, json when piped] [possible values: table, json, jsonl, ids, csv]
       --list <NAME|ID>   The list's exact name or its ID [default: the "Tasks" list]
       --instance <NAME>  Use a separate copy of ms-todo's data (also MS_TODO_INSTANCE). Builds run from Cargo's target/ directory default to "dev"; "default" is the installed copy
+      --my-day           Today's My Day instead of a list, as `myday list` gives it
       --search <QUERY>   Only tasks whose title or notes match, best match first; the syntax is `search`'s
   -h, --help             Print help
   -V, --version          Print version

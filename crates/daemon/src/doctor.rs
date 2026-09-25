@@ -51,6 +51,7 @@ pub(crate) async fn doctor(state: &State) -> Result<ResponseData, ErrorPayload> 
         scopes,
         outbox: outbox_depth(state).await?,
         suggest: Some(state.suggest.status()),
+        my_day: Some(crate::my_day::status(state).await?),
     }))
 }
 

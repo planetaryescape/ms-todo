@@ -49,6 +49,11 @@ pub struct Task {
     /// The day it was completed: Graph's UTC date (S12), as `done` reads
     /// it; `None` until Graph has answered the completion.
     pub completed_on: Option<NaiveDate>,
+    /// The day whose My Day it's in (`myDay` in our extension).
+    pub my_day: Option<NaiveDate>,
+    /// Why My Day suggests it, when it's one of the My Day view's
+    /// suggestions: `due_today`, `overdue` or `left_over`.
+    pub suggestion: Option<String>,
 }
 
 impl Task {
@@ -111,6 +116,11 @@ impl Task {
                 .and_then(|(at, zone)| local_date_time(at, zone)),
             completed_on: date_time("completedDateTime")
                 .and_then(|(at, zone)| completion_date(at, zone)),
+            my_day: entity
+                .get("extensions")
+                .and_then(|extensions| extensions.get(0)?.get("myDay")?.as_str())
+                .and_then(|day| NaiveDate::parse_from_str(day, ms_todo_core::DATE_FORMAT).ok()),
+            suggestion: text("suggestion").map(str::to_owned),
         })
     }
 }

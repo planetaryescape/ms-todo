@@ -20,6 +20,7 @@ mod done_command;
 mod error;
 mod folder_commands;
 mod link_commands;
+mod my_day_commands;
 mod outbox_commands;
 mod output;
 mod output_schemas;
@@ -173,7 +174,11 @@ async fn dispatch(command: Command, paths: &Paths, format: OutputFormat) -> Resu
         Command::Folders(FoldersCommand::Order(args)) => {
             folder_commands::order_folder(paths, args, format).await
         }
-        Command::Tasks(TasksCommand::List { list, search }) => {
+        Command::Tasks(TasksCommand::List { my_day: true, .. }) => {
+            my_day_commands::list(paths, format).await
+        }
+        Command::MyDay(command) => my_day_commands::run(paths, command, format).await,
+        Command::Tasks(TasksCommand::List { list, search, .. }) => {
             let (items, sync) = data_commands::tasks(paths, list, search).await?;
             print_collection(format, &items, sync, &data_commands::TASKS_TABLE)
         }

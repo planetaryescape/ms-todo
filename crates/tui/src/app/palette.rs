@@ -260,7 +260,7 @@ mod tests {
             }
         );
         assert_eq!(app.wanted, Some(Scope::All));
-        assert_eq!(app.sidebar_index, 2);
+        assert_eq!(app.sidebar_index, 3);
     }
 
     #[test]

@@ -43,7 +43,9 @@ use crate::list_writes::queue_lists;
 use crate::outbox::move_job;
 use crate::outbox::{fields_not_holding, op_id_for};
 use crate::task_fields::{as_written, creatable_fields};
-use crate::task_writes::{delete_op, move_op, new_task_raw, our_extension, queue, update_op};
+use crate::task_writes::{
+    action_name, delete_op, move_op, new_task_raw, our_extension, queue, update_op,
+};
 
 /// A completed copy is created at real time (S12), so a copy of this
 /// completion was created no earlier than this before it was sent.
@@ -156,6 +158,22 @@ pub(crate) async fn undo(
                 let from_list = move_job::from_list(op);
                 inverse.push(move_op(id(inverse.len()), &row, &from_list));
             }
+            OpKind::TaskExtension => {
+                let moved = extension_moved(op, &row);
+                if !moved.is_empty() {
+                    let reason = format!(
+                        "has changed since ({}); undo would overwrite that",
+                        moved.join(", ")
+                    );
+                    refused.push(Refused {
+                        id: row.local_id.clone(),
+                        title: row.title.clone(),
+                        reason,
+                    });
+                    continue;
+                }
+                inverse.push(extension_undo(id(inverse.len()), &row, op)?);
+            }
             OpKind::Extension => {
                 return Err(error_payload(
                     ErrorKind::Internal,
@@ -164,6 +182,9 @@ pub(crate) async fn undo(
             }
         }
     }
+    // A task with two operations (My Day's) is left alone once.
+    let mut seen = std::collections::HashSet::new();
+    refused.retain(|task| seen.insert(task.id.clone()));
     if inverse.is_empty() {
         return Err(match refused.as_slice() {
             [] => nothing_to_undo(&target),
@@ -261,6 +282,36 @@ fn check_list_unchanged(op: &OutboxRow, list: &ListRow) -> Result<(), ErrorPaylo
         "{:?} {since} since; undo would overwrite that",
         list.display_name
     )))
+}
+
+/// The fields `op` set on its task's extension that don't hold the value
+/// it set any more (a null having removed one).
+fn extension_moved(op: &OutboxRow, row: &TaskRow) -> Vec<String> {
+    let extension = row
+        .extension
+        .as_ref()
+        .and_then(Value::as_object)
+        .cloned()
+        .unwrap_or_default();
+    fields_not_holding(op.body(), &extension)
+}
+
+/// The extension write that puts back what `op` changed on `row`'s
+/// extension: in My Day again, or out of it.
+fn extension_undo(op_id: String, row: &TaskRow, op: &OutboxRow) -> Result<NewOp, ErrorPayload> {
+    let action = match op.action.as_str() {
+        "my_day_add" => TaskAction::MyDayRemove,
+        _ => TaskAction::MyDayAdd,
+    };
+    Ok(NewOp {
+        op_id,
+        entity_local_id: row.local_id.clone(),
+        list_local_id: row.list_local_id.clone(),
+        op: OpKind::TaskExtension,
+        action: action_name(action).to_owned(),
+        payload: json!({ "body": Value::Object(inverse_fields(op)?) }),
+        change: LocalChange::Extension,
+    })
 }
 
 /// Why undoing the move `op` would overwrite a later change to its task,

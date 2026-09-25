@@ -230,7 +230,7 @@ async fn parse_shows_the_reading_and_writes_nothing() {
         warnings.contains("@new isn't one of your categories"),
         "{warnings}"
     );
-    assert!(warnings.contains("rung 7"), "{warnings}");
+    assert!(!warnings.contains("My Day"), "{warnings}");
     assert!(graph.writes().await.is_empty());
 
     // A person's view of it.

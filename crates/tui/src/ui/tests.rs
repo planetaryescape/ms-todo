@@ -42,15 +42,15 @@ fn the_selected_row_is_highlighted_in_the_focused_pane_only() {
     terminal
         .draw(|frame| super::draw(frame, &app))
         .expect("draw");
-    // Under the title bar, Home is the sidebar's sixth row; "Pay rent"
+    // Under the title bar, Home is the sidebar's seventh row; "Pay rent"
     // the list's first.
-    assert!(!selected(&terminal, &app, 2, 7));
+    assert!(!selected(&terminal, &app, 2, 8));
     assert!(selected(&terminal, &app, 26, 2));
     app.focus = Pane::Sidebar;
     terminal
         .draw(|frame| super::draw(frame, &app))
         .expect("draw");
-    assert!(selected(&terminal, &app, 2, 7));
+    assert!(selected(&terminal, &app, 2, 8));
     assert!(!selected(&terminal, &app, 26, 2));
 }
 
@@ -739,4 +739,11 @@ fn the_add_modal_offers_a_likely_list_for_the_inbox() {
         "{screen}"
     );
     insta::assert_snapshot!(screen);
+}
+
+#[test]
+fn my_day_with_its_suggestions() {
+    let mut app = crate::app::my_day::tests::in_my_day();
+    app.task_index = 2;
+    insta::assert_snapshot!(render(&app));
 }

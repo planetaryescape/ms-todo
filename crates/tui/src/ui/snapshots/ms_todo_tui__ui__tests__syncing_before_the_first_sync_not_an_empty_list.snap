@@ -4,11 +4,11 @@ expression: render(&app)
 ---
 " ms-todo 9.9.9 · Tasks                                                                              ◌ syncing "
 "╭ Lists ───────────────╮╭ Tasks ───────────────────────────────────────────╮╭ Detail ────────────────────────╮"
+"│☼ My Day              ││                                                  ││                                │"
 "│★ Important           ││                                                  ││                                │"
 "│▦ Planned             ││                                                  ││                                │"
 "│∞ All                 ││                                                  ││                                │"
 "│✓ Completed           ││                                                  ││                                │"
-"│                      ││                                                  ││                                │"
 "│                      ││                     Syncing…                     ││                                │"
 "│                      ││                                                  ││                                │"
 "│                      ││                                                  ││                                │"

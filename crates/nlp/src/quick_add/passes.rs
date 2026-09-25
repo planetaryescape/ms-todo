@@ -242,8 +242,7 @@ impl<'i> Scan<'i> {
         }
     }
 
-    /// `+myday` or a lone `*`: recognised, so it isn't a title word, but
-    /// not applied until rung 7 brings My Day.
+    /// `+myday` or a lone `*`: the task goes in today's My Day.
     fn my_day(&mut self, task: &mut ParsedTask) {
         for at in self.word_starts() {
             let rest = &self.scan[at..];
@@ -261,13 +260,7 @@ impl<'i> Scan<'i> {
             if !clean {
                 continue;
             }
-            if !task.my_day {
-                task.my_day = true;
-                task.warnings.push(format!(
-                    "{}: My Day arrives in rung 7, so the task isn't added to it",
-                    &self.input[at..at + length]
-                ));
-            }
+            task.my_day = true;
             self.claim(at..at + length, SpanKind::MyDay);
         }
     }

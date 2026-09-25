@@ -33,7 +33,7 @@ fn start_status_stop_and_the_pid_is_gone() {
     let started = env.json(&["daemon", "start"]);
     assert_eq!(started["running"], true);
     assert_eq!(started["ready"], true);
-    assert_eq!(started["protocol_version"], 11);
+    assert_eq!(started["protocol_version"], 12);
     assert_eq!(started["instance"], "dev");
     let pid = started["pid"].as_u64().expect("pid");
     assert!(pid_exists(pid));

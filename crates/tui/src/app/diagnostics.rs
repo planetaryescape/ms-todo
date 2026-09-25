@@ -233,6 +233,7 @@ pub(crate) mod tests {
                 ..OutboxDepth::default()
             },
             suggest: None,
+            my_day: None,
         }
     }
 

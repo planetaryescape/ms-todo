@@ -37,6 +37,8 @@ pub(crate) struct State {
     pub moves_dir: std::path::PathBuf,
     /// List suggestions, when `[suggest]` turns them on.
     pub suggest: crate::suggest::Suggester,
+    /// `[my_day]`: when a day's My Day ends.
+    pub my_day: crate::my_day::Config,
 }
 
 impl State {
@@ -114,6 +116,11 @@ pub(crate) async fn handle(state: &State, request: Request) -> Response {
                 .suggest(&state.store, generation, &title)
                 .await
                 .map(|suggestion| ResponseData::ListSuggestion { suggestion })
+        }
+        Request::MyDay => crate::my_day::my_day(state).await,
+        Request::MyDayRollover { dry_run, op_id } => {
+            let op_id = op_id.unwrap_or_else(new_op_id);
+            crate::my_day::rollover(state, dry_run, op_id).await
         }
         Request::Bearer => match state.auth.valid_token().await {
             Ok(token) => Ok(ResponseData::Bearer {

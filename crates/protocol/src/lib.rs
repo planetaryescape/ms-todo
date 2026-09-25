@@ -31,8 +31,11 @@ use serde_json::{Map, Value};
 /// `recurrence` and `categories` (quick add, rung 6a), so an older daemon
 /// never drops a recurrence it doesn't know and creates a one-off task.
 /// 11: `SuggestList` (rung 6b), so a client restarts an older daemon
-/// rather than have the request refused as unknown.
-pub const PROTOCOL_VERSION: u32 = 11;
+/// rather than have the request refused as unknown. 12: My Day (rung 7):
+/// `Scope::MyDay`, `TaskChange::AddToMyDay` and `RemoveFromMyDay`,
+/// `NewTask.my_day`, `MyDay`, `MyDayRollover` and `Counts.my_day`, so an
+/// older daemon never adds a task without putting it in My Day.
+pub const PROTOCOL_VERSION: u32 = 12;
 
 /// The socket buffer both ends ask for: room for a large list's `Seed` in
 /// one write. macOS gives a Unix socket 8 KiB, so a 350 KiB seed crossed
@@ -255,6 +258,22 @@ pub enum Request {
     /// error. Answered out of order, so a slow provider never holds up
     /// the connection's other requests.
     SuggestList { title: String },
+    /// My Day from the cache, answered `MyDay`: today's tasks (by My
+    /// Day's day, which starts at `my_day.rollover_time`) and the
+    /// suggestions for it.
+    MyDay,
+    /// Run the My Day rollover now: every task in an earlier day's My Day
+    /// leaves it, and loses a due date ms-todo set for it if it's still
+    /// open (docs/blueprint/05-custom-features.md#my-day). With `dry_run`,
+    /// answers `Plan` and writes nothing; otherwise `Applied`, one outbox
+    /// operation or two per task under one `op_id`.
+    MyDayRollover {
+        #[serde(default)]
+        dry_run: bool,
+        /// Chosen by the client before sending (see `AddTask`).
+        #[serde(default)]
+        op_id: Option<String>,
+    },
     /// A valid access token, for `auth bearer --reveal-secret`.
     Bearer,
     /// Stop the daemon. It answers `Ack`, then exits.
@@ -342,6 +361,7 @@ pub enum ResponseData {
     ListSuggestion {
         suggestion: Option<ListSuggestion>,
     },
+    MyDay(MyDay),
     Ack,
     #[serde(other)]
     Unknown,
@@ -357,10 +377,31 @@ pub struct ListSuggestion {
     pub confidence: f64,
 }
 
+/// My Day: today's tasks and what's suggested for it.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct MyDay {
+    /// My Day's day, `YYYY-MM-DD`: today, or yesterday before
+    /// `my_day.rollover_time`.
+    pub date: String,
+    /// The tasks in today's My Day, open ones first.
+    pub tasks: Vec<Entity>,
+    /// Open tasks not in it that could be: each has `suggestion`, why
+    /// (`due_today`, `overdue` or `left_over`, from an earlier My Day the
+    /// rollover took it out of), and `list`, its list's name.
+    pub suggestions: Vec<Entity>,
+    /// Every list's sync state, as a view over every list has it.
+    pub sync: SyncInfo,
+    /// The day the last rollover ran for, `YYYY-MM-DD`.
+    #[serde(default)]
+    pub last_rollover: Option<String>,
+}
+
 /// What a client shows: a smart view over every list, or one list.
 #[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(tag = "view", rename_all = "snake_case")]
 pub enum Scope {
+    /// The tasks in today's My Day, open ones first.
+    MyDay,
     /// Open tasks marked important.
     Important,
     /// Open tasks with a due date, soonest first.
@@ -395,11 +436,27 @@ pub struct Seed {
     pub sync: SyncInfo,
     pub activity: SyncActivity,
     pub outbox: OutboxDepth,
+    /// For `Scope::MyDay`: its day and suggestions; `None` for any other
+    /// scope.
+    #[serde(default)]
+    pub my_day: Option<MyDaySeed>,
+}
+
+/// What the My Day view shows besides its tasks.
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+pub struct MyDaySeed {
+    /// `YYYY-MM-DD`, as `MyDay.date`.
+    pub date: String,
+    /// As `MyDay.suggestions`.
+    pub suggestions: Vec<Entity>,
 }
 
 /// How many tasks each smart view and each list holds.
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Counts {
+    /// Open tasks in today's My Day.
+    #[serde(default)]
+    pub my_day: u64,
     pub important: u64,
     pub planned: u64,
     pub all: u64,
@@ -506,6 +563,26 @@ pub struct DoctorReport {
     /// List suggestions (rung 6b); `None` from a daemon before them.
     #[serde(default)]
     pub suggest: Option<SuggestStatus>,
+    /// My Day (rung 7); `None` from a daemon before it.
+    #[serde(default)]
+    pub my_day: Option<MyDayStatus>,
+}
+
+/// How My Day stands, for `doctor`.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct MyDayStatus {
+    /// My Day's day now, `YYYY-MM-DD`.
+    pub date: String,
+    /// Open tasks in it.
+    pub count: u64,
+    /// `HH:MM`, local: when a day's My Day ends.
+    pub rollover_time: String,
+    /// The day the last rollover ran for.
+    #[serde(default)]
+    pub last_rollover: Option<String>,
+    /// Why `my_day.rollover_time` in config.toml wasn't used.
+    #[serde(default)]
+    pub problem: Option<String>,
 }
 
 /// How list suggestions stand, for `doctor`.
@@ -711,6 +788,10 @@ pub struct NewTask {
     /// Outlook category names, as the task carries them.
     #[serde(default)]
     pub categories: Vec<String>,
+    /// Put it in today's My Day; with no due date, it's due today too, so
+    /// the phone shows it in its own My Day (D-037).
+    #[serde(default)]
+    pub my_day: bool,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -726,6 +807,12 @@ pub enum TaskChange {
     Move {
         to: String,
     },
+    /// Put the tasks in today's My Day; one with no due date is due today
+    /// too, which ms-todo takes away again at the rollover (D-037).
+    AddToMyDay,
+    /// Take the tasks out of My Day, and an open one's due date with it
+    /// when ms-todo set that date and nobody has changed it since.
+    RemoveFromMyDay,
     #[serde(other)]
     Unknown,
 }
@@ -788,6 +875,12 @@ pub enum TaskAction {
     DeleteFolder,
     /// A folder before or after another.
     OrderFolder,
+    /// Tasks into today's My Day.
+    MyDayAdd,
+    /// Tasks out of My Day.
+    MyDayRemove,
+    /// An earlier day's My Day emptied.
+    MyDayRollover,
     #[serde(other)]
     Unknown,
 }

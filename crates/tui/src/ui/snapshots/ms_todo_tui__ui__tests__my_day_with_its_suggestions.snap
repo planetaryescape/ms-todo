@@ -1,0 +1,20 @@
+---
+source: crates/tui/src/ui/tests.rs
+expression: render(&app)
+---
+" ms-todo 9.9.9 · My Day · Thu 24 Sep                                                                 ● synced "
+"╭ Lists ───────────────╮╭ My Day · Thu 24 Sep ─────────────────────────────╮╭ Detail ────────────────────────╮"
+"│☼ My Day             1││  Today                                           ││Title      Renew passport       │"
+"│★ Important          1││○ Call the bank                                   ││                                │"
+"│▦ Planned            2││✓ Pay the plumber                                 ││Status     open                 │"
+"│∞ All                3││  Suggestions                                     ││List       Home                 │"
+"│✓ Completed          1││○ Renew passport                   Today          ││Due        Thu 24 Sep 2026      │"
+"│≡ Tasks               ││○ File expenses                   Sun 20          ││(Today)                         │"
+"│≡ Home               3││○ Book dentist                                    ││Reminder   none                 │"
+"│                      ││                                                  ││Importance normal               │"
+"│                      ││                                                  ││Sync       synced               │"
+"│                      ││                                                  ││                                │"
+"│                      ││                                                  ││Notes      none                 │"
+"╰──────────────────────╯╰──────────────────────────────────────────────────╯╰────────────────────────────────╯"
+" ● daemon  ·  synced 12s ago  ·  all changes sent                                                             "
+" a Add  x Done  e Edit  d Delete  v Select  u Undo  / Filter  : Palette  r Sync  ? Help  q Quit  o Open link  "

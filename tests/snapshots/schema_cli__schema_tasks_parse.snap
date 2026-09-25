@@ -59,7 +59,7 @@ expression: pretty
         ]
       },
       "my_day": {
-        "description": "+myday or * was typed; not applied until rung 7",
+        "description": "+myday or * was typed: the task goes in today's My Day",
         "type": "boolean"
       },
       "priority": {

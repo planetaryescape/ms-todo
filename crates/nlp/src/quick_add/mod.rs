@@ -70,8 +70,7 @@ pub struct ParsedTask {
     /// both normal (D-017).
     pub priority: Option<u8>,
     pub categories: Vec<String>,
-    /// `+myday` or `*` was typed. My Day arrives in rung 7; until then
-    /// this is only reported, with a warning.
+    /// `+myday` or `*` was typed: put the task in today's My Day.
     pub my_day: bool,
     /// The recognised parts, by byte range of the input, in order.
     pub spans: Vec<Span>,
@@ -121,7 +120,7 @@ impl SpanKind {
 impl ParsedTask {
     /// The fields read, as a person reads them back, in the order the
     /// preview line shows them: `p1`, `due Thu 1 Oct`, `every month on the
-    /// 1st`, `remind 09:00`. The list isn't here: the caller knows the
+    /// 1st`, `remind 09:00`, `@label`, `My Day`. The list isn't here: the caller knows the
     /// target when none was typed.
     pub fn summary(&self, ctx: &ParseContext) -> Vec<String> {
         let mut parts = Vec::new();
@@ -146,6 +145,9 @@ impl ParsedTask {
         }
         for category in &self.categories {
             parts.push(format!("@{category}"));
+        }
+        if self.my_day {
+            parts.push("My Day".into());
         }
         parts
     }

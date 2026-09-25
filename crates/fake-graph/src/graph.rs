@@ -2,9 +2,9 @@
 //! each list's tasks in pages, `lists/delta` and each list's `tasks/delta`,
 //! a single list's or task's GET, and `$batch` GETs of single tasks with our
 //! extension, chained the way Graph chains them (a failed step makes the
-//! rest 424), and writes of our extension on a list (folders): PATCH
-//! replaces the document and POST upserts it, as S2 found, and each moves
-//! the list's etag. Tests change `data` between syncs, as a phone would,
+//! rest 424), and writes of our extension on a list (folders) or a task
+//! (My Day): PATCH replaces the document and POST upserts it, as S2 found,
+//! and each moves the list's or task's etag. Tests change `data` between syncs, as a phone would,
 //! and mount their own mocks for other writes.
 //!
 //! Delta works like Graph's as far as ms-todo can tell: a delta token
@@ -267,6 +267,68 @@ impl FakeGraph {
                     fields.remove("extensionName");
                 }
                 write_list_extension(&mut data, &list, body);
+                ResponseTemplate::new(201)
+            })
+            .mount(&server)
+            .await;
+
+        // Our extension on a task (My Day), as on a list: PATCH replaces
+        // the document, DELETE removes it, POST upserts it, and each moves
+        // the task's etag (S2).
+        let shared = Arc::clone(&data);
+        Mock::given(method("PATCH"))
+            .and(path_regex(
+                r"^/v1\.0/me/todo/lists/[^/]+/tasks/[^/]+/extensions/[^/]+$",
+            ))
+            .respond_with(move |request: &Request| {
+                let mut data = lock(&shared);
+                let (list, task) = task_of(request);
+                if !data.extensions.contains_key(&task) {
+                    return not_found();
+                }
+                let body: Value = serde_json::from_slice(&request.body).unwrap_or_default();
+                if body.as_object().is_none_or(serde_json::Map::is_empty) {
+                    return ResponseTemplate::new(400).set_body_json(json!({ "error": {
+                        "code": "RequestBroker--ParseUri",
+                        "message": "Resource not found for the segment 'todo'."
+                    } }));
+                }
+                let stored = write_task_extension(&mut data, &list, &task, body);
+                ResponseTemplate::new(200).set_body_json(stored)
+            })
+            .mount(&server)
+            .await;
+
+        let shared = Arc::clone(&data);
+        Mock::given(method("DELETE"))
+            .and(path_regex(
+                r"^/v1\.0/me/todo/lists/[^/]+/tasks/[^/]+/extensions/[^/]+$",
+            ))
+            .respond_with(move |request: &Request| {
+                let mut data = lock(&shared);
+                let (list, task) = task_of(request);
+                if data.extensions.remove(&task).is_some() {
+                    bump_task_etag(&mut data, &list, &task);
+                }
+                ResponseTemplate::new(204)
+            })
+            .mount(&server)
+            .await;
+
+        let shared = Arc::clone(&data);
+        Mock::given(method("POST"))
+            .and(path_regex(
+                r"^/v1\.0/me/todo/lists/[^/]+/tasks/[^/]+/extensions$",
+            ))
+            .respond_with(move |request: &Request| {
+                let mut data = lock(&shared);
+                let (list, task) = task_of(request);
+                let mut body: Value = serde_json::from_slice(&request.body).unwrap_or_default();
+                if let Some(fields) = body.as_object_mut() {
+                    fields.remove("@odata.type");
+                    fields.remove("extensionName");
+                }
+                write_task_extension(&mut data, &list, &task, body);
                 ResponseTemplate::new(201)
             })
             .mount(&server)
@@ -569,6 +631,40 @@ fn bump_list_etag(data: &mut Data, list: &str) {
     data.extension_writes += 1;
     let etag = format!("W/\"{list}-x{}\"", data.extension_writes);
     if let Some(found) = data.lists.iter_mut().find(|found| found["id"] == list) {
+        found["@odata.etag"] = json!(etag);
+    }
+}
+
+/// The list and task IDs of `/v1.0/me/todo/lists/{list}/tasks/{task}/…`.
+fn task_of(request: &Request) -> (String, String) {
+    let mut parts = request.url.path().split('/').skip(5);
+    let list = parts.next().unwrap_or_default().to_owned();
+    let task = parts.nth(1).unwrap_or_default().to_owned();
+    (list, task)
+}
+
+/// Store `fields` as the whole of task `task`'s extension, and move the
+/// task's etag, as any extension write does (S2).
+fn write_task_extension(data: &mut Data, list: &str, task: &str, fields: Value) -> Value {
+    let mut stored = json!({
+        "extensionName": "com.planetaryescape.mstodo",
+        "id": "microsoft.graph.openTypeExtension.com.planetaryescape.mstodo"
+    });
+    if let (Some(stored), Some(fields)) = (stored.as_object_mut(), fields.as_object()) {
+        stored.extend(fields.clone());
+    }
+    data.extensions.insert(task.to_owned(), stored.clone());
+    bump_task_etag(data, list, task);
+    stored
+}
+
+fn bump_task_etag(data: &mut Data, list: &str, task: &str) {
+    let etag = format!("W/\"{task}-{}\"", next_write());
+    if let Some(found) = data
+        .tasks
+        .get_mut(list)
+        .and_then(|tasks| tasks.iter_mut().find(|found| found["id"] == task))
+    {
         found["@odata.etag"] = json!(etag);
     }
 }

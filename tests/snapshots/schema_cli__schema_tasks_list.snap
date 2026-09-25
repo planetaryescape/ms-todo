@@ -11,6 +11,11 @@ expression: pretty
         "type": "string",
         "x-cli": "--list"
       },
+      "my_day": {
+        "description": "Today's My Day instead of a list, as `myday list` gives it",
+        "type": "boolean",
+        "x-cli": "--my-day"
+      },
       "search": {
         "description": "Only tasks whose title or notes match, best match first; the syntax is `search`'s",
         "type": "string",

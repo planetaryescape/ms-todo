@@ -52,7 +52,9 @@ pub fn output_schema(command: &str) -> Option<Value> {
             &["access_token", "expires_at"],
         ),
         "lists list" => collection(list_entity()),
-        "tasks list" => collection(task_entity()),
+        "tasks list" | "myday list" => collection(task_entity()),
+        "myday suggest" => collection(suggestion()),
+        "myday add" | "myday remove" | "myday rollover" => json!({ "oneOf": [applied(), plan()] }),
         "search" => collection(search_result()),
         "done" => collection(done_result()),
         "tasks add" | "tasks complete" | "tasks reopen" | "tasks edit" | "tasks move"
@@ -161,7 +163,7 @@ fn parsed_task() -> Value {
             "importance": { "enum": ["low", "normal", "high", null] },
             "priority": { "type": ["integer", "null"], "description": "The p1–p4 typed" },
             "categories": { "type": "array", "items": { "type": "string" } },
-            "my_day": { "type": "boolean", "description": "+myday or * was typed; not applied until rung 7" },
+            "my_day": { "type": "boolean", "description": "+myday or * was typed: the task goes in today's My Day" },
             "spans": { "type": "array", "items": span },
             "warnings": { "type": "array", "items": { "type": "string" } }
         }),
@@ -260,7 +262,7 @@ fn outbox_op() -> Value {
         json!({
             "op_id": { "type": "string" },
             "command_id": { "type": "string", "description": "The op_id the change printed; a change to several tasks has one operation per task" },
-            "action": { "enum": ["add", "edit", "complete", "reopen", "delete", "move"] },
+            "action": { "enum": ["add", "edit", "complete", "reopen", "delete", "move", "my_day_add", "my_day_remove", "my_day_rollover"] },
             "task_id": { "type": "string" },
             "list_id": { "type": "string" },
             "title": nullable("string", ""),
@@ -378,6 +380,29 @@ fn search_result() -> Value {
     schema
 }
 
+fn suggestion() -> Value {
+    let mut schema = task_entity();
+    schema["properties"]["list"] =
+        json!({ "type": "string", "description": "The name of the task's list" });
+    schema["properties"]["suggestion"] = json!({
+        "enum": ["due_today", "overdue", "left_over"],
+        "description": "Why: due today, overdue, or left open in an earlier My Day the rollover emptied"
+    });
+    schema["properties"]["left_from"] = json!({
+        "type": ["string", "null"],
+        "format": "date",
+        "description": "For left_over: the day of the My Day it was in"
+    });
+    schema["required"]
+        .as_array_mut()
+        .expect("task_entity lists required keys")
+        .extend([json!("list"), json!("suggestion")]);
+    schema["description"] = json!(
+        "An open task My Day suggests: the task as `tasks list` gives it, with `list` and `suggestion`; due today first, then overdue, then left over"
+    );
+    schema
+}
+
 fn done_result() -> Value {
     let mut schema = task_entity();
     schema["properties"]["list"] =
@@ -420,7 +445,7 @@ fn applied() -> Value {
     versioned(
         json!({
             "op_id": { "type": "string", "description": "What `undo` and `outbox list` know the change by" },
-            "action": { "enum": ["add", "complete", "reopen", "edit", "delete", "undo", "move"] },
+            "action": { "enum": ["add", "complete", "reopen", "edit", "delete", "undo", "move", "my_day_add", "my_day_remove", "my_day_rollover"] },
             "items": {
                 "type": "array",
                 "items": task_entity(),
@@ -537,7 +562,7 @@ fn plan() -> Value {
     versioned(
         json!({
             "dry_run": { "const": true },
-            "action": { "enum": ["add", "complete", "reopen", "edit", "delete", "move"] },
+            "action": { "enum": ["add", "complete", "reopen", "edit", "delete", "move", "my_day_add", "my_day_remove", "my_day_rollover"] },
             "list": candidate(),
             "targets": {
                 "type": "array",
@@ -550,7 +575,7 @@ fn plan() -> Value {
                     &["id", "title", "list_id"],
                 )
             },
-            "changes": { "description": "The Graph fields each target gets; null for delete" }
+            "changes": { "description": "The Graph fields each target gets; null for delete. For My Day: myDay (the day, or null), and the tasks whose due date is set (due_today) or cleared (due_cleared)" }
         }),
         &["dry_run", "action", "changes"],
     )
@@ -650,6 +675,17 @@ fn doctor() -> Value {
                     "provider": nullable("string", "typesafe"),
                     "sends": nullable("string", "What leaves this machine when enabled"),
                     "problem": nullable("string", "Why suggestions are off or failing")
+                }
+            },
+            "my_day": {
+                "type": ["object", "null"],
+                "description": "My Day (rung 7); null when the daemon didn't report",
+                "properties": {
+                    "date": { "type": "string", "format": "date", "description": "My Day's day now" },
+                    "count": { "type": "integer", "description": "Open tasks in it" },
+                    "rollover_time": { "type": "string", "description": "HH:MM, local: when a day's My Day ends" },
+                    "last_rollover": nullable("string", "The day the last rollover ran for"),
+                    "phone": { "type": "string", "description": "What the phone's own My Day depends on" }
                 }
             },
             "problems": { "type": "array", "items": { "type": "string" } }

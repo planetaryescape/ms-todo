@@ -223,6 +223,9 @@ fn verb(action: TaskAction) -> &'static str {
         TaskAction::RenameFolder => "rename the folder of",
         TaskAction::DeleteFolder => "take out of the folder",
         TaskAction::OrderFolder => "reorder the folder of",
+        TaskAction::MyDayAdd => "put in My Day",
+        TaskAction::MyDayRemove => "take out of My Day",
+        TaskAction::MyDayRollover => "roll out of an earlier My Day",
         TaskAction::Unknown => "change",
     }
 }
@@ -241,6 +244,9 @@ fn past_tense(action: TaskAction) -> &'static str {
         TaskAction::RenameFolder => "Renamed the folder of",
         TaskAction::DeleteFolder => "Took out of the folder",
         TaskAction::OrderFolder => "Reordered the folder of",
+        TaskAction::MyDayAdd => "In My Day:",
+        TaskAction::MyDayRemove => "Out of My Day:",
+        TaskAction::MyDayRollover => "Rolled out of My Day:",
         TaskAction::Unknown => "Changed",
     }
 }

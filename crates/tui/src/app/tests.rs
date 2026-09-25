@@ -46,6 +46,7 @@ pub(crate) fn seed(scope: Scope, tasks: Vec<ms_todo_protocol::Entity>) -> Seed {
         ],
         lists_sync: ready,
         counts: Counts {
+            my_day: 0,
             important: 1,
             planned: 2,
             all: 3,
@@ -61,6 +62,7 @@ pub(crate) fn seed(scope: Scope, tasks: Vec<ms_todo_protocol::Entity>) -> Seed {
             last_error: None,
         },
         outbox: OutboxDepth::default(),
+        my_day: None,
     }
 }
 
@@ -151,8 +153,8 @@ fn connecting_asks_for_the_default_list_and_the_seed_fills_every_pane() {
         titles(&app),
         ["Pay rent", "Call Sam", "Water plants", "Ship blueprint"]
     );
-    // The sidebar follows: four views, then Tasks, then Home.
-    assert_eq!(app.sidebar_index, 5);
+    // The sidebar follows: five views, then Tasks, then Home.
+    assert_eq!(app.sidebar_index, 6);
     assert_eq!(app.lists.len(), 2);
     assert_eq!(app.counts.all, 3);
 }
@@ -199,7 +201,7 @@ fn h_l_and_tab_move_between_panes() {
 fn moving_in_the_sidebar_seeds_the_new_scope_and_drops_stale_answers() {
     let mut app = seeded();
     act(&mut app, Action::FocusLeft);
-    // From Home (5) up to Tasks, then to Completed.
+    // From Home (6) up to Tasks, then to Completed.
     let first = act(&mut app, Action::MoveUp);
     let second = act(&mut app, Action::MoveUp);
     assert_eq!(
@@ -224,7 +226,7 @@ fn moving_in_the_sidebar_seeds_the_new_scope_and_drops_stale_answers() {
     answer_seed(&mut app, &second[0], seed(Scope::Completed, done));
     assert_eq!(app.shown, Some(Scope::Completed));
     assert_eq!(titles(&app), ["Ship blueprint"]);
-    assert_eq!(app.sidebar_index, 3);
+    assert_eq!(app.sidebar_index, 4);
     // At the top, another k asks for nothing.
     act(&mut app, Action::JumpTop);
     assert!(act(&mut app, Action::MoveUp).is_empty());
@@ -732,6 +734,7 @@ fn the_views_are_read_ahead_and_a_scope_seen_before_paints_at_once() {
     assert_eq!(
         scopes,
         [
+            Some(Scope::MyDay),
             Some(Scope::Important),
             Some(Scope::Planned),
             Some(Scope::All),
@@ -834,7 +837,11 @@ fn the_window_title_names_the_app_and_the_view() {
     assert_eq!(app.window_title(), "ms-todo \u{2014} Home");
     act(&mut app, Action::FocusLeft);
     act(&mut app, Action::JumpTop);
-    assert_eq!(app.window_title(), "ms-todo \u{2014} Important");
+    // My Day's title has its day.
+    assert_eq!(
+        app.window_title(),
+        "ms-todo \u{2014} My Day \u{b7} Thu 24 Sep"
+    );
 }
 
 #[test]

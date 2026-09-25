@@ -113,6 +113,39 @@ expression: pretty
           }
         ]
       },
+      "my_day": {
+        "description": "My Day (rung 7); null when the daemon didn't report",
+        "properties": {
+          "count": {
+            "description": "Open tasks in it",
+            "type": "integer"
+          },
+          "date": {
+            "description": "My Day's day now",
+            "format": "date",
+            "type": "string"
+          },
+          "last_rollover": {
+            "description": "The day the last rollover ran for",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "phone": {
+            "description": "What the phone's own My Day depends on",
+            "type": "string"
+          },
+          "rollover_time": {
+            "description": "HH:MM, local: when a day's My Day ends",
+            "type": "string"
+          }
+        },
+        "type": [
+          "object",
+          "null"
+        ]
+      },
       "outbox": {
         "description": "How many writes are in each state; flagged are unknown for over 24 hours",
         "properties": {

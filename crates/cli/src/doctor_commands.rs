@@ -6,8 +6,8 @@
 use ms_todo_core::Paths;
 use ms_todo_graph::auth::{Authenticator, Endpoints};
 use ms_todo_protocol::{
-    DoctorReport, OutboxDepth, Request, ResponseData, ScopeStatus, SuggestStatus, SyncMode,
-    SyncState,
+    DoctorReport, MyDayStatus, OutboxDepth, Request, ResponseData, ScopeStatus, SuggestStatus,
+    SyncMode, SyncState,
 };
 use serde::Serialize;
 
@@ -31,6 +31,8 @@ pub struct Doctor {
     pub outbox: Option<OutboxDepth>,
     /// List suggestions (rung 6b), when the daemon reported.
     pub suggest: Option<Suggest>,
+    /// My Day (rung 7), when the daemon reported.
+    pub my_day: Option<MyDayState>,
     /// What needs attention, for people.
     pub problems: Vec<String>,
 }
@@ -43,6 +45,38 @@ pub struct Suggest {
     pub sends: Option<String>,
     /// Why suggestions are off or failing.
     pub problem: Option<String>,
+}
+
+#[derive(Serialize)]
+pub struct MyDayState {
+    /// My Day's day now, `YYYY-MM-DD`.
+    pub date: String,
+    /// Open tasks in it.
+    pub count: u64,
+    /// When a day's My Day ends, local `HH:MM`.
+    pub rollover_time: String,
+    /// The day the last rollover ran for.
+    pub last_rollover: Option<String>,
+    /// What the phone's My Day depends on, which Graph can't show.
+    pub phone: &'static str,
+}
+
+/// The phone mirror's condition (D-037), as `doctor` states it.
+const MY_DAY_PHONE: &str = "a task ms-todo puts in My Day with no due date is due today, so \
+     the To Do app shows it in its own My Day only where \"Show 'Due Today' tasks in My Day\" \
+     is on; Microsoft Graph can't show that setting, so check it in the app. Tasks added to My \
+     Day in the app don't reach ms-todo's";
+
+impl From<MyDayStatus> for MyDayState {
+    fn from(status: MyDayStatus) -> Self {
+        Self {
+            date: status.date,
+            count: status.count,
+            rollover_time: status.rollover_time,
+            last_rollover: status.last_rollover,
+            phone: MY_DAY_PHONE,
+        }
+    }
 }
 
 /// What a suggestion sends, as `doctor` states it.
@@ -144,6 +178,7 @@ pub async fn doctor(paths: &Paths) -> Result<Doctor, CliError> {
             last_error: None,
             outbox: None,
             suggest: None,
+            my_day: None,
             problems,
         });
     };
@@ -154,7 +189,12 @@ pub async fn doctor(paths: &Paths) -> Result<Doctor, CliError> {
         scopes,
         outbox,
         suggest,
+        my_day,
     } = report;
+    if let Some(problem) = my_day.as_ref().and_then(|my_day| my_day.problem.as_ref()) {
+        problems.push(format!("my_day: {problem}"));
+    }
+    let my_day = my_day.map(MyDayState::from);
     let suggest = suggest.map(Suggest::from);
     if let Some(problem) = suggest
         .as_ref()
@@ -209,6 +249,7 @@ pub async fn doctor(paths: &Paths) -> Result<Doctor, CliError> {
         last_error,
         outbox: Some(outbox),
         suggest,
+        my_day,
         problems,
     })
 }
@@ -318,6 +359,17 @@ impl Render for Doctor {
                 None => "off".into(),
             };
             rows.push(("Suggest", state));
+        }
+        if let Some(my_day) = &self.my_day {
+            let last = my_day.last_rollover.as_deref().unwrap_or("never");
+            rows.push((
+                "My Day",
+                format!(
+                    "{} open on {}; rolls over at {}, last for {last}",
+                    my_day.count, my_day.date, my_day.rollover_time
+                ),
+            ));
+            rows.push(("Phone", my_day.phone.to_owned()));
         }
         for scope in self
             .scopes

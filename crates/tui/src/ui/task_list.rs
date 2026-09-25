@@ -7,7 +7,7 @@ use ratatui::widgets::{Cell, Paragraph, Row, Table, TableState};
 use unicode_width::UnicodeWidthStr;
 
 use super::{focused, pane, selection};
-use crate::app::scope::{completed_groups, planned_groups};
+use crate::app::scope::{completed_groups, my_day_groups, planned_groups};
 use crate::app::{App, Connection, Pane, SyncMarker, Task};
 use crate::glyphs::Glyphs;
 use crate::theme::Theme;
@@ -57,6 +57,7 @@ pub fn draw<'a>(frame: &mut Frame, area: Rect, app: &'a App) {
                 .collect(),
         ),
         Some(Scope::Completed) => Some(completed_groups(&app.tasks, today)),
+        Some(Scope::MyDay) => Some(my_day_groups(&app.tasks)),
         _ => None,
     };
     let (rows, selected) = match groups {
@@ -104,9 +105,12 @@ fn empty_text(app: &App) -> String {
         // The rows on hand are another scope's; never show them as this one.
         _ if app.loading() => "Loading…".into(),
         _ if !app.tasks_ready => "Syncing…".into(),
-        _ => match &app.filter {
-            Some(filter) => format!("No task matches \"{filter}\""),
-            None => "Nothing here".into(),
+        _ => match (&app.filter, &app.shown) {
+            (Some(filter), _) => format!("No task matches \"{filter}\""),
+            (None, Some(Scope::MyDay)) => {
+                "Nothing in My Day yet: t on a task in any list adds it".into()
+            }
+            (None, _) => "Nothing here".into(),
         },
     }
 }

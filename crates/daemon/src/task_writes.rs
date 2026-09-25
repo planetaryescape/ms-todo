@@ -33,12 +33,20 @@ pub(crate) async fn add_task(
     dry_run: bool,
     op_id: String,
 ) -> Result<ResponseData, ErrorPayload> {
-    let fields = new_task_fields(&task)?;
+    let mut fields = new_task_fields(&task)?;
+    // My Day's fields go in the create's own extension, so the task is
+    // made in My Day with nothing more to send.
+    let my_day = task
+        .my_day
+        .then(|| crate::my_day::new_task_fields(&mut fields, state.my_day.today()));
     ensure_ready(state, LISTS_SCOPE).await?;
     let lists = state.store.lists().await.map_err(store_error)?;
     let list = resolve_list(&lists, task.list.as_deref())?;
     let mut body = graph_body(&fields, &user_time_zone());
     if dry_run {
+        if let Some(my_day) = my_day {
+            body["extensions"] = json!([my_day]);
+        }
         return Ok(ResponseData::Plan(Plan {
             action: TaskAction::Add,
             list: Some(list.candidate()),
@@ -47,7 +55,10 @@ pub(crate) async fn add_task(
             changes: body,
         }));
     }
-    let extension = our_extension(&op_id, None);
+    let mut extension = our_extension(&op_id, None);
+    if let (Some(my_day), Some(extension)) = (my_day, extension.as_object_mut()) {
+        extension.extend(my_day);
+    }
     body["extensions"] = json!([extension]);
     let op = NewOp {
         op_id: op_id.clone(),
@@ -85,6 +96,16 @@ pub(crate) async fn change_tasks(
         TaskChange::Edit(edit) => (TaskAction::Edit, edit_fields(&edit)?),
         TaskChange::Delete => (TaskAction::Delete, Vec::new()),
         TaskChange::Move { to } => return move_tasks(state, &targets, &to, dry_run, op_id).await,
+        TaskChange::AddToMyDay => {
+            let targets = resolve(state, &targets).await?;
+            let action = TaskAction::MyDayAdd;
+            return crate::my_day::change(state, targets, action, dry_run, op_id).await;
+        }
+        TaskChange::RemoveFromMyDay => {
+            let targets = resolve(state, &targets).await?;
+            let action = TaskAction::MyDayRemove;
+            return crate::my_day::change(state, targets, action, dry_run, op_id).await;
+        }
         TaskChange::Unknown => {
             return Err(error_payload(
                 ms_todo_core::ErrorKind::Unsupported,
@@ -236,7 +257,7 @@ pub(crate) async fn queue(
 ) -> Result<ResponseData, ErrorPayload> {
     // A selection that matched nothing queues nothing, and has nothing
     // to undo.
-    let rows = if ops.is_empty() {
+    let mut rows = if ops.is_empty() {
         Vec::new()
     } else {
         let rows = state
@@ -247,6 +268,12 @@ pub(crate) async fn queue(
         state.outbox.wake();
         rows
     };
+    // A task with two operations (My Day's extension write and due date)
+    // is answered once, as it is after both: its last row.
+    let mut seen = std::collections::HashSet::new();
+    rows.reverse();
+    rows.retain(|row| seen.insert(row.local_id.clone()));
+    rows.reverse();
     state
         .events
         .tasks_changed(rows.iter().map(|row| row.local_id.clone()).collect());
@@ -351,6 +378,9 @@ pub(crate) fn action_name(action: TaskAction) -> &'static str {
         TaskAction::RenameFolder => "rename_folder",
         TaskAction::DeleteFolder => "delete_folder",
         TaskAction::OrderFolder => "order_folder",
+        TaskAction::MyDayAdd => "my_day_add",
+        TaskAction::MyDayRemove => "my_day_remove",
+        TaskAction::MyDayRollover => "my_day_rollover",
         TaskAction::Undo | TaskAction::Unknown => "change",
     }
 }
