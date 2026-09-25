@@ -170,6 +170,26 @@ test("successful writes with unconfirmed responses warn before retrying", async 
     );
   }
 });
+test("My Day no-op mutation confirms with no changed items", async () => {
+  for (const [action, run] of [
+    ["my_day_add", addToMyDay],
+    ["my_day_remove", removeFromMyDay],
+  ] as const) {
+    const cli = fakeCli(
+      JSON.stringify({ schema_version: 2, action, op_id: "op", items: [] }),
+    );
+    await run(task.id, cli.path);
+  }
+});
+test("task creation still requires a returned item", async () => {
+  const cli = fakeCli(
+    JSON.stringify({ schema_version: 2, action: "add", op_id: "op", items: [] }),
+  );
+  await assert.rejects(
+    addTask("hello", cli.path),
+    /did not confirm add.*may have happened; check tasks and outbox before retrying/,
+  );
+});
 test("nonzero write errors retain the CLI's message", async () => {
   const cli = fakeCli(JSON.stringify({ error: { message: "unknown list" } }), 2);
   await assert.rejects(

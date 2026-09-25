@@ -53,7 +53,7 @@ const mutationSchema = z.object({
   schema_version: z.literal(2),
   action: z.string(),
   op_id: z.string(),
-  items: z.array(z.object({ id: z.string() })).min(1),
+  items: z.array(z.object({ id: z.string() })),
 });
 const errorSchema = z.object({ error: z.object({ message: z.string() }) });
 const execErrorSchema = z.object({
@@ -290,6 +290,9 @@ async function write(
     true,
   );
   if (result.action !== action) {
+    throw new CliError(`${confirmationError} ${UNCERTAIN_WRITE_GUIDANCE}`);
+  }
+  if (action === "add" && result.items.length === 0) {
     throw new CliError(`${confirmationError} ${UNCERTAIN_WRITE_GUIDANCE}`);
   }
 }

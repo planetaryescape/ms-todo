@@ -55,6 +55,7 @@
   "scripts": {
     "dev": "ray develop",
     "build": "ray build",
+    "publish": "ray publish",
     "lint": "ray lint",
     "typecheck": "tsc --noEmit",
     "test": "tsx --test tests/*.test.ts"
