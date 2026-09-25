@@ -9,7 +9,7 @@ ms-todo writes an open extension as GET, merge, then a PATCH of the whole docume
 The fields exposed, by where they live:
 
 - **A list's extension:** `folder`, `order`, `folderOrder` (rung 5c, D-047).
-- **A task's extension:** `opId` and `originalCreatedAt` (written with the create or move itself, not by a later GET–PATCH), and since rung 7 `myDay` and `myDayDueSet` (D-054), written by `myday add|remove` and the rollover. A lost `myDay` puts a task in or out of My Day on one device only; a lost `myDayDueSet` can at worst leave a due date My Day set on the task after it leaves My Day. `assignee` (rung 8d) will share the same document.
+- **A task's extension:** `opId` and `originalCreatedAt` (written with the create or move itself, not by a later GET–PATCH), and since rung 7 `myDay` and `myDayDueSet` (D-054), written by `myday add|remove` and the rollover. A lost `myDay` puts a task in or out of My Day on one device only; a lost `myDayDueSet` can at worst leave a due date My Day set on the task after it leaves My Day. Since rung 8d (D-057), `assignee` and `assigneeStatusSet` share the same document, written by `tasks add|edit --assignee` and `--clear-assignee`: a lost `assignee` leaves a task assigned (or not) on one device only, and a lost `assigneeStatusSet` means clearing the assignee later leaves `waitingOnOthers` rather than setting `notStarted`.
 
 ## Why it's accepted today
 

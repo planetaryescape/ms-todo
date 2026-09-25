@@ -98,6 +98,7 @@ Every command in the tour and the recipes works in it. The seed data is `demo/se
 | See a list's tasks | `mst tasks list --list Finances` |
 | Add a task the way you'd say it | `mst tasks add "Call mum in 2 days p1"` |
 | Plan today | `mst myday suggest`, `mst myday add <id>`, `mst myday list` |
+| Track who you're waiting on | `mst tasks edit <id> --assignee Sam`, `mst waiting` |
 | Preview how it would be read | `mst tasks parse "Call mum in 2 days p1"` |
 | Complete, reopen, edit or delete | `mst tasks complete <id>`, `reopen`, `edit`, `delete` |
 | Find a task in any list | `mst search rent` |
@@ -160,12 +161,13 @@ In the TUI's add box, a likely list shows as `→ Finances? (Ctrl-l to accept)`.
 | `Enter` / `Space` in the sidebar | open a list or view; on a folder, fold or unfold it |
 | `a` | quick add, in a box in the middle of the screen: each part it reads is coloured as you type, with the task it makes underneath. `Tab` completes a `#List` or `@label`, `Ctrl-r` takes the text literally, `Ctrl-l` takes a suggested list, `Enter` adds |
 | `x` | complete, or reopen a completed task |
-| `e` | edit a field: `t` title, `d` due date, `r` reminder, `i` importance, `n` notes, `I` cycles importance; in the detail pane, edits the field under the cursor |
+| `e` | edit a field: `t` title, `d` due date, `r` reminder, `i` importance, `a` assignee, `n` notes, `I` cycles importance; in the detail pane, edits the field under the cursor |
 | `Enter` in the detail pane | edit the field under the cursor |
 | `Space` on a step in the detail pane | check or uncheck it; `a` adds steps, `e` / `Enter` edits a step or the link, `d` deletes one |
 | `A` | attach a file by its path; on a file in the detail pane, `Enter`, `e` or `o` saves it to `~/Downloads` and opens it, `d` deletes it |
 | `v` / `V` | select a task, or every task in the view; `Esc` clears the selection |
 | `t` | put the task or the selection in My Day, or take it out; on a suggestion in the My Day view, add it |
+| `W` | assign the task or the selection to someone; empty clears it |
 | `m` | move the task or the selection to another list |
 | `M` | move the current list into a folder |
 | `S` | set one due date on the selection |
@@ -280,6 +282,19 @@ mst myday remove <id>
 - **Across machines:** My Day lives in Microsoft To Do, so every ms-todo you sign in to sees it. Tasks you add to My Day in the To Do app don't reach ms-todo's, since the API can't see them.
 
 Adding, removing and the rollover are changes like any other: `mst undo` reverses them.
+
+### Waiting on someone
+
+Mark a task as waiting on a person, then see everything you're waiting on:
+
+```sh
+mst tasks edit <id> --assignee Sam   # also "waiting on others", which the To Do app shows
+mst waiting                          # every open assigned task, grouped by person
+mst tasks list --assignee sam        # one person's, whatever the case
+mst tasks edit <id> --clear-assignee
+```
+
+The name is ms-todo's own: nobody is told, and the To Do apps don't show it, but the status they do show. In the TUI, the Assigned view groups tasks by person and each row carries a person chip. [Waiting on someone](docs/usage.md#waiting-on-someone) has the rest.
 
 ### Undo and the outbox
 

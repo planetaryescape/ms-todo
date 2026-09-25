@@ -155,6 +155,25 @@ Microsoft Graph can't read or write the To Do app's My Day, so ms-todo keeps its
 - **Suggestions** come from the cache: open tasks due today, then overdue, then those the last rollover on this machine took out still open (`left_over`, with `left_from`, the day they were in). A task already in today's My Day isn't suggested. CSV is `id,title,list,suggestion,due,left_from`.
 - Adding, removing and the rollover are changes like any other: queued, `pending` until sent, and undone with `ms-todo undo`. Undo leaves alone a task changed since (listed in `refused`).
 
+## Waiting on someone
+
+```sh
+ms-todo tasks edit <TASK>... --assignee Sam       # a name or an email; several tasks at once
+ms-todo tasks add "Get the quote" --assignee Sam  # --keep-status leaves the status alone
+ms-todo waiting                                   # every open assigned task, grouped by person
+ms-todo waiting sam                               # one person's (also `tasks list --assignee sam`)
+ms-todo tasks list --list Home --assignee '*'     # a list's assigned tasks, completed ones too
+ms-todo tasks edit <TASK> --clear-assignee
+```
+
+An assignee is `assignee` in ms-todo's own data on the task: free text, trimmed, up to 200 characters. It means something only to ms-todo. Nobody is told, and the To Do apps never show it; every ms-todo you sign in to sees it after its next sync. Names match without regard to case, so `Sam` and `sam` are one person; `*` means anyone.
+
+- **The status.** Assigning an open task also makes it "waiting on others" (`waitingOnOthers`), a status the To Do apps show, and marks that ms-todo set it (`assigneeStatusSet`). Clearing the assignee makes such a task "not started" again, but only while it's still waiting: a status you changed since, on the phone or anywhere, stays. A task that was already waiting, or is completed, keeps its status and isn't marked. `--keep-status` leaves the status alone either way. If the status changes on another device between queueing and sending, ms-todo leaves it and doesn't mark it.
+- **Listing.** Without `--list`, `tasks list --assignee` and `waiting` give the open tasks of every list, grouped by person, soonest due first, each with its list's name. With `--list`, that list's assigned tasks, open and completed. The table's columns are `DONE, WAITING ON, DUE, LIST, TITLE`; CSV is `id,title,assignee,list,status,due,sync_state`.
+- **Undo.** `ms-todo undo` puts the assignee and the status back. If the assignee has changed since (another machine reassigned the task), it leaves the assignee, the status and the mark alone; a status changed since is left alone on its own.
+- **In the TUI**, the Assigned view (after All) groups open assigned tasks under each person's name, and a task's row carries a person chip, `◔ Sam` (`w Sam` in ASCII). The detail pane shows the Assignee field and "waiting on others" as the status. `e` on the Assignee field edits it, as does `e` then `a`; empty clears it. `W`, or "Assign to…" in the palette, asks for one name for the selection, or the task under the cursor. Each is one change, so `u` undoes it.
+- **Quick add** has no token for an assignee: `@` is a category. Use `--assignee`.
+
 ## Move tasks between lists
 
 ```sh

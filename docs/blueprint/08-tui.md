@@ -50,8 +50,10 @@ Use glyphs from a Nerd Font or Unicode symbol set, with an ASCII fallback option
 - Important (`importance = high`)
 - Planned (has a due date, grouped into Overdue, Today, Tomorrow, This week, Later)
 - All
-- Completed (grouped by the day each task was completed: Today, Yesterday, `Mon 21 Sep`…; rung 5d)
 - Assigned (has an assignee)
+- Completed (grouped by the day each task was completed: Today, Yesterday, `Mon 21 Sep`…; rung 5d)
+
+As built (rung 8d, D-057): **Assigned** comes after All, `◔ Assigned` (`w` in ASCII) with its open count: open tasks with an assignee, under a heading per person (names that differ only in case are one person, under the spelling seen first), soonest due first. A task's row ends with a person chip, `◔ Sam`, in the `accent` role. The detail pane has an **Assignee** field after Importance (the cursor reaches it; `e` or Enter on it edits it, empty clears), and shows the status `waiting on others`. The field picker's `a` edits it too, and with a selection asks for one name for all. `W`, "Assign to…" in the palette, asks in the hint bar (`Assign 3 tasks to: Sam█ … Enter on empty: no one`) for the selection or the task under the cursor, starting from the name they share; one `ChangeTasks`, so one `u` undoes it.
 
 The **My Day view** has:
 

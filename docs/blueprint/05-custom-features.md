@@ -60,6 +60,13 @@ Why not a special list, copies of tasks, an Outlook category, or always setting 
 - BK doesn't share lists (D-014), so this is really a personal "waiting on <person>" label. Pair it with `status = waitingOnOthers` by default, which *is* a real Graph status the app shows.
 - CLI filter: `ms-todo tasks list --assignee "Sam"`. The TUI shows a person chip.
 
+As built (rung 8d, D-057):
+
+- **Fields:** `assignee` (trimmed free text, at most 200 characters) and `assigneeStatusSet: true` when ms-todo set `waitingOnOthers` for it. Both go in the same document as `myDay`, `myDayDueSet`, `opId` and `originalCreatedAt`, through the same GET, merge and whole-document write (`task_extension`), so a write carries only its own fields and the merge keeps the rest ([issue 001](../issues/001-extension-write-race.md)).
+- **Pairing, My Day's shape (D-054):** assigning an open task that isn't waiting is three operations: the assignee, then a status edit to `waitingOnOthers` sent only while Graph's status is still the one it was planned from (`expect_fields: { status }`, one GET first), then the flag, sent only if that edit was made (`after`). A task already waiting or completed keeps its status and gets no flag. Clearing removes both fields and, when the flag is set and the task is still `waitingOnOthers`, sets `notStarted` under the same precondition. `--keep-status` skips the status either way. A new task gets both fields and the status in its own create.
+- **Undo** reverses each operation by the changed-since rule, and a status edit or flag only with its assignee (`part_of`): when another machine reassigned the task, all three are left alone.
+- **Sync:** the extension write moves the task's etag, so another machine's assignment arrives by hydration with no new sync code.
+
 ## Move between lists
 
 Graph has no move operation. ms-todo implements `task move` as **a copy that checks its work and loses nothing:**
