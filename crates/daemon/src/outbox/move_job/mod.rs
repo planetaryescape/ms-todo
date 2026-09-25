@@ -225,6 +225,30 @@ pub(crate) async fn discard(
 
 type Step = Result<(), Settled>;
 
+/// An attachment as the check compares it: name, byte count, sha256.
+type Attached = (String, usize, String);
+
+/// What checking the copy found.
+enum Check {
+    /// It holds everything; Graph's JSON for it and our extension.
+    Matches(Entity, Option<Value>),
+    /// These values differ.
+    Mismatch(Vec<String>),
+    /// The target list is gone (the ghost-write check).
+    ListGone,
+    /// The copy is gone.
+    CopyGone,
+}
+
+fn list_gone() -> ErrorPayload {
+    error_payload(
+        ErrorKind::Rejected,
+        "the list it was moving to was deleted on another device, so the move was undone; the \
+         task is where it was"
+            .into(),
+    )
+}
+
 impl Job<'_> {
     async fn save(&self, progress: &Progress) -> Step {
         self.state
@@ -482,29 +506,30 @@ impl Job<'_> {
     async fn verify(&self, progress: &mut Progress) -> Step {
         let copy_id = copy_id(progress)?;
         let source = source(progress)?.clone();
-        // The ghost-write check (04, S4): a POST into a list deleted
-        // meanwhile still answers 201.
-        match self.state.graph.get_list(&self.target).await {
-            Ok(_) => {}
-            Err(error) if error.status() == Some(404) => {
+        let mut expected: Vec<Attached> = progress
+            .attachments
+            .iter()
+            .map(|step| (step.name.clone(), step.bytes, step.sha256.clone()))
+            .collect();
+        expected.sort();
+        let checked = self
+            .check_copy(&copy_id, &source.raw, source.extension.as_ref(), &expected)
+            .await;
+        let (copy, copy_extension) = match checked {
+            Ok(Check::Matches(copy, extension)) => (copy, extension),
+            Ok(Check::Mismatch(wrong)) => {
                 let error = error_payload(
                     ErrorKind::Rejected,
-                    "the list it was moving to was deleted on another device, so the move was \
-                     undone; the task is where it was"
-                        .into(),
+                    format!(
+                        "the copy didn't match the original ({}), so it was deleted and the \
+                         original kept",
+                        wrong.join(", ")
+                    ),
                 );
                 return self.start_roll_back(progress, &error).await;
             }
-            Err(error) => return self.read_failed(progress, error).await,
-        }
-        let fetched = self
-            .state
-            .graph
-            .get_task_with_extension(&self.target, &copy_id, EXTENSION_NAME)
-            .await;
-        let (copy, copy_extension) = match fetched {
-            Ok(task) => split_extension(task),
-            Err(error) if error.status() == Some(404) => {
+            Ok(Check::ListGone) => return self.start_roll_back(progress, &list_gone()).await,
+            Ok(Check::CopyGone) => {
                 let error = error_payload(
                     ErrorKind::Conflict,
                     "the copy was deleted on another device before it was checked, so the move \
@@ -515,45 +540,6 @@ impl Job<'_> {
             }
             Err(error) => return self.read_failed(progress, error).await,
         };
-        let copy_extension = copy_extension.flatten();
-        let copied = match self.copied_attachments(&copy_id).await {
-            Ok(copied) => copied,
-            Err(error) => return self.read_failed(progress, error).await,
-        };
-        let mut wrong = differences(
-            &comparable(&source.raw, source.extension.as_ref()),
-            &comparable(&copy, copy_extension.as_ref()),
-        );
-        let original = original_created_at(&source.raw, source.extension.as_ref());
-        if original.is_some()
-            && copy_extension
-                .as_ref()
-                .and_then(|extension| extension.get(ORIGINAL_CREATED_AT))
-                .and_then(Value::as_str)
-                != original.as_deref()
-        {
-            wrong.push(ORIGINAL_CREATED_AT.into());
-        }
-        let mut expected: Vec<(String, usize, String)> = progress
-            .attachments
-            .iter()
-            .map(|step| (step.name.clone(), step.bytes, step.sha256.clone()))
-            .collect();
-        expected.sort();
-        if copied != expected {
-            wrong.push("attachments".into());
-        }
-        if !wrong.is_empty() {
-            let error = error_payload(
-                ErrorKind::Rejected,
-                format!(
-                    "the copy didn't match the original ({}), so it was deleted and the original \
-                     kept",
-                    wrong.join(", ")
-                ),
-            );
-            return self.start_roll_back(progress, &error).await;
-        }
         progress.copy = Some(copy);
         progress.copy_extension = copy_extension;
         let Some(source_id) = source.graph_id.clone() else {
@@ -586,32 +572,87 @@ impl Job<'_> {
         }
     }
 
-    /// The copy's attachments as `(name, bytes, sha256)`, sorted.
-    async fn copied_attachments(
+    /// Check the copy `copy_id` against `expected` (Graph's JSON for the
+    /// task, its extension and its attachments): the target list answers
+    /// 200 (the ghost-write check, 04 and S4: a POST into a list deleted
+    /// meanwhile still answers 201), and the copy read back holds every
+    /// value [`comparable`] names, `originalCreatedAt`, and the same
+    /// attachments byte for byte.
+    async fn check_copy(
         &self,
         copy_id: &str,
-    ) -> Result<Vec<(String, usize, String)>, GraphError> {
+        expected: &Entity,
+        expected_extension: Option<&Value>,
+        expected_attachments: &[Attached],
+    ) -> Result<Check, GraphError> {
+        match self.state.graph.get_list(&self.target).await {
+            Ok(_) => {}
+            Err(error) if error.status() == Some(404) => return Ok(Check::ListGone),
+            Err(error) => return Err(error),
+        }
+        let fetched = self
+            .state
+            .graph
+            .get_task_with_extension(&self.target, copy_id, EXTENSION_NAME)
+            .await;
+        let (copy, copy_extension) = match fetched {
+            Ok(task) => split_extension(task),
+            Err(error) if error.status() == Some(404) => return Ok(Check::CopyGone),
+            Err(error) => return Err(error),
+        };
+        let copy_extension = copy_extension.flatten();
+        let copied = self.attachment_hashes(&self.target, copy_id).await?;
+        let mut wrong = differences(
+            &comparable(expected, expected_extension),
+            &comparable(&copy, copy_extension.as_ref()),
+        );
+        let original = original_created_at(expected, expected_extension);
+        if original.is_some()
+            && copy_extension
+                .as_ref()
+                .and_then(|extension| extension.get(ORIGINAL_CREATED_AT))
+                .and_then(Value::as_str)
+                != original.as_deref()
+        {
+            wrong.push(ORIGINAL_CREATED_AT.into());
+        }
+        if copied != expected_attachments {
+            wrong.push("attachments".into());
+        }
+        Ok(if wrong.is_empty() {
+            Check::Matches(copy, copy_extension)
+        } else {
+            Check::Mismatch(wrong)
+        })
+    }
+
+    /// A task's attachments as `(name, bytes, sha256)`, sorted.
+    async fn attachment_hashes(
+        &self,
+        list_graph_id: &str,
+        task_graph_id: &str,
+    ) -> Result<Vec<Attached>, GraphError> {
         let listed = self
             .state
             .graph
-            .list_attachments(&self.target, copy_id)
+            .list_attachments(list_graph_id, task_graph_id)
             .await?;
-        let mut copied = Vec::new();
+        let mut hashes = Vec::new();
         for attachment in &listed {
             let id = text(attachment, "id").unwrap_or_default();
             let bytes = self
                 .state
                 .graph
-                .download_attachment(&self.target, copy_id, &id)
+                .download_attachment(list_graph_id, task_graph_id, &id)
                 .await?;
             let size = bytes.len();
             let (_, hash) = spool::hash(bytes)
                 .await
                 .map_err(|error| GraphError::Decode(error.to_string()))?;
-            copied.push((text(attachment, "name").unwrap_or_default(), size, hash));
+            hashes.push((text(attachment, "name").unwrap_or_default(), size, hash));
         }
-        copied.sort();
-        Ok(copied)
+        hashes.sort();
+        Ok(hashes)
     }
 
     /// Delete the source. From the moment its DELETE may be sent, the copy
@@ -668,14 +709,14 @@ impl Job<'_> {
         source_id: &str,
         copy_id: &str,
     ) -> Step {
-        let source_there = match self
+        let source_now = match self
             .state
             .graph
-            .get_task(&source.list_graph_id, source_id)
+            .get_task_with_extension(&source.list_graph_id, source_id, EXTENSION_NAME)
             .await
         {
-            Ok(_) => true,
-            Err(error) if error.status() == Some(404) => false,
+            Ok(task) => Some(split_extension(task)),
+            Err(error) if error.status() == Some(404) => None,
             Err(error) => return Err(read_failure(error)),
         };
         let copy = match self
@@ -688,16 +729,26 @@ impl Job<'_> {
             Err(error) if error.status() == Some(404) => None,
             Err(error) => return Err(read_failure(error)),
         };
-        match (source_there, copy) {
-            (false, Some((copy, extension))) => {
+        match (source_now, copy) {
+            (None, Some((copy, extension))) => {
                 progress.copy = Some(copy);
                 if let Some(extension) = extension.flatten() {
                     progress.copy_extension = Some(extension);
                 }
                 self.finish(progress).await
             }
-            (true, Some(_)) => self.delete_source(progress, source, source_id).await,
-            (true, None) => {
+            (Some((now, now_extension)), Some(_)) => {
+                self.recheck_then_delete(
+                    progress,
+                    source,
+                    source_id,
+                    copy_id,
+                    now,
+                    now_extension.flatten(),
+                )
+                .await
+            }
+            (Some(_), None) => {
                 // Nothing is lost: the original is there. The copy is
                 // already gone, so rolling back deletes nothing.
                 progress.copy_id = None;
@@ -709,7 +760,7 @@ impl Job<'_> {
                 );
                 self.start_roll_back(progress, &error).await
             }
-            (false, None) => {
+            (None, None) => {
                 progress.both_missing = true;
                 progress.needs_user = true;
                 self.save(progress).await?;
@@ -726,6 +777,66 @@ impl Job<'_> {
                         .into(),
                 })
             }
+        }
+    }
+
+    /// Both the source and the copy are there after a restart, and the
+    /// source's DELETE may have been sent before. The source may have been
+    /// edited meanwhile, so the whole check runs again against the source
+    /// as it is now, and the target list's liveness, before the delete. A
+    /// source that no longer matches is kept, and so is the copy: the
+    /// earlier DELETE's outcome isn't known, so nothing is deleted and the
+    /// user decides.
+    async fn recheck_then_delete(
+        &self,
+        progress: &mut Progress,
+        source: &Source,
+        source_id: &str,
+        copy_id: &str,
+        now: Entity,
+        now_extension: Option<Value>,
+    ) -> Step {
+        let expected = match self
+            .attachment_hashes(&source.list_graph_id, source_id)
+            .await
+        {
+            Ok(expected) => expected,
+            Err(error) => return Err(read_failure(error)),
+        };
+        let checked = self
+            .check_copy(copy_id, &now, now_extension.as_ref(), &expected)
+            .await;
+        match checked {
+            Ok(Check::Matches(copy, extension)) => {
+                progress.copy = Some(copy);
+                progress.copy_extension = extension;
+                self.save(progress).await?;
+                self.delete_source(progress, source, source_id).await
+            }
+            Ok(Check::Mismatch(wrong)) => {
+                progress.needs_user = true;
+                self.save(progress).await?;
+                Err(Settled::Paused {
+                    error: error_payload(
+                        ErrorKind::Conflict,
+                        format!("the task changed during the move ({})", wrong.join(", ")),
+                    ),
+                    note: format!(
+                        "the task changed on another device during the move ({}), so the \
+                         original wasn't deleted; both it and the copy are kept. `ms-todo outbox \
+                         discard` keeps the original where it was (the copy then shows as a task \
+                         of its own); `ms-todo outbox retry` checks again",
+                        wrong.join(", ")
+                    ),
+                })
+            }
+            // The copy went with its list, or was deleted: the original is
+            // kept, and there's nothing of the move's to delete.
+            Ok(Check::ListGone | Check::CopyGone) => {
+                progress.copy_id = None;
+                self.start_roll_back(progress, &list_gone()).await
+            }
+            Err(error) => Err(read_failure(error)),
         }
     }
 

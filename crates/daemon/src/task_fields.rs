@@ -170,7 +170,7 @@ pub(crate) const DATE_ONLY: [&str; 2] = ["dueDateTime", "startDateTime"];
 
 /// Everything a task POST can set that a task read from Graph has: what a
 /// re-created or copied task gets back.
-const CREATABLE: [&str; 11] = [
+pub(crate) const CREATABLE: [&str; 11] = [
     "title",
     "body",
     "importance",

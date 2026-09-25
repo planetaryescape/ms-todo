@@ -794,3 +794,61 @@ async fn ids_output_is_one_local_id_per_line() {
         assert_eq!(String::from_utf8_lossy(&output), format!("{local}\n"));
     }
 }
+
+#[tokio::test]
+async fn a_copy_that_lost_when_a_step_was_checked_is_never_trusted() {
+    let mut env = Env::new();
+    let graph = rich_graph(&mut env).await;
+    graph
+        .lossy_create(|created| {
+            if let Some(step) = created["checklistItems"][1].as_object_mut() {
+                step.remove("checkedDateTime");
+            }
+        })
+        .await;
+    let moved = move_t1(&env);
+    env.settled();
+    let op = env.op_in_state(&op_id(&moved), "failed");
+    let message = op["last_error"]["message"].as_str().unwrap_or_default();
+    assert!(
+        message.contains("checklistItems[1].checkedDateTime"),
+        "{message}"
+    );
+    assert!(
+        graph.task("L-tasks", "T1").is_some(),
+        "the source is never deleted"
+    );
+    assert_eq!(deletes_in(&graph, "L-tasks").await, 0);
+    assert!(graph.tasks_in("L-groc").is_empty(), "the copy was deleted");
+}
+
+#[tokio::test]
+async fn a_restart_with_both_there_after_the_source_changed_deletes_nothing() {
+    let (env, graph, op) = crash_in_delete(false, |graph| {
+        graph.edit(|data| {
+            if let Some(source) = data
+                .tasks
+                .get_mut("L-tasks")
+                .and_then(|tasks| tasks.iter_mut().find(|task| task["id"] == "T1"))
+            {
+                source["title"] = json!("Renew passport (photos done)");
+                source["@odata.etag"] = json!("W/\"phone\"");
+            }
+        });
+    })
+    .await;
+    let paused = env.op_in_state(&op, "unknown");
+    assert_eq!(paused["flagged"], true);
+    let note = paused["note"].as_str().unwrap_or_default();
+    assert!(
+        note.contains("changed on another device during the move"),
+        "{note}"
+    );
+    assert!(note.contains("title"), "{note}");
+    // Only the DELETE sent before the restart, which never took effect.
+    assert_eq!(deletes_in(&graph, "L-tasks").await, 1);
+    assert_eq!(deletes_in(&graph, "L-groc").await, 0);
+    let source = graph.task("L-tasks", "T1").expect("the source is kept");
+    assert_eq!(source["title"], "Renew passport (photos done)");
+    assert_eq!(graph.tasks_in("L-groc").len(), 1, "the copy is kept");
+}

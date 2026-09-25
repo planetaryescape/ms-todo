@@ -11,7 +11,7 @@
 use ms_todo_core::{DATE_FORMAT, completion_date, local_date_time, local_due_date};
 use serde_json::{Map, Value, json};
 
-use crate::task_fields::{DATE_ONLY, creatable_fields, graph_date, midnight};
+use crate::task_fields::{CREATABLE, DATE_ONLY, creatable_fields, graph_date, midnight};
 use crate::task_writes::our_extension;
 use ms_todo_store::Entity;
 
@@ -95,74 +95,111 @@ fn children(source: &Entity, key: &str, fields: &[&str]) -> Vec<Value> {
         .unwrap_or_default()
 }
 
-/// A task's content as a move promises to keep it: every field a copy
-/// can carry, dates as days, children by what they hold rather than
-/// their IDs, and our extension without what each copy sets anew.
+/// A task's content as a move promises to keep it, as flat named values:
+/// every field the copy's POST carries ([`CREATABLE`]), every attribute of
+/// each checklist item ([`CHECKLIST_FIELDS`]) and of the linked resource
+/// ([`LINK_FIELDS`]) it carries, and our extension. The lists are the ones
+/// [`copy_body`] sends, so what is copied and what is checked can't drift.
+/// S14 found all of it survives a copy.
+///
+/// Left out on purpose, because a copy never keeps them (S14): the task's
+/// `id`, `@odata.etag`, `createdDateTime` (stamped at the move; kept as
+/// `originalCreatedAt`, checked on its own) and `lastModifiedDateTime`,
+/// each child's `id`, and our extension's `opId` and `originalCreatedAt`,
+/// which each copy sets anew. `hasAttachments` is checked through the
+/// attachments themselves, byte for byte.
 pub(crate) fn comparable(task: &Entity, extension: Option<&Value>) -> Map<String, Value> {
     let mut fields = Map::new();
-    for key in [
-        "title",
-        "importance",
-        "status",
-        "isReminderOn",
-        "categories",
-        "recurrence",
+    for key in CREATABLE {
+        fields.insert(key.into(), field_value(task, key));
+    }
+    for (collection, attributes) in [
+        ("checklistItems", &CHECKLIST_FIELDS),
+        ("linkedResources", &LINK_FIELDS),
     ] {
-        fields.insert(key.into(), task.get(key).cloned().unwrap_or(Value::Null));
+        let items = task
+            .get(collection)
+            .and_then(Value::as_array)
+            .map(Vec::as_slice)
+            .unwrap_or_default();
+        fields.insert(format!("{collection}.count"), json!(items.len()));
+        for (index, item) in items.iter().enumerate() {
+            for &attribute in attributes {
+                let value = item.get(attribute).unwrap_or(&Value::Null);
+                fields.insert(
+                    format!("{collection}[{index}].{attribute}"),
+                    instant_to_second(value),
+                );
+            }
+        }
     }
-    let body = task.get("body").unwrap_or(&Value::Null);
-    fields.insert("body".into(), json!([body["content"], body["contentType"]]));
-    let day =
-        |key, read| graph_date(task, key, read).map(|date| date.format(DATE_FORMAT).to_string());
-    for key in DATE_ONLY {
-        fields.insert(key.into(), json!(day(key, local_due_date)));
+    if let Some(Value::Object(all)) = extension {
+        for (key, value) in all {
+            let set_anew = matches!(
+                key.as_str(),
+                "id" | "extensionName" | "opId" | ORIGINAL_CREATED_AT
+            );
+            if !set_anew && !key.contains("@odata") {
+                fields.insert(format!("extension.{key}"), value.clone());
+            }
+        }
     }
-    fields.insert(
-        "completedDateTime".into(),
-        json!(day("completedDateTime", completion_date)),
-    );
-    let reminder = task.get("reminderDateTime").and_then(|value| {
-        let at = local_date_time(
-            value.get("dateTime")?.as_str()?,
-            value.get("timeZone")?.as_str()?,
-        )?;
-        Some(at.format("%Y-%m-%dT%H:%M").to_string())
-    });
-    fields.insert("reminderDateTime".into(), json!(reminder));
-    // What an item holds; Graph keeps when it was made to the second only.
-    let checklist: Vec<Value> = children(task, "checklistItems", &["displayName", "isChecked"]);
-    fields.insert("checklistItems".into(), Value::Array(checklist));
-    fields.insert(
-        "linkedResources".into(),
-        Value::Array(children(task, "linkedResources", &LINK_FIELDS)),
-    );
-    let extension: Map<String, Value> = extension
-        .and_then(Value::as_object)
-        .map(|all| {
-            all.iter()
-                .filter(|(key, _)| {
-                    !matches!(
-                        key.as_str(),
-                        "id" | "extensionName" | "opId" | ORIGINAL_CREATED_AT
-                    ) && !key.contains("@odata")
-                })
-                .map(|(key, value)| (key.clone(), value.clone()))
-                .collect()
-        })
-        .unwrap_or_default();
-    fields.insert("extension".into(), Value::Object(extension));
     fields
 }
 
-/// The fields of `expected` that `actual` doesn't hold, by name.
+/// A task field as a copy keeps it: dates as days, a reminder to the
+/// minute, notes by content and type, the rest as they are.
+fn field_value(task: &Entity, key: &str) -> Value {
+    let day = |read| graph_date(task, key, read).map(|date| date.format(DATE_FORMAT).to_string());
+    match key {
+        _ if DATE_ONLY.contains(&key) => json!(day(local_due_date)),
+        "completedDateTime" => json!(day(completion_date)),
+        "reminderDateTime" => json!(task.get(key).and_then(|value| {
+            let at = local_date_time(
+                value.get("dateTime")?.as_str()?,
+                value.get("timeZone")?.as_str()?,
+            )?;
+            Some(at.format("%Y-%m-%dT%H:%M").to_string())
+        })),
+        "body" => {
+            let body = task.get(key).unwrap_or(&Value::Null);
+            json!([body["content"], body["contentType"]])
+        }
+        _ => task.get(key).cloned().unwrap_or(Value::Null),
+    }
+}
+
+/// A child's timestamp to the second: Graph keeps a step's
+/// `createdDateTime` to the second only (S14: `…23.3795339Z` came back
+/// `…23Z`). Anything else, as it is.
+fn instant_to_second(value: &Value) -> Value {
+    value
+        .as_str()
+        .and_then(|text| chrono::DateTime::parse_from_rfc3339(text).ok())
+        .map_or_else(
+            || value.clone(),
+            |at| {
+                json!(
+                    at.with_timezone(&chrono::Utc)
+                        .format("%Y-%m-%dT%H:%M:%SZ")
+                        .to_string()
+                )
+            },
+        )
+}
+
+/// The names of the values `expected` and `actual` don't share, either
+/// way round (a copy with an extra step differs too).
 pub(crate) fn differences(
     expected: &Map<String, Value>,
     actual: &Map<String, Value>,
 ) -> Vec<String> {
-    expected
-        .iter()
-        .filter(|(key, value)| actual.get(key.as_str()) != Some(*value))
-        .map(|(key, _)| key.clone())
+    let mut keys: Vec<&String> = expected.keys().chain(actual.keys()).collect();
+    keys.sort();
+    keys.dedup();
+    keys.into_iter()
+        .filter(|key| expected.get(key.as_str()) != actual.get(key.as_str()))
+        .cloned()
         .collect()
 }
 
@@ -273,7 +310,8 @@ mod tests {
         copy.insert(
             "checklistItems".into(),
             json!([{ "id": "other", "displayName": "one", "isChecked": true,
-                     "createdDateTime": "2026-09-24T10:00:00Z" }]),
+                     "checkedDateTime": "2026-09-24T12:00:00.0000000Z",
+                     "createdDateTime": "2026-09-24T10:00:00.4321Z" }]),
         );
         copy.insert(
             "dueDateTime".into(),
@@ -284,12 +322,31 @@ mod tests {
         let expected = comparable(&original, Some(&theirs));
         assert!(differences(&expected, &comparable(&copy, Some(&ours))).is_empty());
 
+        // A step that lost when it was checked.
+        let mut unchecked = copy.clone();
+        unchecked["checklistItems"][0]
+            .as_object_mut()
+            .expect("step")
+            .remove("checkedDateTime");
+        assert_eq!(
+            differences(&expected, &comparable(&unchecked, Some(&ours))),
+            ["checklistItems[0].checkedDateTime"]
+        );
+
         copy.insert("checklistItems".into(), json!([]));
         copy.insert("importance".into(), json!("low"));
         let lost = json!({ "opId": "the-move" });
         assert_eq!(
             differences(&expected, &comparable(&copy, Some(&lost))),
-            ["checklistItems", "extension", "importance"]
+            [
+                "checklistItems.count",
+                "checklistItems[0].checkedDateTime",
+                "checklistItems[0].createdDateTime",
+                "checklistItems[0].displayName",
+                "checklistItems[0].isChecked",
+                "extension.assignee",
+                "importance"
+            ]
         );
     }
 }

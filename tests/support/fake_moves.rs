@@ -184,6 +184,28 @@ impl FakeGraph {
             .await;
     }
 
+    /// Make the next task create keep less than it was sent: Graph stores
+    /// the task, then `lose` changes what it holds, as a lossy copy would.
+    pub async fn lossy_create(&self, lose: fn(&mut Value)) {
+        let shared = Arc::clone(&self.data);
+        Mock::given(method("POST"))
+            .and(path_regex(r"^/v1\.0/me/todo/lists/[^/]+/tasks$"))
+            .respond_with(move |request: &Request| {
+                let mut data = lock(&shared);
+                let answer = create_task(&mut data, request);
+                let (list, _) = list_and_task(request);
+                if let Some(created) = data.tasks.get_mut(&list).and_then(|tasks| tasks.last_mut())
+                {
+                    lose(created);
+                }
+                answer
+            })
+            .up_to_n_times(1)
+            .with_priority(1)
+            .mount(&self.server)
+            .await;
+    }
+
     /// Put `bytes` on the task `task` in `list` as the file `name`, as a
     /// phone would.
     pub fn attach(&self, list: &str, task: &str, name: &str, bytes: &[u8]) {
