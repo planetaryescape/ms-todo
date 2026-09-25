@@ -155,7 +155,26 @@ test("mutation requires a confirmed action", async () => {
       fakeCli(JSON.stringify({ schema_version: 2, action: "add", items: [] }))
         .path,
     ),
-    /did not confirm/,
+    /did not confirm.*may have happened; check tasks and outbox before retrying/,
+  );
+});
+test("successful writes with unconfirmed responses warn before retrying", async () => {
+  for (const output of [
+    "not json",
+    JSON.stringify({ schema_version: 3, action: "add", op_id: "op", items: [task] }),
+    JSON.stringify({ schema_version: 2, action: "complete", op_id: "op", items: [task] }),
+  ]) {
+    await assert.rejects(
+      addTask("hello", fakeCli(output).path),
+      /may have happened; check tasks and outbox before retrying/,
+    );
+  }
+});
+test("nonzero write errors retain the CLI's message", async () => {
+  const cli = fakeCli(JSON.stringify({ error: { message: "unknown list" } }), 2);
+  await assert.rejects(
+    addTask("hello", cli.path),
+    { name: "CliError", message: "unknown list" },
   );
 });
 

@@ -404,7 +404,7 @@ export function TaskList({ mode }: { mode: Mode }) {
           </List.Section>
         )}
       {!loading &&
-        items.length === 0 &&
+        (visibleResult?.sync.state === "initial" || items.length === 0) &&
         (mode !== "my-day" || suggestions.length === 0) && (
           <List.EmptyView
             title={emptyTitle}

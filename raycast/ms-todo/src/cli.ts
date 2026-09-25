@@ -7,6 +7,8 @@ import { z } from "zod";
 const execFileAsync = promisify(execFile);
 // Outlast the CLI's 15-second daemon startup and 300-second request stall limits.
 const CLI_TIMEOUT_MS = 330_000;
+const UNCERTAIN_WRITE_GUIDANCE =
+  "The change may have happened; check tasks and outbox before retrying.";
 
 const dateTimeSchema = z.object({
   dateTime: z.string(),
@@ -173,6 +175,7 @@ async function runCli<T>(
   schema: z.ZodType<T>,
   responseError: string,
   preferredPath = "",
+  uncertainWriteResponse = false,
 ): Promise<T> {
   const path = findCli(preferredPath);
   try {
@@ -185,7 +188,14 @@ async function runCli<T>(
         encoding: "utf8",
       },
     );
-    return parseOutput(stdout, schema, responseError);
+    try {
+      return parseOutput(stdout, schema, responseError);
+    } catch (error) {
+      if (uncertainWriteResponse && error instanceof CliError) {
+        throw new CliError(`${error.message} ${UNCERTAIN_WRITE_GUIDANCE}`);
+      }
+      throw error;
+    }
   } catch (error) {
     if (error instanceof CliError) throw error;
     const failure = execErrorSchema.safeParse(error);
@@ -197,7 +207,7 @@ async function runCli<T>(
         (args[0] === "myday" && ["add", "remove"].includes(args[1]));
       throw new CliError(
         isWrite
-          ? "ms-todo did not respond within 5½ minutes. The change may still have happened; check tasks and outbox before retrying."
+          ? `ms-todo did not respond within 5½ minutes. ${UNCERTAIN_WRITE_GUIDANCE}`
           : "ms-todo did not respond within 5½ minutes. Check the daemon with `ms-todo doctor`.",
       );
     }
@@ -277,8 +287,11 @@ async function write(
     mutationSchema,
     confirmationError,
     preferredPath,
+    true,
   );
-  if (result.action !== action) throw new CliError(confirmationError);
+  if (result.action !== action) {
+    throw new CliError(`${confirmationError} ${UNCERTAIN_WRITE_GUIDANCE}`);
+  }
 }
 
 export async function addTask(

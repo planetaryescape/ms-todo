@@ -23,8 +23,7 @@ export function EditTask({ task, cliPath, onSaved }: Props) {
 
   async function save() {
     if (busyRef.current) return;
-    const trimmedTitle = title.trim();
-    if (!trimmedTitle) {
+    if (!title.trim()) {
       await showToast({
         style: Toast.Style.Failure,
         title: "Title cannot be empty",
@@ -32,7 +31,7 @@ export function EditTask({ task, cliPath, onSaved }: Props) {
       return;
     }
     const change: TaskEdit = {};
-    if (trimmedTitle !== task.title) change.title = trimmedTitle;
+    if (title !== task.title) change.title = title;
     if (due.trim()) change.due = due.trim();
     if (
       importance === "low" ||
