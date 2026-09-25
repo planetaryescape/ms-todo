@@ -15,7 +15,7 @@ const fn hex(rgb: u32) -> Color {
     Color::from_u32(rgb)
 }
 
-pub static BUILTIN: [Builtin; 8] = [
+pub static BUILTIN: [Builtin; 12] = [
     Builtin {
         name: DEFAULT,
         palette: TERMINAL,
@@ -43,6 +43,22 @@ pub static BUILTIN: [Builtin; 8] = [
     Builtin {
         name: "nord",
         palette: NORD,
+    },
+    Builtin {
+        name: "one-dark",
+        palette: ONE_DARK,
+    },
+    Builtin {
+        name: "kanagawa",
+        palette: KANAGAWA,
+    },
+    Builtin {
+        name: "night-owl",
+        palette: NIGHT_OWL,
+    },
+    Builtin {
+        name: "cobalt2",
+        palette: COBALT2,
     },
     Builtin {
         name: "high-contrast",
@@ -263,6 +279,133 @@ const NORD: Palette = Palette {
     link: hex(0x81a1c1),         // nord9
     cursor: hex(0xd8dee9),       // nord4
     header_bar: hex(0x3b4252),   // nord1
+};
+
+// Atom's One Dark: the syntax theme's palette,
+// https://github.com/atom/atom/blob/master/packages/one-dark-syntax/styles/colors.less
+// and syntax-variables.less, and the UI theme's status colours,
+// https://github.com/atom/atom/blob/master/packages/one-dark-ui/styles/ui-variables.less.
+// Atom defines them in HSL; these are the hex values they compute to.
+const ONE_DARK: Palette = Palette {
+    background: hex(0x282c34),     // syntax-bg
+    text: hex(0xabb2bf),           // mono-1
+    text_dim: hex(0x828997),       // mono-2
+    text_muted: hex(0x5c6370),     // mono-3
+    border: hex(0x3e4451),         // syntax-selection-color
+    border_focused: hex(0x61afef), // hue-2, blue
+    title: hex(0x61afef),          // hue-2, blue
+    selection_bg: hex(0x31363f),   // background-color-highlight
+    selection_fg: Color::Reset,
+    accent: hex(0x61afef),       // hue-2, blue
+    overdue: hex(0xe06c75),      // hue-5, red
+    due_today: hex(0xd19a66),    // hue-6, orange
+    important: hex(0xe5c07b),    // hue-6-2, yellow
+    completed: hex(0x5c6370),    // mono-3
+    sync_pending: hex(0x5c6370), // mono-3
+    sync_unknown: hex(0xe5c07b), // hue-6-2, yellow
+    sync_failed: hex(0xe06c75),  // hue-5, red
+    error: hex(0xe06c75),        // hue-5, red
+    warning: hex(0xd19a66),      // hue-6, orange
+    banner_error: hex(0xe06c75), // hue-5, red
+    banner_info: hex(0x56b6c2),  // hue-1, cyan
+    search_match: hex(0xc678dd), // hue-3, purple
+    link: hex(0x56b6c2),         // hue-1, cyan
+    cursor: hex(0x528bff),       // syntax-accent, the cursor
+    header_bar: hex(0x21252b),   // level-3-color, the tool panels
+};
+
+// Kanagawa's "wave" theme,
+// https://github.com/rebelot/kanagawa.nvim/blob/master/lua/kanagawa/colors.lua
+// for the palette and lua/kanagawa/themes.lua for which colour does what
+// (ui.bg, ui.fg_dim, float.fg_border, diag.error and so on).
+const KANAGAWA: Palette = Palette {
+    background: hex(0x1f1f28),     // sumiInk3, ui.bg
+    text: hex(0xdcd7ba),           // fujiWhite, ui.fg
+    text_dim: hex(0xc8c093),       // oldWhite, ui.fg_dim
+    text_muted: hex(0x727169),     // fujiGray, syn.comment
+    border: hex(0x54546d),         // sumiInk6, float.fg_border
+    border_focused: hex(0x7e9cd8), // crystalBlue
+    title: hex(0x957fb8),          // oniViolet
+    selection_bg: hex(0x223249),   // waveBlue1, ui.bg_visual
+    selection_fg: Color::Reset,
+    accent: hex(0x7e9cd8),       // crystalBlue
+    overdue: hex(0xe46876),      // waveRed
+    due_today: hex(0xffa066),    // surimiOrange
+    important: hex(0xe6c384),    // carpYellow
+    completed: hex(0x717c7c),    // katanaGray, syn.deprecated
+    sync_pending: hex(0x727169), // fujiGray
+    sync_unknown: hex(0xe6c384), // carpYellow
+    sync_failed: hex(0xe82424),  // samuraiRed, diag.error
+    error: hex(0xe82424),        // samuraiRed, diag.error
+    warning: hex(0xff9e3b),      // roninYellow, diag.warning
+    banner_error: hex(0xe82424), // samuraiRed, diag.error
+    banner_info: hex(0x7fb4ca),  // springBlue
+    search_match: hex(0x98bb6c), // springGreen
+    link: hex(0x7fb4ca),         // springBlue
+    cursor: hex(0xdcd7ba),       // fujiWhite
+    header_bar: hex(0x16161d),   // sumiInk0, ui.bg_m3
+};
+
+// Night Owl,
+// https://github.com/sdras/night-owl-vscode-theme/blob/main/themes/Night%20Owl-color-theme.json:
+// its workbench colours for the chrome, its token colours for meaning.
+const NIGHT_OWL: Palette = Palette {
+    background: hex(0x011627),     // editor.background
+    text: hex(0xd6deeb),           // editor.foreground
+    text_dim: hex(0x89a4bb),       // sideBar.foreground
+    text_muted: hex(0x5f7e97),     // statusBar.foreground
+    border: hex(0x4b6479),         // editorLineNumber.foreground
+    border_focused: hex(0x82aaff), // terminal.ansiBlue
+    title: hex(0xc792ea),          // keyword
+    selection_bg: hex(0x1d3b53),   // editor.selectionBackground
+    selection_fg: Color::Reset,
+    accent: hex(0x82aaff),       // terminal.ansiBlue
+    overdue: hex(0xef5350),      // errorForeground
+    due_today: hex(0xf78c6c),    // number
+    important: hex(0xffeb95),    // terminal.ansiBrightYellow
+    completed: hex(0x637777),    // comment
+    sync_pending: hex(0x5f7e97), // statusBar.foreground
+    sync_unknown: hex(0xffca28), // inputValidation.warningBorder
+    sync_failed: hex(0xef5350),  // errorForeground
+    error: hex(0xef5350),        // errorForeground
+    warning: hex(0xffca28),      // inputValidation.warningBorder
+    banner_error: hex(0xef5350), // errorForeground
+    banner_info: hex(0x7fdbca),  // terminal.ansiBrightCyan
+    search_match: hex(0xc5e478), // variable
+    link: hex(0x80cbc4),         // notificationLink.foreground
+    cursor: hex(0x80a4c2),       // editorCursor.foreground
+    header_bar: hex(0x01111d),   // tab.inactiveBackground
+};
+
+// Cobalt2, https://github.com/wesbos/cobalt2-vscode/blob/master/theme/cobalt2.json.
+// Its errorForeground (#a22929) is hard to read on the blue, so errors
+// use its red for deletions, as its terminal does.
+const COBALT2: Palette = Palette {
+    background: hex(0x193549),     // editor.background
+    text: hex(0xffffff),           // editor.foreground
+    text_dim: hex(0xaaaaaa),       // foreground
+    text_muted: hex(0x808080),     // gitDecoration.ignoredResourceForeground
+    border: hex(0x234e6d),         // editor.lineHighlightBorder
+    border_focused: hex(0xffc600), // tab.activeBorder
+    title: hex(0xffc600),          // panelTitle.activeForeground
+    selection_bg: hex(0x1f4662),   // editor.lineHighlightBackground
+    selection_fg: Color::Reset,
+    accent: hex(0x9effff),       // meta
+    overdue: hex(0xff628c),      // terminal.ansiRed
+    due_today: hex(0xff9d00),    // keyword
+    important: hex(0xffc600),    // editorWarning.foreground
+    completed: hex(0x808080),    // gitDecoration.ignoredResourceForeground
+    sync_pending: hex(0x808080), // gitDecoration.ignoredResourceForeground
+    sync_unknown: hex(0xffc600), // editorWarning.foreground
+    sync_failed: hex(0xff628c),  // terminal.ansiRed
+    error: hex(0xff628c),        // terminal.ansiRed
+    warning: hex(0xff9d00),      // keyword
+    banner_error: hex(0xff628c), // terminal.ansiRed
+    banner_info: hex(0x80fcff),  // terminal.ansiCyan
+    search_match: hex(0xa5ff90), // string
+    link: hex(0x0088ff),         // textLink.foreground
+    cursor: hex(0xffc600),       // editorCursor.foreground
+    header_bar: hex(0x15232d),   // titleBar.activeBackground
 };
 
 // No official palette exists for this one: every text colour meets

@@ -24,6 +24,10 @@ fn the_built_in_themes_default_to_terminal_and_have_unique_names() {
             "gruvbox-light",
             "tokyo-night",
             "nord",
+            "one-dark",
+            "kanagawa",
+            "night-owl",
+            "cobalt2",
             "high-contrast"
         ]
     );
@@ -141,6 +145,13 @@ fn without_truecolor_rgb_becomes_the_nearest_256_colour_index() {
             0xf3, 0x8b, 0xa8
         ))))
     );
+    // Every fixed palette comes down to 256 colours whole: no RGB left.
+    for theme in BUILTIN.iter().filter(|theme| theme.name != DEFAULT) {
+        let styles = choice(theme.name, Capability::Ansi256).theme();
+        let debug = format!("{styles:?}");
+        assert!(!debug.contains("Rgb"), "{}: {debug}", theme.name);
+        assert!(debug.contains("Indexed"), "{}", theme.name);
+    }
     // The terminal theme's colours are the terminal's either way.
     assert_eq!(
         choice("terminal", Capability::Ansi256).theme(),

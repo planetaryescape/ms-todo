@@ -185,7 +185,7 @@ In the editor, a due date or a reminder takes what `--due` and `--reminder` take
 
 ### Themes
 
-The default theme, `terminal`, draws with your terminal's own colours (its ANSI palette, dim and bold), so a Ghostty or iTerm theme carries over. The others are fixed palettes: `catppuccin-mocha`, `catppuccin-latte`, `gruvbox-dark`, `gruvbox-light`, `tokyo-night`, `nord` and `high-contrast`. All of them keep borders and secondary text quiet, mark the selected row with a soft background, and keep colour for what means something: overdue, important, sync state and errors.
+The default theme, `terminal`, draws with your terminal's own colours (its ANSI palette, dim and bold), so a Ghostty or iTerm theme carries over. The others are fixed palettes: `catppuccin-mocha`, `catppuccin-latte`, `gruvbox-dark`, `gruvbox-light`, `tokyo-night`, `nord`, `one-dark`, `kanagawa`, `night-owl`, `cobalt2` and `high-contrast`. All of them keep borders and secondary text quiet, mark the selected row with a soft background, and keep colour for what means something: overdue, important, sync state and errors.
 
 Pick one in the TUI with `:` then "Theme…": each theme shows as you move to it, `Enter` keeps it and writes it to `config.toml`, and `Esc` puts the old one back. Or set it yourself:
 

@@ -502,6 +502,12 @@ fn catppuccin_mocha_in_truecolor() {
 }
 
 #[test]
+fn kanagawa_in_truecolor() {
+    let app = themed("kanagawa", crate::theme::Capability::Truecolor);
+    insta::assert_snapshot!(render_styled(&app));
+}
+
+#[test]
 fn no_color_is_monochrome() {
     let app = themed("catppuccin-mocha", crate::theme::Capability::Monochrome);
     let screen = render_styled(&app);

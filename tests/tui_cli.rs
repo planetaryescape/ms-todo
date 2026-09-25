@@ -18,7 +18,7 @@ fn list_themes_prints_every_name_default_first() {
         .clone();
     assert_eq!(
         String::from_utf8(output).expect("utf8"),
-        "terminal\ncatppuccin-mocha\ncatppuccin-latte\ngruvbox-dark\ngruvbox-light\ntokyo-night\nnord\nhigh-contrast\n"
+        "terminal\ncatppuccin-mocha\ncatppuccin-latte\ngruvbox-dark\ngruvbox-light\ntokyo-night\nnord\none-dark\nkanagawa\nnight-owl\ncobalt2\nhigh-contrast\n"
     );
 }
 
