@@ -419,6 +419,16 @@ async fn patch(
                 .map_err(classify)?;
             let (current, extension) = split_extension(fetched);
             if !recurring && is_applied(body, &current) {
+                if claims_ownership(op) {
+                    // Another device got there first: the value is there,
+                    // but not ours, so the flag that follows mustn't claim
+                    // it (nor a clear later take it away).
+                    return Ok(Attempt::Skipped {
+                        task: current,
+                        extension,
+                        why: "another device set the same value meanwhile, so ms-todo left it as theirs",
+                    });
+                }
                 // Ours already, e.g. a resend whose first try went through.
                 return Ok(Attempt::Changed(current, extension));
             }
@@ -457,6 +467,14 @@ async fn patch(
         }
         Err(error) => Err(classify(error)),
     }
+}
+
+/// Whether `op` is an edit a later flag claims as ms-todo's own (My Day's
+/// due date, `myDayDueSet`; an assignment's status, `assigneeStatusSet`):
+/// its precondition payload says so. Such an edit counts as made only when
+/// our own PATCH changed the value.
+fn claims_ownership(op: &OutboxRow) -> bool {
+    op.payload.get("expect_due").is_some() || op.payload.get(EXPECT_FIELDS).is_some()
 }
 
 /// S12: completing a recurring task keeps its ID, moves its due date to

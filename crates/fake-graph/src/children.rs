@@ -186,7 +186,7 @@ fn delete(data: &mut Data, request: &Request, collection: &str) -> ResponseTempl
 }
 
 /// A 412 when `If-Match` isn't the task's etag (S6).
-fn precondition(task: &Value, request: &Request) -> Option<ResponseTemplate> {
+pub(crate) fn precondition(task: &Value, request: &Request) -> Option<ResponseTemplate> {
     let sent = request.headers.get("if-match")?.to_str().ok()?;
     (task["@odata.etag"] != sent).then(|| {
         ResponseTemplate::new(412).set_body_json(json!({ "error": {

@@ -720,3 +720,62 @@ async fn a_due_date_the_phone_set_while_adding_is_never_taken_away() {
     env.settled();
     assert_eq!(graph_task(&graph, "T2")["dueDateTime"], due("2026-09-20"));
 }
+
+/// The phone sets My Day's day as T1's due date right after ms-todo's
+/// due-date edit has checked it, so the edit's PATCH meets a new etag.
+fn phone_sets_t1_and_moves_its_etag(data: &mut support::fake_graph::Data) {
+    phone_sets(data, "T1");
+    if let Some(task) = data
+        .tasks
+        .get_mut("L-tasks")
+        .and_then(|tasks| tasks.iter_mut().find(|task| task["id"] == "T1"))
+    {
+        task["@odata.etag"] = json!("W/\"phone\"");
+    }
+}
+
+#[tokio::test]
+async fn a_due_date_the_phone_set_just_before_ours_landed_is_never_claimed() {
+    let mut env = Env::new();
+    let graph = graph_with(
+        &mut env,
+        vec![task("T1", "Call the bank", "W/\"1\"")],
+        Vec::new(),
+    )
+    .await;
+    graph.refuse_stale_task_patches().await;
+    // The extension write reads the task twice; the due-date edit's check
+    // is the third read, and the phone lands after it: the PATCH is a 412
+    // and Graph already has the same day, set by the phone.
+    graph
+        .edit_after_gets(
+            r"^/v1\.0/me/todo/lists/L-tasks/tasks/T1$",
+            3,
+            phone_sets_t1_and_moves_its_etag,
+        )
+        .await;
+    start_on(&env, "2026-09-20");
+    env.synced();
+    rolled_over(&env);
+    let id = env.local_id(&["tasks", "list"], "T1");
+    env.json(&["myday", "add", &id]);
+    env.settled();
+    let extension = graph.extension("T1").expect("in My Day");
+    assert_eq!(extension["myDay"], "2026-09-20");
+    assert!(extension.get("myDayDueSet").is_none(), "{extension}");
+    let skipped = env
+        .outbox()
+        .into_iter()
+        .filter(|op| {
+            op["note"]
+                .as_str()
+                .is_some_and(|note| note.starts_with("skipped:"))
+        })
+        .count();
+    assert_eq!(skipped, 2, "the due-date edit and the flag");
+
+    // Removing keeps the phone's date.
+    env.json(&["myday", "remove", &id]);
+    env.settled();
+    assert_eq!(graph_task(&graph, "T1")["dueDateTime"], due("2026-09-20"));
+}

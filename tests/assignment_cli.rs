@@ -241,6 +241,64 @@ async fn a_status_changed_while_assigning_is_kept_and_never_marked_as_ours() {
     assert_eq!(skipped, 2, "the status edit and the flag");
 }
 
+/// Another device makes T1 waiting on others right after ms-todo's status
+/// edit has checked it, so the edit's PATCH meets a new etag.
+fn phone_waits_t1(data: &mut support::fake_graph::Data) {
+    if let Some(task) = data
+        .tasks
+        .get_mut("L-tasks")
+        .and_then(|tasks| tasks.iter_mut().find(|task| task["id"] == "T1"))
+    {
+        task["status"] = json!("waitingOnOthers");
+        task["@odata.etag"] = json!("W/\"phone\"");
+    }
+}
+
+#[tokio::test]
+async fn a_status_another_device_set_just_before_ours_landed_is_never_claimed() {
+    let mut env = Env::new();
+    let graph = graph_with(
+        &mut env,
+        vec![task("T1", "Get the quote", "W/\"1\"")],
+        Vec::new(),
+    )
+    .await;
+    graph.refuse_stale_task_patches().await;
+    // The assignee write reads the task twice; the status edit's check is
+    // the third read, and the other device lands after it: the PATCH is a
+    // 412, and Graph already has the same status, set by that device.
+    graph
+        .edit_after_gets(
+            r"^/v1\.0/me/todo/lists/L-tasks/tasks/T1$",
+            3,
+            phone_waits_t1,
+        )
+        .await;
+    env.synced();
+    let id = env.local_id(&["tasks", "list"], "T1");
+    env.json(&["tasks", "edit", &id, "--assignee", "Sam"]);
+    env.settled();
+    assert_eq!(status(&graph, "T1"), "waitingOnOthers");
+    let extension = graph.extension("T1").expect("extension");
+    assert_eq!(extension["assignee"], "Sam");
+    assert!(extension.get("assigneeStatusSet").is_none(), "{extension}");
+    let skipped = env
+        .outbox()
+        .into_iter()
+        .filter(|op| {
+            op["note"]
+                .as_str()
+                .is_some_and(|note| note.starts_with("skipped:"))
+        })
+        .count();
+    assert_eq!(skipped, 2, "the status edit and the flag");
+
+    // Clearing leaves the other device's status.
+    env.json(&["tasks", "edit", &id, "--clear-assignee"]);
+    env.settled();
+    assert_eq!(status(&graph, "T1"), "waitingOnOthers");
+}
+
 #[tokio::test]
 async fn adding_with_an_assignee_sends_it_in_the_create() {
     let mut env = Env::new();

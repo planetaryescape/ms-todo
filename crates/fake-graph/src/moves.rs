@@ -87,6 +87,23 @@ impl FakeGraph {
             .await;
     }
 
+    /// Refuse a task PATCH whose `If-Match` isn't the task's etag, with
+    /// Graph's 412 (S6); others go on to `accept_task_patches`. Opt-in,
+    /// since most tests change Graph without the daemon re-reading it.
+    pub async fn refuse_stale_task_patches(&self) {
+        Mock::given(method("PATCH"))
+            .and(path_regex(r"^/v1\.0/me/todo/lists/[^/]+/tasks/[^/]+$"))
+            .and(StaleEtag(Arc::clone(&self.data)))
+            .respond_with(|request: &Request| {
+                // The matcher saw it stale; answer as Graph does.
+                crate::children::precondition(&Value::Null, request)
+                    .unwrap_or_else(|| ResponseTemplate::new(412))
+            })
+            .with_priority(1)
+            .mount(&self.server)
+            .await;
+    }
+
     /// Make the next task create keep less than it was sent: Graph stores
     /// the task, then `lose` changes what it holds, as a lossy copy would.
     pub async fn lossy_create(&self, lose: fn(&mut Value)) {
@@ -211,4 +228,16 @@ pub fn create_task(data: &mut Data, request: &Request) -> ResponseTemplate {
         task["extensions"] = json!([extension]);
     }
     ResponseTemplate::new(201).set_body_json(task)
+}
+
+/// A task PATCH whose `If-Match` isn't the task's current etag.
+struct StaleEtag(Arc<std::sync::Mutex<Data>>);
+
+impl wiremock::Match for StaleEtag {
+    fn matches(&self, request: &Request) -> bool {
+        let data = lock(&self.0);
+        let (list, task) = list_and_task(request);
+        find_task(&data, &list, &task)
+            .is_some_and(|task| crate::children::precondition(task, request).is_some())
+    }
 }
