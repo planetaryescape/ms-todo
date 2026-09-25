@@ -1788,7 +1788,7 @@ dependencies = [
 
 [[package]]
 name = "ms-todo"
-version = "0.1.11"
+version = "0.1.12"
 dependencies = [
  "assert_cmd",
  "chrono",
@@ -1809,7 +1809,7 @@ dependencies = [
 
 [[package]]
 name = "ms-todo-cli"
-version = "0.1.11"
+version = "0.1.12"
 dependencies = [
  "chrono",
  "clap",
@@ -1831,7 +1831,7 @@ dependencies = [
 
 [[package]]
 name = "ms-todo-core"
-version = "0.1.11"
+version = "0.1.12"
 dependencies = [
  "chrono",
  "dirs",
@@ -1840,7 +1840,7 @@ dependencies = [
 
 [[package]]
 name = "ms-todo-daemon"
-version = "0.1.11"
+version = "0.1.12"
 dependencies = [
  "chrono",
  "fs2",
@@ -1861,7 +1861,7 @@ dependencies = [
 
 [[package]]
 name = "ms-todo-graph"
-version = "0.1.11"
+version = "0.1.12"
 dependencies = [
  "chrono",
  "fastrand",
@@ -1879,7 +1879,7 @@ dependencies = [
 
 [[package]]
 name = "ms-todo-nlp"
-version = "0.1.11"
+version = "0.1.12"
 dependencies = [
  "chrono",
  "proptest",
@@ -1889,7 +1889,7 @@ dependencies = [
 
 [[package]]
 name = "ms-todo-protocol"
-version = "0.1.11"
+version = "0.1.12"
 dependencies = [
  "bytes",
  "serde",
@@ -1900,7 +1900,7 @@ dependencies = [
 
 [[package]]
 name = "ms-todo-store"
-version = "0.1.11"
+version = "0.1.12"
 dependencies = [
  "chrono",
  "html2text",
@@ -1915,7 +1915,7 @@ dependencies = [
 
 [[package]]
 name = "ms-todo-tui"
-version = "0.1.11"
+version = "0.1.12"
 dependencies = [
  "chrono",
  "crossterm",
