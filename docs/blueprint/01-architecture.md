@@ -73,7 +73,7 @@ Length-delimited JSON (`tokio_util::codec::LengthDelimitedCodec`) over a Unix so
 
 Resolve data and runtime paths with the `dirs` crate:
 
-- Config: `config.toml` in `$MS_TODO_CONFIG_DIR`, else `$XDG_CONFIG_HOME/ms-todo/`, else `~/.config/ms-todo/`, on macOS as well as Linux. Not `dirs::config_dir()`, which is `~/Library/Application Support` on macOS (D-035).
+- Config: `config.toml` in `$MS_TODO_CONFIG_DIR`, else `$XDG_CONFIG_HOME/ms-todo/`, else `~/.config/ms-todo/`, on macOS as well as Linux. Not `dirs::config_dir()`, which is `~/Library/Application Support` on macOS (D-035). It holds `[auth] client_id` and the TUI's `[tui] theme` and `[tui.colors]` ([08](08-tui.md#themes), D-049).
 - Data: `<data_dir>/ms-todo/`, containing:
   - `ms-todo.db`: SQLite, WAL mode
   - `auth/token.json`: mode 0600

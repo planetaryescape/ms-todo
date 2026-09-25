@@ -30,7 +30,7 @@ ms-todo auth status   # account, token expiry, client ID and scopes
 ms-todo auth logout
 ```
 
-Release builds sign in through the maintainer's Entra app registration. You can [register your own](docs/setup/entra-app-registration.md) in about 10 minutes and set `MS_TODO_CLIENT_ID`, or `client_id` under `[auth]` in `~/.config/ms-todo/config.toml` (`$XDG_CONFIG_HOME` and `$MS_TODO_CONFIG_DIR` move it). `auth status` shows which client ID is in use.
+Release builds sign in through the maintainer's Entra app registration. You can [register your own](docs/setup/entra-app-registration.md) in about 10 minutes and set `MS_TODO_CLIENT_ID`, or `client_id` under `[auth]` in `~/.config/ms-todo/config.toml` (`$XDG_CONFIG_HOME` and `$MS_TODO_CONFIG_DIR` move it). The same file holds the TUI's theme ([Themes](#themes)). `auth status` shows which client ID is in use.
 
 ## See your tasks
 
@@ -141,6 +141,7 @@ Exit codes: 0 success, 1 network or Graph failure (including `outcome_unknown` a
 ```sh
 mst                  # in a terminal, the same as `mst tui` or `ms-todo tui`
 mst tui --ascii      # plain ASCII instead of Unicode symbols
+mst tui --theme nord # draw with a theme (mst tui --list-themes names them)
 ```
 
 `mst` with no command opens the TUI only when both its input and output are a terminal; from a script, a pipe or an agent it prints help and exits 2, as before. Global flags still work (`mst --instance work`); TUI flags such as `--ascii` need `tui`.
@@ -171,6 +172,23 @@ A title bar with the version and the view you're in, a sidebar of smart views (I
 | `q` | quit |
 
 In the editor, a due date or a reminder takes what `--due` and `--reminder` take (`tomorrow`, `fri 17:30`, `+2w`, `12 oct`), and shows what it resolves to as you type (`→ Fri 2 Oct`, or `, in the past`); empty or `-` clears it, and input it can't read says why and sends nothing. Importance is picked by level: `1` high, `2` or `3` normal, `4` low (or `h`, `n`, `l`), saved at once. Notes are plain text on several lines: notes written as html on another device are shown as text, and only rewritten as text if you change them. A selection holds only tasks in the view on screen: switching views clears it, and a task that leaves the view drops out of it. The Completed view is grouped by the day each task was completed: Today, Yesterday, then `Mon 21 Sep` and so on.
+
+### Themes
+
+The default theme, `terminal`, draws with your terminal's own colours (its ANSI palette, dim and bold), so a Ghostty or iTerm theme carries over. The others are fixed palettes: `catppuccin-mocha`, `catppuccin-latte`, `gruvbox-dark`, `gruvbox-light`, `tokyo-night`, `nord` and `high-contrast`. All of them keep borders and secondary text quiet, mark the selected row with a soft background, and keep colour for what means something: overdue, important, sync state and errors.
+
+Pick one in the TUI with `:` then "Theme…": each theme shows as you move to it, `Enter` keeps it and writes it to `config.toml`, and `Esc` puts the old one back. Or set it yourself:
+
+```toml
+# ~/.config/ms-todo/config.toml
+[tui]
+theme = "catppuccin-mocha"
+
+[tui.colors]           # optional: change single roles
+overdue = "#ff5f5f"    # #rrggbb, an ANSI name (red, bright-blue, dark-gray), 0-255, or reset
+```
+
+The roles are `background`, `text`, `text_dim`, `text_muted`, `border`, `border_focused`, `title`, `selection_bg`, `selection_fg`, `accent`, `overdue`, `due_today`, `important`, `completed`, `sync_pending`, `sync_unknown`, `sync_failed`, `error`, `warning`, `banner_error`, `banner_info`, `search_match`, `cursor` and `header_bar`. `--theme` wins over the file. An unknown theme, role or colour stops the TUI with an error naming it. The fixed palettes need truecolor, which the terminal announces with `COLORTERM=truecolor`; without it they're brought to the nearest of the 256 colours. `NO_COLOR` turns colour off whatever the theme: bold, dim and reverse carry the meaning instead.
 
 Everything the TUI does is also a command, so scripts and agents use the commands. `mst tui --bench-startup` measures the start and a run of keys against your cache and prints the timings; `MS_TODO_TUI_TRACE=<file>` writes every keypress's timing to a file.
 
