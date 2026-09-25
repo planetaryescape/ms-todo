@@ -5,6 +5,8 @@ import { promisify } from "node:util";
 import { z } from "zod";
 
 const execFileAsync = promisify(execFile);
+// Outlast the CLI's 15-second daemon startup and 300-second request stall limits.
+const CLI_TIMEOUT_MS = 330_000;
 
 const taskSchema = z.object({
   id: z.string(),
@@ -129,7 +131,7 @@ async function runCli<T>(
     const { stdout } = await execFileAsync(
       path,
       ["--format", "json", ...args],
-      { timeout: 15_000, maxBuffer: 8 * 1024 * 1024, encoding: "utf8" },
+      { timeout: CLI_TIMEOUT_MS, maxBuffer: 8 * 1024 * 1024, encoding: "utf8" },
     );
     return parseOutput(stdout, schema, responseError);
   } catch (error) {
@@ -137,8 +139,12 @@ async function runCli<T>(
     const failure = execErrorSchema.safeParse(error);
     if (!failure.success) throw new CliError(String(error));
     if (failure.data.killed) {
+      const isWrite =
+        args[0] === "tasks" && (args[1] === "add" || args[1] === "complete");
       throw new CliError(
-        "ms-todo did not respond within 15 seconds. Check the daemon with `ms-todo doctor`.",
+        isWrite
+          ? "ms-todo did not respond within 5½ minutes. The change may still have happened; check tasks and outbox before retrying."
+          : "ms-todo did not respond within 5½ minutes. Check the daemon with `ms-todo doctor`.",
       );
     }
     if (failure.data.code === "ENOENT") {

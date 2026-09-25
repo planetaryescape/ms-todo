@@ -7,7 +7,7 @@ import {
   showToast,
   Toast,
 } from "@raycast/api";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Collection, Task, completeTask, myDay, searchTasks } from "./cli";
 
 type Mode = "search" | "my-day";
@@ -17,10 +17,14 @@ type Preferences = { cliPath?: string };
 export function TaskList({ mode }: { mode: Mode }) {
   const { cliPath } = getPreferenceValues<Preferences>();
   const [query, setQuery] = useState("");
-  const [result, setResult] = useState<Collection>();
+  const [result, setResult] = useState<{
+    query: string;
+    collection: Collection;
+  }>();
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string>();
   const [revision, setRevision] = useState(0);
+  const completing = useRef(new Set<string>());
 
   useEffect(() => {
     if (mode === "search" && !query.trim()) {
@@ -40,7 +44,7 @@ export function TaskList({ mode }: { mode: Mode }) {
         void load
           .then((value) => {
             if (!cancelled) {
-              setResult(value);
+              setResult({ query: query.trim(), collection: value });
               setError(undefined);
             }
           })
@@ -64,6 +68,8 @@ export function TaskList({ mode }: { mode: Mode }) {
 
   const finish = useCallback(
     async (task: Task) => {
+      if (completing.current.has(task.id)) return;
+      completing.current.add(task.id);
       try {
         await completeTask(task.id, cliPath);
         await showToast({
@@ -71,6 +77,7 @@ export function TaskList({ mode }: { mode: Mode }) {
           title: "Task completed",
           message: task.title,
         });
+        setResult(undefined);
         setRevision((value) => value + 1);
       } catch (cause) {
         await showToast({
@@ -78,36 +85,49 @@ export function TaskList({ mode }: { mode: Mode }) {
           title: "Could not complete task",
           message: cause instanceof Error ? cause.message : String(cause),
         });
+      } finally {
+        completing.current.delete(task.id);
       }
     },
     [cliPath],
   );
 
+  const visibleResult =
+    result?.query === query.trim() ? result.collection : undefined;
+  const awaitingResult =
+    mode === "search" && !!query.trim() && !visibleResult && !error;
+
   const emptyTitle =
     error ??
-    (result?.sync.state === "initial"
+    (visibleResult?.sync.state === "initial"
       ? "Initial sync is still running"
       : mode === "search" && !query.trim()
         ? "Type to search cached tasks"
         : "No tasks found");
   const emptyDescription = error
     ? "Check the CLI Path preference, sign-in, and `ms-todo doctor`."
-    : result?.sync.state === "initial"
+    : visibleResult?.sync.state === "initial"
       ? "Refresh after ms-todo finishes its first sync."
       : undefined;
 
   return (
     <List
       filtering={false}
-      isLoading={loading}
+      isLoading={loading || awaitingResult}
       searchBarPlaceholder={
         mode === "search" ? "Search task titles and notes" : undefined
       }
-      onSearchTextChange={mode === "search" ? setQuery : undefined}
-      throttle={mode === "search"}
+      onSearchTextChange={
+        mode === "search"
+          ? (text) => {
+              setQuery(text);
+              setError(undefined);
+            }
+          : undefined
+      }
     >
-      {result?.sync.state !== "initial" &&
-        result?.items.map((task) => (
+      {visibleResult?.sync.state !== "initial" &&
+        visibleResult?.items.map((task) => (
           <List.Item
             key={task.id}
             title={task.title}
@@ -137,7 +157,9 @@ export function TaskList({ mode }: { mode: Mode }) {
           />
         ))}
       {!loading &&
-        (!result?.items.length || result.sync.state === "initial") && (
+        !awaitingResult &&
+        (!visibleResult?.items.length ||
+          visibleResult.sync.state === "initial") && (
           <List.EmptyView
             title={emptyTitle}
             description={emptyDescription}
