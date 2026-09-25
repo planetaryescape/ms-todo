@@ -16,7 +16,15 @@ import {
   completeTask,
   findCli,
   myDay,
-  searchTasks,
+  myDaySuggestions,
+  listTasks,
+  listTaskLists,
+  showTask,
+  editTask,
+  reopenTask,
+  deleteTask,
+  addToMyDay,
+  removeFromMyDay,
 } from "../src/cli";
 
 const directories: string[] = [];
@@ -51,17 +59,17 @@ const ready = {
   items: [task],
 };
 
-test("search reads and validates cached tasks with argv, including special input", async () => {
+test("search loads all cached tasks once for local fuzzy filtering", async () => {
   const cli = fakeCli(JSON.stringify(ready));
-  const result = await searchTasks("milk; $(touch /tmp/bad)", cli.path);
+  const result = await listTasks({ status: "all" }, cli.path);
   assert.equal(result.items[0]?.id, "local-id");
   assert.deepEqual(cli.args(), [
     "--format",
     "json",
-    "search",
-    "milk; $(touch /tmp/bad)",
+    "tasks",
+    "list",
     "--status",
-    "open",
+    "all",
   ]);
 });
 test("My Day preserves initial sync state", async () => {
@@ -149,4 +157,144 @@ test("mutation requires a confirmed action", async () => {
     ),
     /did not confirm/,
   );
+});
+
+test("list browsing and task details use local IDs", async () => {
+  const lists = fakeCli(
+    JSON.stringify({
+      schema_version: 2,
+      sync: ready.sync,
+      items: [{ id: "list-local", displayName: "Home", folder: "Areas" }],
+    }),
+  );
+  assert.equal((await listTaskLists(lists.path)).items[0]?.id, "list-local");
+  assert.deepEqual(lists.args(), ["--format", "json", "lists", "list"]);
+  const tasks = fakeCli(JSON.stringify(ready));
+  await listTasks({ listId: "list-local", status: "all" }, tasks.path);
+  assert.deepEqual(tasks.args(), [
+    "--format",
+    "json",
+    "tasks",
+    "list",
+    "--status",
+    "all",
+    "--list",
+    "list-local",
+  ]);
+  const detail = fakeCli(
+    JSON.stringify({
+      schema_version: 2,
+      ...task,
+      body: { content: "Some notes", contentType: "text" },
+    }),
+  );
+  assert.equal(
+    (await showTask(task.id, detail.path)).body?.content,
+    "Some notes",
+  );
+  assert.deepEqual(detail.args(), [
+    "--format",
+    "json",
+    "tasks",
+    "show",
+    "local-id",
+  ]);
+});
+
+test("core mutations keep values in argv and confirm action", async () => {
+  const edit = fakeCli(
+    JSON.stringify({
+      schema_version: 2,
+      action: "edit",
+      op_id: "op",
+      items: [task],
+    }),
+  );
+  await editTask(
+    task.id,
+    {
+      title: "Buy milk; $(touch /tmp/bad)",
+      due: "tomorrow",
+      importance: "high",
+    },
+    edit.path,
+  );
+  assert.deepEqual(edit.args(), [
+    "--format",
+    "json",
+    "tasks",
+    "edit",
+    "local-id",
+    "--title",
+    "Buy milk; $(touch /tmp/bad)",
+    "--due",
+    "tomorrow",
+    "--importance",
+    "high",
+  ]);
+  const clear = fakeCli(
+    JSON.stringify({
+      schema_version: 2,
+      action: "edit",
+      op_id: "op",
+      items: [task],
+    }),
+  );
+  await editTask(task.id, { due: "-" }, clear.path);
+  assert.deepEqual(clear.args(), [
+    "--format",
+    "json",
+    "tasks",
+    "edit",
+    "local-id",
+    "--clear-due",
+  ]);
+  await assert.rejects(editTask(task.id, {}, edit.path), /at least one change/);
+  for (const [action, command, run] of [
+    ["reopen", ["tasks", "reopen", "local-id"], reopenTask],
+    ["delete", ["tasks", "delete", "local-id", "--yes"], deleteTask],
+    ["my_day_add", ["myday", "add", "local-id"], addToMyDay],
+    ["my_day_remove", ["myday", "remove", "local-id"], removeFromMyDay],
+  ] as const) {
+    const cli = fakeCli(
+      JSON.stringify({ schema_version: 2, action, op_id: "op", items: [task] }),
+    );
+    await run(task.id, cli.path);
+    assert.deepEqual(cli.args(), ["--format", "json", ...command]);
+  }
+});
+
+test("quick add can target a list ID", async () => {
+  const cli = fakeCli(
+    JSON.stringify({
+      schema_version: 2,
+      action: "add",
+      op_id: "op",
+      items: [task],
+    }),
+  );
+  await addTask("Buy milk", cli.path, "list-local");
+  assert.deepEqual(cli.args(), [
+    "--format",
+    "json",
+    "tasks",
+    "add",
+    "Buy milk",
+    "--list",
+    "list-local",
+    "--strict",
+  ]);
+});
+
+test("My Day suggestions retain reason and local ID", async () => {
+  const cli = fakeCli(
+    JSON.stringify({
+      schema_version: 2,
+      sync: ready.sync,
+      items: [{ ...task, suggestion: "due_today" }],
+    }),
+  );
+  const suggestions = await myDaySuggestions(cli.path);
+  assert.equal(suggestions.items[0]?.suggestion, "due_today");
+  assert.deepEqual(cli.args(), ["--format", "json", "myday", "suggest"]);
 });

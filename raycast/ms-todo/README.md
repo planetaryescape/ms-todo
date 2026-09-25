@@ -1,6 +1,6 @@
 # Microsoft To Do via ms-todo
 
-Capture, search, and complete Microsoft To Do tasks from Raycast using the local [ms-todo](https://github.com/planetaryescape/ms-todo) CLI. The extension asks the CLI for cached tasks; the CLI's daemon owns sync and sign-in. This extension does not connect to Microsoft Graph, read the cache directly, or collect analytics.
+Capture and manage Microsoft To Do tasks from Raycast using the local [ms-todo](https://github.com/planetaryescape/ms-todo) CLI. The extension asks the CLI for cached tasks; the CLI's daemon owns sync and sign-in. This extension does not connect to Microsoft Graph, read the cache directly, or collect analytics.
 
 ## Setup
 
@@ -24,9 +24,12 @@ Capture, search, and complete Microsoft To Do tasks from Raycast using the local
 
 ## Commands
 
-- **Quick Add Task** uses [ms-todo quick add syntax](https://github.com/planetaryescape/ms-todo/blob/main/docs/usage.md#quick-add). For example, `Buy milk tomorrow #Groceries`. With no list, ms-todo adds it to Tasks. An unknown explicit `#List` is rejected, so a typo cannot silently file the task in Tasks.
-- **Search Tasks** searches cached open tasks by title or notes. Select **Complete Task** to complete a result.
-- **My Day** shows today's ms-todo My Day and lets you complete an open task. ms-todo's My Day is its own synced view; Microsoft Graph does not expose the To Do app's My Day.
+- **Quick Add Task** uses [ms-todo quick add syntax](https://github.com/planetaryescape/ms-todo/blob/main/docs/usage.md#quick-add), such as `Buy milk tomorrow #Groceries`. With no list, the task goes to Tasks. An unknown explicit `#List` is rejected.
+- **Search Tasks** loads every cached task and uses Raycast's fuzzy filtering over title, list name, and plain-text notes. The status menu shows Open, Completed, or All without another CLI read. This is fuzzy filtering, so Microsoft To Do's full-text query operators are not interpreted here.
+- **Browse Tasks** has smart views for Open, Today, Overdue, Important, and Completed, followed by your named lists. Choose a list by its local ID behind the scenes; duplicate list names stay distinct. Add a task from a named list to file it there directly.
+- **My Day** shows today's ms-todo My Day and suggestions for tasks due today, overdue, or left from an earlier My Day. Add suggestions from the action menu. ms-todo's My Day is its own synced view; Microsoft Graph does not expose the To Do app's My Day.
+
+Open any task for details: status, importance, due date, reminder, notes, My Day membership, and sync state. The action menu can complete or reopen it, edit its title/due date/importance, add or remove it from My Day, or delete it after confirmation. Notes are read-only here because editing them as plain text could remove formatting; use the ms-todo CLI or TUI for notes edits. Changes are applied locally first and may still be pending upstream.
 
 Reads come from the local cache and may lag Microsoft To Do until the daemon syncs. An empty result while initial sync is running is marked as incomplete. Local writes appear immediately and may still be pending upstream; use `ms-todo doctor` or `ms-todo outbox list` to inspect sync problems.
 

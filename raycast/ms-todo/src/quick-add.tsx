@@ -12,7 +12,9 @@ import { addTask } from "./cli";
 
 type Preferences = { cliPath?: string };
 
-export default function QuickAdd() {
+type Props = { listId?: string; listName?: string; onAdded?: () => void };
+
+export default function QuickAdd({ listId, listName, onAdded }: Props = {}) {
   const { cliPath } = getPreferenceValues<Preferences>();
   const [submitting, setSubmitting] = useState(false);
   const [title, setTitle] = useState("");
@@ -24,7 +26,8 @@ export default function QuickAdd() {
     submittingRef.current = true;
     setSubmitting(true);
     try {
-      await addTask(text, cliPath);
+      await addTask(text, cliPath, listId);
+      onAdded?.();
       setTitle("");
       await showToast({
         style: Toast.Style.Success,
@@ -63,7 +66,13 @@ export default function QuickAdd() {
         value={title}
         onChange={setTitle}
       />
-      <Form.Description text="Uses ms-todo quick add syntax. Without a list, the task goes to Tasks." />
+      <Form.Description
+        text={
+          listName
+            ? `Adding to ${listName}. This list overrides any #List in the text.`
+            : "Uses ms-todo quick add syntax. Without a list, the task goes to Tasks."
+        }
+      />
     </Form>
   );
 }
