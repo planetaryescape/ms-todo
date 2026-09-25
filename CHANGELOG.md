@@ -1,5 +1,22 @@
 # Changelog
 
+## [0.1.22](https://github.com/planetaryescape/ms-todo/compare/v0.1.21...v0.1.22) (2026-09-25)
+
+
+### Features
+
+* steps and links in the CLI, daemon and TUI (rung 8a) ([cbe8004](https://github.com/planetaryescape/ms-todo/commit/cbe8004f80d69126235e8059bf7587e15a0538d0))
+
+
+### Bug Fixes
+
+* the step cursor follows the step, not its position ([dc6dc18](https://github.com/planetaryescape/ms-todo/commit/dc6dc189c993cf3eeb8389ffcff2d77767c3cfd4))
+
+
+### Documentation
+
+* rung 8a steps and links in the README, usage, blueprint, S15, D-055 and the skill ([d42177e](https://github.com/planetaryescape/ms-todo/commit/d42177e83c64dfe1a3b2cd5c19dad8457150ab3c))
+
 ## [0.1.21](https://github.com/planetaryescape/ms-todo/compare/v0.1.20...v0.1.21) (2026-09-25)
 
 
