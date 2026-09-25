@@ -46,6 +46,14 @@ pub enum Command {
     /// Tasks in a list
     #[command(subcommand)]
     Tasks(TasksCommand),
+    /// Tasks you're waiting on: every open task with an assignee, grouped
+    /// by person. The same as `tasks list --assignee '*'`, or with PERSON,
+    /// `tasks list --assignee PERSON`
+    Waiting {
+        /// Only this person's (a case-insensitive exact match)
+        #[arg(value_name = "PERSON")]
+        person: Option<String>,
+    },
     /// Plan today: the tasks in My Day, what could go in it, and taking
     /// them in and out. A task with no due date is due today while it's
     /// there, so the To Do app shows it in its own My Day too
@@ -516,12 +524,17 @@ pub enum TasksCommand {
         #[arg(long, value_name = "NAME|ID", conflicts_with = "my_day")]
         list: Option<String>,
         /// Today's My Day instead of a list, as `myday list` gives it
-        #[arg(long, conflicts_with = "search")]
+        #[arg(long, conflicts_with_all = ["search", "assignee"])]
         my_day: bool,
         /// Only tasks whose title or notes match, best match first; the
         /// syntax is `search`'s
         #[arg(long, value_name = "QUERY")]
         search: Option<String>,
+        /// Only tasks assigned to this person (a case-insensitive exact
+        /// match), or to anyone with `*`. Without --list, the open tasks
+        /// of every list, grouped by person
+        #[arg(long, value_name = "PERSON")]
+        assignee: Option<String>,
     },
     /// Add a task, read from text the way you'd say it
     ///
@@ -545,8 +558,9 @@ pub enum TasksCommand {
     Complete(TargetArgs),
     /// Mark completed tasks as not started again
     Reopen(TargetArgs),
-    /// Change a task's title, due date, importance, reminder or notes; or
-    /// the due date, importance or reminder of several tasks at once
+    /// Change a task's title, due date, importance, reminder, notes or
+    /// assignee; or the due date, importance, reminder or assignee of
+    /// several tasks at once
     Edit(EditArgs),
     /// Move tasks to another list, keeping everything they hold: steps,
     /// link, attachments and ms-todo's own fields. Each is copied, the copy
@@ -737,6 +751,14 @@ pub struct AddArgs {
     /// due date, it's due today too
     #[arg(long)]
     pub my_day: bool,
+    /// Who it waits on: a name or an email, only ms-todo sees it and
+    /// nobody is told. The task is made "waiting on others" too, which
+    /// the To Do app shows
+    #[arg(long, value_name = "PERSON")]
+    pub assignee: Option<String>,
+    /// With --assignee: don't make it "waiting on others"
+    #[arg(long, requires = "assignee")]
+    pub keep_status: bool,
     /// Show what would be sent without changing anything
     #[arg(long)]
     pub dry_run: bool,
@@ -799,6 +821,7 @@ pub struct MoveArgs {
 
 #[derive(Debug, Args)]
 #[command(group(ArgGroup::new("selector").args(["overdue", "due_before"])))]
+#[command(group(ArgGroup::new("assignee_change").args(["assignee", "clear_assignee"])))]
 pub struct EditArgs {
     /// The task's ID from `tasks list`, or its exact title when --list is
     /// given. Several change together; `-` reads IDs from stdin, one per line
@@ -850,6 +873,18 @@ pub struct EditArgs {
     /// New notes, as plain text. They replace the old ones
     #[arg(long, value_name = "TEXT")]
     pub body: Option<String>,
+    /// Who it waits on: a name or an email, only ms-todo sees it and
+    /// nobody is told. An open task becomes "waiting on others" too,
+    /// which the To Do app shows
+    #[arg(long, value_name = "PERSON", conflicts_with = "clear_assignee")]
+    pub assignee: Option<String>,
+    /// Remove the assignee. A task ms-todo made "waiting on others" is
+    /// "not started" again, unless its status has changed since
+    #[arg(long)]
+    pub clear_assignee: bool,
+    /// With --assignee or --clear-assignee: leave the status as it is
+    #[arg(long, requires = "assignee_change")]
+    pub keep_status: bool,
     /// Show what would change without changing anything
     #[arg(long)]
     pub dry_run: bool,

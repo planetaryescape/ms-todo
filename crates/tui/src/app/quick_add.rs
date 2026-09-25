@@ -280,6 +280,7 @@ impl App {
                 .map(ms_todo_nlp::Recurrence::to_graph),
             categories: parsed.categories.clone(),
             my_day: parsed.my_day || my_day,
+            ..NewTask::default()
         }
     }
 }

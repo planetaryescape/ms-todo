@@ -23,6 +23,9 @@ pub enum View {
     /// Every open task.
     All,
     Completed,
+    /// Open tasks with an assignee (`assignee` in our extension), grouped
+    /// by person.
+    Assigned,
 }
 
 impl View {
@@ -43,6 +46,9 @@ impl View {
             }
             Self::All => Cow::Borrowed("tasks.status <> 'completed'"),
             Self::Completed => Cow::Borrowed("tasks.status = 'completed'"),
+            Self::Assigned => Cow::Owned(format!(
+                "tasks.status <> 'completed' AND COALESCE(trim({ASSIGNEE}), '') <> ''"
+            )),
         }
     }
 
@@ -60,6 +66,12 @@ impl View {
             Self::Completed => {
                 "tasks.completed_at_utc IS NOT NULL, tasks.completed_at_utc DESC, tasks.rowid DESC"
             }
+            // Each person's tasks together, however their name was typed,
+            // soonest due first.
+            Self::Assigned => {
+                "lower(trim(json_extract(tasks.extension_json, '$.assignee'))), \
+                 tasks.due_date IS NULL, tasks.due_date, tasks.created_at, tasks.rowid"
+            }
         }
     }
 }
@@ -71,6 +83,7 @@ pub struct TaskCounts {
     pub planned: u64,
     pub all: u64,
     pub completed: u64,
+    pub assigned: u64,
     /// Open tasks by list local ID; a list with none is absent.
     pub open_by_list: BTreeMap<String, u64>,
 }
@@ -78,6 +91,9 @@ pub struct TaskCounts {
 /// A task's My Day date, `YYYY-MM-DD` or null: the expression
 /// `tasks_by_my_day` indexes.
 pub(crate) const MY_DAY: &str = "json_extract(tasks.extension_json, '$.myDay')";
+
+/// Who a task waits on, as ms-todo's extension has it, or null.
+const ASSIGNEE: &str = "json_extract(tasks.extension_json, '$.assignee')";
 
 /// Live tasks in live lists.
 pub(crate) const LIVE: &str = "FROM tasks JOIN lists ON lists.local_id = tasks.list_local_id \
@@ -100,13 +116,14 @@ impl Store {
     /// Every view's count and each list's open tasks, in one read.
     pub async fn task_counts(&self) -> Result<TaskCounts, StoreError> {
         let sum = |view: View| format!("COALESCE(SUM({}), 0)", view.condition());
-        let (important, planned, all, completed): (i64, i64, i64, i64) =
+        let (important, planned, all, completed, assigned): (i64, i64, i64, i64, i64) =
             sqlx::query_as(AssertSqlSafe(format!(
-                "SELECT {}, {}, {}, {} {LIVE}",
+                "SELECT {}, {}, {}, {}, {} {LIVE}",
                 sum(View::Important),
                 sum(View::Planned),
                 sum(View::All),
-                sum(View::Completed)
+                sum(View::Completed),
+                sum(View::Assigned)
             )))
             .fetch_one(self.reader())
             .await?;
@@ -122,6 +139,7 @@ impl Store {
             planned: count(planned),
             all: count(all),
             completed: count(completed),
+            assigned: count(assigned),
             open_by_list: by_list
                 .into_iter()
                 .map(|(list, open)| (list, count(open)))

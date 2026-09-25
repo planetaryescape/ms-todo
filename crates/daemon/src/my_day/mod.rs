@@ -17,7 +17,7 @@ mod suggestions;
 use chrono::NaiveDate;
 use ms_todo_core::DATE_FORMAT;
 use ms_todo_protocol::{ErrorPayload, MyDay, Plan, PlannedTask, ResponseData, TaskAction};
-use ms_todo_store::{LISTS_SCOPE, LocalChange, NewOp, OpKind, TaskRow, View};
+use ms_todo_store::{LISTS_SCOPE, NewOp, TaskRow, View};
 use serde_json::{Map, Value, json};
 
 pub(crate) use config::Config;
@@ -29,7 +29,7 @@ use crate::handlers::{State, store_error};
 use crate::outbox::op_id_for;
 use crate::task_fields::{Field, graph_body, graph_due_date, user_time_zone};
 use crate::task_resolution::Target;
-use crate::task_writes::{action_name, queue, update_op};
+use crate::task_writes::{queue, task_extension_op, update_op};
 
 /// The day a task is in My Day for, `YYYY-MM-DD`.
 pub(crate) const MY_DAY: &str = "myDay";
@@ -134,15 +134,7 @@ pub(crate) fn plan_ops(
     plan: &TaskPlan,
     action: TaskAction,
 ) -> Vec<NewOp> {
-    let extension_op = |op_id: String, fields: Map<String, Value>| NewOp {
-        op_id,
-        entity_local_id: row.local_id.clone(),
-        list_local_id: row.list_local_id.clone(),
-        op: OpKind::TaskExtension,
-        action: action_name(action).to_owned(),
-        payload: json!({ "body": Value::Object(fields) }),
-        change: LocalChange::Extension,
-    };
+    let extension_op = |op_id, fields| task_extension_op(op_id, row, fields, action);
     // `myDayDueSet: true` is written last, and only once ms-todo's own
     // due-date edit was made: an edit skipped because the phone set a
     // date meanwhile must never leave the flag on that date (D-054).
@@ -321,6 +313,7 @@ pub(crate) fn new_task_fields(fields: &mut Vec<Field>, today: NaiveDate) -> Map<
 #[cfg(test)]
 mod tests {
     use super::*;
+    use ms_todo_store::OpKind;
 
     fn row(raw: Value, extension: Option<Value>) -> TaskRow {
         TaskRow {

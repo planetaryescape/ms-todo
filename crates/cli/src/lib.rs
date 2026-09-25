@@ -180,9 +180,23 @@ async fn dispatch(command: Command, paths: &Paths, format: OutputFormat) -> Resu
             my_day_commands::list(paths, format).await
         }
         Command::MyDay(command) => my_day_commands::run(paths, command, format).await,
-        Command::Tasks(TasksCommand::List { list, search, .. }) => {
-            let (items, sync) = data_commands::tasks(paths, list, search).await?;
-            print_collection(format, &items, sync, &data_commands::TASKS_TABLE)
+        Command::Tasks(TasksCommand::List {
+            list,
+            search,
+            assignee,
+            ..
+        }) => {
+            let table = match assignee {
+                Some(_) => &data_commands::WAITING_TABLE,
+                None => &data_commands::TASKS_TABLE,
+            };
+            let (items, sync) = data_commands::tasks(paths, list, search, assignee).await?;
+            print_collection(format, &items, sync, table)
+        }
+        Command::Waiting { person } => {
+            let assignee = Some(person.unwrap_or_else(|| "*".to_owned()));
+            let (items, sync) = data_commands::tasks(paths, None, None, assignee).await?;
+            print_collection(format, &items, sync, &data_commands::WAITING_TABLE)
         }
         Command::Steps(command) => child_commands::steps(paths, command, format).await,
         Command::Links(command) => child_commands::links(paths, command, format).await,

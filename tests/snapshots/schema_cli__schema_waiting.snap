@@ -6,25 +6,10 @@ expression: pretty
   "input": {
     "additionalProperties": false,
     "properties": {
-      "assignee": {
-        "description": "Only tasks assigned to this person (a case-insensitive exact match), or to anyone with `*`. Without --list, the open tasks of every list, grouped by person",
+      "person": {
+        "description": "Only this person's (a case-insensitive exact match)",
         "type": "string",
-        "x-cli": "--assignee"
-      },
-      "list": {
-        "description": "The list's exact name or its ID [default: the \"Tasks\" list]",
-        "type": "string",
-        "x-cli": "--list"
-      },
-      "my_day": {
-        "description": "Today's My Day instead of a list, as `myday list` gives it",
-        "type": "boolean",
-        "x-cli": "--my-day"
-      },
-      "search": {
-        "description": "Only tasks whose title or notes match, best match first; the syntax is `search`'s",
-        "type": "string",
-        "x-cli": "--search"
+        "x-cli": "<PERSON>"
       }
     },
     "required": [],
@@ -34,7 +19,7 @@ expression: pretty
     "properties": {
       "items": {
         "items": {
-          "description": "A task: every field Microsoft Graph returns, with `id` replaced",
+          "description": "An open task someone is assigned, grouped by person: the task as `tasks list` gives it, with `list`; `tasks list --assignee` gives the same shape",
           "properties": {
             "attachments": {
               "description": "Its attachments' metadata, as `attachments list` gives it without `index`; absent until a sync has fetched it",
@@ -90,6 +75,10 @@ expression: pretty
             "lastModifiedDateTime": {
               "type": "string"
             },
+            "list": {
+              "description": "The name of the task's list",
+              "type": "string"
+            },
             "list_id": {
               "description": "The local ID of the task's list",
               "type": "string"
@@ -122,7 +111,8 @@ expression: pretty
             "graph_id",
             "sync_state",
             "list_id",
-            "title"
+            "title",
+            "list"
           ],
           "type": "object"
         },

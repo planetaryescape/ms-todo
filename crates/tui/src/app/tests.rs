@@ -51,6 +51,7 @@ pub(crate) fn seed(scope: Scope, tasks: Vec<ms_todo_protocol::Entity>) -> Seed {
             planned: 2,
             all: 3,
             completed: 1,
+            assigned: 0,
             lists: [("home".to_owned(), 3)].into_iter().collect(),
         },
         tasks,
@@ -153,8 +154,8 @@ fn connecting_asks_for_the_default_list_and_the_seed_fills_every_pane() {
         titles(&app),
         ["Pay rent", "Call Sam", "Water plants", "Ship blueprint"]
     );
-    // The sidebar follows: five views, then Tasks, then Home.
-    assert_eq!(app.sidebar_index, 6);
+    // The sidebar follows: six views, then Tasks, then Home.
+    assert_eq!(app.sidebar_index, 7);
     assert_eq!(app.lists.len(), 2);
     assert_eq!(app.counts.all, 3);
 }
@@ -201,7 +202,7 @@ fn h_l_and_tab_move_between_panes() {
 fn moving_in_the_sidebar_seeds_the_new_scope_and_drops_stale_answers() {
     let mut app = seeded();
     act(&mut app, Action::FocusLeft);
-    // From Home (6) up to Tasks, then to Completed.
+    // From Home (7) up to Tasks, then to Completed.
     let first = act(&mut app, Action::MoveUp);
     let second = act(&mut app, Action::MoveUp);
     assert_eq!(
@@ -226,7 +227,7 @@ fn moving_in_the_sidebar_seeds_the_new_scope_and_drops_stale_answers() {
     answer_seed(&mut app, &second[0], seed(Scope::Completed, done));
     assert_eq!(app.shown, Some(Scope::Completed));
     assert_eq!(titles(&app), ["Ship blueprint"]);
-    assert_eq!(app.sidebar_index, 4);
+    assert_eq!(app.sidebar_index, 5);
     // At the top, another k asks for nothing.
     act(&mut app, Action::JumpTop);
     assert!(act(&mut app, Action::MoveUp).is_empty());
@@ -789,6 +790,7 @@ fn the_views_are_read_ahead_and_a_scope_seen_before_paints_at_once() {
             Some(Scope::Important),
             Some(Scope::Planned),
             Some(Scope::All),
+            Some(Scope::Assigned),
             Some(Scope::Completed)
         ]
     );
@@ -798,7 +800,7 @@ fn the_views_are_read_ahead_and_a_scope_seen_before_paints_at_once() {
         json!({ "status": "completed" }),
     )];
     app.update(Msg::Response {
-        tag: prefetches[3].tag,
+        tag: prefetches[5].tag,
         result: Ok(ResponseData::Seed(seed(Scope::Completed, done))),
     });
     // Read ahead, not drawn.

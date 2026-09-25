@@ -11,12 +11,13 @@
 
 use ms_todo_core::DATE_FORMAT;
 use ms_todo_protocol::{
-    Applied, ErrorPayload, NewTask, Plan, PlannedTask, ResponseData, TaskAction, TaskChange,
-    TaskSelect,
+    Applied, Clearable, ErrorPayload, NewTask, Plan, PlannedTask, ResponseData, TaskAction,
+    TaskChange, TaskEdit, TaskSelect,
 };
 use ms_todo_store::{Entity, LISTS_SCOPE, LocalChange, NewOp, OpKind, TaskRow, apply_body};
 use serde_json::{Map, Value, json};
 
+use crate::assignment;
 use crate::entities::{EXTENSION_NAME, task_entity};
 use crate::freshness::ensure_ready;
 use crate::handlers::{State, error_payload, store_error};
@@ -34,18 +35,23 @@ pub(crate) async fn add_task(
     op_id: String,
 ) -> Result<ResponseData, ErrorPayload> {
     let mut fields = new_task_fields(&task)?;
-    // My Day's fields go in the create's own extension, so the task is
-    // made in My Day with nothing more to send.
-    let my_day = task
+    // My Day's and the assignee's fields go in the create's own
+    // extension, so the task is made with them and nothing more to send.
+    let mut ours = task
         .my_day
         .then(|| crate::my_day::new_task_fields(&mut fields, state.my_day.today()));
+    if let Some(name) = &task.assignee {
+        let name = assignment::clean(name)?;
+        let assigned = assignment::new_task_fields(&name, task.keep_status, &mut fields);
+        ours.get_or_insert_default().extend(assigned);
+    }
     ensure_ready(state, LISTS_SCOPE).await?;
     let lists = state.store.lists().await.map_err(store_error)?;
     let list = resolve_list(&lists, task.list.as_deref())?;
     let mut body = graph_body(&fields, &user_time_zone());
     if dry_run {
-        if let Some(my_day) = my_day {
-            body["extensions"] = json!([my_day]);
+        if let Some(ours) = ours {
+            body["extensions"] = json!([ours]);
         }
         return Ok(ResponseData::Plan(Plan {
             action: TaskAction::Add,
@@ -56,8 +62,8 @@ pub(crate) async fn add_task(
         }));
     }
     let mut extension = our_extension(&op_id, None);
-    if let (Some(my_day), Some(extension)) = (my_day, extension.as_object_mut()) {
-        extension.extend(my_day);
+    if let (Some(ours), Some(extension)) = (ours, extension.as_object_mut()) {
+        extension.extend(ours);
     }
     body["extensions"] = json!([extension]);
     let op = NewOp {
@@ -90,10 +96,14 @@ pub(crate) async fn change_tasks(
     dry_run: bool,
     op_id: String,
 ) -> Result<ResponseData, ErrorPayload> {
+    let mut assign = None;
     let (action, fields) = match change {
         TaskChange::Complete => (TaskAction::Complete, vec![Field::Status("completed")]),
         TaskChange::Reopen => (TaskAction::Reopen, vec![Field::Status("notStarted")]),
-        TaskChange::Edit(edit) => (TaskAction::Edit, edit_fields(&edit)?),
+        TaskChange::Edit(edit) => {
+            assign = assignee_change(&edit)?;
+            (TaskAction::Edit, edit_fields(&edit)?)
+        }
         TaskChange::Delete => (TaskAction::Delete, Vec::new()),
         TaskChange::Move { to } => return move_tasks(state, &targets, &to, dry_run, op_id).await,
         TaskChange::AddToMyDay => {
@@ -136,12 +146,23 @@ pub(crate) async fn change_tasks(
                 .into(),
         ));
     }
-    let changes = if action == TaskAction::Delete {
+    let mut changes = if action == TaskAction::Delete {
         Value::Null
     } else {
         graph_body(&fields, &user_time_zone())
     };
+    // Each task's assignment, planned from the task as it is now.
+    let plans: Vec<Option<assignment::TaskPlan>> = targets
+        .iter()
+        .map(|target| {
+            let (change, keep_status) = assign.as_ref()?;
+            assignment::plan(&target.row, change, *keep_status)
+        })
+        .collect();
     if dry_run {
+        if let Some(changes) = changes.as_object_mut() {
+            changes.extend(assignment::dry_run_changes(plans.iter().flatten()));
+        }
         return Ok(ResponseData::Plan(Plan {
             action,
             list: None,
@@ -157,20 +178,32 @@ pub(crate) async fn change_tasks(
             changes,
         }));
     }
-    let ops = targets
-        .iter()
-        .enumerate()
-        .map(|(index, target)| {
-            let op_id = op_id_for(&op_id, index);
-            let row = &target.row;
-            if action == TaskAction::Delete {
-                delete_op(op_id, row, action)
-            } else {
-                update_op(op_id, row, &changes, action)
-            }
-        })
-        .collect();
+    let mut ops = Vec::new();
+    for (target, plan) in targets.iter().zip(&plans) {
+        let row = &target.row;
+        let id = op_id_for(&op_id, ops.len());
+        if action == TaskAction::Delete {
+            ops.push(delete_op(id, row, action));
+        } else if !fields.is_empty() {
+            ops.push(update_op(id, row, &changes, action));
+        }
+        if let Some(plan) = plan {
+            let mut more = assignment::plan_ops(&op_id, ops.len(), row, plan, action);
+            ops.append(&mut more);
+        }
+    }
     queue(state, &op_id, None, ops, action).await
+}
+
+/// An edit's assignee change, the name checked, and whether it keeps the
+/// status.
+fn assignee_change(edit: &TaskEdit) -> Result<Option<(Clearable<String>, bool)>, ErrorPayload> {
+    let change = match &edit.assignee {
+        None => return Ok(None),
+        Some(Clearable::Set(name)) => Clearable::Set(assignment::clean(name)?),
+        Some(Clearable::Clear) => Clearable::Clear,
+    };
+    Ok(Some((change, edit.keep_status)))
 }
 
 /// `tasks move`: one move operation per task, all under `op_id`. Each task
@@ -321,6 +354,25 @@ pub(crate) fn update_op(op_id: String, row: &TaskRow, body: &Value, action: Task
         action: action_name(action).to_owned(),
         payload,
         change: LocalChange::Update,
+    }
+}
+
+/// A write of `fields` over `row`'s extension (My Day, assignment),
+/// applied to the cache at once.
+pub(crate) fn task_extension_op(
+    op_id: String,
+    row: &TaskRow,
+    fields: Map<String, Value>,
+    action: TaskAction,
+) -> NewOp {
+    NewOp {
+        op_id,
+        entity_local_id: row.local_id.clone(),
+        list_local_id: row.list_local_id.clone(),
+        op: OpKind::TaskExtension,
+        action: action_name(action).to_owned(),
+        payload: json!({ "body": Value::Object(fields) }),
+        change: LocalChange::Extension,
     }
 }
 

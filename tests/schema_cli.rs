@@ -49,6 +49,7 @@ const COMMANDS: &[&str] = &[
     "attachments add",
     "attachments download",
     "attachments delete",
+    "waiting",
     "myday list",
     "myday add",
     "myday remove",

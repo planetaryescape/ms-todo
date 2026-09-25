@@ -175,6 +175,7 @@ pub const BINDINGS: &[Binding] = &[
     bind(TASKS, "y", Action::CopyLink, "Copy link", true),
     bind(TASKS, "t", Action::ToggleMyDay, "My Day", true),
     bind(TASKS, "A", Action::Attach, "Attach a file\u{2026}", false),
+    bind(TASKS, "W", Action::Assign, "Assign to\u{2026}", false),
     bind(&[Context::Prompt], "Enter", Action::Submit, "Done", true),
     bind(ADDING, "Enter", Action::Submit, "Add", true),
     bind(ADDING, "Tab", Action::Complete, "Complete", true),
@@ -216,6 +217,13 @@ pub const BINDINGS: &[Binding] = &[
         "i",
         Action::EditField(Field::Importance),
         "Set importance",
+        false,
+    ),
+    bind(
+        FIELDS,
+        "a",
+        Action::EditField(Field::Assignee),
+        "Edit assignee",
         false,
     ),
     bind(

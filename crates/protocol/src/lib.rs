@@ -41,8 +41,11 @@ use serde_json::{Map, Value};
 /// them refused as unknown. 14: attachments (rung 8b):
 /// `TaskChange::AddAttachments` and `DeleteAttachments`, their
 /// `TaskAction`s, and `DownloadAttachments`, so a client restarts an older
-/// daemon rather than have them refused as unknown.
-pub const PROTOCOL_VERSION: u32 = 14;
+/// daemon rather than have them refused as unknown. 15: assignment (rung
+/// 8d): `NewTask.assignee`, `TaskEdit.assignee`, `ListTasks.assignee`,
+/// `Scope::Assigned` and `Counts.assigned`, so an older daemon never
+/// drops an assignee it doesn't know and makes the change without it.
+pub const PROTOCOL_VERSION: u32 = 15;
 
 /// The socket buffer both ends ask for: room for a large list's `Seed` in
 /// one write. macOS gives a Unix socket 8 KiB, so a 350 KiB seed crossed
@@ -112,6 +115,12 @@ pub enum Request {
         /// first.
         #[serde(default)]
         search: Option<String>,
+        /// Only tasks assigned to this person (a case-insensitive exact
+        /// match), or to anyone for `*`. With no `list`, it's the open
+        /// tasks of every list, grouped by person, as the Assigned view
+        /// has them, each with `list`, its list's name.
+        #[serde(default)]
+        assignee: Option<String>,
     },
     /// Tasks whose title or notes match `query`, best match first, from the
     /// cache. `query` is FTS5's syntax: words (all must match), `"phrases"`,
@@ -458,6 +467,8 @@ pub enum Scope {
     All,
     /// Every completed task, most recently completed first.
     Completed,
+    /// Open tasks with an assignee, grouped by person.
+    Assigned,
     /// One list's tasks, open and completed, by its local ID or name.
     List { id: String },
     #[serde(other)]
@@ -509,6 +520,9 @@ pub struct Counts {
     pub planned: u64,
     pub all: u64,
     pub completed: u64,
+    /// Open tasks with an assignee.
+    #[serde(default)]
+    pub assigned: u64,
     /// Open tasks by list local ID; a list with none is absent.
     #[serde(default)]
     pub lists: std::collections::BTreeMap<String, u64>,
@@ -840,6 +854,14 @@ pub struct NewTask {
     /// the phone shows it in its own My Day (D-037).
     #[serde(default)]
     pub my_day: bool,
+    /// Who the task waits on: ms-todo's `assignee` (free text or an
+    /// email), which means nothing to Microsoft To Do. Unless
+    /// `keep_status`, the task is made `waitingOnOthers` too.
+    #[serde(default)]
+    pub assignee: Option<String>,
+    /// With `assignee`: leave the status as it would be.
+    #[serde(default)]
+    pub keep_status: bool,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -969,6 +991,14 @@ pub struct TaskEdit {
     pub reminder: Option<Clearable<String>>,
     #[serde(default)]
     pub body: Option<String>,
+    /// Who the task waits on (`NewTask.assignee`). Setting one makes an
+    /// open task `waitingOnOthers`; clearing it makes a task ms-todo made
+    /// `waitingOnOthers` `notStarted` again, unless its status has
+    /// changed since. `keep_status` leaves the status alone either way.
+    #[serde(default)]
+    pub assignee: Option<Clearable<String>>,
+    #[serde(default)]
+    pub keep_status: bool,
 }
 
 /// A field an edit either sets or clears.

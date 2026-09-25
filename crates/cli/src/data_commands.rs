@@ -65,6 +65,24 @@ pub const TASKS_TABLE: Table = Table {
     bold_matches: None,
 };
 
+/// Tasks by who they wait on, as `waiting` and `tasks list --assignee`
+/// give them: each person's together, in the daemon's order.
+pub const WAITING_TABLE: Table = Table {
+    headings: &["DONE", "WAITING ON", "DUE", "LIST", "TITLE"],
+    row: |task| {
+        vec![
+            done(task),
+            csv_columns::assignee(task).to_owned(),
+            csv_columns::local_due(task),
+            text(task, "list").to_owned(),
+            text(task, "title").to_owned(),
+        ]
+    },
+    csv_headings: csv_columns::ASSIGNED_COLUMNS,
+    csv_row: csv_columns::assigned_row,
+    bold_matches: None,
+};
+
 pub const SEARCH_TABLE: Table = Table {
     headings: &["DONE", "DUE", "LIST", "TITLE", "MATCH"],
     row: |task| {
@@ -100,8 +118,22 @@ pub async fn tasks(
     paths: &Paths,
     list: Option<String>,
     search: Option<String>,
+    assignee: Option<String>,
 ) -> Result<(Vec<Entity>, SyncInfo), CliError> {
-    let request = Request::ListTasks { list, search };
+    if assignee
+        .as_deref()
+        .is_some_and(|name| name.trim().is_empty())
+    {
+        return Err(CliError::message(
+            ErrorKind::InvalidInput,
+            "--assignee needs a name, or `*` for anyone".into(),
+        ));
+    }
+    let request = Request::ListTasks {
+        list,
+        search,
+        assignee,
+    };
     match daemon_client::ask(paths, request).await? {
         ResponseData::Tasks { items, sync } => Ok((items, sync)),
         _ => Err(crate::unexpected_response()),

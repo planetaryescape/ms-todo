@@ -39,6 +39,17 @@ pub const DONE_COLUMNS: &[&str] = &[
     "sync_state",
 ];
 
+/// A task someone is assigned: who, what, and where it is.
+pub const ASSIGNED_COLUMNS: &[&str] = &[
+    "id",
+    "title",
+    "assignee",
+    "list",
+    "status",
+    "due",
+    "sync_state",
+];
+
 /// A My Day suggestion: the task, why, and where it is.
 pub const SUGGESTION_COLUMNS: &[&str] = &["id", "title", "list", "suggestion", "due", "left_from"];
 
@@ -97,6 +108,26 @@ pub fn done_row(task: &Entity) -> Vec<String> {
         text(task, "importance").to_owned(),
         text(task, "sync_state").to_owned(),
     ]
+}
+
+pub fn assigned_row(task: &Entity) -> Vec<String> {
+    vec![
+        text(task, "id").to_owned(),
+        text(task, "title").to_owned(),
+        assignee(task).to_owned(),
+        text(task, "list").to_owned(),
+        text(task, "status").to_owned(),
+        local_due(task),
+        text(task, "sync_state").to_owned(),
+    ]
+}
+
+/// Who the task waits on: `assignee` in ms-todo's extension, or empty.
+pub fn assignee(task: &Entity) -> &str {
+    task.get("extensions")
+        .and_then(|extensions| extensions.get(0)?.get("assignee")?.as_str())
+        .unwrap_or_default()
+        .trim()
 }
 
 pub fn suggestion_row(task: &Entity) -> Vec<String> {

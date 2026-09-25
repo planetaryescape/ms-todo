@@ -260,7 +260,7 @@ pub(crate) mod tests {
     fn folders_group_their_lists_with_a_total_before_the_lists_in_none() {
         let app = foldered();
         assert_eq!(
-            rows(&app)[5..],
+            rows(&app)[6..],
             [
                 "[-Areas 5]",
                 "  Home",
@@ -285,7 +285,7 @@ pub(crate) mod tests {
 
         assert!(act(&mut app, Action::Open).is_empty());
         assert_eq!(
-            rows(&app)[5..],
+            rows(&app)[6..],
             ["[+Areas 5]", "[-Projects 4]", "  Launch", "Tasks"]
         );
         assert!(matches!(cursor(&app), Some(Entry::Folder { name, .. }) if name == "Areas"));
@@ -298,7 +298,7 @@ pub(crate) mod tests {
         assert!(matches!(cursor(&app), Some(Entry::Folder { name, .. }) if name == "Areas"));
 
         act(&mut app, Action::Open);
-        assert_eq!(rows(&app).len(), 11);
+        assert_eq!(rows(&app).len(), 12);
         // Down onto a list opens it.
         let effects = act(&mut app, Action::MoveDown);
         assert_eq!(effects.len(), 1);
@@ -324,7 +324,7 @@ pub(crate) mod tests {
         let mut moved = foldered_seed();
         moved.lists.swap(0, 1);
         answer_seed(&mut app, &opened[0], moved);
-        assert_eq!(rows(&app)[6..8], ["  Finances", "  Home"]);
+        assert_eq!(rows(&app)[7..9], ["  Finances", "  Home"]);
         assert!(matches!(cursor(&app), Some(Entry::List { id, .. }) if id == "home"));
     }
 
@@ -389,7 +389,7 @@ pub(crate) mod tests {
             })),
         });
         assert_eq!(
-            rows(&app)[5..],
+            rows(&app)[6..],
             [
                 "[-Areas 2]",
                 "  Finances",

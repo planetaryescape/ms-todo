@@ -55,6 +55,8 @@ pub struct Task {
     pub list_id: String,
     pub title: String,
     pub completed: bool,
+    /// Graph's `waitingOnOthers`, which an assignee pairs with.
+    pub waiting: bool,
     pub importance: Importance,
     /// Local date (S11).
     pub due: Option<NaiveDate>,
@@ -86,6 +88,8 @@ pub struct Task {
     /// Why My Day suggests it, when it's one of the My Day view's
     /// suggestions: `due_today`, `overdue` or `left_over`.
     pub suggestion: Option<String>,
+    /// Who it waits on (`assignee` in our extension), on one line.
+    pub assignee: Option<String>,
 }
 
 impl Task {
@@ -142,6 +146,7 @@ impl Task {
             list_id: text("list_id").unwrap_or_default().to_owned(),
             title: text("title").unwrap_or_default().to_owned(),
             completed: text("status") == Some("completed"),
+            waiting: text("status") == Some("waitingOnOthers"),
             importance: match text("importance") {
                 Some("high") => Importance::High,
                 Some("low") => Importance::Low,
@@ -184,6 +189,11 @@ impl Task {
                 .and_then(|extensions| extensions.get(0)?.get("myDay")?.as_str())
                 .and_then(|day| NaiveDate::parse_from_str(day, ms_todo_core::DATE_FORMAT).ok()),
             suggestion: text("suggestion").map(str::to_owned),
+            assignee: entity
+                .get("extensions")
+                .and_then(|extensions| extensions.get(0)?.get("assignee")?.as_str())
+                .map(|name| ms_todo_core::one_line_safe(name.trim()))
+                .filter(|name| !name.is_empty()),
         })
     }
 }

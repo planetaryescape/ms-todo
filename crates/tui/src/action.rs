@@ -91,4 +91,6 @@ pub enum Action {
     ToggleStep,
     /// `A`: attach a file to the task, by its path.
     Attach,
+    /// `W`: who the selection, or the task under the cursor, waits on.
+    Assign,
 }

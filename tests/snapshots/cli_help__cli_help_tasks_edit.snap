@@ -2,7 +2,7 @@
 source: tests/cli_help.rs
 expression: help_output(args)
 ---
-Change a task's title, due date, importance, reminder or notes; or the due date, importance or reminder of several tasks at once
+Change a task's title, due date, importance, reminder, notes or assignee; or the due date, importance, reminder or assignee of several tasks at once
 
 Usage: ms-todo tasks edit [OPTIONS] [TASK]...
 
@@ -23,6 +23,9 @@ Options:
       --reminder <WHEN>        Remind me at this local time, in the forms --reminder takes on `tasks add`; empty or `-` turns it off
       --clear-reminder         Turn the reminder off
       --body <TEXT>            New notes, as plain text. They replace the old ones
+      --assignee <PERSON>      Who it waits on: a name or an email, only ms-todo sees it and nobody is told. An open task becomes "waiting on others" too, which the To Do app shows
+      --clear-assignee         Remove the assignee. A task ms-todo made "waiting on others" is "not started" again, unless its status has changed since
+      --keep-status            With --assignee or --clear-assignee: leave the status as it is
       --dry-run                Show what would change without changing anything
       --yes                    Change several tasks without asking. Off a terminal, changing more than one needs it
       --idempotency-key <KEY>  Run this change at most once: repeating the command with the same key returns the first result for 24 hours, and the same key with a different change exits 2

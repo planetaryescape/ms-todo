@@ -224,6 +224,8 @@ fn merge(
         recurrence: parsed.recurrence.as_ref().map(Recurrence::to_graph),
         categories: parsed.categories.clone(),
         my_day: parsed.my_day || args.my_day,
+        assignee: args.assignee.clone(),
+        keep_status: args.keep_status,
     };
     Ok((task, notes))
 }

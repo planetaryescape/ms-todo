@@ -53,6 +53,7 @@ pub fn output_schema(command: &str) -> Option<Value> {
         ),
         "lists list" => collection(list_entity()),
         "tasks list" | "myday list" => collection(task_entity()),
+        "waiting" => collection(waiting_result()),
         "myday suggest" => collection(suggestion()),
         "myday add" | "myday remove" | "myday rollover" => json!({ "oneOf": [applied(), plan()] }),
         "search" => collection(search_result()),
@@ -369,8 +370,7 @@ fn task_entity() -> Value {
     properties["list_id"] =
         json!({ "type": "string", "description": "The local ID of the task's list" });
     properties["title"] = json!({ "type": "string" });
-    properties["status"] =
-        json!({ "type": "string", "description": "notStarted or completed, among Graph's values" });
+    properties["status"] = json!({ "type": "string", "description": "notStarted, waitingOnOthers or completed, among Graph's values" });
     properties["importance"] = json!({ "enum": ["low", "normal", "high"] });
     properties["dueDateTime"] =
         json!({ "type": "object", "description": "Graph's dateTimeTimeZone; a date only" });
@@ -409,6 +409,20 @@ fn search_result() -> Value {
         .extend([json!("list"), json!("snippet")]);
     schema["description"] = json!(
         "A task that matched, best match first: the task as `tasks list` gives it, with `list` and `snippet`"
+    );
+    schema
+}
+
+fn waiting_result() -> Value {
+    let mut schema = task_entity();
+    schema["properties"]["list"] =
+        json!({ "type": "string", "description": "The name of the task's list" });
+    schema["required"]
+        .as_array_mut()
+        .expect("task_entity lists required keys")
+        .push(json!("list"));
+    schema["description"] = json!(
+        "An open task someone is assigned, grouped by person: the task as `tasks list` gives it, with `list`; `tasks list --assignee` gives the same shape"
     );
     schema
 }

@@ -42,15 +42,15 @@ fn the_selected_row_is_highlighted_in_the_focused_pane_only() {
     terminal
         .draw(|frame| super::draw(frame, &app))
         .expect("draw");
-    // Under the title bar, Home is the sidebar's seventh row; "Pay rent"
+    // Under the title bar, Home is the sidebar's eighth row; "Pay rent"
     // the list's first.
-    assert!(!selected(&terminal, &app, 2, 8));
+    assert!(!selected(&terminal, &app, 2, 9));
     assert!(selected(&terminal, &app, 26, 2));
     app.focus = Pane::Sidebar;
     terminal
         .draw(|frame| super::draw(frame, &app))
         .expect("draw");
-    assert!(selected(&terminal, &app, 2, 8));
+    assert!(selected(&terminal, &app, 2, 9));
     assert!(!selected(&terminal, &app, 26, 2));
 }
 
@@ -859,4 +859,45 @@ fn attachments_in_the_row_and_the_detail_pane() {
         .draw(|frame| super::draw(frame, &app))
         .expect("draw");
     insta::assert_snapshot!(format!("{browsing}\n{}", terminal.backend()));
+}
+
+/// The Assigned view (rung 8d): each person's open tasks under their
+/// name, a person chip on each row, the detail pane's Assignee and
+/// "waiting on others".
+#[test]
+fn assigned_is_grouped_by_person_with_a_chip() {
+    let mut app = seeded();
+    app.focus = Pane::Sidebar;
+    let at = app
+        .entries()
+        .iter()
+        .position(|entry| entry.scope() == Some(Scope::Assigned))
+        .expect("the Assigned view");
+    app.sidebar_index = at;
+    let effects = app.update(Msg::Event(ms_todo_protocol::Event::ResyncNeeded));
+    let waiting = |who: &str| json!({ "status": "waitingOnOthers", "extensions": [{ "assignee": who, "assigneeStatusSet": true }] });
+    let mut seeded_view = seed(
+        Scope::Assigned,
+        vec![
+            task("a1", "Chase the invoice", waiting("ada@example.com")),
+            task("s1", "Get the quote", waiting("Sam")),
+            task("s2", "Return the ladder", waiting("sam")),
+        ],
+    );
+    seeded_view.counts.assigned = 3;
+    answer_seed(&mut app, &effects[0], seeded_view);
+    app.focus = Pane::Tasks;
+    app.task_index = 1;
+    insta::assert_snapshot!(render(&app));
+}
+
+#[test]
+fn assign_to_asks_for_a_name_for_the_selection() {
+    let mut app = seeded();
+    app.mode = Mode::Assigning {
+        ids: vec!["t1".into(), "t2".into()],
+        what: "2 tasks".into(),
+        input: crate::app::line_editor::LineEditor::single("Sam"),
+    };
+    insta::assert_snapshot!(render(&app));
 }

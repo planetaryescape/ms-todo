@@ -108,6 +108,14 @@ pub fn draw(frame: &mut Frame, area: Rect, app: &App) {
             spans.extend(hint_spans(Context::Prompt));
             Line::from(spans)
         }
+        // Who several tasks wait on: what's typed, then what empty does.
+        Mode::Assigning { what, input, .. } => {
+            let mut spans = vec![Span::styled(format!(" Assign {what} to: "), theme.accent)];
+            spans.extend(typed(input));
+            spans.extend(hint_spans(Context::Prompt));
+            spans.push(Span::styled(" Enter on empty: no one ", theme.text_dim));
+            Line::from(spans)
+        }
         Mode::ChoosingImportance { .. } => {
             let mut spans = vec![Span::styled(" importance: ", theme.accent)];
             spans.extend(hint_spans(Context::Importance));

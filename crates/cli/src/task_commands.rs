@@ -36,6 +36,8 @@ pub async fn add(paths: &Paths, args: AddArgs, format: OutputFormat) -> Result<(
             importance: args.importance,
             body: args.body.clone(),
             my_day: args.my_day,
+            assignee: args.assignee.clone(),
+            keep_status: args.keep_status,
             ..NewTask::default()
         }
     } else {
@@ -84,6 +86,8 @@ pub async fn edit(paths: &Paths, args: EditArgs, format: OutputFormat) -> Result
         importance: args.importance,
         reminder: clearable(args.reminder, args.clear_reminder),
         body: args.body,
+        assignee: clearable(args.assignee.map(Clearable::Set), args.clear_assignee),
+        keep_status: args.keep_status,
     };
     let (tasks, from_stdin) = expand_stdin(args.task)?;
     let bulk = Bulk {

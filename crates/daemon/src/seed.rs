@@ -89,6 +89,7 @@ pub(crate) async fn seed(
             planned: counts.planned,
             all: counts.all,
             completed: counts.completed,
+            assigned: counts.assigned,
             lists: counts.open_by_list,
         },
         tasks: rows.iter().map(task_entity).collect(),
@@ -106,6 +107,7 @@ fn view_of(scope: &Scope, today: NaiveDate) -> Option<View> {
         Scope::Planned => Some(View::Planned),
         Scope::All => Some(View::All),
         Scope::Completed => Some(View::Completed),
+        Scope::Assigned => Some(View::Assigned),
         Scope::List { .. } | Scope::Unknown => None,
     }
 }

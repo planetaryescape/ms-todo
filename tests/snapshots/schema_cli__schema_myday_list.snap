@@ -80,7 +80,7 @@ expression: pretty
               "type": "object"
             },
             "status": {
-              "description": "notStarted or completed, among Graph's values",
+              "description": "notStarted, waitingOnOthers or completed, among Graph's values",
               "type": "string"
             },
             "sync_state": {

@@ -21,6 +21,12 @@ fn task(id: &str, extra: Value) -> SeenTask {
     }
 }
 
+/// `seen` with ms-todo's extension naming who it waits on.
+fn assigned(mut seen: SeenTask, who: &str) -> SeenTask {
+    seen.hydration = Hydration::Fetched(Some(json!({ "assignee": who })));
+    seen
+}
+
 fn due(date: &str) -> Value {
     json!({ "dateTime": format!("{date}T00:00:00.0000000"), "timeZone": "Europe/London" })
 }
@@ -57,16 +63,23 @@ async fn filled() -> (tempfile::TempDir, Store, String, String) {
             "L1",
             &home,
             vec![
-                task("T1", json!({ "importance": "high" })),
-                task("T2", json!({ "dueDateTime": due("2026-10-02") })),
+                assigned(task("T1", json!({ "importance": "high" })), "sam"),
+                // Blank is nobody.
+                assigned(
+                    task("T2", json!({ "dueDateTime": due("2026-10-02") })),
+                    "  ",
+                ),
                 task(
                     "T3",
                     json!({ "dueDateTime": due("2026-09-30"), "importance": "high" }),
                 ),
-                task(
-                    "T4",
-                    json!({ "status": "completed",
-                            "completedDateTime": { "dateTime": "2026-09-20T09:00:00.0000000", "timeZone": "UTC" } }),
+                assigned(
+                    task(
+                        "T4",
+                        json!({ "status": "completed",
+                                "completedDateTime": { "dateTime": "2026-09-20T09:00:00.0000000", "timeZone": "UTC" } }),
+                    ),
+                    "Sam",
                 ),
                 task(
                     "T5",
@@ -79,7 +92,7 @@ async fn filled() -> (tempfile::TempDir, Store, String, String) {
             "L2",
             &work,
             vec![
-                task("T6", json!({})),
+                assigned(task("T6", json!({})), "Ada"),
                 // Completed here, not yet answered by Graph: no date.
                 task("T7", json!({ "status": "completed" })),
             ],
@@ -121,6 +134,8 @@ async fn each_view_holds_its_tasks_in_its_order() {
     assert_eq!(titles(&store, View::All).await, ["T1", "T2", "T3", "T6"]);
     // Most recently completed first; one with no date yet is newest.
     assert_eq!(titles(&store, View::Completed).await, ["T7", "T5", "T4"]);
+    // Open and assigned, by person whatever the case; blank is nobody.
+    assert_eq!(titles(&store, View::Assigned).await, ["T6", "T1"]);
 }
 
 #[tokio::test]
@@ -132,9 +147,10 @@ async fn counts_cover_every_view_and_each_lists_open_tasks() {
             counts.important,
             counts.planned,
             counts.all,
-            counts.completed
+            counts.completed,
+            counts.assigned
         ),
-        (2, 2, 4, 3)
+        (2, 2, 4, 3, 2)
     );
     assert_eq!(counts.open_by_list.get(&home), Some(&3));
     assert_eq!(counts.open_by_list.get(&work), Some(&1));

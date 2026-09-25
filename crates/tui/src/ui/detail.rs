@@ -98,7 +98,14 @@ pub fn draw(frame: &mut Frame, area: Rect, app: &App) {
     lines.push(Line::default());
     lines.push(field(
         "Status",
-        if task.completed { "completed" } else { "open" }.into(),
+        if task.completed {
+            "completed"
+        } else if task.waiting {
+            "waiting on others"
+        } else {
+            "open"
+        }
+        .into(),
     ));
     if let Some(name) = app.list_name(&task.list_id) {
         lines.push(field("List", name.to_owned()));
@@ -113,6 +120,12 @@ pub fn draw(frame: &mut Frame, area: Rect, app: &App) {
     lines.extend(editable(
         Field::Importance,
         vec![Span::raw(importance_name(task.importance))],
+    ));
+    lines.extend(editable(
+        Field::Assignee,
+        vec![task.assignee.as_ref().map_or_else(none, |name| {
+            Span::styled(format!("{} {name}", app.glyphs.assigned), theme.accent)
+        })],
     ));
     if let Some(recurrence) = &task.recurrence {
         lines.push(field("Repeats", recurrence.clone()));

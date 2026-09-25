@@ -1,5 +1,5 @@
 //! Sending a write of our extension (docs/blueprint/05-custom-features.md):
-//! a list's (folders) or a task's (My Day). Graph replaces an open
+//! a list's (folders) or a task's (My Day, assignment). Graph replaces an open
 //! extension on PATCH (S2), so the worker GETs the extension as Graph has
 //! it now, puts the operation's fields over it and writes the whole
 //! document back. An entity without our extension gets it by POST, which
@@ -68,7 +68,7 @@ pub(super) async fn send(
     Ok(Attempt::ExtensionWritten(cached(data)))
 }
 
-/// A My Day write on the task `task_graph_id`. Graph's task is read again
+/// A My Day or assignment write on the task `task_graph_id`. Graph's task is read again
 /// afterwards, since the write moved its etag.
 pub(super) async fn send_task(
     state: &State,
@@ -98,7 +98,7 @@ pub(super) async fn send_task(
         return Ok(Attempt::Skipped {
             task,
             extension: Some(current),
-            why: "the due-date edit it followed wasn't made, so ms-todo didn't set the date",
+            why: "the edit it followed wasn't made, so ms-todo didn't mark it as its own",
         });
     }
     write(state, owner, current, op).await?;
@@ -107,7 +107,8 @@ pub(super) async fn send_task(
 }
 
 /// Whether the operation `op_id` was sent, not skipped: `myDayDueSet`
-/// is written only after ms-todo's own due-date edit (D-054).
+/// and `assigneeStatusSet` are written only after ms-todo's own edit
+/// (D-054).
 async fn edit_was_made(state: &State, op_id: &str) -> Result<bool, Failure> {
     let edit = state
         .store

@@ -7,7 +7,7 @@ use ratatui::widgets::{Cell, Paragraph, Row, Table, TableState};
 use unicode_width::UnicodeWidthStr;
 
 use super::{focused, pane, selection};
-use crate::app::scope::{completed_groups, my_day_groups, planned_groups};
+use crate::app::scope::{assigned_groups, completed_groups, my_day_groups, planned_groups};
 use crate::app::{App, Connection, Pane, SyncMarker, Task};
 use crate::glyphs::Glyphs;
 use crate::theme::Theme;
@@ -58,6 +58,7 @@ pub fn draw<'a>(frame: &mut Frame, area: Rect, app: &'a App) {
         ),
         Some(Scope::Completed) => Some(completed_groups(&app.tasks, today)),
         Some(Scope::MyDay) => Some(my_day_groups(&app.tasks)),
+        Some(Scope::Assigned) => Some(assigned_groups(&app.tasks)),
         _ => None,
     };
     let (rows, selected) = match groups {
@@ -109,6 +110,9 @@ fn empty_text(app: &App) -> String {
             (Some(filter), _) => format!("No task matches \"{filter}\""),
             (None, Some(Scope::MyDay)) => {
                 "Nothing in My Day yet: t on a task in any list adds it".into()
+            }
+            (None, Some(Scope::Assigned)) => {
+                "Nobody to wait on: W on a task assigns it to someone".into()
             }
             (None, _) => "Nothing here".into(),
         },
@@ -175,6 +179,13 @@ fn task_row<'a>(
         title.push(Span::styled(
             format!("  {checked}/{total}"),
             theme.text_muted,
+        ));
+    }
+    // Who it waits on, as a person chip.
+    if let Some(name) = &task.assignee {
+        title.push(Span::styled(
+            format!("  {} {name}", glyphs.assigned),
+            theme.accent,
         ));
     }
     // It has files, as the To Do app's paperclip says.

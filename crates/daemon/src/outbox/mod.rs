@@ -62,6 +62,10 @@ impl Outbox {
 
 /// The operation ID of a command's `index`th operation: the command's own
 /// for the first, `<command>.<index>` for the rest.
+/// In an update's payload: Graph fields that must still hold these
+/// values when it's sent, else it's skipped (an assignment's status edit).
+pub(crate) const EXPECT_FIELDS: &str = "expect_fields";
+
 pub(crate) fn op_id_for(command_id: &str, index: usize) -> String {
     if index == 0 {
         command_id.to_owned()

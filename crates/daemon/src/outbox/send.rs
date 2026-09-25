@@ -20,7 +20,7 @@ use super::child_write;
 use super::extension_write;
 use super::move_job;
 use super::rollback::{announce_entity, reconcile_list, reject};
-use super::{backoff, now};
+use super::{EXPECT_FIELDS, backoff, now};
 use crate::entities::split_extension;
 use crate::handlers::{State, error_payload, graph_error};
 use crate::task_fields::graph_due_date;
@@ -355,9 +355,12 @@ async fn attempt(state: &State, op: &OutboxRow) -> Result<Attempt, Failure> {
     if op.op == OpKind::Child {
         return child_write::send(state, &list_graph_id, &graph_id, op, &task.raw).await;
     }
-    if let Some(expected) = op.payload.get("expect_due") {
-        // My Day's due-date edit: made only while Graph's due date is the
-        // one it was planned from (a day, or null for none).
+    let expect_due = op.payload.get("expect_due");
+    let expect_fields = op.payload.get(EXPECT_FIELDS);
+    if expect_due.is_some() || expect_fields.is_some() {
+        // My Day's due-date edit, or an assignment's status edit: made
+        // only while Graph's value is the one it was planned from (a day,
+        // or null for none; each field in `expect_fields`).
         let fetched = state
             .graph
             .get_task(&list_graph_id, &graph_id)
@@ -365,11 +368,20 @@ async fn attempt(state: &State, op: &OutboxRow) -> Result<Attempt, Failure> {
             .map_err(classify)?;
         let (current, extension) = split_extension(fetched);
         let due = graph_due_date(&current).map(|day| day.format(DATE_FORMAT).to_string());
-        if expected.as_str() != due.as_deref() {
+        let why = if expect_due.is_some_and(|expected| expected.as_str() != due.as_deref()) {
+            Some("the due date changed on another device meanwhile, so it was left alone")
+        } else if expect_fields
+            .is_some_and(|expected| !fields_not_holding(expected, &current).is_empty())
+        {
+            Some("the task changed on another device meanwhile, so it was left alone")
+        } else {
+            None
+        };
+        if let Some(why) = why {
             return Ok(Attempt::Skipped {
                 task: current,
                 extension,
-                why: "the due date changed on another device meanwhile, so it was left alone",
+                why,
             });
         }
         return patch(state, op, &list_graph_id, &graph_id, &current).await;

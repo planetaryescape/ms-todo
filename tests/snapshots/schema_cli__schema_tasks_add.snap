@@ -6,6 +6,11 @@ expression: pretty
   "input": {
     "additionalProperties": false,
     "properties": {
+      "assignee": {
+        "description": "Who it waits on: a name or an email, only ms-todo sees it and nobody is told. The task is made \"waiting on others\" too, which the To Do app shows",
+        "type": "string",
+        "x-cli": "--assignee"
+      },
       "body": {
         "description": "Notes, as plain text",
         "type": "string",
@@ -35,6 +40,11 @@ expression: pretty
         "description": "How important it is, over any p1–p4 in the text: 1 or p1 (high), 2, 3, p2 or p3 (normal), 4 or p4 (low), or high, normal or low",
         "type": "string",
         "x-cli": "--importance"
+      },
+      "keep_status": {
+        "description": "With --assignee: don't make it \"waiting on others\"",
+        "type": "boolean",
+        "x-cli": "--keep-status"
       },
       "list": {
         "description": "The list's exact name or its ID, over any #List in the text [default: the \"Tasks\" list]",
@@ -165,7 +175,7 @@ expression: pretty
                   "type": "object"
                 },
                 "status": {
-                  "description": "notStarted or completed, among Graph's values",
+                  "description": "notStarted, waitingOnOthers or completed, among Graph's values",
                   "type": "string"
                 },
                 "sync_state": {

@@ -22,15 +22,18 @@ pub enum Field {
     Due,
     Reminder,
     Importance,
+    /// Who the task waits on (rung 8d).
+    Assignee,
     Notes,
 }
 
 impl Field {
-    pub const ALL: [Self; 5] = [
+    pub const ALL: [Self; 6] = [
         Self::Title,
         Self::Due,
         Self::Reminder,
         Self::Importance,
+        Self::Assignee,
         Self::Notes,
     ];
 
@@ -40,6 +43,7 @@ impl Field {
             Self::Due => "Due",
             Self::Importance => "Importance",
             Self::Reminder => "Reminder",
+            Self::Assignee => "Assignee",
             Self::Notes => "Notes",
         }
     }
@@ -52,6 +56,7 @@ impl Field {
             Self::Due => "today, fri, next mon, +3d, 12 oct or 2026-10-02; empty clears",
             Self::Importance => "1 high, 2 or 3 normal, 4 low",
             Self::Reminder => "17:30, tomorrow 9am or fri 5:30pm; empty clears",
+            Self::Assignee => "who it waits on, a name or an email; empty clears",
             Self::Notes => "plain text, or empty to clear",
         }
     }
@@ -69,6 +74,7 @@ impl Field {
                 .reminder
                 .map(|at| at.format("%Y-%m-%d %H:%M").to_string())
                 .unwrap_or_default(),
+            Self::Assignee => task.assignee.clone().unwrap_or_default(),
             Self::Notes => task.notes().unwrap_or_default(),
         }
     }
@@ -130,6 +136,7 @@ pub fn parse(
         }
         // Set by level in the picker, never typed.
         Field::Importance => None,
+        Field::Assignee => assignee_edit(typed, task.assignee.as_deref()),
         // Compared as rendered, so html notes left alone stay html.
         Field::Notes => (typed != task.notes().unwrap_or_default()).then(|| TaskEdit {
             body: Some(typed.to_owned()),
@@ -137,6 +144,22 @@ pub fn parse(
         }),
     };
     Ok(edit)
+}
+
+/// Assigning to `typed`, or clearing the assignee when it's empty; `None`
+/// when that's what the task has. The daemon pairs the status with it.
+pub(super) fn assignee_edit(typed: &str, current: Option<&str>) -> Option<TaskEdit> {
+    let typed = typed.trim();
+    let assignee = match (typed, current) {
+        ("", None) => return None,
+        ("", Some(_)) => Clearable::Clear,
+        (name, Some(current)) if name == current => return None,
+        (name, _) => Clearable::Set(name.to_owned()),
+    };
+    Some(TaskEdit {
+        assignee: Some(assignee),
+        ..TaskEdit::default()
+    })
 }
 
 pub(super) fn set_value<T>(
@@ -228,10 +251,16 @@ impl App {
         if self.mode == Mode::Normal && self.still_loading() {
             return Vec::new();
         }
-        // With a selection, a due date goes to every task in it.
-        if action == Action::EditField(Field::Due) && !self.selection.is_empty() {
+        // With a selection, a due date or an assignee goes to every task
+        // in it.
+        if let Action::EditField(field @ (Field::Due | Field::Assignee)) = action
+            && !self.selection.is_empty()
+        {
             self.mode = Mode::Normal;
-            self.start_set_due();
+            match field {
+                Field::Due => self.start_set_due(),
+                _ => self.start_assign(),
+            }
             return Vec::new();
         }
         let Some(id) = self.edit_target() else {

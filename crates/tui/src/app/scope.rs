@@ -1,7 +1,7 @@
 //! What the sidebar offers, which tasks belong where, and how a scope's
 //! tasks are ordered and grouped.
 
-use std::collections::{BTreeMap, HashSet};
+use std::collections::{BTreeMap, HashMap, HashSet};
 
 use chrono::{Datelike, Duration, NaiveDate};
 use ms_todo_protocol::{Entity, Scope};
@@ -123,13 +123,13 @@ pub fn sidebar_entries(
     entries
 }
 
-/// The smart views, in sidebar order (docs/blueprint/08-tui.md#layout;
-/// Assigned comes in a later rung).
-pub const VIEWS: [Scope; 5] = [
+/// The smart views, in sidebar order (docs/blueprint/08-tui.md#layout).
+pub const VIEWS: [Scope; 6] = [
     Scope::MyDay,
     Scope::Important,
     Scope::Planned,
     Scope::All,
+    Scope::Assigned,
     Scope::Completed,
 ];
 
@@ -140,6 +140,7 @@ pub fn view_name(scope: &Scope) -> &'static str {
         Scope::Planned => "Planned",
         Scope::All => "All",
         Scope::Completed => "Completed",
+        Scope::Assigned => "Assigned",
         Scope::List { .. } | Scope::Unknown => "",
     }
 }
@@ -155,6 +156,7 @@ pub fn belongs(scope: &Scope, task: &Task, my_day: NaiveDate) -> bool {
         Scope::Planned => task.due.is_some() && !task.completed,
         Scope::All => !task.completed,
         Scope::Completed => task.completed,
+        Scope::Assigned => task.assignee.is_some() && !task.completed,
         Scope::List { id } => task.list_id == *id,
         Scope::Unknown => false,
     }
@@ -246,6 +248,26 @@ pub fn my_day_groups(tasks: &[Task]) -> Vec<(String, Vec<usize>)> {
         .collect()
 }
 
+/// The Assigned view's groups: each person's tasks under their name, as
+/// indexes into `tasks`, which the daemon sorts by person. Names that
+/// differ only in case are one person, under the spelling seen first.
+pub fn assigned_groups(tasks: &[Task]) -> Vec<(String, Vec<usize>)> {
+    let mut groups: Vec<(String, Vec<usize>)> = Vec::new();
+    // Each name folded once: drawn every frame.
+    let mut by_person: HashMap<String, usize> = HashMap::new();
+    for (index, task) in tasks.iter().enumerate() {
+        let Some(name) = &task.assignee else {
+            continue;
+        };
+        let at = *by_person.entry(name.to_lowercase()).or_insert_with(|| {
+            groups.push((name.clone(), Vec::new()));
+            groups.len() - 1
+        });
+        groups[at].1.push(index);
+    }
+    groups
+}
+
 /// The Completed view's groups, newest day first: each day's heading
 /// ("Today", "Yesterday", "Mon 21 Sep") with its tasks, as indexes into
 /// `tasks`, which the daemon sorts newest first. A completion Graph hasn't
@@ -290,6 +312,34 @@ mod tests {
             entity["completedDateTime"] = serde_json::json!({ "dateTime": format!("{day}T00:00:00.0000000"), "timeZone": "UTC" });
         }
         Task::from_entity(entity.as_object().expect("object")).expect("task")
+    }
+
+    fn assigned(id: &str, who: &str) -> Task {
+        let entity = serde_json::json!({ "id": id, "extensions": [{ "assignee": who }] });
+        Task::from_entity(entity.as_object().expect("object")).expect("task")
+    }
+
+    #[test]
+    fn assigned_tasks_group_by_person_whatever_the_case() {
+        let tasks = [
+            assigned("a", "Sam"),
+            assigned("b", "sam"),
+            assigned("c", "Ada"),
+            assigned("d", "SAM"),
+        ];
+        assert_eq!(
+            assigned_groups(&tasks),
+            [
+                ("Sam".to_owned(), vec![0, 1, 3]),
+                ("Ada".to_owned(), vec![2])
+            ]
+        );
+        let loose = assigned("e", "  Kim\u{1b}[31m ");
+        assert_eq!(
+            loose.assignee.as_deref(),
+            Some("Kim[31m"),
+            "trimmed, one safe line"
+        );
     }
 
     #[test]

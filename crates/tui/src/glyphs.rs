@@ -34,6 +34,9 @@ pub struct Glyphs {
     pub scroll_thumb: &'static str,
     pub more_below: &'static str,
     pub more_above: &'static str,
+    /// The Assigned view, and the person chip on a task someone's
+    /// assigned.
+    pub assigned: &'static str,
 }
 
 pub const UNICODE: Glyphs = Glyphs {
@@ -61,6 +64,7 @@ pub const UNICODE: Glyphs = Glyphs {
     scroll_thumb: "\u{2503}",        // ┃
     more_below: "\u{2193} more",     // ↓
     more_above: "\u{2191} more",     // ↑
+    assigned: "\u{25d4}",            // ◔
 };
 
 pub const ASCII: Glyphs = Glyphs {
@@ -88,4 +92,5 @@ pub const ASCII: Glyphs = Glyphs {
     scroll_thumb: "#",
     more_below: "v more",
     more_above: "^ more",
+    assigned: "w",
 };

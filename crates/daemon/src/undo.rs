@@ -16,6 +16,9 @@
 //!
 //! - A folder change by setting the extension fields it wrote on each list
 //!   back to what they were.
+//! - An assignment by setting its assignee back, and the status and flag
+//!   that pair with it, but only with the assignee: when the assignee has
+//!   changed since, all three are left alone.
 //!
 //! An operation Graph rejected changed nothing, so it's skipped; one whose
 //! outcome is `unknown` must be resolved first.
@@ -29,6 +32,8 @@
 //! left alone and listed in the answer's `refused`, and the rest are
 //! undone; only when every one moved is the undo refused.
 
+use std::collections::HashSet;
+
 use chrono::{DateTime, Duration};
 use ms_todo_core::ErrorKind;
 use ms_todo_protocol::{Candidate, ErrorPayload, Refused, ResponseData, TaskAction};
@@ -38,6 +43,7 @@ use ms_todo_store::{
 };
 use serde_json::{Map, Value, json};
 
+use crate::assignment::PART_OF;
 use crate::handlers::{State, error_payload, store_error};
 use crate::list_writes::queue_lists;
 use crate::outbox::move_job;
@@ -88,10 +94,20 @@ pub(crate) async fn undo(
     }
     let mut inverse: Vec<NewOp> = Vec::new();
     let mut refused: Vec<Refused> = Vec::new();
+    // Operations left alone, by ID, for those that pair with them.
+    let mut left_alone: HashSet<&str> = HashSet::new();
     let id = |queued: usize| op_id_for(&op_id, queued);
     for op in &ops {
         // Rejected or skipped, it changed nothing.
         if rejected(op)? || op.was_skipped() {
+            continue;
+        }
+        // An assignment's status and flag go back only with its assignee.
+        if op.payload[PART_OF]
+            .as_str()
+            .is_some_and(|part_of| left_alone.contains(part_of))
+        {
+            left_alone.insert(&op.op_id);
             continue;
         }
         let (row, deleted) = state
@@ -132,6 +148,7 @@ pub(crate) async fn undo(
                         title: row.title.clone(),
                         reason,
                     });
+                    left_alone.insert(&op.op_id);
                     continue;
                 }
                 let (body, action) = inverse_update(op)?;
@@ -171,6 +188,7 @@ pub(crate) async fn undo(
                         title: row.title.clone(),
                         reason,
                     });
+                    left_alone.insert(&op.op_id);
                     continue;
                 }
                 inverse.push(extension_undo(id(inverse.len()), &row, op)?);
@@ -196,7 +214,7 @@ pub(crate) async fn undo(
         }
     }
     // A task with two operations (My Day's) is left alone once.
-    let mut seen = std::collections::HashSet::new();
+    let mut seen = HashSet::new();
     refused.retain(|task| seen.insert(task.id.clone()));
     if inverse.is_empty() {
         return Err(match refused.as_slice() {
@@ -323,11 +341,12 @@ fn extension_moved(op: &OutboxRow, row: &TaskRow) -> Vec<String> {
 }
 
 /// The extension write that puts back what `op` changed on `row`'s
-/// extension: in My Day again, or out of it.
+/// extension: in My Day again, or out of it, or the assignee as it was.
 fn extension_undo(op_id: String, row: &TaskRow, op: &OutboxRow) -> Result<NewOp, ErrorPayload> {
     let action = match op.action.as_str() {
         "my_day_add" => TaskAction::MyDayRemove,
-        _ => TaskAction::MyDayAdd,
+        "my_day_remove" | "my_day_rollover" => TaskAction::MyDayAdd,
+        _ => TaskAction::Edit,
     };
     Ok(NewOp {
         op_id,

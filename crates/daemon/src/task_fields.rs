@@ -158,10 +158,12 @@ pub(crate) fn edit_fields(edit: &TaskEdit) -> Result<Vec<Field>, ErrorPayload> {
     if let Some(body) = &edit.body {
         fields.push(Field::Body(body.clone()));
     }
-    if fields.is_empty() {
+    // An assignee lives in our extension, not in these fields.
+    if fields.is_empty() && edit.assignee.is_none() {
         return Err(invalid(
             "nothing to change; pass at least one of --title, --due, --clear-due, \
-             --importance, --reminder, --clear-reminder or --body"
+             --importance, --reminder, --clear-reminder, --body, --assignee or \
+             --clear-assignee"
                 .into(),
         ));
     }

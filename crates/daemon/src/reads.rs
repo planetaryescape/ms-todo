@@ -2,8 +2,12 @@
 //! (D-034) with the scope's sync state beside the items.
 
 use ms_todo_protocol::{ErrorPayload, ResponseData, SearchStatus, SyncInfo, SyncState};
-use ms_todo_store::{LISTS_SCOPE, ListRow, StatusFilter, TaskRow, TaskSearch, tasks_scope};
+use ms_todo_store::{LISTS_SCOPE, ListRow, StatusFilter, TaskRow, TaskSearch, View, tasks_scope};
+use std::collections::HashMap;
 
+use serde_json::json;
+
+use crate::assignment::assigned_to;
 use crate::entities::{list_entity, search_entity, task_entity};
 use crate::freshness::{all_lists_state, read_state};
 use crate::handlers::{State, store_error};
@@ -22,11 +26,14 @@ pub(crate) async fn list_lists(state: &State) -> Result<ResponseData, ErrorPaylo
 }
 
 /// A list's tasks, oldest first; with `search`, those matching it, best
-/// first, whatever their status.
+/// first, whatever their status. With `assignee`, only the tasks assigned
+/// to that person (anyone for `*`), and with no `list`, the open ones in
+/// every list, as the Assigned view has them.
 pub(crate) async fn list_tasks(
     state: &State,
     wanted: Option<&str>,
     search: Option<&str>,
+    assignee: Option<&str>,
 ) -> Result<ResponseData, ErrorPayload> {
     let lists_sync = read_state(state, LISTS_SCOPE).await?;
     if lists_sync.state == SyncState::Initial {
@@ -37,11 +44,61 @@ pub(crate) async fn list_tasks(
         });
     }
     let lists = state.store.lists().await.map_err(store_error)?;
-    let (_, rows, sync) = list_rows(state, &lists, wanted, search).await?;
+    // One list's tasks, or with an assignee and no list, the Assigned view.
+    let (rows, sync) = if assignee.is_none() || wanted.is_some() {
+        let (_, rows, sync) = list_rows(state, &lists, wanted, search).await?;
+        (rows, sync)
+    } else {
+        let view = View::Assigned;
+        let rows = match search {
+            None => state.store.tasks_in_view(view).await,
+            Some(query) => search_view(state, query, view).await,
+        }
+        .map_err(store_error)?;
+        (rows, all_lists_state(state, lists_sync).await?)
+    };
+    let Some(assignee) = assignee else {
+        return Ok(ResponseData::Tasks {
+            items: rows.iter().map(task_entity).collect(),
+            sync,
+        });
+    };
+    let wanted = assignee.trim().to_lowercase();
+    let names: HashMap<&str, &str> = lists
+        .iter()
+        .map(|list| (list.local_id.as_str(), list.display_name.as_str()))
+        .collect();
     Ok(ResponseData::Tasks {
-        items: rows.iter().map(task_entity).collect(),
+        items: rows
+            .iter()
+            .filter(|row| assigned_to(row, &wanted))
+            .map(|row| {
+                let mut entity = task_entity(row);
+                entity.insert("list".into(), json!(names.get(row.list_local_id.as_str())));
+                entity
+            })
+            .collect(),
         sync,
     })
+}
+
+/// A view's tasks matching `query`, best first, whatever their status.
+async fn search_view(
+    state: &State,
+    query: &str,
+    view: View,
+) -> Result<Vec<TaskRow>, ms_todo_store::StoreError> {
+    let hits = state
+        .store
+        .search_tasks(&TaskSearch {
+            query,
+            list_local_id: None,
+            status: StatusFilter::All,
+            view: Some(view),
+            limit: None,
+        })
+        .await?;
+    Ok(hits.into_iter().map(|hit| hit.task).collect())
 }
 
 /// The tasks `names` names, as `ChangeTasks` finds them.

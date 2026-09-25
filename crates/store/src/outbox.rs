@@ -227,7 +227,8 @@ impl OutboxRow {
     }
 
     /// Done without sending anything: its send-time precondition didn't
-    /// hold (My Day's `expect` and `expect_due`), so it changed nothing.
+    /// hold (My Day's `expect` and `expect_due`, an assignment's
+    /// `expect_fields`), so it changed nothing.
     pub fn was_skipped(&self) -> bool {
         self.state == OpState::Done
             && self

@@ -11,6 +11,7 @@ Commands:
   lists        Your task lists, and which folder each is in
   folders      Folders that group your lists, as in the To Do app. Only ms-todo sees them, on every machine it runs on
   tasks        Tasks in a list
+  waiting      Tasks you're waiting on: every open task with an assignee, grouped by person. The same as `tasks list --assignee '*'`, or with PERSON, `tasks list --assignee PERSON`
   myday        Plan today: the tasks in My Day, what could go in it, and taking them in and out. A task with no due date is due today while it's there, so the To Do app shows it in its own My Day too
   steps        A task's steps: list, add, rename, check, uncheck and delete them. A step is named by its number from 1 (as `steps list` shows them), its ID, or its exact text
   links        A task's link (its linked resource): list, add, change or delete it. Microsoft To Do allows one per task; `tasks links` also lists the URLs in the notes

@@ -47,10 +47,12 @@ fn every_request_and_response_round_trips() {
         Payload::Request(Request::ListTasks {
             list: None,
             search: None,
+            assignee: None,
         }),
         Payload::Request(Request::ListTasks {
             list: Some("Groceries".into()),
             search: Some("milk".into()),
+            assignee: Some("Sam".into()),
         }),
         Payload::Request(Request::SearchTasks {
             query: "insur* OR \"car tax\"".into(),
@@ -246,6 +248,8 @@ fn every_request_and_response_round_trips() {
                 })),
                 categories: vec!["Errands".into()],
                 my_day: true,
+                assignee: Some("Sam".into()),
+                keep_status: false,
             },
             dry_run: true,
             op_id: None,
@@ -455,6 +459,7 @@ fn every_request_and_response_round_trips() {
                     planned: 2,
                     all: 3,
                     completed: 4,
+                    assigned: 6,
                     lists: [("l1".to_owned(), 3)].into_iter().collect(),
                 },
                 tasks: vec![entity.clone()],
@@ -584,7 +589,7 @@ fn unknown_tags_decode_to_unknown() {
     // A smart view from a newer client.
     let seed = decode_json(json!({
         "id": 0,
-        "payload": { "type": "request", "cmd": "seed", "scope": { "view": "assigned" } }
+        "payload": { "type": "request", "cmd": "seed", "scope": { "view": "waiting_on_me" } }
     }));
     assert_eq!(
         seed.payload,
@@ -628,7 +633,8 @@ fn fields_from_a_newer_peer_are_ignored_and_missing_new_fields_default() {
         tasks.payload,
         Payload::Request(Request::ListTasks {
             list: None,
-            search: None
+            search: None,
+            assignee: None,
         })
     );
     // A search's filters default to open tasks, every list, no limit.

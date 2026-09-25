@@ -59,8 +59,18 @@ pub(crate) async fn handle(state: &State, request: Request) -> Response {
         Request::GetTasks { tasks, list } => {
             crate::reads::get_tasks(state, &tasks, list.as_deref()).await
         }
-        Request::ListTasks { list, search } => {
-            list_tasks(state, list.as_deref(), search.as_deref()).await
+        Request::ListTasks {
+            list,
+            search,
+            assignee,
+        } => {
+            list_tasks(
+                state,
+                list.as_deref(),
+                search.as_deref(),
+                assignee.as_deref(),
+            )
+            .await
         }
         Request::SearchTasks {
             query,

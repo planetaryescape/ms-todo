@@ -14,6 +14,7 @@
 //! drawn at once; the event that follows it brings the rest (the counts,
 //! the sync marker) up to date.
 
+mod assign;
 pub mod attachments;
 mod detail_cursor;
 pub mod diagnostics;
@@ -142,6 +143,13 @@ pub enum Mode {
         input: LineEditor,
         /// Why the text can't be sent, shown after it.
         error: Option<String>,
+    },
+    /// `W`: who the tasks `ids` wait on; empty clears it. `what` names
+    /// them, as `"Call Sam"` or `3 tasks`.
+    Assigning {
+        ids: Vec<String>,
+        what: String,
+        input: LineEditor,
     },
     /// `m`: which list to move the tasks `ids` to, by typing part of its
     /// name or its folder's; `what` names the tasks, as `"Call Sam"` or
@@ -450,7 +458,8 @@ impl App {
             | Mode::Editing { .. }
             | Mode::EditingChild { .. }
             | Mode::Attaching { .. }
-            | Mode::SettingDue { .. } => Context::Prompt,
+            | Mode::SettingDue { .. }
+            | Mode::Assigning { .. } => Context::Prompt,
             Mode::ChoosingField { .. } => Context::Fields,
             Mode::MovingList { .. } => Context::Folder,
             Mode::ChoosingImportance { .. } => Context::Importance,
@@ -671,6 +680,7 @@ impl App {
             (Mode::Attaching { .. }, Action::Submit) => self.submit_attach(),
             (Mode::ConfirmDeleteChild { .. }, Action::Confirm) => self.confirm_child_delete(),
             (Mode::SettingDue { .. }, Action::Submit) => self.submit_set_due(),
+            (Mode::Assigning { .. }, Action::Submit) => self.submit_assign(),
             (Mode::ChoosingField { .. }, Action::EditField(_) | Action::CycleImportance)
             | (Mode::ChoosingImportance { .. }, Action::SetImportance(_)) => {
                 self.edit_action(action)
@@ -770,6 +780,7 @@ impl App {
             | Action::MoveTasks
             | Action::ToggleMyDay
             | Action::Attach
+            | Action::Assign
                 if self.still_loading() =>
             {
                 Vec::new()
@@ -790,6 +801,10 @@ impl App {
                 Vec::new()
             }
             Action::ToggleMyDay => self.toggle_my_day(),
+            Action::Assign => {
+                self.start_assign();
+                Vec::new()
+            }
             Action::MoveTasks => {
                 self.start_move_tasks();
                 Vec::new()
@@ -929,7 +944,9 @@ impl App {
                 }
                 return Vec::new();
             }
-            Mode::Filtering { input } | Mode::MovingList { input, .. } => edit(input),
+            Mode::Filtering { input }
+            | Mode::MovingList { input, .. }
+            | Mode::Assigning { input, .. } => edit(input),
             Mode::Editing { input, error, .. }
             | Mode::EditingChild { input, error, .. }
             | Mode::Attaching { input, error, .. }
