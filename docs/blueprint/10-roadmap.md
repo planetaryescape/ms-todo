@@ -256,7 +256,7 @@ Split in two during the build, because one session couldn't hold it (D-043). 5a 
 
 **Build:**
 
-- `crates/nlp` ([06](06-natural-language.md)): the rule-table date scanner (D-026), the token grammar and the recurrence grammar. The scanner also reads `--due`, `--start` and `--reminder`.
+- `crates/nlp` ([06](06-natural-language.md)): the rule-table date scanner (D-026), the token grammar and the recurrence grammar. The scanner also reads `--due`, `--start` and `--reminder`. Its whole-string mode, which reads `--due`, `--reminder` and the TUI's date fields, shipped early in the editing fix (D-045); rung 6 adds span mode.
 - Quick add in the CLI (parsing by default, `--no-parse`, `tasks parse`) and in the TUI, with live highlighting.
 - `@label` applies categories and creates a missing one on request (`--create-categories`).
 

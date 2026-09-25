@@ -84,3 +84,13 @@ Copy these from mxr, including its keybinding registry:
 - a status line showing daemon connection, last sync and outbox depth
 - until a scope's first sync finishes (`sync_state: "initial"`), a "syncing" state instead of an empty list (vault: `First Run Is the Launch Surface`, `Derived State Needs an Unknown State`)
 - a diagnostics page (`ms-todo doctor` output) inside the TUI, like mxr's
+
+## Editing fields and typing
+
+As built in the editing fix (D-045):
+
+- **`e` opens a one-line field picker** in the hint bar, from the list or the detail pane: `edit: [t]itle [d]ue [r]eminder [i]mportance [n]otes  I Cycle importance  Esc Cancel`, built from the keybinding registry. A letter opens that field's editor in the detail pane; Enter on a field in the detail pane still edits it directly. The palette lists each field too ("Edit title", "Edit due date", "Edit reminder", "Set importance", "Edit notes", "Cycle importance"), shown with their keys as `e t` and so on. The picker holds the task's ID, so the edit goes to that task only while it's still in the scope on screen (5a).
+- **Importance is never typed.** `i` asks for a level, `importance: 1/h High  2/3/n Normal  4/l Low  Esc Cancel`, and a key saves it at once (D-017's mapping, read by `ms_todo_nlp::read_importance`). `I` in the picker cycles low, normal, high and saves.
+- **Every prompt is a line editor** (the add, filter, edit and palette prompts): `ratatui-textarea` holds the text and the cursor, and `app/line_editor.rs` picks its keys. Left and Right, Home and End (Ctrl-a, Ctrl-e), a word back and forward (Alt-b, Alt-f, Ctrl- or Alt-arrows), Backspace, Delete, Ctrl-w a word back, Ctrl-u to the line's start, Ctrl-k to its end. The cursor starts after the value, and the character under it is drawn reversed (the cursor glyph past the end). Keys the registry doesn't bind in a prompt go to the editor as `Msg::Key`; the registry lists the prompt keys, and help lists the editor's.
+- **Notes are multi-line:** Enter is a new line, and Ctrl-s or Alt-Enter saves.
+- **Dates take phrases** (`tomorrow`, `fri 17:30`, `+2w`, `12 oct`), read by `crates/nlp` as the CLI's flags are ([07](07-cli.md)). What the text resolves to shows under it as it's typed (`→ Fri 2 Oct`, `, in the past`), or why it can't be read; Enter with input it can't read shows the reason in red and sends nothing.

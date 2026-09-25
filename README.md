@@ -59,8 +59,8 @@ Search looks through every task's title and notes (html notes as text), ignoring
 ## Add and finish tasks
 
 ```sh
-ms-todo tasks add "Buy milk" --list Groceries --due 2026-09-26
-ms-todo tasks add "Call the dentist" --reminder 2026-09-26T09:30 --importance high --body "re: filling"
+ms-todo tasks add "Buy milk" --list Groceries --due tomorrow
+ms-todo tasks add "Call the dentist" --reminder "fri 9:30am" --importance p1 --body "re: filling"
 ms-todo tasks complete <ID>...        # IDs from `tasks list --format ids`
 ms-todo tasks reopen <ID>...
 ms-todo tasks edit <ID> --title "Buy oat milk" --due 2026-09-27   # also --clear-due, --reminder, --clear-reminder, --importance, --body
@@ -70,6 +70,8 @@ ms-todo tasks list --format ids | ms-todo tasks complete -   # `-` reads IDs fro
 
 - The text of `tasks add` is the title, exactly as given. With no `--list`, it goes to "Tasks".
 - Due dates are dates only; put a time in `--reminder`. Dates are written in your local time zone (`TZ`, or the system's).
+- `--due` takes `2026-10-02` or a phrase: `today`, `tomorrow` (`tom`), `yesterday`, `fri` (the next one, never today), `this fri`, `next fri` (next week's), `in 3 days`, `three days from today`, `+2w`, `-1d`, `2 days ago`, `next week` (its Monday), `next month` (the 1st), `eow`, `eom`, `12 oct`, `oct 12`, `12/10` (day first). A day and month already past means next year's. `--reminder` takes the same with a time: `17:30` alone (today's, or tomorrow's once it's past), `tomorrow 9am`, `fri 5:30pm`, `noon`, `2026-10-02 09:30`. On `tasks edit`, an empty value or `-` clears either. A phrase ms-todo can't read exits 2 and names the part it didn't understand.
+- `--importance` takes `high`, `normal` or `low`, or Todoist's levels: `1` or `p1` is high, `2`, `3`, `p2` and `p3` are normal (Microsoft To Do has one level for both), `4` or `p4` is low.
 - A task can also be named by its exact title, together with `--list`. A title several tasks share is an error listing them.
 - `--dry-run` shows what a command would change, resolved exactly as the real run would, and changes nothing.
 - Completing a recurring task keeps it open with the next due date, and Microsoft To Do adds the occurrence you finished as a new, completed task.
@@ -120,7 +122,9 @@ A title bar with the version and the view you're in, a sidebar of smart views (I
 | `h` / `l`, `Tab` | move between the sidebar, the list and the detail pane |
 | `a` | add a task to the current list; the text is taken literally |
 | `x` | complete, or reopen a completed task; with a selection, completes its open tasks (or reopens them all) in one change |
-| `e`, or `Enter` in the detail pane | edit the field under the detail pane's cursor (`j` / `k` there move between title, due date, reminder, importance and notes); `Enter` saves, `Esc` cancels, and invalid input says why and sends nothing |
+| `e` | pick a field to edit, from the list or the detail pane: `t` title, `d` due date, `r` reminder, `i` importance, `n` notes, `I` cycles importance low, normal, high and saves; `Esc` cancels |
+| `Enter` in the detail pane | edit the field under the detail pane's cursor (`j` / `k` there move between title, due date, reminder, importance and notes) |
+| in an editor | `Enter` saves (`Ctrl-s` or `Alt-Enter` in notes, where `Enter` is a new line), `Esc` cancels; `←` / `→`, `Home` / `End` (`Ctrl-a` / `Ctrl-e`), `Alt-b` / `Alt-f` (or `Ctrl-←` / `Ctrl-→`) a word, `Backspace` / `Delete`, `Ctrl-w` a word back, `Ctrl-u` / `Ctrl-k` to the line's start / end. The add, filter and palette prompts edit the same way |
 | `v` / `V` | select a task, or every task in the view; `Esc` clears the selection |
 | `d` | delete the task or the selection, after a `y` / `n` confirmation that names the count |
 | `u` | undo the last change; for a repeating task, pick the completed copy to delete |
@@ -131,7 +135,7 @@ A title bar with the version and the view you're in, a sidebar of smart views (I
 | `?` | every key |
 | `q` | quit |
 
-In the editor, a due date is `YYYY-MM-DD` and a reminder `YYYY-MM-DDTHH:MM` in local time; leave either empty to clear it. Importance is `low`, `normal` or `high`. Notes are plain text: notes written as html on another device are shown as text, and only rewritten as text if you change them. A selection holds only tasks in the view on screen: switching views clears it, and a task that leaves the view drops out of it.
+In the editor, a due date or a reminder takes what `--due` and `--reminder` take (`tomorrow`, `fri 17:30`, `+2w`, `12 oct`), and shows what it resolves to as you type (`→ Fri 2 Oct`, or `, in the past`); empty or `-` clears it, and input it can't read says why and sends nothing. Importance is picked by level: `1` high, `2` or `3` normal, `4` low (or `h`, `n`, `l`), saved at once. Notes are plain text on several lines: notes written as html on another device are shown as text, and only rewritten as text if you change them. A selection holds only tasks in the view on screen: switching views clears it, and a task that leaves the view drops out of it.
 
 Everything the TUI does is also a command, so scripts and agents use the commands. `mst tui --bench-startup` measures the start and a run of keys against your cache and prints the timings; `MS_TODO_TUI_TRACE=<file>` writes every keypress's timing to a file.
 

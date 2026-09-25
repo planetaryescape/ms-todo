@@ -76,7 +76,7 @@ ms-todo tasks delete <ID> --yes --format json
 ms-todo tasks list --list "Groceries" --format ids | ms-todo tasks complete - --format json
 ```
 
-- Due dates are dates only (`YYYY-MM-DD`). A time goes in `--reminder` (`YYYY-MM-DDTHH:MM`, local time).
+- Due dates are dates only (`YYYY-MM-DD`). A time goes in `--reminder` (`YYYY-MM-DDTHH:MM`, local time). Both also take phrases such as `tomorrow` or `fri 17:30`, resolved on the machine running the CLI; for generated commands, pass the explicit forms. `--importance` takes `high|normal|low`, `1`–`4` or `p1`–`p4`.
 - Without `--list`, `tasks add` goes to the default "Tasks" list.
 - Every change returns at once, even with no network: `{"schema_version", "op_id", "action", "items": [...], "list_ids": [...]}`, each task as ms-todo has it now, in the same shape as `tasks list`. The change is queued in the outbox, and the daemon sends it to Microsoft To Do in the background. Until it gets there the task's `sync_state` is `pending`, and a new task's `graph_id` is `null`. Its local `id` never changes, so you can edit or complete it straight away.
 - Completing a **recurring** task keeps the same task open with its due date moved on, and Microsoft To Do adds the completed occurrence as a new task. Once synced, `tasks list` shows the new due date. That's success, not a failure.
