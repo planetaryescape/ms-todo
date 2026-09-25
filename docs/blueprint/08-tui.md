@@ -44,6 +44,8 @@ This is copied from `mxr/crates/tui/src/{app,ui,runner.rs}`. Avoid spotuify's 11
 
 Use glyphs from a Nerd Font or Unicode symbol set, with an ASCII fallback option. No emoji (BK's rule).
 
+The active task pane shows the cursor's position and the number of tasks (`3/42`) in its top border. `PgUp` and `PgDn` move about one screenful through a task list, the sidebar or the detail pane; group headings count as rows, so paging in smart views follows what is drawn. `g` and `G` still jump to the first and last row.
+
 **Smart views** are all queries the daemon answers from its local cache:
 
 - My Day

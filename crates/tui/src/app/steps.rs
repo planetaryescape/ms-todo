@@ -115,7 +115,7 @@ impl App {
         self.focus == Pane::Detail && self.detail_row_now().is_some_and(DetailRow::is_child)
     }
 
-    /// j, k, g and G in the detail pane.
+    /// Move among the detail pane's fields and children.
     pub(super) fn move_detail(&mut self, action: Action) {
         let Some(task) = self.selected() else {
             return;
@@ -124,9 +124,12 @@ impl App {
         let now = self.detail_row.on(task);
         let at = rows.iter().position(|row| *row == now).unwrap_or(0);
         let last = rows.len() - 1;
+        let page = usize::from(self.screen.height.saturating_sub(6).max(1));
         let at = match action {
             Action::MoveDown => (at + 1).min(last),
             Action::MoveUp => at.saturating_sub(1),
+            Action::PageDown => at.saturating_add(page).min(last),
+            Action::PageUp => at.saturating_sub(page),
             Action::JumpTop => 0,
             Action::JumpBottom => last,
             _ => at,

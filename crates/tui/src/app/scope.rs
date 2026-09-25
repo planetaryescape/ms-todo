@@ -185,6 +185,31 @@ pub fn order(scope: &Scope, filtered: bool, tasks: &mut [Task]) {
     });
 }
 
+/// The headings and task indexes drawn in a smart view. Navigation uses
+/// these same rows so page keys account for headings taking screen space.
+pub fn task_groups(
+    scope: Option<&Scope>,
+    filtered: bool,
+    tasks: &[Task],
+    today: NaiveDate,
+) -> Option<Vec<(String, Vec<usize>)>> {
+    if filtered {
+        return None;
+    }
+    match scope? {
+        Scope::Planned => Some(
+            planned_groups(tasks, today)
+                .into_iter()
+                .map(|(group, members)| (group.name().to_owned(), members))
+                .collect(),
+        ),
+        Scope::Completed => Some(completed_groups(tasks, today)),
+        Scope::MyDay => Some(my_day_groups(tasks)),
+        Scope::Assigned => Some(assigned_groups(tasks)),
+        _ => None,
+    }
+}
+
 /// A group of the Planned view.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum DueGroup {

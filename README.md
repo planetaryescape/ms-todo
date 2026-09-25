@@ -163,6 +163,7 @@ In the TUI's add box, a likely list shows as `→ Finances? (Ctrl-l to accept)`.
 | Key | Does |
 | --- | --- |
 | `j` / `k`, `g` / `G` | down, up, top, bottom |
+| `PgUp` / `PgDn` | move about one screenful in the sidebar, task list or detail pane; group headings count as rows |
 | `h` / `l`, `Tab` | move between the sidebar, the task list and the detail pane |
 | `Enter` / `Space` in the sidebar | open a list or view; on a folder, fold or unfold it |
 | `a` | quick add, in a box in the middle of the screen: each part it reads is coloured as you type, with the task it makes underneath. `Tab` completes a `#List` or `@label`, `Ctrl-r` takes the text literally, `Ctrl-l` takes a suggested list, `Enter` adds |

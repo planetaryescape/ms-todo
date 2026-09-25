@@ -118,6 +118,8 @@ pub const BINDINGS: &[Binding] = &[
     bind(LISTS, "Up", Action::MoveUp, "Up", false),
     bind(BROWSE, "g", Action::JumpTop, "Top", false),
     bind(BROWSE, "G", Action::JumpBottom, "Bottom", false),
+    bind(BROWSE, "PgDn", Action::PageDown, "Page down", false),
+    bind(BROWSE, "PgUp", Action::PageUp, "Page up", false),
     bind(BROWSE, "h", Action::FocusLeft, "Left pane", false),
     bind(BROWSE, "l", Action::FocusRight, "Right pane", false),
     bind(SIDEBAR, "Enter", Action::Open, "Open or fold", true),
@@ -442,6 +444,8 @@ pub fn commands() -> Vec<(String, &'static str, Action)> {
                     | Action::MoveUp
                     | Action::JumpTop
                     | Action::JumpBottom
+                    | Action::PageDown
+                    | Action::PageUp
                     | Action::FocusLeft
                     | Action::FocusRight
                     | Action::FocusNext

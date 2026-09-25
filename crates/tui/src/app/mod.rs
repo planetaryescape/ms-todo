@@ -773,9 +773,12 @@ impl App {
             return effects;
         }
         match action {
-            Action::MoveDown | Action::MoveUp | Action::JumpTop | Action::JumpBottom => {
-                self.navigate(action)
-            }
+            Action::MoveDown
+            | Action::MoveUp
+            | Action::PageDown
+            | Action::PageUp
+            | Action::JumpTop
+            | Action::JumpBottom => self.navigate(action),
             Action::FocusLeft => {
                 self.focus = match self.focus {
                     Pane::Detail => Pane::Tasks,
@@ -940,9 +943,14 @@ impl App {
             Pane::Tasks | Pane::Detail => (self.task_index, self.tasks.len()),
         };
         let last = len.saturating_sub(1);
+        let page = usize::from(self.screen.height.saturating_sub(6).max(1));
         let moved = match action {
             Action::MoveDown => (index + 1).min(last),
             Action::MoveUp => index.saturating_sub(1),
+            Action::PageDown if self.focus == Pane::Tasks => self.page_task_index(true, page),
+            Action::PageUp if self.focus == Pane::Tasks => self.page_task_index(false, page),
+            Action::PageDown => index.saturating_add(page).min(last),
+            Action::PageUp => index.saturating_sub(page),
             Action::JumpTop => 0,
             _ => last,
         };
@@ -954,6 +962,51 @@ impl App {
             return Vec::new();
         }
         self.open_entry(moved)
+    }
+
+    /// Find the next task about one visible page away. Group headings use
+    /// a row too, so a page in Planned or Completed doesn't skip tasks.
+    fn page_task_index(&self, down: bool, page: usize) -> usize {
+        let Some(groups) = scope::task_groups(
+            self.shown.as_ref(),
+            self.filter.is_some(),
+            &self.tasks,
+            self.clock.today(),
+        ) else {
+            return if down {
+                self.task_index
+                    .saturating_add(page)
+                    .min(self.tasks.len().saturating_sub(1))
+            } else {
+                self.task_index.saturating_sub(page)
+            };
+        };
+        let mut rows = Vec::with_capacity(self.tasks.len());
+        let mut row = 0usize;
+        for (_, members) in groups {
+            row += 1;
+            for index in members {
+                rows.push((row, index));
+                row += 1;
+            }
+        }
+        let Some(current) = rows.iter().find(|(_, index)| *index == self.task_index) else {
+            return self.task_index;
+        };
+        let target = if down {
+            current.0.saturating_add(page)
+        } else {
+            current.0.saturating_sub(page)
+        };
+        if down {
+            rows.iter().find(|(row, _)| *row >= target).or(rows.last())
+        } else {
+            rows.iter()
+                .rev()
+                .find(|(row, _)| *row <= target)
+                .or(rows.first())
+        }
+        .map_or(self.task_index, |(_, index)| *index)
     }
 
     /// Switch to the sidebar's row `index`: paint it from memory if it was

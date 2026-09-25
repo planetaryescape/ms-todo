@@ -3,7 +3,7 @@ source: crates/tui/src/ui/tests.rs
 expression: "format!(\"{unicode}\\n{}\", render(&app))"
 ---
 " ms-todo 9.9.9 · Home                                                                                ● synced "
-"╭ Lists ───────────────╮╭ Home ────────────────────────────────────────────╮╭ Detail ────────────────────────╮"
+"╭ Lists ───────────────╮╭ Home ─────────────────────────────────────── 1/4 ╮╭ Detail ────────────────────────╮"
 "│☼ My Day              ││○ Pay rent                         Oct 1 ★ ↻ ◷    ││Title      Pay rent             │"
 "│★ Important          1││○ Update the budget                Oct 1 ★ ↻      ││                                │"
 "│▦ Planned            2││○ Water plants                     Oct 1   ↻      ││Status     open                 │"
@@ -20,7 +20,7 @@ expression: "format!(\"{unicode}\\n{}\", render(&app))"
 " a Add  x Done  e Edit  d Delete  v Select  u Undo  / Filter  : Palette  r Sync  ? Help  q Quit  o Open link  "
 
 " ms-todo 9.9.9 · Home                                                                                + synced "
-"╭ Lists ───────────────╮╭ Home ────────────────────────────────────────────╮╭ Detail ────────────────────────╮"
+"╭ Lists ───────────────╮╭ Home ─────────────────────────────────────── 1/4 ╮╭ Detail ────────────────────────╮"
 "│o My Day              ││[ ] Pay rent                       Oct 1 ! R @    ││Title      Pay rent             │"
 "│! Important          1││[ ] Update the budget              Oct 1 ! R      ││                                │"
 "│# Planned            2││[ ] Water plants                   Oct 1   R      ││Status     open                 │"

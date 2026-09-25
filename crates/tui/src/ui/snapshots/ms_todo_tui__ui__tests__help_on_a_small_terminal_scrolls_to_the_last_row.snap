@@ -20,7 +20,7 @@ expression: bottom
 "│      │   PgDn              Page down                                 │ne     │"
 "│      │   PgUp              Page up                                   │nced   │"
 "│      │   g                 Top                                       │       │"
-"│      │   G                 Bottom                                    ┃ne     │"
+"│      │   G                 Bottom                                    │ne     │"
 "│      │   Esc/?/q           Close                                     ┃       │"
 "│      │                                                               ┃       │"
 "╰──────│ Scripts and agents: use the `ms-todo` commands.               ┃───────╯"

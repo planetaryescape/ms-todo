@@ -101,6 +101,8 @@ fn place(binding: &Binding) -> (Section, Option<&'static str>) {
                 | Action::MoveUp
                 | Action::JumpTop
                 | Action::JumpBottom
+                | Action::PageDown
+                | Action::PageUp
                 | Action::FocusLeft
                 | Action::FocusRight
                 | Action::FocusNext
