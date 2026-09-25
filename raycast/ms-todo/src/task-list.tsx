@@ -98,7 +98,7 @@ export function TaskList({ mode }: { mode: Mode }) {
     return () => {
       cancelled = true;
     };
-  }, [mode, cliPath]);
+  }, [mode, cliPath, revision]);
 
   useEffect(() => {
     if (mode !== "my-day") return;
