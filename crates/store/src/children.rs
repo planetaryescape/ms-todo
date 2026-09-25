@@ -15,9 +15,7 @@ use serde_json::{Map, Value};
 
 use crate::Entity;
 
-/// How the ID of a child not created in Graph yet starts. Graph's own
-/// child IDs are bare UUIDs.
-pub const LOCAL_CHILD_PREFIX: &str = "local-";
+pub use ms_todo_core::LOCAL_CHILD_PREFIX;
 
 /// The collections a child operation writes to.
 pub const STEPS: &str = "checklistItems";

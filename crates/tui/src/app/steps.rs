@@ -117,7 +117,7 @@ impl App {
             Action::JumpBottom => last,
             _ => at,
         };
-        self.detail_row = rows[at];
+        self.set_detail_row(rows[at]);
     }
 
     /// A key on a step or the link row. `None` when it's not a step or
@@ -130,8 +130,11 @@ impl App {
         if !is_child_key {
             return None;
         }
+        let row = self.detail_row_now()?;
+        if action != Action::Add && self.refuse_if_stale() {
+            return Some(Vec::new());
+        }
         let task = self.selected()?.clone();
-        let row = self.detail_row.on(&task);
         let effects = match (action, row) {
             (Action::ToggleStep, DetailRow::Step(at)) => {
                 let step = &task.steps[at];

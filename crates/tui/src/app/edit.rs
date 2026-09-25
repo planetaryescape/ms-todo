@@ -279,7 +279,7 @@ impl App {
             _ => Some(LineEditor::single(&field.current(task))),
         };
         self.focus = Pane::Detail;
-        self.detail_row = DetailRow::Field(field);
+        self.set_detail_row(DetailRow::Field(field));
         self.mode = match input {
             None => Mode::ChoosingImportance { id },
             Some(input) => Mode::Editing {
@@ -299,7 +299,7 @@ impl App {
         };
         let same = task.importance == importance;
         self.mode = Mode::Normal;
-        self.detail_row = DetailRow::Field(Field::Importance);
+        self.set_detail_row(DetailRow::Field(Field::Importance));
         if same {
             return Vec::new();
         }

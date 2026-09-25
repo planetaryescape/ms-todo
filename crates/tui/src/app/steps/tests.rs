@@ -277,3 +277,123 @@ fn a_task_with_fewer_steps_keeps_the_cursor_on_its_steps() {
     assert_eq!(DetailRow::Step(1).on(&none), DetailRow::Steps);
     assert_eq!(DetailRow::Step(5).on(&first), DetailRow::Step(1));
 }
+
+/// Home again with "Paint" holding `steps`, as a refresh brings it.
+fn refreshed(app: &mut App, steps: serde_json::Value) {
+    let effects = app.update(Msg::Event(ms_todo_protocol::Event::ResyncNeeded));
+    let paint = task("t9", "Paint", json!({ "checklistItems": steps }));
+    answer_seed(app, &effects[0], seed(scope_home(), vec![paint]));
+}
+
+fn step(id: &str, name: &str, checked: bool) -> serde_json::Value {
+    json!({ "id": id, "displayName": name, "isChecked": checked })
+}
+
+#[test]
+fn the_cursor_follows_its_step_when_one_above_is_deleted_elsewhere() {
+    let mut app = painted();
+    to_row(&mut app, DetailRow::Step(1));
+    // The phone deletes "Buy paint", above "Tape".
+    refreshed(&mut app, json!([step("c2", "Tape", false)]));
+    assert_eq!(app.detail_row_now(), Some(DetailRow::Step(0)));
+    let (_, change) = sent(&act(&mut app, Action::ToggleStep));
+    assert_eq!(
+        change,
+        TaskChange::CheckSteps {
+            steps: vec!["c2".into()],
+            checked: true
+        },
+        "still Tape"
+    );
+}
+
+#[test]
+fn a_step_gone_from_under_the_cursor_is_left_alone_with_a_hint() {
+    let mut app = painted();
+    to_row(&mut app, DetailRow::Step(1));
+    refreshed(
+        &mut app,
+        json!([
+            step("c1", "Buy paint", true),
+            step("c3", "Two coats", false)
+        ]),
+    );
+    // The nearest step, but the next action only says what happened.
+    assert_eq!(app.detail_row_now(), Some(DetailRow::Step(1)));
+    assert!(act(&mut app, Action::ToggleStep).is_empty());
+    assert!(
+        app.banner
+            .as_ref()
+            .is_some_and(|banner| banner.text.contains("step changed")),
+        "{:?}",
+        app.banner
+    );
+    // Once said, the step now under the cursor is the one acted on.
+    let (_, change) = sent(&act(&mut app, Action::ToggleStep));
+    assert_eq!(
+        change,
+        TaskChange::CheckSteps {
+            steps: vec!["c3".into()],
+            checked: true
+        }
+    );
+
+    // Every step gone: the heading, and Space does nothing.
+    to_row(&mut app, DetailRow::Step(0));
+    refreshed(&mut app, json!([]));
+    assert_eq!(app.detail_row_now(), Some(DetailRow::Steps));
+    assert!(act(&mut app, Action::ToggleStep).is_empty());
+}
+
+#[test]
+fn the_cursor_keeps_a_new_step_when_it_gets_graphs_id() {
+    let mut app = painted();
+    refreshed(
+        &mut app,
+        json!([
+            step("c1", "Buy paint", true),
+            step("local-9", "Sand", false)
+        ]),
+    );
+    to_row(&mut app, DetailRow::Step(1));
+    refreshed(
+        &mut app,
+        json!([step("c1", "Buy paint", true), step("c9", "Sand", false)]),
+    );
+    let (_, change) = sent(&act(&mut app, Action::ToggleStep));
+    assert_eq!(
+        change,
+        TaskChange::CheckSteps {
+            steps: vec!["c9".into()],
+            checked: true
+        }
+    );
+}
+
+#[test]
+fn a_link_changed_elsewhere_is_left_alone_with_a_hint() {
+    let mut app = painted();
+    to_row(&mut app, DetailRow::Link);
+    let effects = app.update(Msg::Event(ms_todo_protocol::Event::ResyncNeeded));
+    let paint = task(
+        "t9",
+        "Paint",
+        json!({ "linkedResources": [{ "id": "r2", "webUrl": "https://example.com/other", "applicationName": "x" }] }),
+    );
+    answer_seed(&mut app, &effects[0], seed(scope_home(), vec![paint]));
+    assert!(act(&mut app, Action::Delete).is_empty());
+    assert_eq!(app.mode, Mode::Normal, "nothing asked");
+    assert!(
+        app.banner
+            .as_ref()
+            .is_some_and(|banner| banner.text.contains("link changed"))
+    );
+    act(&mut app, Action::Delete);
+    let (_, change) = sent(&act(&mut app, Action::Confirm));
+    assert_eq!(
+        change,
+        TaskChange::DeleteLink {
+            link: Some("r2".into())
+        }
+    );
+}

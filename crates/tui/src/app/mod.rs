@@ -14,6 +14,7 @@
 //! drawn at once; the event that follows it brings the rest (the counts,
 //! the sync marker) up to date.
 
+mod detail_cursor;
 pub mod diagnostics;
 mod due_batch;
 pub mod edit;
@@ -323,6 +324,12 @@ pub struct App {
     /// The detail pane's cursor: the field `e` and Enter edit, or a step
     /// or the link.
     pub detail_row: steps::DetailRow,
+    /// Which step or link `detail_row` is on, by ID, so a refresh can't
+    /// slide it onto another.
+    detail_anchor: Option<detail_cursor::Anchor>,
+    /// The step or link the cursor was on changed in a refresh: the next
+    /// step or link action says so and does nothing.
+    detail_stale: bool,
     /// The tasks `v` and `V` selected, by ID; all rows of `tasks`.
     pub selection: HashSet<String>,
     pub diagnostics: Diagnostics,
@@ -378,6 +385,8 @@ impl App {
             tasks: Vec::new(),
             task_index: 0,
             detail_row: steps::DetailRow::default(),
+            detail_anchor: None,
+            detail_stale: false,
             selection: HashSet::new(),
             diagnostics: Diagnostics::default(),
             tasks_ready: false,
@@ -502,6 +511,12 @@ impl App {
     }
 
     pub fn update(&mut self, msg: Msg) -> Vec<Effect> {
+        let effects = self.handle(msg);
+        self.follow_detail_row();
+        effects
+    }
+
+    fn handle(&mut self, msg: Msg) -> Vec<Effect> {
         match msg {
             Msg::Action(action) => self.act(action),
             Msg::Char(ch) => self.edit_with(|input| {
