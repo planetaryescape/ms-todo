@@ -166,6 +166,28 @@ ms-todo undo                                       # moves them back
 
 Microsoft To Do has no move, so ms-todo copies the task into the other list with every field, its steps (ticked or not), its link, its attachments byte for byte and ms-todo's own data, reads the copy back to check it matches, and only then deletes the original. The task keeps its ID in ms-todo and shows in the new list at once, `pending` until the move is done. If a step fails before the delete, the half-made copy is deleted and the original is untouched; if Microsoft To Do doesn't answer a step, the move pauses in `ms-todo outbox list` and deletes nothing until it's found or you decide (`outbox retry` or `outbox discard`). The To Do apps show the moved task as created at the time of the move; ms-todo keeps the original time as `originalCreatedAt` in its own data. A task that has changed or moved again since isn't moved back by `undo`.
 
+## Steps and links
+
+```sh
+ms-todo steps list <TASK>                          # numbered from 1, in the order they were added
+ms-todo steps add <TASK> "Buy paint" "Tape"        # several at once, in order, unchecked
+ms-todo steps check <TASK> 1 "Tape"                # by number, ID or exact text
+ms-todo steps uncheck <TASK> 1
+ms-todo steps edit <TASK> 2 "Masking tape"         # stays checked or unchecked
+ms-todo steps delete <TASK> 2 --yes                # asks first in a terminal
+ms-todo links add <TASK> https://example.com/spec --name "Spec"
+ms-todo links edit <TASK> --url https://example.com/spec-v2
+ms-todo links list <TASK>
+ms-todo links delete <TASK> --yes
+```
+
+TASK is an ID, or an exact title with `--list`. A step is named by its number from 1 (as `steps list` shows it), its ID, or its exact text; a text two steps share is refused, listing their numbers, and a number is always a number. Every change shows at once, is sent in the background, and `ms-todo undo` reverses it, unless the step has changed since (checked on the phone, say), when that step is left alone. A step checked on the phone shows as checked after the next sync. `--dry-run` shows the plan; writes take `--idempotency-key`.
+
+- **Order.** Steps stay in the order they were added: Microsoft To Do has no way to reorder them, so there's no `steps order`.
+- **One link per task**, as the To Do apps allow: `links add` on a task that has one exits 2 and points at `links edit`. `--app` is the app the link belongs to (Microsoft To Do requires one; `ms-todo` without it), and `--external-id` the item's ID there. `links edit` can set a field but not empty one: Microsoft To Do ignores that. Any URL is kept, but only http, https and mailto open from `tasks open` or the TUI, and ms-todo notes it when yours won't. `tasks links` lists the link and the URLs in the notes together.
+- **A step or link whose add got no answer** stays `unknown` in `ms-todo outbox list`, flagged for you: Microsoft To Do may have it, and nothing can tell which step is which, so it's never sent twice by itself. Look at the task, then `outbox retry` to send it again or `outbox discard` if it's there.
+- **In the TUI**, the detail pane shows Steps with each step's checkbox, then the link, and a task's row shows `2/5`. Move the cursor onto them with `j`/`k`: `Space` checks or unchecks a step, `a` adds steps (Enter adds one and opens the next; Esc stops), `e` or Enter edits a step or the link's URL (or adds a link), and `d` deletes either after asking.
+
 ## Group lists into folders
 
 ```sh

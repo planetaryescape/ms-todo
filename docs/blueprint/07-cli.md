@@ -49,8 +49,9 @@ search     QUERY [--list L] [--status open|completed|all] [--limit N]   # title 
 done       [--since W] [--until W] [--list L | --folder F] [--limit N]     # completed, by local day, newest first (D-048)
 reschedule [--overdue | --due-before W | T... | -] --to W [--list L | --folder F] [--dry-run] [--yes]
 
-steps      list T | add T "text" | edit T S "text" | check T S | uncheck T S | delete T S | order …
-links      list T | add T URL [--name N] [--app A] [--external-id X] | edit … | delete T R
+steps      list T | add T "text"... | edit T S "text" | check T S... | uncheck T S... | delete T S... [--yes]
+           # S: a number from 1, an ID or the exact text; no `order`: Graph can't reorder steps (S15)
+links      list T | add T URL [--name N] [--app A] [--external-id X] | edit T [R] [--url U] [--name N] … | delete T [R] [--yes]
 attachments list T | add T FILE... | download T [A] [--out DIR] | delete T A   # paths only; the daemon moves the bytes
 extensions list (list|task) ID | get … NAME | set … NAME --json '{…}' | delete … NAME
 categories list | create NAME [--color presetN] | recolor … | delete …
@@ -98,6 +99,15 @@ raw        GET|POST|PATCH|DELETE PATH [--body JSON]   # authenticated passthroug
 - `doctor` has `suggest` (`enabled`, `provider`, `sends`: what leaves the machine, `problem`), and a failure or bad setting is a `suggest: …` problem.
 
 **Moving tasks, as built (rung 5e, D-051).** `tasks move T… --to L` moves the tasks named (`-` reads IDs from stdin; `--list L` lets T be an exact title there) to the list L. It's previewed and confirmed as 5d's bulk changes are: several tasks ask in a terminal and need `--yes` elsewhere (exit 2); `--dry-run` answers the `Plan` shape with `action: "move"`, `list` the target and `targets` the tasks. A real run answers `Applied` with `action: "move"` and each task as it now shows, in the target list with `sync_state` `pending`; its local ID never changes. A task already in L, or an unknown L, is refused (exit 2, exit 3) before anything is queued. Each task is one outbox operation (`action: "move"`) whose `note` in `outbox list` says why a paused move is waiting; a move paused on something only the user can settle is `flagged` at once. `outbox retry`, `outbox discard` and `undo` act on moves as D-051 describes.
+
+**Steps and links, as built (rung 8a, D-055).** Each command works on one task (`--list L` lets T be an exact title there).
+
+- `steps list T` is a collection of the task's steps in Graph's order (the order they were added): Graph's fields (`id`, `displayName`, `isChecked`, `checkedDateTime`, `createdDateTime`) plus `index`, from 1. Table `#  DONE  STEP  ID`; CSV `index,id,text,checked,checked_at,created`; `ids` the step IDs. `links list T` is the same for the link (`webUrl`, `displayName`, `applicationName`, `externalId`); CSV `index,id,url,name,app,external_id`.
+- A step S is named by its ID, its number from 1, or its exact text; a number is always a number. Several steps sharing a text is `invalid_input` listing their numbers; a step not found is `not_found` (exit 3). Every name must match, or nothing is queued.
+- `steps add T "text"...` adds each text as a step, unchecked, in order; `edit T S "text"` renames one and keeps it checked or not; `check` and `uncheck T S...`; `delete T S... [--yes]` asks in a terminal, and elsewhere exits 2 without `--yes`. A step already as asked is left out, so a repeat queues nothing.
+- `links add T URL [--name N] [--app A] [--external-id X]` gives the task its link; `applicationName` is `ms-todo` without `--app` (Graph requires one, S15). A task with a link already is refused (exit 2): Graph allows one (S14). `links edit T [R] [--url U] [--name N] [--app A] [--external-id X]` sets fields; Graph can't clear one, so an empty value is refused. `links delete T [R] [--yes]` as `steps delete`. R is the link's number or ID, and can be left out. A URL must parse (`url` crate); any scheme is kept, and in table, CSV and ids formats a `note:` on stderr says when it won't open.
+- Writes answer `Applied` with the task (its `checklistItems` and `linkedResources` as they are now, `sync_state` `pending`) and actions `step_add`, `step_edit`, `step_check`, `step_uncheck`, `step_delete`, `link_add`, `link_edit`, `link_delete`; the table lists the task's steps or link after the change. `--dry-run` answers `Plan` with the task as `targets` and each write as `{ collection, verb, id, body, carried }` in `changes`. Each step or link written is one outbox operation under the command's `op_id`; `undo` reverses them, leaving alone (in `refused`) a step changed since. A create whose answer was lost is `unknown` and `flagged` at once.
+- **Protocol 13:** `TaskChange::AddSteps`, `EditStep`, `CheckSteps`, `DeleteSteps`, `AddLink`, `EditLink` and `DeleteLink`.
 
 `raw` counts as coverage of the full surface: anything Graph adds later can be reached before it gets a proper command.
 

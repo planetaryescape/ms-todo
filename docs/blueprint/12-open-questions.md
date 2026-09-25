@@ -20,6 +20,7 @@ For each, record the request, the response (with private data removed), the date
 | S12 | Does creating a task with `recurrence` and completing it make Graph create the next occurrence (as the app does), and what does delta return for it? | How recurrence and sync interact | [04](04-sync-cache.md) |
 | S13 | Can a task create carry a unique marker (our extension with the outbox `opId`), and can a lookup find it? (Added after review, 2026-09-24.) | Attributing a create whose outcome is unknown | [04](04-sync-cache.md#unknown-outcome-d-028) |
 | S14 | What does a task copied to another list keep, and which requests copy it? (Rung 5e, 2026-09-25.) | Moving a task without losing anything | [05](05-custom-features.md#move-between-lists), D-051 |
+| S15 | How do step and link writes behave: which fields a link needs, whether its PATCH and DELETE honour `If-Match`, whether a field can be cleared, and whether steps can be reordered? (Rung 8a, 2026-09-25.) | Steps and links through the outbox | [07](07-cli.md), D-055 |
 | P1 | What is the default page size for task lists and delta, and does `Prefer: odata.maxpagesize` work? (Added during phase 0.) | Pagination, and rung 1's "more than 100 tasks" check | [03](03-graph-provider.md) |
 
 ### S5 result (2026-09-24)
@@ -101,6 +102,10 @@ Confidence: high. Evidence: [S11](../research/spikes/S11.md). Changed: [02](02-d
 ### S14 result (2026-09-25)
 
 **Everything but `createdDateTime`, and one POST makes all of it but the attachments.** A task POST takes its checklist items (with `isChecked` and `checkedDateTime`), its linked resource and our extension inline; attachments copy byte for byte through a POST or an upload session. A task holds at most one linked resource. An upload session's bytes go to `<uploadUrl>/content`, with the token (the bare URL is 404). A recurring task's dates must be written in the zone its recurrence reports, which a GET gives as UTC, or Graph moves the copy's dates a day on. `createdDateTime` is stamped anew and ignored on create. Confidence: high. Evidence: [S14](../research/spikes/S14.md). Changed: [05](05-custom-features.md#move-between-lists), D-051.
+
+### S15 result (2026-09-25)
+
+**Links behave like steps for `If-Match`, but a field can't be cleared; steps can't be reordered.** A link needs `applicationName` (400 without); its PATCH and DELETE honour the parent task's etag as a step's do (412 when stale); its PATCH is partial, and a null or empty value is ignored, so a field can be set and never cleared; any URL scheme is kept, but not a string that isn't a URL. A step can be created checked, with its `checkedDateTime` kept. Steps come back in the order they were added, and nothing reorders them: `createdDateTime` can't be updated and `$orderby` is ignored. Confidence: high. Evidence: [S15](../research/spikes/S15.md). Changed: [07](07-cli.md), [08](08-tui.md), D-055.
 
 ### P1 result (2026-09-24)
 

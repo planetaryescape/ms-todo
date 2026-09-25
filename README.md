@@ -162,6 +162,7 @@ In the TUI's add box, a likely list shows as `→ Finances? (Ctrl-l to accept)`.
 | `x` | complete, or reopen a completed task |
 | `e` | edit a field: `t` title, `d` due date, `r` reminder, `i` importance, `n` notes, `I` cycles importance |
 | `Enter` in the detail pane | edit the field under the cursor |
+| `Space` on a step in the detail pane | check or uncheck it; `a` adds steps, `e` / `Enter` edits a step or the link, `d` deletes one |
 | `v` / `V` | select a task, or every task in the view; `Esc` clears the selection |
 | `t` | put the task or the selection in My Day, or take it out; on a suggestion in the My Day view, add it |
 | `m` | move the task or the selection to another list |
@@ -238,6 +239,17 @@ mst undo                                          # moves it back
 ```
 
 A move keeps the task's steps, link, attachments and ms-todo's own data, and checks the copy before it deletes the original.
+
+### Steps and links
+
+```sh
+mst steps add <id> "Buy paint" "Tape the edges" "Two coats"
+mst steps check <id> 1               # by number, ID or exact text
+mst steps list <id>
+mst links add <id> https://example.com/colours --name "Colour chart"
+```
+
+Steps checked on the phone show as checked here after the next sync. A task holds one link, as the To Do apps allow. In the TUI, the detail pane lists the steps and the link: `Space` ticks the step under the cursor. [Steps and links](docs/usage.md#steps-and-links) has the rest.
 
 ### My Day
 

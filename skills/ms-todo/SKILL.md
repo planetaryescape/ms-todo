@@ -1,11 +1,11 @@
 ---
 name: ms-todo
-description: Read, find, add, complete, reopen, edit, reschedule, move and delete Microsoft To Do tasks, and plan My Day, from the terminal by driving the `ms-todo` CLI. Use when the user wants to capture a task, tick one off, change a due date or reminder, move overdue tasks, move tasks to another list, plan today (My Day), see what's in a list, find a task by what it says, summarise what they finished (for a standup or a weekly review), or otherwise work with their Microsoft To Do lists and tasks.
+description: Read, find, add, complete, reopen, edit, reschedule, move and delete Microsoft To Do tasks, break them into steps, attach a link, and plan My Day, from the terminal by driving the `ms-todo` CLI. Use when the user wants to capture a task, tick one off, change a due date or reminder, move overdue tasks, move tasks to another list, add or tick off a task's steps, attach a link to a task, plan today (My Day), see what's in a list, find a task by what it says, summarise what they finished (for a standup or a weekly review), or otherwise work with their Microsoft To Do lists and tasks.
 ---
 
 # ms-todo
 
-**Skill v8, for ms-todo rung 7** (instant reads from a local cache kept live by delta sync; search across every list; what was completed, by day; instant writes that queue offline and are never dropped; bulk reschedules and edits; moving tasks between lists without losing anything; undo; quick add, which reads a task's text for its list, dates, recurrence and importance, and which agents turn off with `--no-parse`; optional list suggestions for inbox tasks; and My Day, ms-todo's plan for today, mirrored on the phone through the due date).
+**Skill v9, for ms-todo rung 8a** (instant reads from a local cache kept live by delta sync; search across every list; what was completed, by day; instant writes that queue offline and are never dropped; bulk reschedules and edits; moving tasks between lists without losing anything; undo; quick add, which reads a task's text for its list, dates, recurrence and importance, and which agents turn off with `--no-parse`; optional list suggestions for inbox tasks; My Day, ms-todo's plan for today, mirrored on the phone through the due date; and a task's steps and its one link).
 
 `ms-todo tui` (`mst tui`) is a full-screen view for people at a keyboard. Don't use it: it needs a terminal, and everything it does is a command below. Always pass a subcommand: a bare `ms-todo` opens the TUI in a terminal, and elsewhere only prints help and exits 2.
 
@@ -140,6 +140,25 @@ ms-todo tasks move <ID> <ID> --to "Someday" --yes --format json           # seve
 - A move copies the task into the list with every field, its steps, its link, its attachments and ms-todo's own data, checks the copy, and only then deletes the original. The task keeps its `id`; its `graph_id` changes. The answer shows it in the new list with `sync_state: "pending"`; it's `synced` once the move is done (`ms-todo outbox list`: the operation's `action` is `move`).
 - A failure before the delete leaves the original untouched: the operation is `failed` and the task is back in its list. A step with no answer pauses the move as `unknown` and deletes nothing. **Never retry or discard a paused move yourself, and never recreate the task**: tell the user what its `note` says and let them choose `outbox retry` or `outbox discard`. A move of a task already in that list exits 2; an unknown list exits 3.
 - `ms-todo undo <op_id>` moves the tasks back the same way. A task moved or changed since is left alone and listed in `refused`; if all are, undo exits 5.
+
+## Steps and links
+
+```bash
+ms-todo steps list <ID> --format json                       # items: each step's id, displayName, isChecked, and index (from 1)
+ms-todo steps add <ID> "Buy paint" "Tape" --format json     # action "step_add"; several in order, unchecked
+ms-todo steps check <ID> <STEP> [<STEP>...] --format json   # "step_check"; uncheck is "step_uncheck"
+ms-todo steps edit <ID> <STEP> "New text" --format json     # "step_edit"; keeps it checked or not
+ms-todo steps delete <ID> <STEP> --dry-run --format json    # then again with --yes, once the user agrees
+ms-todo links list <ID> --format json                       # the task's link: webUrl, displayName, applicationName, externalId
+ms-todo links add <ID> <URL> --name "Spec" --format json    # "link_add"
+ms-todo links edit <ID> --url <URL> --format json           # "link_edit": sets fields, can't clear one
+ms-todo links delete <ID> --yes --format json               # "link_delete"
+```
+
+- **Name a step by its `id`** from `steps list`. A number is its position from 1, which shifts when a step is deleted, and exact text fails (exit 2) when two steps share it. Steps can't be reordered.
+- Each command works on one task. The answer is the usual `Applied`, the task with its `checklistItems` and `linkedResources` as they are now, `sync_state: "pending"` until sent. A step you just added has an `id` starting `local-` until Microsoft To Do has it; you can check or edit it straight away.
+- **A task holds one link.** `links add` on a task with one exits 2: ask the user whether to replace it (`links edit`), don't delete it yourself. The link's URL is kept whatever it is; `tasks open` opens only http, https and mailto.
+- A step or link add with no answer is `unknown` and `flagged` at once, since nothing identifies a step: tell the user, and never add it again yourself.
 
 ## My Day: plan today
 
