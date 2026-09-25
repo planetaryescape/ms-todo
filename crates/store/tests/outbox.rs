@@ -459,3 +459,30 @@ async fn a_task_extension_write_merges_at_once_rolls_back_and_stays_over_graphs_
         "the task itself untouched"
     );
 }
+
+#[tokio::test]
+async fn the_default_undo_passes_over_an_automatic_command() {
+    let (_dir, store, list) = open().await;
+    store
+        .enqueue("op-1", None, vec![create("op-1", "t1", &list, "Milk")])
+        .await
+        .expect("create");
+    store
+        .enqueue("op-2", None, vec![edit("op-2", "t1", &list, "Oat milk")])
+        .await
+        .expect("edit");
+    let mut automatic = my_day("op-3", "t1", &list, json!({ "myDay": null }));
+    automatic.payload["origin"] = json!("auto");
+    store
+        .enqueue("op-3", None, vec![automatic])
+        .await
+        .expect("automatic");
+    assert_eq!(
+        store
+            .last_undoable_command()
+            .await
+            .expect("read")
+            .as_deref(),
+        Some("op-2")
+    );
+}

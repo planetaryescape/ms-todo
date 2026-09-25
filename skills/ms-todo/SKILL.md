@@ -153,7 +153,7 @@ ms-todo myday rollover --dry-run --format json    # what the daily rollover woul
 ```
 
 - A task is in My Day when its extension's `myDay` (`items[].extensions[0].myDay`) is today's date. **Adding a task with no due date also makes it due today** (`myDayDueSet: true`), so the phone's own My Day shows it; tell the user that when you add one. A task with a due date keeps it. Removing it, or the daily rollover, takes that due date away again unless the user changed it; a due date the user set is never touched.
-- The daemon empties the day's My Day by itself at `my_day.rollover_time` (00:00 unless config.toml says otherwise). Don't run `myday rollover` unless the user asks; it's one change, `my_day_rollover` in `outbox list`, and `undo <op_id>` reverses it.
+- The daemon empties the day's My Day by itself at `my_day.rollover_time` (00:00 unless config.toml says otherwise). Don't run `myday rollover` unless the user asks; it's one change, `my_day_rollover` in `outbox list`, and only `undo <op_id>` reverses it: a plain `undo` skips the daemon's own rollover.
 - Only suggest; **add only what the user picks**. Adding a task already in My Day, or removing one that isn't, changes nothing (`items: []`).
 - Tasks the user put in My Day in the To Do app aren't visible here: Graph can't read the app's My Day. Don't tell the user their My Day is empty on that basis; say ms-todo's is.
 

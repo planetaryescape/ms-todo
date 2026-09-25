@@ -21,7 +21,7 @@ use ms_todo_store::{LISTS_SCOPE, LocalChange, NewOp, OpKind, TaskRow, View};
 use serde_json::{Map, Value, json};
 
 pub(crate) use config::Config;
-pub(crate) use rollover::{rollover, run};
+pub(crate) use rollover::{Origin, rollover, run};
 pub(crate) use suggestions::suggestions;
 
 use crate::freshness::{all_lists_state, read_state};

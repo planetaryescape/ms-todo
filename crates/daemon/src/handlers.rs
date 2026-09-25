@@ -120,7 +120,7 @@ pub(crate) async fn handle(state: &State, request: Request) -> Response {
         Request::MyDay => crate::my_day::my_day(state).await,
         Request::MyDayRollover { dry_run, op_id } => {
             let op_id = op_id.unwrap_or_else(new_op_id);
-            crate::my_day::rollover(state, dry_run, op_id).await
+            crate::my_day::rollover(state, dry_run, op_id, crate::my_day::Origin::User).await
         }
         Request::Bearer => match state.auth.valid_token().await {
             Ok(token) => Ok(ResponseData::Bearer {

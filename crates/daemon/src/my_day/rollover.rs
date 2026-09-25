@@ -45,11 +45,22 @@ pub(crate) fn rollover_plan(row: &TaskRow, today: NaiveDate) -> Option<TaskPlan>
     Some(plan)
 }
 
+/// Who started a rollover.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum Origin {
+    /// `myday rollover`.
+    User,
+    /// The daemon's daily run. Its operations carry `"origin": "auto"`, so
+    /// a plain `undo` passes over it for the user's own last change.
+    Auto,
+}
+
 /// `myday rollover [--dry-run]`, and the daily run.
 pub(crate) async fn rollover(
     state: &State,
     dry_run: bool,
     op_id: String,
+    origin: Origin,
 ) -> Result<ResponseData, ErrorPayload> {
     let today = state.my_day.today();
     let rows = state
@@ -70,7 +81,12 @@ pub(crate) async fn rollover(
         let plan = dry_run_plan(TaskAction::MyDayRollover, &planned, changes);
         return Ok(ResponseData::Plan(plan));
     }
-    let ops = command_ops(&op_id, &planned, TaskAction::MyDayRollover);
+    let mut ops = command_ops(&op_id, &planned, TaskAction::MyDayRollover);
+    if origin == Origin::Auto {
+        for op in &mut ops {
+            op.payload["origin"] = json!("auto");
+        }
+    }
     let answer = queue(state, &op_id, None, ops, TaskAction::MyDayRollover).await?;
     let today_text = today.format(DATE_FORMAT).to_string();
     let left_over = left_over(&planned).to_string();
@@ -153,7 +169,7 @@ async fn tick(state: &State) {
         return;
     }
     let op_id = uuid::Uuid::new_v4().to_string();
-    match rollover(state, false, op_id.clone()).await {
+    match rollover(state, false, op_id.clone(), Origin::Auto).await {
         Ok(ResponseData::Applied(applied)) => eprintln!(
             "ms-todo daemon: My Day rolled over to {today}: {} task(s) taken out (op {op_id})",
             applied.items.len()

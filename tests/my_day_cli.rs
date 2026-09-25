@@ -565,3 +565,70 @@ async fn doctor_reports_my_day_and_the_phone_setting_and_a_bad_rollover_time() {
     let problems = doctor["problems"].to_string();
     assert!(problems.contains("my_day.rollover_time"), "{problems}");
 }
+
+#[tokio::test]
+async fn a_plain_undo_takes_back_your_last_change_not_the_automatic_rollover() {
+    let mut env = Env::new();
+    let config = env.home.path().join("config/ms-todo");
+    std::fs::create_dir_all(&config).expect("config dir");
+    // My Day's day is yesterday until 23:59, so the first start rolls over
+    // for yesterday and the next start, at 00:00, is due again.
+    std::fs::write(
+        config.join("config.toml"),
+        "[my_day]\nrollover_time = \"23:59\"\n",
+    )
+    .expect("config");
+    let graph = graph_with(
+        &mut env,
+        vec![
+            task("T1", "Buy milk", "W/\"1\""),
+            task("T2", "Call the bank", "W/\"1\""),
+        ],
+        Vec::new(),
+    )
+    .await;
+    env.synced();
+    rolled_over(&env);
+    let milk = env.local_id(&["tasks", "list"], "T1");
+    let edited = env.json(&["tasks", "edit", &milk, "--title", "Buy oat milk"]);
+    let edit = edited["op_id"].as_str().expect("op_id").to_owned();
+    env.settled();
+
+    // T2 is in an earlier day's My Day, and the daemon restarts at 00:00.
+    graph.edit(|data| {
+        data.extensions
+            .insert("T2".into(), my_day_extension(OLD_DAY, false));
+        let task = data
+            .tasks
+            .get_mut("L-tasks")
+            .and_then(|tasks| tasks.iter_mut().find(|task| task["id"] == "T2"))
+            .expect("task");
+        task["@odata.etag"] = json!("W/\"2\"");
+    });
+    env.synced();
+    std::fs::remove_file(config.join("config.toml")).expect("remove config");
+    env.json(&["daemon", "stop"]);
+    env.synced();
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(20);
+    while graph.extension("T2").is_some() {
+        assert!(
+            std::time::Instant::now() < deadline,
+            "the automatic rollover never took T2 out"
+        );
+        std::thread::sleep(std::time::Duration::from_millis(100));
+    }
+    env.settled();
+    let rollover = command_of(&env, "my_day_rollover");
+
+    let undone = env.json(&["undo"]);
+    assert_eq!(undone["undoes"], edit.as_str());
+    env.settled();
+    assert_eq!(graph_task(&graph, "T1")["title"], "Buy milk");
+    assert!(graph.extension("T2").is_none(), "the rollover stays");
+
+    // By name, the rollover can still be undone.
+    let by_name = env.json(&["undo", &rollover]);
+    assert_eq!(by_name["undoes"], rollover.as_str());
+    env.settled();
+    assert_eq!(graph.extension("T2").expect("back")["myDay"], OLD_DAY);
+}

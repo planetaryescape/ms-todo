@@ -531,10 +531,13 @@ impl Store {
         self.ops_with("o.op_id = ?", id).await
     }
 
-    /// The latest command that isn't an undo and hasn't been undone.
+    /// The latest command that isn't an undo, hasn't been undone and was
+    /// the user's own: one the daemon made by itself (the My Day rollover)
+    /// has `"origin": "auto"` in its payload, and is undone only by name.
     pub async fn last_undoable_command(&self) -> Result<Option<String>, StoreError> {
         Ok(sqlx::query_scalar(
             "SELECT command_id FROM outbox o WHERE undoes_command_id IS NULL \
+             AND json_extract(o.payload_json, '$.origin') IS NOT 'auto' \
              AND NOT EXISTS (SELECT 1 FROM outbox u WHERE u.undoes_command_id = o.command_id) \
              GROUP BY command_id ORDER BY MAX(seq) DESC LIMIT 1",
         )
