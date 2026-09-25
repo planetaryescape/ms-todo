@@ -6,6 +6,8 @@
 
 mod support;
 
+use std::time::{Duration, Instant};
+
 use serde_json::{Value, json};
 use support::Env;
 use support::fake_graph::{FakeGraph, list, task};
@@ -255,7 +257,15 @@ async fn a_list_deleted_before_its_tasks_have_synced_counts_what_graph_holds() {
     });
     graph.accept_catalog().await;
     env.json(&["sync"]);
-    let listed = env.json(&["lists", "list"]);
+    let lists_ready = Instant::now() + Duration::from_secs(10);
+    let listed = loop {
+        let listed = env.json(&["lists", "list"]);
+        if listed["sync"]["state"] == "ready" {
+            break listed;
+        }
+        assert!(Instant::now() < lists_ready, "the lists never synced");
+        std::thread::sleep(Duration::from_millis(50));
+    };
     assert_eq!(listed["items"].as_array().map(Vec::len), Some(2));
     assert!(
         env.json(&["tasks", "list", "--list", "Groceries"])["items"]
