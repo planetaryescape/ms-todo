@@ -183,7 +183,7 @@ fn the_preview_names_the_day_and_says_when_it_is_past() {
 }
 
 #[test]
-fn a_due_date_refuses_a_time_and_a_reminder_needs_one() {
+fn a_due_date_refuses_a_time() {
     assert_eq!(
         read_due("tomorrow", &ctx()),
         Ok(Reading::Set {
@@ -193,12 +193,59 @@ fn a_due_date_refuses_a_time_and_a_reminder_needs_one() {
     );
     let timed = read_due("tomorrow 9am", &ctx()).expect_err("a time");
     assert!(timed.0.contains("reminder"), "{timed}");
-    let untimed = read_reminder("tomorrow", &ctx()).expect_err("no time");
-    assert!(untimed.0.contains("time"), "{untimed}");
     assert!(matches!(
         read_reminder("fri 17:30", &ctx()),
         Ok(Reading::Set { .. })
     ));
+}
+
+/// A reminder read against the test clock, as `YYYY-MM-DD HH:MM` and
+/// its preview.
+fn reminder_at(input: &str, ctx: &ParseContext) -> (String, String) {
+    match read_reminder(input, ctx) {
+        Ok(Reading::Set { value, preview }) => {
+            (value.format("%Y-%m-%d %H:%M").to_string(), preview)
+        }
+        other => (format!("{other:?}"), String::new()),
+    }
+}
+
+#[test]
+fn a_reminder_with_only_a_day_is_at_nine() {
+    // Thursday 24 September, 14:00.
+    for (input, at, preview) in [
+        ("tomorrow", "2026-09-25 09:00", "Fri 25 Sep 09:00"),
+        ("in 2 days", "2026-09-26 09:00", "Sat 26 Sep 09:00"),
+        ("fri", "2026-09-25 09:00", "Fri 25 Sep 09:00"),
+        ("12 oct", "2026-10-12 09:00", "Mon 12 Oct 09:00"),
+        ("next week", "2026-09-28 09:00", "Mon 28 Sep 09:00"),
+    ] {
+        assert_eq!(
+            reminder_at(input, &ctx()),
+            (at.to_owned(), preview.to_owned()),
+            "{input:?}"
+        );
+    }
+}
+
+#[test]
+fn a_reminder_for_today_after_nine_stays_today_and_says_it_is_past() {
+    // 14:00: today's 09:00 has gone, and isn't moved to tomorrow.
+    assert_eq!(
+        reminder_at("today", &ctx()),
+        (
+            "2026-09-24 09:00".to_owned(),
+            "Thu 24 Sep 09:00, in the past".to_owned()
+        )
+    );
+    // 08:00: still to come.
+    let early = ctx_at("2026-09-24T08:00:00+01:00");
+    assert_eq!(
+        reminder_at("today", &early),
+        ("2026-09-24 09:00".to_owned(), "Thu 24 Sep 09:00".to_owned())
+    );
+    // A typed time still wins over the default.
+    assert_eq!(reminder_at("tomorrow 17:30", &ctx()).0, "2026-09-25 17:30");
 }
 
 #[test]

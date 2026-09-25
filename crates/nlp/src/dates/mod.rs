@@ -99,23 +99,35 @@ pub fn read_due(input: &str, ctx: &ParseContext) -> Result<Reading<NaiveDate>, N
     }
 }
 
-/// A reminder, which needs a time: `17:30` alone is today's, or
-/// tomorrow's once it has passed; a day alone is refused rather than
-/// given a time nobody typed.
+/// The time a reminder given only a day rings at. 09:00 matches
+/// Microsoft To Do's own "Tomorrow" reminder.
+const DEFAULT_REMINDER_TIME: NaiveTime = match NaiveTime::from_hms_opt(9, 0, 0) {
+    Some(time) => time,
+    None => panic!("09:00 is a valid time"),
+};
+
+/// A reminder: `17:30` alone is today's, or tomorrow's once it has
+/// passed; a day alone is that day at [`DEFAULT_REMINDER_TIME`]. A day
+/// alone that is today keeps today even when 09:00 has passed, and its
+/// preview says so, as a past due date's does, rather than moving to a
+/// day nobody typed.
 pub fn read_reminder(
     input: &str,
     ctx: &ParseContext,
 ) -> Result<Reading<NaiveDateTime>, NotUnderstood> {
-    match read_when(input, ctx)? {
-        Reading::Clear => Ok(Reading::Clear),
-        Reading::Set {
-            value: DueSpec::DateTime(at),
-            preview,
-        } => Ok(Reading::Set { value: at, preview }),
-        Reading::Set { .. } => Err(NotUnderstood(
-            "a reminder needs a time too, as in \"tomorrow 9am\"".into(),
-        )),
-    }
+    Ok(match whole_string::read(input, ctx)? {
+        None => Reading::Clear,
+        Some(spec) => {
+            let at = match spec {
+                DueSpec::DateTime(at) => at,
+                DueSpec::Date(date) => date.and_time(DEFAULT_REMINDER_TIME),
+            };
+            Reading::Set {
+                value: at,
+                preview: preview(DueSpec::DateTime(at), ctx),
+            }
+        }
+    })
 }
 
 /// `Fri 2 Oct`, with the year when it isn't this one, the time when

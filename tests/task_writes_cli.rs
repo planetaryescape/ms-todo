@@ -490,6 +490,26 @@ async fn date_and_importance_flags_take_phrases() {
         .expect("a due date");
     assert!(due.ends_with("T00:00:00"), "{due}");
 
+    // A digit offset works in both flags, and a reminder given only a
+    // day is 09:00 on it.
+    let offset = env.json(&[
+        "tasks",
+        "add",
+        "x",
+        "--due",
+        "in 2 days",
+        "--reminder",
+        "in 2 days",
+        "--dry-run",
+    ]);
+    let due = offset["changes"]["dueDateTime"]["dateTime"]
+        .as_str()
+        .expect("a due date");
+    let reminder = offset["changes"]["reminderDateTime"]["dateTime"]
+        .as_str()
+        .expect("a reminder");
+    assert_eq!(reminder, due.replace("T00:00:00", "T09:00:00"), "{due}");
+
     // `-` clears, like --clear-due.
     let edit = env.json(&["tasks", "edit", "T1", "--due", "-", "--dry-run"]);
     assert_eq!(edit["changes"], json!({ "dueDateTime": null }));

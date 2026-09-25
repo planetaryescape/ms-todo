@@ -230,7 +230,8 @@ pub struct AddArgs {
     #[arg(long, value_name = "WHEN", value_parser = phrases::due, allow_hyphen_values = true)]
     pub due: Option<Clearable<String>>,
     /// Remind me at this local time: 17:30 (the next one), tomorrow 9am,
-    /// fri 5:30pm, 2026-10-02 09:30. A day needs a time
+    /// fri 5:30pm, 2026-10-02 09:30. A day alone, such as tomorrow or in
+    /// 2 days, is 09:00 on it
     #[arg(long, value_name = "WHEN", value_parser = phrases::reminder, allow_hyphen_values = true)]
     pub reminder: Option<Clearable<String>>,
     /// How important it is: 1 or p1 (high), 2, 3, p2 or p3 (normal), 4

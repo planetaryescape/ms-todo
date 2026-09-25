@@ -14,7 +14,7 @@ Options:
       --list <NAME|ID>         The list's exact name or its ID [default: the "Tasks" list]
       --due <WHEN>             Due date: 2026-10-02, today, tomorrow, fri, next mon, in 3 days, +2w, 12 oct, 12/10 (day first), end of month. Due dates have no time; put a time in --reminder
       --instance <NAME>        Use a separate copy of ms-todo's data (also MS_TODO_INSTANCE). Builds run from Cargo's target/ directory default to "dev"; "default" is the installed copy
-      --reminder <WHEN>        Remind me at this local time: 17:30 (the next one), tomorrow 9am, fri 5:30pm, 2026-10-02 09:30. A day needs a time
+      --reminder <WHEN>        Remind me at this local time: 17:30 (the next one), tomorrow 9am, fri 5:30pm, 2026-10-02 09:30. A day alone, such as tomorrow or in 2 days, is 09:00 on it
       --importance <LEVEL>     How important it is: 1 or p1 (high), 2, 3, p2 or p3 (normal), 4 or p4 (low), or high, normal or low
       --body <TEXT>            Notes, as plain text
       --dry-run                Show what would be sent without changing anything

@@ -286,9 +286,13 @@ fn date_shortcuts_resolve_before_sending() {
             None,
         ),
         (Field::Due, "+2w", Some("2026-10-08"), None),
+        (Field::Due, "in 2 days", Some("2026-09-26"), None),
         (Field::Due, "12 oct", Some("2026-10-12"), None),
         (Field::Reminder, "17:30", None, Some("2026-09-24T17:30")),
         (Field::Reminder, "9:00", None, Some("2026-09-25T09:00")),
+        // A day alone is 09:00 on it, as To Do's "Tomorrow" is.
+        (Field::Reminder, "in 2 days", None, Some("2026-09-26T09:00")),
+        (Field::Reminder, "tomorrow", None, Some("2026-09-25T09:00")),
         (
             Field::Reminder,
             "next mon 9am",
@@ -332,6 +336,13 @@ fn the_resolved_date_is_shown_while_typing() {
     retype(&mut app, "tomo");
     assert!(matches!(app.date_preview(), Some(Err(why)) if why.contains("tomo")));
     act(&mut app, Action::Cancel);
+    pick(&mut app, Field::Reminder);
+    retype(&mut app, "in 2 days");
+    assert_eq!(
+        app.date_preview(),
+        Some(Ok("\u{2192} Sat 26 Sep 09:00".into()))
+    );
+    act(&mut app, Action::Cancel);
     pick(&mut app, Field::Title);
     assert_eq!(app.date_preview(), None);
 }
@@ -364,7 +375,6 @@ fn invalid_input_shows_why_and_sends_nothing_until_fixed() {
         (Field::Due, "2026-13-40"),
         (Field::Due, "soonish"),
         (Field::Due, "tomorrow 9am"),
-        (Field::Reminder, "tomorrow"),
         (Field::Reminder, "2026-10-01 9 in the morning"),
     ] {
         pick(&mut app, field);

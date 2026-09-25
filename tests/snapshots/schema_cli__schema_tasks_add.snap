@@ -37,7 +37,7 @@ expression: pretty
         "x-cli": "--list"
       },
       "reminder": {
-        "description": "Remind me at this local time: 17:30 (the next one), tomorrow 9am, fri 5:30pm, 2026-10-02 09:30. A day needs a time",
+        "description": "Remind me at this local time: 17:30 (the next one), tomorrow 9am, fri 5:30pm, 2026-10-02 09:30. A day alone, such as tomorrow or in 2 days, is 09:00 on it",
         "type": "string",
         "x-cli": "--reminder"
       },
