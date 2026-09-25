@@ -89,7 +89,7 @@ pub fn print_success(format: OutputFormat, value: &impl Render) -> Result<(), Cl
 }
 
 // One flat record's value as a CSV cell: arrays joined with `;`, null empty.
-fn csv_cell(value: &Value) -> String {
+pub fn csv_cell(value: &Value) -> String {
     match value {
         Value::Null => String::new(),
         Value::String(text) => text.clone(),

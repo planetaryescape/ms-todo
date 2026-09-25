@@ -16,7 +16,7 @@ expression: "format!(\"{everything}\\n{}\", render(&app))"
 "│                      │││Clear selection or filter                              Esc│                        │"
 "│                      │││Sync                                                     r│   none                 │"
 "╰──────────────────────╯╰│Diagnostics                                              D│────────────────────────╯"
-" ● daemon  ·  synced 12s │Help                                                     ?│                         "
+" ● daemon  ·  synced 12s │Move list to folder…                                     M│                         "
 " Enter Run  Esc Close    ╰──────────────────────────────────────────────────────────╯                         "
 
 " ms-todo 9.9.9 · Home                                                                                ● synced "

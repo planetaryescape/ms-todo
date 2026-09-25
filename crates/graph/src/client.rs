@@ -152,6 +152,68 @@ impl GraphClient {
         )
     }
 
+    /// `GET /me/todo/lists/{id}` with our open extension `name` inline: the
+    /// read before an extension write merges into it (S2).
+    pub async fn get_list_with_extension(
+        &self,
+        list_id: &str,
+        name: &str,
+    ) -> Result<Entity, GraphError> {
+        let mut url = self.url(&["me", "todo", "lists", list_id]);
+        expand_extension(&mut url, name);
+        entity(self.get(url, false).await?)
+    }
+
+    /// `PATCH /me/todo/lists/{list}/extensions/{name}` with the whole
+    /// document: Graph replaces the extension with `data` (S2), so a
+    /// resend writes the same thing and it's idempotent.
+    pub async fn replace_list_extension(
+        &self,
+        list_id: &str,
+        name: &str,
+        data: &Value,
+    ) -> Result<(), GraphError> {
+        let url = self.url(&["me", "todo", "lists", list_id, "extensions", name]);
+        self.send(Call {
+            body: Some(data),
+            ..Call::new(Method::PATCH, url)
+        })
+        .await
+        .map(drop)
+    }
+
+    /// `DELETE /me/todo/lists/{list}/extensions/{name}`, for a document
+    /// with no fields left: Graph refuses a PATCH of an empty one (400
+    /// `RequestBroker--ParseUri`). A 404 or a repeat means it's gone,
+    /// which counts as success (S2: a delete of one that doesn't exist is
+    /// 204 anyway).
+    pub async fn delete_list_extension(&self, list_id: &str, name: &str) -> Result<(), GraphError> {
+        let url = self.url(&["me", "todo", "lists", list_id, "extensions", name]);
+        match self.send(Call::new(Method::DELETE, url)).await {
+            Ok(_) => Ok(()),
+            Err(error) if error.status() == Some(404) => Ok(()),
+            Err(error) => Err(error),
+        }
+    }
+
+    /// `POST /me/todo/lists/{list}/extensions`, for a list without our
+    /// extension yet. POST of a name that exists acts as an upsert (S2), so
+    /// unlike other creates a resend is harmless, and it's sent as
+    /// idempotent.
+    pub async fn create_list_extension(
+        &self,
+        list_id: &str,
+        body: &Value,
+    ) -> Result<(), GraphError> {
+        let url = self.url(&["me", "todo", "lists", list_id, "extensions"]);
+        self.send(Call {
+            body: Some(body),
+            ..Call::new(Method::POST, url)
+        })
+        .await
+        .map(drop)
+    }
+
     /// `GET /me/todo/lists/{id}/tasks`, every page.
     pub async fn list_tasks(&self, list_id: &str) -> Result<Vec<Entity>, GraphError> {
         self.get_collection(self.url(&["me", "todo", "lists", list_id, "tasks"]))

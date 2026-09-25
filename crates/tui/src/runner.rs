@@ -168,7 +168,10 @@ fn key_msg(app: &App, key: &KeyEvent) -> Option<Msg> {
     if let Some(action) = resolve(context, key) {
         return Some(Msg::Action(action));
     }
-    if !matches!(context, Context::Prompt | Context::Notes | Context::Palette) {
+    if !matches!(
+        context,
+        Context::Prompt | Context::Notes | Context::Palette | Context::Folder
+    ) {
         return None;
     }
     match key.code {

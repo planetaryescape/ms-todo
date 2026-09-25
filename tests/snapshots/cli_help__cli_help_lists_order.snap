@@ -1,0 +1,20 @@
+---
+source: tests/cli_help.rs
+expression: help_output(args)
+---
+Put a list just before or after another list in its folder
+
+Usage: ms-todo lists order [OPTIONS] <--before <LIST>|--after <LIST>> <LIST>
+
+Arguments:
+  <LIST>  The list to move, by exact name or ID
+
+Options:
+      --before <LIST>          Put it just before this list, in the same folder
+      --format <FORMAT>        Output format: jsonl is one object per line, ids one ID per line, csv has a header row [default: table in a terminal, json when piped] [possible values: table, json, jsonl, ids, csv]
+      --after <LIST>           Put it just after this list, in the same folder
+      --instance <NAME>        Use a separate copy of ms-todo's data (also MS_TODO_INSTANCE). Builds run from Cargo's target/ directory default to "dev"; "default" is the installed copy
+      --dry-run                Show what would change without changing anything
+      --idempotency-key <KEY>  Run this change at most once: repeating the command with the same key returns the first result for 24 hours, and the same key with a different change exits 2
+  -h, --help                   Print help
+  -V, --version                Print version

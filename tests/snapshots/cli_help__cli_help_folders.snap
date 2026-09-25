@@ -1,0 +1,20 @@
+---
+source: tests/cli_help.rs
+expression: help_output(args)
+---
+Folders that group your lists, as in the To Do app. Only ms-todo sees them, on every machine it runs on
+
+Usage: ms-todo folders [OPTIONS] <COMMAND>
+
+Commands:
+  list    Every folder in order, with its lists and open tasks
+  rename  Rename a folder; every list in it moves with it
+  delete  Delete a folder. Its lists stay, in no folder; no list or task is deleted. Asks first in a terminal; anywhere else it needs --yes
+  order   Put a folder just before or after another folder
+  help    Print this message or the help of the given subcommand(s)
+
+Options:
+      --format <FORMAT>  Output format: jsonl is one object per line, ids one ID per line, csv has a header row [default: table in a terminal, json when piped] [possible values: table, json, jsonl, ids, csv]
+      --instance <NAME>  Use a separate copy of ms-todo's data (also MS_TODO_INSTANCE). Builds run from Cargo's target/ directory default to "dev"; "default" is the installed copy
+  -h, --help             Print help
+  -V, --version          Print version

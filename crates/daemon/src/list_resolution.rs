@@ -95,6 +95,7 @@ mod tests {
             wellknown_list_name: Some(wellknown.into()),
             raw: Map::new(),
             extension: None,
+            sync_state: "synced".into(),
         }
     }
 

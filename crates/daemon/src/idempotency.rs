@@ -35,6 +35,11 @@ pub(crate) fn fingerprint(request: &Request) -> String {
         idempotency_key,
         ..
     }
+    | Request::ChangeLists {
+        op_id,
+        idempotency_key,
+        ..
+    }
     | Request::Undo {
         op_id,
         idempotency_key,

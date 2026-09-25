@@ -371,7 +371,9 @@ fn escape_sequences_from_graph_never_reach_the_terminal() {
         content: format!("line one\n{evil}"),
         html: false,
     });
-    app.lists[1].1 = evil.into();
+    app.lists[1].name = evil.into();
+    // A folder's name comes from another device's extension.
+    app.lists[0].folder = Some(evil.into());
     app.show(Level::Error, evil);
     let mut screens = vec![render(&app)];
     // Editing the title shows it as it came, in the line editor.
@@ -401,4 +403,26 @@ fn escape_sequences_from_graph_never_reach_the_terminal() {
         );
         assert!(screen.contains("rent"));
     }
+}
+
+#[test]
+fn the_sidebar_with_folders_one_collapsed() {
+    let mut app = crate::app::folders::tests::foldered();
+    app.collapsed.insert("Projects".into());
+    app.focus = Pane::Sidebar;
+    let mut shown = render(&app);
+    app.mode = Mode::MovingList {
+        list_id: "home".into(),
+        input: crate::app::line_editor::LineEditor::single("Ar"),
+    };
+    shown.push_str(&render(&app));
+    insta::assert_snapshot!(shown);
+}
+
+#[test]
+fn the_sidebar_with_folders_in_ascii() {
+    let mut app = crate::app::folders::tests::foldered();
+    app.glyphs = ASCII;
+    app.collapsed.insert("Projects".into());
+    insta::assert_snapshot!(render(&app));
 }

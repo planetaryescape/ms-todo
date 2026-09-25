@@ -8,6 +8,13 @@ pub enum Action {
     MoveUp,
     JumpTop,
     JumpBottom,
+    /// Enter or Space in the sidebar: collapse or expand a folder, or
+    /// open a list or view.
+    Open,
+    /// "Move list to folder…": ask for a folder for the current list.
+    MoveToFolder,
+    /// Tab in the folder prompt: take the first suggestion.
+    Complete,
     /// `h`: the pane to the left.
     FocusLeft,
     /// `l`, and Enter in the sidebar: the pane to the right.

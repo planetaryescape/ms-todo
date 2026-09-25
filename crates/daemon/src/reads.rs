@@ -13,7 +13,10 @@ pub(crate) async fn list_lists(state: &State) -> Result<ResponseData, ErrorPaylo
     let sync = read_state(state, LISTS_SCOPE).await?;
     let lists = state.store.lists().await.map_err(store_error)?;
     Ok(ResponseData::Lists {
-        items: lists.iter().map(list_entity).collect(),
+        items: crate::folders::sorted(&lists)
+            .into_iter()
+            .map(list_entity)
+            .collect(),
         sync,
     })
 }

@@ -1,0 +1,20 @@
+---
+source: tests/cli_help.rs
+expression: help_output(args)
+---
+Put lists in a folder (made if it's new), or take them out of theirs
+
+Usage: ms-todo lists move [OPTIONS] <--folder <FOLDER>|--no-folder> <LIST>...
+
+Arguments:
+  <LIST>...  The lists, by exact name or ID; several move together. `-` reads IDs from stdin, one per line
+
+Options:
+      --folder <FOLDER>        The folder to put them in. A folder that exists matches ignoring case; any other name makes a new one
+      --format <FORMAT>        Output format: jsonl is one object per line, ids one ID per line, csv has a header row [default: table in a terminal, json when piped] [possible values: table, json, jsonl, ids, csv]
+      --instance <NAME>        Use a separate copy of ms-todo's data (also MS_TODO_INSTANCE). Builds run from Cargo's target/ directory default to "dev"; "default" is the installed copy
+      --no-folder              Take them out of their folder
+      --dry-run                Show what would change without changing anything
+      --idempotency-key <KEY>  Run this change at most once: repeating the command with the same key returns the first result for 24 hours, and the same key with a different change exits 2
+  -h, --help                   Print help
+  -V, --version                Print version

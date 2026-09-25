@@ -1,10 +1,11 @@
 use bytes::BytesMut;
 use ms_todo_protocol::{
-    Applied, Candidate, Clearable, Codec, Counts, DaemonStatus, DoctorReport, EntityChanged,
-    ErrorPayload, Event, Importance, Message, NewTask, OpError, OutboxDepth, OutboxOp, OutboxState,
-    PROTOCOL_VERSION, Payload, Plan, PlannedTask, RawWriteMethod, Request, Response, ResponseData,
-    Rolled, Scope, ScopeError, ScopeStatus, SearchStatus, Seed, SyncActivity, SyncInfo, SyncMode,
-    SyncProgress, SyncReport, SyncState, TaskAction, TaskChange, TaskEdit, WriteRejected,
+    Anchor, Applied, Candidate, Clearable, Codec, Counts, DaemonStatus, DoctorReport,
+    EntityChanged, ErrorPayload, Event, Folder, Importance, ListChange, Message, NewTask, OpError,
+    OutboxDepth, OutboxOp, OutboxState, PROTOCOL_VERSION, Payload, Plan, PlannedList, PlannedTask,
+    RawWriteMethod, Request, Response, ResponseData, Rolled, Scope, ScopeError, ScopeStatus,
+    SearchStatus, Seed, SyncActivity, SyncInfo, SyncMode, SyncProgress, SyncReport, SyncState,
+    TaskAction, TaskChange, TaskEdit, WriteRejected,
 };
 use serde_json::json;
 use tokio_util::codec::{Decoder, Encoder};
@@ -213,6 +214,52 @@ fn every_request_and_response_round_trips() {
                     id: "T1".into(),
                     title: "Buy milk".into(),
                     list_id: "L".into(),
+                }],
+                lists: Vec::new(),
+                changes: serde_json::Value::Null,
+            }),
+        }),
+        Payload::Request(Request::ChangeLists {
+            change: ListChange::MoveList {
+                lists: vec!["Finances".into(), "Health".into()],
+                folder: Some("Areas".into()),
+            },
+            dry_run: false,
+            op_id: Some("op-move".into()),
+            idempotency_key: Some("k2".into()),
+        }),
+        Payload::Request(Request::ChangeLists {
+            change: ListChange::OrderFolder {
+                folder: "Areas".into(),
+                anchor: Anchor::Before("Projects".into()),
+            },
+            dry_run: true,
+            op_id: None,
+            idempotency_key: None,
+        }),
+        Payload::Request(Request::ListFolders),
+        Payload::Response(Response::Ok {
+            data: ResponseData::Folders {
+                items: vec![Folder {
+                    name: "Areas".into(),
+                    lists: vec!["l1".into()],
+                    open_count: 4,
+                }],
+                sync: SyncInfo {
+                    state: SyncState::Ready,
+                    generation: 2,
+                },
+            },
+        }),
+        Payload::Response(Response::Ok {
+            data: ResponseData::Plan(Plan {
+                action: TaskAction::RenameFolder,
+                list: None,
+                targets: Vec::new(),
+                lists: vec![PlannedList {
+                    id: "l1".into(),
+                    name: "Finances".into(),
+                    changes: json!({ "folder": "Responsibilities" }),
                 }],
                 changes: serde_json::Value::Null,
             }),

@@ -197,7 +197,7 @@ fn change_request(
 /// A real run's `op_id`, made here before sending so it can be reported
 /// even if the daemon's answer is lost. A dry run changes nothing, so it
 /// has none.
-fn op_id_unless(dry_run: bool) -> Option<String> {
+pub(crate) fn op_id_unless(dry_run: bool) -> Option<String> {
     (!dry_run).then(new_op_id)
 }
 
@@ -205,10 +205,15 @@ fn new_op_id() -> String {
     uuid::Uuid::new_v4().to_string()
 }
 
-async fn send(paths: &Paths, request: Request, format: OutputFormat) -> Result<(), CliError> {
+pub(crate) async fn send(
+    paths: &Paths,
+    request: Request,
+    format: OutputFormat,
+) -> Result<(), CliError> {
     let op_id = match &request {
         Request::AddTask { op_id, .. }
         | Request::ChangeTasks { op_id, .. }
+        | Request::ChangeLists { op_id, .. }
         | Request::Undo { op_id, .. } => op_id.clone(),
         _ => None,
     };
@@ -228,7 +233,7 @@ async fn send(paths: &Paths, request: Request, format: OutputFormat) -> Result<(
 /// Replace `-` with the IDs on stdin, one per line, blank lines skipped, so
 /// `ms-todo tasks list --format ids | ms-todo tasks complete -` works. Also
 /// says whether stdin was read.
-fn expand_stdin(tasks: Vec<String>) -> Result<(Vec<String>, bool), CliError> {
+pub(crate) fn expand_stdin(tasks: Vec<String>) -> Result<(Vec<String>, bool), CliError> {
     if !tasks.iter().any(|task| task == STDIN_MARKER) {
         return Ok((tasks, false));
     }

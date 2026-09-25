@@ -16,10 +16,12 @@
 mod doctor;
 mod entities;
 mod events;
+mod folders;
 mod freshness;
 mod handlers;
 mod idempotency;
 mod list_resolution;
+mod list_writes;
 mod outbox;
 mod reads;
 mod seed;

@@ -10,7 +10,7 @@ use sqlx::FromRow;
 use crate::graph_columns::{ListColumns, text};
 use sqlx::SqliteConnection;
 
-use crate::outbox::{NO_UNRESOLVED_OPS, fail_ops_in_list};
+use crate::outbox::{LIST_SYNC_STATE, NO_UNRESOLVED_OPS, UNRESOLVED_STATES, fail_ops_in_list};
 use crate::sync_state::{Cursor, LISTS_SCOPE, checkpoint, tasks_scope};
 use crate::{Entity, Store, StoreError, new_local_id, now, parse_object, parse_optional, to_json};
 
@@ -25,6 +25,43 @@ pub struct ListRow {
     pub raw: Entity,
     /// Our open extension, when the list has one.
     pub extension: Option<Value>,
+    /// `synced`, or from its folder writes in the outbox: `pending`,
+    /// `unknown` or `failed`.
+    pub sync_state: String,
+}
+
+/// The extension field holding a list's folder's name
+/// (docs/blueprint/05-custom-features.md#folders-list-groups).
+pub const FOLDER_FIELD: &str = "folder";
+/// The extension field holding a list's place among its folder's lists.
+pub const ORDER_FIELD: &str = "order";
+/// The extension field holding the place of a list's folder among the
+/// folders; every list in a folder carries the same one.
+pub const FOLDER_ORDER_FIELD: &str = "folderOrder";
+
+impl ListRow {
+    /// The folder the list is in, if any. A blank name is no folder.
+    pub fn folder(&self) -> Option<&str> {
+        self.field(FOLDER_FIELD)
+            .and_then(Value::as_str)
+            .map(str::trim)
+            .filter(|name| !name.is_empty())
+    }
+
+    /// The list's place among its folder's lists (or among the lists in no
+    /// folder), if it has one.
+    pub fn order(&self) -> Option<i64> {
+        self.field(ORDER_FIELD).and_then(Value::as_i64)
+    }
+
+    /// Its folder's place among the folders, if it has one.
+    pub fn folder_order(&self) -> Option<i64> {
+        self.field(FOLDER_ORDER_FIELD).and_then(Value::as_i64)
+    }
+
+    fn field(&self, name: &str) -> Option<&Value> {
+        self.extension.as_ref()?.get(name)
+    }
 }
 
 #[derive(FromRow)]
@@ -35,6 +72,7 @@ struct ListRecord {
     wellknown_list_name: Option<String>,
     raw_json: String,
     extension_json: Option<String>,
+    sync_state: String,
 }
 
 impl TryFrom<ListRecord> for ListRow {
@@ -48,6 +86,7 @@ impl TryFrom<ListRecord> for ListRow {
             wellknown_list_name: record.wellknown_list_name,
             raw: parse_object(&record.raw_json)?,
             extension: parse_optional(record.extension_json)?,
+            sync_state: record.sync_state,
         })
     }
 }
@@ -60,6 +99,8 @@ struct Cached {
     extension_json: Option<String>,
     deleted_at: Option<i64>,
     local_rev: i64,
+    /// It has a folder write not yet resolved.
+    busy: bool,
 }
 
 /// Every list Graph returned in one enumeration, each with its extension.
@@ -87,13 +128,17 @@ pub struct ListsApplied {
 impl Store {
     /// Every live list, in the order they were first seen.
     pub async fn lists(&self) -> Result<Vec<ListRow>, StoreError> {
-        let records: Vec<ListRecord> = sqlx::query_as(
-            "SELECT local_id, graph_id, display_name, wellknown_list_name, raw_json, extension_json \
-             FROM lists WHERE deleted_at IS NULL ORDER BY rowid",
-        )
+        let records: Vec<ListRecord> = sqlx::query_as(AssertSqlSafe(select_lists(
+            "WHERE deleted_at IS NULL ORDER BY rowid",
+        )))
         .fetch_all(self.reader())
         .await?;
         records.into_iter().map(ListRow::try_from).collect()
+    }
+
+    /// The live list with local ID `local_id`.
+    pub async fn list(&self, local_id: &str) -> Result<Option<ListRow>, StoreError> {
+        list_in(&mut *self.reader().acquire().await?, local_id).await
     }
 
     /// Apply a full enumeration of lists in one transaction: upsert what
@@ -112,16 +157,20 @@ impl Store {
             seen.insert(graph_id.clone());
             let raw_json = to_json(raw)?;
             let extension_json = extension.as_ref().map(Value::to_string);
-            let existing: Option<Cached> = sqlx::query_as(
-                "SELECT local_id, raw_json, extension_json, deleted_at, local_rev \
-                 FROM lists WHERE graph_id = ?",
-            )
+            let existing: Option<Cached> = sqlx::query_as(AssertSqlSafe(format!(
+                "SELECT local_id, raw_json, extension_json, deleted_at, local_rev, \
+                 EXISTS (SELECT 1 FROM outbox o WHERE o.entity_local_id = lists.local_id \
+                 AND o.state IN {UNRESOLVED_STATES}) AS busy \
+                 FROM lists WHERE graph_id = ?"
+            )))
             .bind(&graph_id)
             .fetch_optional(&mut *tx)
             .await?;
             let columns = ListColumns::of(raw);
             let local_id = match existing {
-                Some(cached) if cached.local_rev > pass.rev => continue,
+                // Written since the fetch, or with a folder write on its
+                // way: Graph's answer to that write brings it up to date.
+                Some(cached) if cached.local_rev > pass.rev || cached.busy => continue,
                 Some(cached) => {
                     if cached.raw_json == raw_json
                         && cached.extension_json == extension_json
@@ -208,6 +257,29 @@ impl Store {
         tx.commit().await?;
         Ok(Some(failed))
     }
+}
+
+/// `SELECT … FROM lists` of the columns a [`ListRecord`] has, then
+/// `rest`.
+fn select_lists(rest: &str) -> String {
+    format!(
+        "SELECT local_id, graph_id, display_name, wellknown_list_name, raw_json, extension_json, \
+         {LIST_SYNC_STATE} FROM lists {rest}"
+    )
+}
+
+/// The live list `local_id`, read in `connection`.
+pub(crate) async fn list_in(
+    connection: &mut SqliteConnection,
+    local_id: &str,
+) -> Result<Option<ListRow>, StoreError> {
+    let record: Option<ListRecord> = sqlx::query_as(AssertSqlSafe(select_lists(
+        "WHERE local_id = ? AND deleted_at IS NULL",
+    )))
+    .bind(local_id)
+    .fetch_optional(connection)
+    .await?;
+    record.map(ListRow::try_from).transpose()
 }
 
 /// Tombstone a list and its tasks not written since `rev`, and drop its

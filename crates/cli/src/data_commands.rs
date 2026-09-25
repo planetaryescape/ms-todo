@@ -18,7 +18,7 @@ use crate::output::{Render, Table};
 use crate::time::rfc3339;
 
 pub const LISTS_TABLE: Table = Table {
-    headings: &["NAME", "SHARED", "ID"],
+    headings: &["NAME", "FOLDER", "SHARED", "ID"],
     row: |list| {
         let mut name = text(list, "displayName").to_owned();
         if text(list, "wellknownListName") == "defaultList" {
@@ -29,7 +29,12 @@ pub const LISTS_TABLE: Table = Table {
         } else {
             ""
         };
-        vec![name, shared.to_owned(), text(list, "id").to_owned()]
+        vec![
+            name,
+            text(list, "folder").to_owned(),
+            shared.to_owned(),
+            text(list, "id").to_owned(),
+        ]
     },
     csv_headings: csv_columns::LIST_COLUMNS,
     csv_row: csv_columns::list_row,

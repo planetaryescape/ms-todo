@@ -14,16 +14,22 @@
 //!   guessed: `--copy` names one of the candidates, and without it the
 //!   candidates come back in an `invalid_input` error (exit 2).
 //!
+//! - A folder change by setting the extension fields it wrote on each list
+//!   back to what they were.
+//!
 //! An operation Graph rejected changed nothing, so it's skipped; one whose
 //! outcome is `unknown` must be resolved first.
 
 use chrono::{DateTime, Duration};
 use ms_todo_core::ErrorKind;
 use ms_todo_protocol::{Candidate, ErrorPayload, ResponseData, TaskAction};
-use ms_todo_store::{Entity, LocalChange, NewOp, OpKind, OpState, OutboxRow, TaskRow};
+use ms_todo_store::{
+    Entity, ListExtensionOp, LocalChange, NewOp, OpKind, OpState, OutboxRow, TaskRow,
+};
 use serde_json::{Map, Value, json};
 
 use crate::handlers::{State, error_payload, store_error};
+use crate::list_writes::queue_lists;
 use crate::outbox::op_id_for;
 use crate::task_writes::{delete_op, new_task_raw, our_extension, queue, update_op};
 
@@ -78,22 +84,14 @@ pub(crate) async fn undo(
             format!("{target} was undone already, by {by}; `ms-todo undo {by}` redoes it"),
         ));
     }
+    if ops.iter().all(|op| op.op == OpKind::Extension) {
+        return undo_lists(state, &target, &ops, &op_id).await;
+    }
     let mut inverse: Vec<NewOp> = Vec::new();
     let id = |queued: usize| op_id_for(&op_id, queued);
     for op in &ops {
-        match op.state {
-            OpState::Failed => continue,
-            OpState::Unknown => {
-                return Err(error_payload(
-                    ErrorKind::InvalidInput,
-                    format!(
-                        "operation {} may or may not have reached Microsoft To Do, so it can't be \
-                         undone yet; see `ms-todo outbox list --state unknown`",
-                        op.op_id
-                    ),
-                ));
-            }
-            OpState::Pending | OpState::Inflight | OpState::Done => {}
+        if rejected(op)? {
+            continue;
         }
         let (row, deleted) = state
             .store
@@ -125,22 +123,102 @@ pub(crate) async fn undo(
                 let (body, action) = inverse_update(op)?;
                 inverse.push(update_op(id(inverse.len()), &row, &body, action));
             }
+            OpKind::Extension => {
+                return Err(error_payload(
+                    ErrorKind::Internal,
+                    format!("{target} changes both tasks and lists, which no command does"),
+                ));
+            }
         }
     }
     if inverse.is_empty() {
-        return Err(error_payload(
-            ErrorKind::InvalidInput,
-            format!("nothing to undo: Microsoft To Do rejected {target}, so it changed nothing"),
-        ));
+        return Err(nothing_to_undo(&target));
     }
     queue(state, &op_id, Some(&target), inverse, TaskAction::Undo).await
+}
+
+/// Undo a folder change: each list's extension fields it wrote go back to
+/// what they were before it.
+async fn undo_lists(
+    state: &State,
+    target: &str,
+    ops: &[OutboxRow],
+    op_id: &str,
+) -> Result<ResponseData, ErrorPayload> {
+    let mut inverse: Vec<ListExtensionOp> = Vec::new();
+    for op in ops {
+        if rejected(op)? {
+            continue;
+        }
+        if state
+            .store
+            .list(&op.entity_local_id)
+            .await
+            .map_err(store_error)?
+            .is_none()
+        {
+            return Err(error_payload(
+                ErrorKind::NotFound,
+                format!(
+                    "list {} was deleted since {target}, so it can't be undone",
+                    op.entity_local_id
+                ),
+            ));
+        }
+        inverse.push(ListExtensionOp {
+            op_id: op_id_for(op_id, inverse.len()),
+            list_local_id: op.entity_local_id.clone(),
+            action: op.action.clone(),
+            fields: inverse_fields(op)?,
+        });
+    }
+    if inverse.is_empty() {
+        return Err(nothing_to_undo(target));
+    }
+    queue_lists(state, op_id, Some(target), inverse, TaskAction::Undo).await
+}
+
+/// Whether `op` is skipped because Graph rejected it, so it changed
+/// nothing. One whose outcome is `unknown` can't be undone yet.
+fn rejected(op: &OutboxRow) -> Result<bool, ErrorPayload> {
+    match op.state {
+        OpState::Failed => Ok(true),
+        OpState::Unknown => Err(error_payload(
+            ErrorKind::InvalidInput,
+            format!(
+                "operation {} may or may not have reached Microsoft To Do, so it can't be \
+                 undone yet; see `ms-todo outbox list --state unknown`",
+                op.op_id
+            ),
+        )),
+        OpState::Pending | OpState::Inflight | OpState::Done => Ok(false),
+    }
+}
+
+fn nothing_to_undo(target: &str) -> ErrorPayload {
+    error_payload(
+        ErrorKind::InvalidInput,
+        format!("nothing to undo: Microsoft To Do rejected {target}, so it changed nothing"),
+    )
 }
 
 /// The fields `op` sent, set back to what they were, and the action that
 /// is.
 fn inverse_update(op: &OutboxRow) -> Result<(Value, TaskAction), ErrorPayload> {
+    let body = inverse_fields(op)?;
+    let action = match op.action.as_str() {
+        "complete" => TaskAction::Reopen,
+        "reopen" => TaskAction::Complete,
+        _ => TaskAction::Edit,
+    };
+    Ok((Value::Object(body), action))
+}
+
+/// Each field `op` sent, with its value before `op` (null where it had
+/// none, which removes it).
+fn inverse_fields(op: &OutboxRow) -> Result<Map<String, Value>, ErrorPayload> {
     let before = before(op)?;
-    let body: Map<String, Value> = op
+    Ok(op
         .body()
         .as_object()
         .map(|fields| {
@@ -149,13 +227,7 @@ fn inverse_update(op: &OutboxRow) -> Result<(Value, TaskAction), ErrorPayload> {
                 .map(|key| (key.clone(), before.get(key).cloned().unwrap_or(Value::Null)))
                 .collect()
         })
-        .unwrap_or_default();
-    let action = match op.action.as_str() {
-        "complete" => TaskAction::Reopen,
-        "reopen" => TaskAction::Complete,
-        _ => TaskAction::Edit,
-    };
-    Ok((Value::Object(body), action))
+        .unwrap_or_default())
 }
 
 /// A create of the task `op` deleted, from what it was then. The task

@@ -2,7 +2,7 @@
 source: tests/cli_help.rs
 expression: help_output(args)
 ---
-Every task list
+Every task list, folder by folder, then those in no folder
 
 Usage: ms-todo lists list [OPTIONS]
 

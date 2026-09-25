@@ -17,6 +17,7 @@ use serde_json::Value;
 use crate::doctor::doctor;
 use crate::events::Events;
 use crate::idempotency::{fingerprint, run_once};
+use crate::list_writes::change_lists;
 use crate::outbox::Outbox;
 use crate::reads::{list_lists, list_tasks, search_tasks};
 use crate::sync::{PassOutcome, Syncer};
@@ -46,6 +47,7 @@ pub(crate) async fn handle(state: &State, request: Request) -> Response {
     let result = match request {
         Request::Status => Ok(ResponseData::Status(status(state))),
         Request::ListLists => list_lists(state).await,
+        Request::ListFolders => crate::list_writes::list_folders(state).await,
         Request::ListTasks { list, search } => {
             list_tasks(state, list.as_deref(), search.as_deref()).await
         }
@@ -77,10 +79,10 @@ pub(crate) async fn handle(state: &State, request: Request) -> Response {
             body,
             op_id,
         } => raw_write(state, method, &path, body, op_id).await,
-        request
-        @ (Request::AddTask { .. } | Request::ChangeTasks { .. } | Request::Undo { .. }) => {
-            mutate(state, request).await
-        }
+        request @ (Request::AddTask { .. }
+        | Request::ChangeTasks { .. }
+        | Request::ChangeLists { .. }
+        | Request::Undo { .. }) => mutate(state, request).await,
         Request::Seed { scope, search } => crate::seed::seed(state, scope, search.as_deref()).await,
         // The connection loop answers `Subscribe` itself, and starts the
         // stream.
@@ -105,8 +107,9 @@ pub(crate) async fn handle(state: &State, request: Request) -> Response {
     result.into()
 }
 
-/// `tasks add|complete|reopen|edit|delete` and `undo`, run at most once
-/// per `--idempotency-key` (a dry run never uses the key).
+/// `tasks add|complete|reopen|edit|delete`, the folder changes and
+/// `undo`, run at most once per `--idempotency-key` (a dry run never uses
+/// the key).
 async fn mutate(state: &State, request: Request) -> Result<ResponseData, ErrorPayload> {
     let fingerprint = fingerprint(&request);
     match request {
@@ -139,6 +142,17 @@ async fn mutate(state: &State, request: Request) -> Result<ResponseData, ErrorPa
                 dry_run,
                 op_id.clone(),
             );
+            run_once(state, key.as_deref(), &fingerprint, &op_id, operation).await
+        }
+        Request::ChangeLists {
+            change,
+            dry_run,
+            op_id,
+            idempotency_key,
+        } => {
+            let op_id = op_id.unwrap_or_else(new_op_id);
+            let key = idempotency_key.filter(|_| !dry_run);
+            let operation = change_lists(state, change, dry_run, op_id.clone());
             run_once(state, key.as_deref(), &fingerprint, &op_id, operation).await
         }
         Request::Undo {

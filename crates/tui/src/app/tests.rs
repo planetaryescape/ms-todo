@@ -833,7 +833,7 @@ fn the_window_title_names_the_app_and_the_view() {
 #[test]
 fn a_list_name_cannot_put_escape_sequences_in_the_window_title() {
     let mut app = seeded();
-    app.lists[1].1 = "Home\x1b]52;c;aGk=\x07\u{9b}\n".into();
+    app.lists[1].name = "Home\x1b]52;c;aGk=\x07\u{9b}\n".into();
     let title = app.window_title();
     assert!(!title.contains(char::is_control), "{title:?}");
     assert_eq!(title, "ms-todo \u{2014} Home]52;c;aGk=");

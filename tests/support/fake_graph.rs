@@ -2,8 +2,10 @@
 //! each list's tasks in pages, `lists/delta` and each list's `tasks/delta`,
 //! a single list's or task's GET, and `$batch` GETs of single tasks with our
 //! extension, chained the way Graph chains them (a failed step makes the
-//! rest 424). Tests change `data` between syncs, as a phone would, and
-//! mount their own mocks for writes.
+//! rest 424), and writes of our extension on a list (folders): PATCH
+//! replaces the document and POST upserts it, as S2 found, and each moves
+//! the list's etag. Tests change `data` between syncs, as a phone would,
+//! and mount their own mocks for other writes.
 //!
 //! Delta works like Graph's as far as ms-todo can tell: a delta token
 //! remembers the scope as it was when issued, a replay returns every item
@@ -27,7 +29,7 @@ pub struct Data {
     pub lists: Vec<Value>,
     /// Tasks by list ID.
     pub tasks: HashMap<String, Vec<Value>>,
-    /// Our extension by task ID.
+    /// Our extension by task or list ID.
     pub extensions: HashMap<String, Value>,
     /// Tasks whose single GET answers 404, as if deleted after the page.
     pub gone_on_fetch: HashSet<String>,
@@ -48,6 +50,8 @@ pub struct Data {
     /// Delta rounds being paged: the items, then the deltaLink.
     delta_rounds: HashMap<u64, (Vec<Value>, String)>,
     next_token: u64,
+    /// Extension writes so far, to make each one's new etag.
+    extension_writes: u64,
 }
 
 impl Data {
@@ -152,8 +156,14 @@ impl FakeGraph {
             .respond_with(move |request: &Request| {
                 let data = lock(&shared);
                 let id = request.url.path().rsplit('/').next().unwrap_or_default();
+                let expanded = query(request, "$expand").is_some();
                 match data.lists.iter().find(|list| list["id"] == id) {
                     Some(list) if !data.gone_lists.contains(id) => {
+                        let list = if expanded {
+                            with_extension(list, &data.extensions)
+                        } else {
+                            list.clone()
+                        };
                         ResponseTemplate::new(200).set_body_json(list)
                     }
                     _ => not_found(),
@@ -173,6 +183,81 @@ impl FakeGraph {
                 ResponseTemplate::new(status).set_body_json(body)
             })
             .with_priority(10)
+            .mount(&server)
+            .await;
+
+        // Our extension on a list: PATCH replaces the whole document (S2).
+        let shared = Arc::clone(&data);
+        Mock::given(method("PATCH"))
+            .and(path_regex(r"^/v1\.0/me/todo/lists/[^/]+/extensions/[^/]+$"))
+            .respond_with(move |request: &Request| {
+                let mut data = lock(&shared);
+                let list = request
+                    .url
+                    .path()
+                    .split('/')
+                    .nth(5)
+                    .unwrap_or_default()
+                    .to_owned();
+                if !data.extensions.contains_key(&list) {
+                    return not_found();
+                }
+                let body: Value = serde_json::from_slice(&request.body).unwrap_or_default();
+                if body.as_object().is_none_or(serde_json::Map::is_empty) {
+                    // What Graph answers an empty document.
+                    return ResponseTemplate::new(400).set_body_json(json!({ "error": {
+                        "code": "RequestBroker--ParseUri",
+                        "message": "Resource not found for the segment 'todo'."
+                    } }));
+                }
+                let stored = write_list_extension(&mut data, &list, body);
+                ResponseTemplate::new(200).set_body_json(stored)
+            })
+            .mount(&server)
+            .await;
+
+        // DELETE of our extension: 204, whether or not it existed (S2).
+        let shared = Arc::clone(&data);
+        Mock::given(method("DELETE"))
+            .and(path_regex(r"^/v1\.0/me/todo/lists/[^/]+/extensions/[^/]+$"))
+            .respond_with(move |request: &Request| {
+                let mut data = lock(&shared);
+                let list = request
+                    .url
+                    .path()
+                    .split('/')
+                    .nth(5)
+                    .unwrap_or_default()
+                    .to_owned();
+                if data.extensions.remove(&list).is_some() {
+                    bump_list_etag(&mut data, &list);
+                }
+                ResponseTemplate::new(204)
+            })
+            .mount(&server)
+            .await;
+
+        // POST of our extension upserts it (S2), with an empty 201.
+        let shared = Arc::clone(&data);
+        Mock::given(method("POST"))
+            .and(path_regex(r"^/v1\.0/me/todo/lists/[^/]+/extensions$"))
+            .respond_with(move |request: &Request| {
+                let mut data = lock(&shared);
+                let list = request
+                    .url
+                    .path()
+                    .split('/')
+                    .nth(5)
+                    .unwrap_or_default()
+                    .to_owned();
+                let mut body: Value = serde_json::from_slice(&request.body).unwrap_or_default();
+                if let Some(fields) = body.as_object_mut() {
+                    fields.remove("@odata.type");
+                    fields.remove("extensionName");
+                }
+                write_list_extension(&mut data, &list, body);
+                ResponseTemplate::new(201)
+            })
             .mount(&server)
             .await;
 
@@ -215,6 +300,11 @@ impl FakeGraph {
     /// Change what Graph holds.
     pub fn edit(&self, change: impl FnOnce(&mut Data)) {
         change(&mut lock(&self.data));
+    }
+
+    /// Our extension on the list or task `id`, as Graph holds it.
+    pub fn extension(&self, id: &str) -> Option<Value> {
+        lock(&self.data).extensions.get(id).cloned()
     }
 
     /// Every request that reached Graph with this method, whatever path.
@@ -404,6 +494,29 @@ fn delta_page(data: &Data, base: &str, path: &str, skip: &str) -> ResponseTempla
 fn not_found() -> ResponseTemplate {
     ResponseTemplate::new(404)
         .set_body_json(json!({ "error": { "code": "ErrorItemNotFound", "message": "not found" } }))
+}
+
+/// Store `fields` as the whole of list `list`'s extension, in Graph's
+/// shape, and move the list's etag, as any extension write does (S2).
+fn write_list_extension(data: &mut Data, list: &str, fields: Value) -> Value {
+    let mut stored = json!({
+        "extensionName": "com.planetaryescape.mstodo",
+        "id": "microsoft.graph.openTypeExtension.com.planetaryescape.mstodo"
+    });
+    if let (Some(stored), Some(fields)) = (stored.as_object_mut(), fields.as_object()) {
+        stored.extend(fields.clone());
+    }
+    data.extensions.insert(list.to_owned(), stored.clone());
+    bump_list_etag(data, list);
+    stored
+}
+
+fn bump_list_etag(data: &mut Data, list: &str) {
+    data.extension_writes += 1;
+    let etag = format!("W/\"{list}-x{}\"", data.extension_writes);
+    if let Some(found) = data.lists.iter_mut().find(|found| found["id"] == list) {
+        found["@odata.etag"] = json!(etag);
+    }
 }
 
 fn with_extension(entity: &Value, extensions: &HashMap<String, Value>) -> Value {

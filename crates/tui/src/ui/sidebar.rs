@@ -1,6 +1,6 @@
 use ratatui::Frame;
 use ratatui::layout::Rect;
-use ratatui::style::Style;
+use ratatui::style::{Modifier, Style};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{List, ListItem, ListState};
 
@@ -18,7 +18,7 @@ pub fn draw(frame: &mut Frame, area: Rect, app: &App) {
         .entries()
         .iter()
         .map(|entry| {
-            let (icon, name, count) = match entry {
+            let (icon, name, count, heading) = match entry {
                 Entry::View(scope) => {
                     let (icon, count) = match scope {
                         Scope::Important => (glyphs.important, app.counts.important),
@@ -26,13 +26,34 @@ pub fn draw(frame: &mut Frame, area: Rect, app: &App) {
                         Scope::All => (glyphs.all, app.counts.all),
                         _ => (glyphs.completed, app.counts.completed),
                     };
-                    (icon, view_name(scope).to_owned(), count)
+                    (icon.to_owned(), view_name(scope).to_owned(), count, false)
                 }
-                Entry::List { id, name } => (
-                    glyphs.list,
-                    name.clone(),
-                    app.counts.lists.get(id).copied().unwrap_or(0),
-                ),
+                Entry::Folder {
+                    name,
+                    collapsed,
+                    count,
+                } => {
+                    let icon = if *collapsed {
+                        glyphs.folder_closed
+                    } else {
+                        glyphs.folder_open
+                    };
+                    (icon.to_owned(), name.clone(), *count, true)
+                }
+                Entry::List {
+                    id,
+                    name,
+                    in_folder,
+                } => {
+                    // A list in a folder is drawn under its heading.
+                    let indent = if *in_folder { "  " } else { "" };
+                    (
+                        format!("{indent}{}", glyphs.list),
+                        name.clone(),
+                        app.counts.lists.get(id).copied().unwrap_or(0),
+                        false,
+                    )
+                }
             };
             let count = if count == 0 {
                 String::new()
@@ -43,8 +64,13 @@ pub fn draw(frame: &mut Frame, area: Rect, app: &App) {
             let room = width.saturating_sub(count.chars().count() + 1);
             let label: String = label.chars().take(room).collect();
             let gap = width.saturating_sub(label.chars().count() + count.chars().count());
+            let label_style = if heading {
+                Style::default().add_modifier(Modifier::BOLD)
+            } else {
+                Style::default()
+            };
             ListItem::new(Line::from(vec![
-                Span::raw(label),
+                Span::styled(label, label_style),
                 Span::raw(" ".repeat(gap)),
                 Span::styled(count, Style::default().fg(DIM)),
             ]))

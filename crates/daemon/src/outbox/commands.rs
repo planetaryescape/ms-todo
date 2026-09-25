@@ -18,10 +18,10 @@
 
 use ms_todo_core::ErrorKind;
 use ms_todo_protocol::{ErrorPayload, OpError, OutboxOp, OutboxState, ResponseData};
-use ms_todo_store::{OpKind, OpState, OutboxRow, Restore, apply_body};
+use ms_todo_store::{OpKind, OpState, OutboxRow, Restore, apply_body, merge_extension};
 
 use super::now;
-use super::rollback::{reconcile_list, undo_local};
+use super::rollback::{announce, current_of, reconcile, undo_local};
 use crate::handlers::{State, error_payload, store_error};
 
 pub(crate) async fn list(
@@ -89,7 +89,7 @@ pub(crate) async fn retry(state: &State, op_id: &str) -> Result<ResponseData, Er
     if !requeued {
         return Err(moved(&op));
     }
-    state.events.tasks_changed(vec![op.entity_local_id.clone()]);
+    announce(state, &op);
     state.outbox.wake();
     current(state, &op.op_id).await
 }
@@ -101,13 +101,8 @@ pub(crate) async fn discard(state: &State, op_id: &str) -> Result<ResponseData, 
         OpState::Done => return Err(already_done(&op)),
         OpState::Pending | OpState::Unknown | OpState::Failed => {}
     }
-    let current = state
-        .store
-        .task_any(&op.entity_local_id)
-        .await
-        .map_err(store_error)?
-        .map(|(row, _)| row.raw);
-    let (restore, reconcile) = match (op.state, op.op) {
+    let current = current_of(state, &op).await.map_err(store_error)?;
+    let (restore, read_again) = match (op.state, op.op) {
         (OpState::Pending, _) => (undo_local(&op, current.as_ref()), false),
         (OpState::Unknown, OpKind::Create) => (Restore::Tombstone, false),
         (OpState::Unknown, _) => (Restore::Nothing, true),
@@ -119,10 +114,10 @@ pub(crate) async fn discard(state: &State, op_id: &str) -> Result<ResponseData, 
         .await
         .map_err(store_error)?
         .ok_or_else(|| moved(&op))?;
-    if reconcile || !cascaded.is_empty() {
-        reconcile_list(state, &op.list_local_id).await;
+    if read_again || !cascaded.is_empty() {
+        reconcile(state, &op).await;
     }
-    state.events.tasks_changed(vec![op.entity_local_id.clone()]);
+    announce(state, &op);
     let cause = format!("not sent: it waited on {}, which was discarded", op.op_id);
     for waiter in &cascaded {
         state
@@ -134,26 +129,27 @@ pub(crate) async fn discard(state: &State, op_id: &str) -> Result<ResponseData, 
 
 /// A `failed` operation's local change, made again for a retry.
 async fn redo_local(state: &State, op: &OutboxRow) -> Result<Restore, ErrorPayload> {
-    let row = state
-        .store
-        .task_any(&op.entity_local_id)
-        .await
-        .map_err(store_error)?;
-    let Some((row, _)) = row else {
+    let Some(current) = current_of(state, op).await.map_err(store_error)? else {
         return Err(error_payload(
             ErrorKind::NotFound,
-            format!("task {} isn't cached any more", op.entity_local_id),
+            format!("{} isn't cached any more", op.entity_local_id),
         ));
     };
     Ok(match op.op {
         // The task's content is still in its row, tombstoned.
-        OpKind::Create => Restore::Replace(row.raw),
+        OpKind::Create => Restore::Replace(current),
         OpKind::Update => {
-            let mut raw = row.raw;
+            let mut raw = current;
             apply_body(&mut raw, op.body());
             Restore::Replace(raw)
         }
         OpKind::Delete => Restore::Tombstone,
+        OpKind::Extension => {
+            let fields = op.body().as_object().cloned().unwrap_or_default();
+            let mut extension = current;
+            merge_extension(&mut extension, &fields);
+            Restore::Replace(extension)
+        }
     })
 }
 

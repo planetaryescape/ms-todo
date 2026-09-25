@@ -68,7 +68,10 @@ pub(crate) async fn seed(
     };
     Ok(ResponseData::Seed(Seed {
         scope,
-        lists: lists.iter().map(list_entity).collect(),
+        lists: crate::folders::sorted(&lists)
+            .into_iter()
+            .map(list_entity)
+            .collect(),
         lists_sync,
         counts: Counts {
             important: counts.important,

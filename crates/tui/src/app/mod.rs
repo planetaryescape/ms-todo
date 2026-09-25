@@ -16,6 +16,7 @@
 
 pub mod diagnostics;
 pub mod edit;
+pub(crate) mod folders;
 pub mod line_editor;
 pub mod palette;
 pub mod scope;
@@ -30,7 +31,6 @@ use ms_todo_protocol::{
     Candidate, Counts, ErrorPayload, Event, Importance, NewTask, OutboxDepth, Request,
     ResponseData, Scope, Seed, SyncActivity, SyncState, TaskChange,
 };
-use serde_json::Value;
 
 use crate::action::Action;
 use crate::glyphs::Glyphs;
@@ -38,7 +38,7 @@ use crate::keybindings::Context;
 use diagnostics::{Diagnostics, Part};
 use edit::Field;
 use line_editor::LineEditor;
-use scope::{Entry, VIEWS, belongs, order};
+use scope::{Entry, SidebarList, VIEWS, belongs, order, sidebar_entries};
 pub use task::{SyncMarker, Task};
 
 /// How long a banner stays, in ticks (the runner ticks every 250 ms).
@@ -91,6 +91,12 @@ pub enum Mode {
         index: usize,
     },
     Diagnostics,
+    /// Typing the folder to move the list `list_id` into; empty takes it
+    /// out of its folder.
+    MovingList {
+        list_id: String,
+        input: LineEditor,
+    },
     /// Undoing a recurring completion: which completed copy to delete.
     Picker {
         target: String,
@@ -153,6 +159,8 @@ pub enum Tag {
     /// A smart view's seed read ahead, so switching to it paints at once.
     Prefetch,
     Write(Write),
+    /// A change to lists' folders.
+    Folders,
     Undo,
     Sync,
     Diagnostics(Part),
@@ -212,8 +220,11 @@ pub struct App {
     pub focus: Pane,
     pub mode: Mode,
     pub connection: Connection,
-    /// `(local ID, name)` of every list, in the daemon's order.
-    pub lists: Vec<(String, String)>,
+    /// Every list, in the daemon's order: folder by folder, then those in
+    /// no folder.
+    pub lists: Vec<SidebarList>,
+    /// The folders collapsed in the sidebar, by name, for this session.
+    pub collapsed: HashSet<String>,
     pub counts: Counts,
     pub activity: SyncActivity,
     pub outbox: OutboxDepth,
@@ -264,6 +275,7 @@ impl App {
             mode: Mode::Normal,
             connection: Connection::Connecting,
             lists: Vec::new(),
+            collapsed: HashSet::new(),
             counts: Counts::default(),
             activity: SyncActivity::default(),
             outbox: OutboxDepth::default(),
@@ -299,6 +311,7 @@ impl App {
             } => Context::Notes,
             Mode::Adding { .. } | Mode::Filtering { .. } | Mode::Editing { .. } => Context::Prompt,
             Mode::ChoosingField { .. } => Context::Fields,
+            Mode::MovingList { .. } => Context::Folder,
             Mode::ChoosingImportance { .. } => Context::Importance,
             Mode::ConfirmDelete { .. } => Context::Confirm,
             Mode::Picker { .. } => Context::Picker,
@@ -313,17 +326,10 @@ impl App {
         }
     }
 
-    /// The sidebar's rows: the smart views, then the lists.
+    /// The sidebar's rows: the smart views, then the folders, each with its
+    /// lists unless it's collapsed, then the lists in no folder.
     pub fn entries(&self) -> Vec<Entry> {
-        VIEWS
-            .iter()
-            .cloned()
-            .map(Entry::View)
-            .chain(self.lists.iter().map(|(id, name)| Entry::List {
-                id: id.clone(),
-                name: name.clone(),
-            }))
-            .collect()
+        sidebar_entries(&self.lists, &self.collapsed, &self.counts.lists)
     }
 
     /// The selected task. `None` while loading: the rows on hand belong to
@@ -356,8 +362,8 @@ impl App {
     pub fn list_name(&self, id: &str) -> Option<&str> {
         self.lists
             .iter()
-            .find(|(list, _)| list == id)
-            .map(|(_, name)| name.as_str())
+            .find(|list| list.id == id)
+            .map(|list| list.name.as_str())
     }
 
     /// The name of a scope as the panes title it.
@@ -450,6 +456,11 @@ impl App {
                 self.edit_action(action)
             }
             (Mode::Adding { .. }, Action::Submit) => self.submit_add(),
+            (Mode::MovingList { .. }, Action::Submit) => self.submit_move(),
+            (Mode::MovingList { .. }, Action::Complete) => {
+                self.complete_folder();
+                Vec::new()
+            }
             (Mode::Filtering { .. }, Action::Submit) => {
                 self.mode = Mode::Normal;
                 self.focus = Pane::Tasks;
@@ -543,6 +554,11 @@ impl App {
                 self.open_palette();
                 Vec::new()
             }
+            Action::Open => self.open_row(),
+            Action::MoveToFolder => {
+                self.start_move();
+                Vec::new()
+            }
             Action::Diagnostics => self.open_diagnostics(),
             Action::Undo => vec![Effect {
                 tag: Tag::Undo,
@@ -616,12 +632,17 @@ impl App {
     /// read before, and ask for its seed.
     fn open_entry(&mut self, index: usize) -> Vec<Effect> {
         self.sidebar_index = index;
+        // A folder's heading shows nothing of its own: the tasks on screen
+        // stay until a list or view is chosen.
+        let Some(scope) = self.entries().get(index).and_then(Entry::scope) else {
+            return Vec::new();
+        };
         // A new scope drops the filter, as To Do's search does, and the
         // selection, which holds the old scope's tasks.
         self.filter = None;
         self.filter_error = None;
         self.selection.clear();
-        self.wanted = self.entries().get(index).map(Entry::scope);
+        self.wanted = Some(scope);
         if let Some(cached) = self.wanted.as_ref().and_then(|scope| self.cache.get(scope)) {
             self.tasks = cached.clone();
             self.shown = self.wanted.clone();
@@ -636,7 +657,9 @@ impl App {
     /// back to its best match.
     fn edit_with(&mut self, edit: impl FnOnce(&mut LineEditor) -> bool) -> Vec<Effect> {
         let changed = match &mut self.mode {
-            Mode::Adding { input } | Mode::Filtering { input } => edit(input),
+            Mode::Adding { input } | Mode::Filtering { input } | Mode::MovingList { input, .. } => {
+                edit(input)
+            }
             Mode::Editing { input, error, .. } => {
                 let changed = edit(input);
                 if changed {
@@ -854,6 +877,10 @@ impl App {
                 self.apply_write(write, &applied.items);
                 Vec::new()
             }
+            (Tag::Folders, Ok(ResponseData::Applied(applied))) => {
+                self.apply_list_write(&applied.items);
+                Vec::new()
+            }
             (Tag::Undo, Ok(ResponseData::Applied(_))) => {
                 self.show(Level::Info, "Undone");
                 self.reseed()
@@ -897,14 +924,11 @@ impl App {
 
     fn apply_seed(&mut self, seed: Seed) {
         let keep = self.selected().map(|task| task.id.clone());
+        let row = self.entries().get(self.sidebar_index).cloned();
         self.lists = seed
             .lists
             .iter()
-            .filter_map(|list| {
-                let id = list.get("id").and_then(Value::as_str)?;
-                let name = list.get("displayName").and_then(Value::as_str)?;
-                Some((id.to_owned(), name.to_owned()))
-            })
+            .filter_map(SidebarList::from_entity)
             .collect();
         self.counts = seed.counts;
         self.activity = seed.activity;
@@ -914,10 +938,8 @@ impl App {
         self.seeded = true;
         if let Some(scope) = &seed.scope {
             self.wanted = Some(scope.clone());
-            if let Some(index) = self.entries().iter().position(|e| e.scope() == *scope) {
-                self.sidebar_index = index;
-            }
         }
+        self.place_sidebar_cursor(row.filter(|row| matches!(row, Entry::Folder { .. })));
         let changed_scope = self.shown != seed.scope;
         if changed_scope {
             self.selection.clear();

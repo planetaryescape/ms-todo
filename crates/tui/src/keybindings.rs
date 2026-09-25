@@ -28,6 +28,8 @@ pub enum Context {
     Prompt,
     /// Typing notes, where Enter is a new line.
     Notes,
+    /// Typing the folder to move a list into, with suggestions.
+    Folder,
     /// Picking which field of a task to edit.
     Fields,
     /// Picking an importance level.
@@ -70,9 +72,10 @@ const LISTS: &[Context] = &[
     Context::Diagnostics,
 ];
 const PALETTE: &[Context] = &[Context::Palette];
-const PROMPTS: &[Context] = &[Context::Prompt, Context::Notes];
+const PROMPTS: &[Context] = &[Context::Prompt, Context::Notes, Context::Folder];
 const NOTES: &[Context] = &[Context::Notes];
 const FIELDS: &[Context] = &[Context::Fields];
+const FOLDER: &[Context] = &[Context::Folder];
 const LEVELS: &[Context] = &[Context::Importance];
 const DIAGNOSTICS: &[Context] = &[Context::Diagnostics];
 
@@ -86,7 +89,8 @@ pub const BINDINGS: &[Binding] = &[
     bind(BROWSE, "G", Action::JumpBottom, "Bottom", false),
     bind(BROWSE, "h", Action::FocusLeft, "Left pane", false),
     bind(BROWSE, "l", Action::FocusRight, "Right pane", false),
-    bind(SIDEBAR, "Enter", Action::FocusRight, "Open", true),
+    bind(SIDEBAR, "Enter", Action::Open, "Open or fold", true),
+    bind(SIDEBAR, "Space", Action::Open, "Open or fold", false),
     bind(BROWSE, "Tab", Action::FocusNext, "Next pane", false),
     bind(BROWSE, "a", Action::Add, "Add", true),
     bind(TASKS, "x", Action::ToggleComplete, "Done", true),
@@ -113,6 +117,13 @@ pub const BINDINGS: &[Binding] = &[
     bind(BROWSE, ":", Action::Palette, "Palette", true),
     bind(BROWSE, "r", Action::Sync, "Sync", true),
     bind(BROWSE, "D", Action::Diagnostics, "Diagnostics", false),
+    bind(
+        BROWSE,
+        "M",
+        Action::MoveToFolder,
+        "Move list to folder\u{2026}",
+        false,
+    ),
     bind(BROWSE, "?", Action::Help, "Help", true),
     bind(BROWSE, "q", Action::Quit, "Quit", true),
     bind(BROWSE, "Ctrl-c", Action::Quit, "Quit", false),
@@ -120,6 +131,8 @@ pub const BINDINGS: &[Binding] = &[
     bind(NOTES, "Ctrl-s", Action::Submit, "Save", true),
     bind(NOTES, "Alt-Enter", Action::Submit, "Save", false),
     bind(NOTES, "Enter", Action::Newline, "New line", true),
+    bind(FOLDER, "Enter", Action::Submit, "Move", true),
+    bind(FOLDER, "Tab", Action::Complete, "Complete", true),
     bind(PROMPTS, "Esc", Action::Cancel, "Cancel", true),
     bind(PROMPTS, "Backspace", Action::Backspace, "Erase", false),
     bind(PROMPTS, "Ctrl-c", Action::Cancel, "Cancel", false),
@@ -250,6 +263,7 @@ pub fn parse_key_string(key: &str) -> Result<KeyPress, String> {
         "Enter" => named(KeyCode::Enter),
         "Esc" | "Escape" => named(KeyCode::Esc),
         "Tab" => named(KeyCode::Tab),
+        "Space" => named(KeyCode::Char(' ')),
         "Backspace" => named(KeyCode::Backspace),
         "Up" => named(KeyCode::Up),
         "Down" => named(KeyCode::Down),
@@ -341,6 +355,8 @@ pub fn commands() -> Vec<(String, &'static str, Action)> {
                     | Action::FocusLeft
                     | Action::FocusRight
                     | Action::FocusNext
+                    // Only the sidebar's row, which the palette covers.
+                    | Action::Open
                     | Action::Palette
                     // The palette names each field instead.
                     | Action::EditHere
@@ -435,7 +451,18 @@ mod tests {
         );
         assert_eq!(
             resolve(Context::Sidebar, &key(KeyCode::Enter, KeyModifiers::NONE)),
-            Some(Action::FocusRight)
+            Some(Action::Open)
+        );
+        assert_eq!(
+            resolve(
+                Context::Sidebar,
+                &key(KeyCode::Char(' '), KeyModifiers::NONE)
+            ),
+            Some(Action::Open)
+        );
+        assert_eq!(
+            resolve(Context::Folder, &key(KeyCode::Tab, KeyModifiers::NONE)),
+            Some(Action::Complete)
         );
     }
 

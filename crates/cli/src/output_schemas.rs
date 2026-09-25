@@ -57,7 +57,11 @@ pub fn output_schema(command: &str) -> Option<Value> {
         "tasks add" | "tasks complete" | "tasks reopen" | "tasks edit" | "tasks delete" => {
             json!({ "oneOf": [applied(), plan()] })
         }
-        "undo" => applied(),
+        "undo" => json!({ "oneOf": [applied(), list_applied()] }),
+        "lists move" | "lists order" | "folders rename" | "folders delete" | "folders order" => {
+            json!({ "oneOf": [list_applied(), list_plan()] })
+        }
+        "folders list" => collection(folder()),
         "outbox list" | "outbox retry" | "outbox discard" => versioned(
             json!({
                 "items": {
@@ -247,6 +251,10 @@ fn list_entity() -> Value {
         json!({ "type": "string", "description": "defaultList for \"Tasks\"" });
     properties["isOwner"] = json!({ "type": "boolean" });
     properties["isShared"] = json!({ "type": "boolean" });
+    properties["folder"] = nullable(
+        "string",
+        "The folder the list is in (ms-todo's own; the To Do apps don't show it), or null",
+    );
     let mut schema = object(properties, &["id", "graph_id", "sync_state", "displayName"]);
     schema["description"] =
         json!("A task list: every field Microsoft Graph returns, with `id` replaced");
@@ -342,6 +350,68 @@ fn applied() -> Value {
             }
         }),
         &["op_id", "action", "items", "list_ids"],
+    )
+}
+
+/// What a folder change did: the lists it changed, as they are now.
+fn list_applied() -> Value {
+    let mut schema = applied();
+    let properties = &mut schema["properties"];
+    properties["action"] = json!({
+        "enum": ["move_list", "order_list", "rename_folder", "delete_folder", "order_folder", "undo"]
+    });
+    properties["items"] = json!({
+        "type": "array",
+        "items": list_entity(),
+        "description": "Each list changed, as ms-todo has it now: sync_state pending until the write reaches Microsoft To Do. Empty when nothing needed to change"
+    });
+    properties["list_ids"]["description"] = json!("Each item's own ID, in order");
+    if let Some(rolled) = properties.as_object_mut() {
+        rolled.remove("rolled");
+    }
+    schema
+}
+
+/// What a folder change would do.
+fn list_plan() -> Value {
+    versioned(
+        json!({
+            "dry_run": { "const": true },
+            "action": { "enum": ["move_list", "order_list", "rename_folder", "delete_folder", "order_folder"] },
+            "lists": {
+                "type": "array",
+                "description": "Each list that would change; absent when none would",
+                "items": object(
+                    json!({
+                        "id": { "type": "string" },
+                        "name": { "type": "string" },
+                        "changes": {
+                            "type": "object",
+                            "description": "The fields of ms-todo's extension it gets: folder, order, folderOrder; null removes one"
+                        }
+                    }),
+                    &["id", "name", "changes"],
+                )
+            },
+            "changes": { "const": null }
+        }),
+        &["dry_run", "action", "changes"],
+    )
+}
+
+fn folder() -> Value {
+    object(
+        json!({
+            "name": { "type": "string" },
+            "lists": {
+                "type": "array",
+                "items": { "type": "string" },
+                "description": "The local IDs of its lists, in order"
+            },
+            "list_count": { "type": "integer" },
+            "open_count": { "type": "integer", "description": "Open tasks in all its lists" }
+        }),
+        &["name", "lists", "list_count", "open_count"],
     )
 }
 

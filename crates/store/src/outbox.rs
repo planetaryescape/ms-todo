@@ -12,6 +12,7 @@ use sqlx::AssertSqlSafe;
 use sqlx::{FromRow, SqliteConnection};
 
 use crate::graph_columns::{etag, text};
+use crate::list_extension::restore_list_extension;
 use crate::pool::next_local_rev;
 use crate::tasks::{TaskRecord, WriteTask, task_record_columns, write_task};
 use crate::{Entity, Store, StoreError, TaskRow, now, parse_object, parse_optional, to_json};
@@ -36,20 +37,40 @@ pub(crate) const NO_UNRESOLVED_OPS: &str = concat!(
     ")"
 );
 
-/// A column of `SELECT … FROM tasks`: the row's sync state from its
-/// operations. `unknown` beats `pending`, which beats `failed`.
-pub(crate) const SYNC_STATE: &str = "(SELECT CASE \
-     WHEN SUM(o.state = 'unknown') > 0 THEN 'unknown' \
-     WHEN SUM(o.state IN ('pending', 'inflight')) > 0 THEN 'pending' \
-     WHEN SUM(o.state = 'failed') > 0 THEN 'failed' ELSE 'synced' END \
-     FROM outbox o WHERE o.entity_local_id = tasks.local_id AND o.state != 'done') AS sync_state";
+/// The unresolved states as an SQL list, for queries built at run time.
+pub(crate) const UNRESOLVED_STATES: &str = unresolved!();
 
+/// The sync state of a row from its operations, as a column of
+/// `SELECT … FROM <table>`: `unknown` beats `pending`, which beats `failed`.
+macro_rules! sync_state {
+    ($table:literal) => {
+        concat!(
+            "(SELECT CASE \
+             WHEN SUM(o.state = 'unknown') > 0 THEN 'unknown' \
+             WHEN SUM(o.state IN ('pending', 'inflight')) > 0 THEN 'pending' \
+             WHEN SUM(o.state = 'failed') > 0 THEN 'failed' ELSE 'synced' END \
+             FROM outbox o WHERE o.entity_local_id = ",
+            $table,
+            ".local_id AND o.state != 'done') AS sync_state"
+        )
+    };
+}
+
+/// A column of `SELECT … FROM tasks`: the task's sync state.
+pub(crate) const SYNC_STATE: &str = sync_state!("tasks");
+
+/// A column of `SELECT … FROM lists`: the list's sync state, from its
+/// extension writes (folders).
+pub(crate) const LIST_SYNC_STATE: &str = sync_state!("lists");
+
+// An operation on a list (a folder change) is titled by the list's name.
 const OP_COLUMNS: &str = "o.op_id, o.seq, o.command_id, o.created_at, o.entity_local_id, \
      o.list_local_id, o.op, o.action, o.payload_json, o.depends_on_op_id, o.undoes_command_id, \
      o.attempts, o.next_attempt_at, o.state, o.last_error_kind, o.last_error, o.rollback_json, \
-     o.sent_at, o.unknown_since, o.note, o.finished_at, t.title";
+     o.sent_at, o.unknown_since, o.note, o.finished_at, COALESCE(t.title, l.display_name) AS title";
 
-const FROM_OUTBOX: &str = "FROM outbox o LEFT JOIN tasks t ON t.local_id = o.entity_local_id";
+const FROM_OUTBOX: &str = "FROM outbox o LEFT JOIN tasks t ON t.local_id = o.entity_local_id \
+     LEFT JOIN lists l ON l.local_id = o.entity_local_id AND o.entity_kind = 'list'";
 
 /// What an operation sends.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -59,6 +80,9 @@ pub enum OpKind {
     /// A PATCH of some of its fields.
     Update,
     Delete,
+    /// A change to some fields of a list's extension (its folder and
+    /// order), sent as GET, merge and a write of the whole document.
+    Extension,
 }
 
 impl OpKind {
@@ -67,14 +91,16 @@ impl OpKind {
             Self::Create => "create",
             Self::Update => "update",
             Self::Delete => "delete",
+            Self::Extension => "extension",
         }
     }
 
-    fn parse(value: &str) -> Result<Self, StoreError> {
+    pub(crate) fn parse(value: &str) -> Result<Self, StoreError> {
         match value {
             "create" => Ok(Self::Create),
             "update" => Ok(Self::Update),
             "delete" => Ok(Self::Delete),
+            "extension" => Ok(Self::Extension),
             other => Err(StoreError::Corrupt(format!("unknown outbox op {other:?}"))),
         }
     }
@@ -293,14 +319,6 @@ impl Store {
         let mut rows = Vec::with_capacity(ops.len());
         for op in ops {
             seq += 1;
-            let depends_on: Option<String> = sqlx::query_scalar(concat!(
-                "SELECT op_id FROM outbox WHERE entity_local_id = ? AND state IN ",
-                unresolved!(),
-                " ORDER BY seq DESC LIMIT 1"
-            ))
-            .bind(&op.entity_local_id)
-            .fetch_optional(&mut *tx)
-            .await?;
             // What a rejection restores and undo inverts: the task before this.
             let mut rollback = None;
             match &op.change {
@@ -339,25 +357,22 @@ impl Store {
                     rollback = Some(current);
                 }
             }
-            sqlx::query(
-                "INSERT INTO outbox (op_id, seq, command_id, created_at, entity_local_id, \
-                 list_local_id, op, action, payload_json, depends_on_op_id, undoes_command_id, \
-                 state, rollback_json) \
-                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?)",
+            insert_op(
+                &mut tx,
+                &Queued {
+                    op_id: &op.op_id,
+                    seq,
+                    command_id,
+                    undoes,
+                    created_at: now,
+                    entity_local_id: &op.entity_local_id,
+                    list_local_id: &op.list_local_id,
+                    op: op.op,
+                    action: &op.action,
+                    payload: &op.payload,
+                    rollback: rollback.as_ref(),
+                },
             )
-            .bind(&op.op_id)
-            .bind(seq)
-            .bind(command_id)
-            .bind(now)
-            .bind(&op.entity_local_id)
-            .bind(&op.list_local_id)
-            .bind(op.op.as_str())
-            .bind(&op.action)
-            .bind(op.payload.to_string())
-            .bind(depends_on)
-            .bind(undoes)
-            .bind(rollback.as_ref().map(to_json).transpose()?)
-            .execute(&mut *tx)
             .await?;
             rows.push(
                 fetch_task(&mut tx, &op.entity_local_id)
@@ -683,7 +698,7 @@ impl Store {
         let mut tx = self.writer().begin().await?;
         let rev = next_local_rev(&mut tx).await?;
         let op = op_in(&mut tx, op_id).await?;
-        apply_restore(&mut tx, &op.entity_local_id, restore, rev).await?;
+        apply_restore(&mut tx, &op, restore, rev).await?;
         finish(&mut tx, op_id, OpState::Failed, Some(error)).await?;
         let cause = format!(
             "not sent: it waited on {op_id}, which Graph rejected ({})",
@@ -720,7 +735,7 @@ impl Store {
             return Ok(None);
         }
         let rev = next_local_rev(&mut tx).await?;
-        apply_restore(&mut tx, &op.entity_local_id, restore, rev).await?;
+        apply_restore(&mut tx, &op, restore, rev).await?;
         let cause = format!("not sent: it waited on {op_id}, which was discarded");
         let cascaded = cascade(&mut tx, op_id, &cause).await?;
         sqlx::query(
@@ -760,7 +775,7 @@ impl Store {
         }
         let rev = next_local_rev(&mut tx).await?;
         let op = op_in(&mut tx, op_id).await?;
-        apply_restore(&mut tx, &op.entity_local_id, restore, rev).await?;
+        apply_restore(&mut tx, &op, restore, rev).await?;
         tx.commit().await?;
         Ok(true)
     }
@@ -819,6 +834,90 @@ fn ops_sql(condition: &str) -> String {
 
 fn rows(records: Vec<OpRecord>) -> Result<Vec<OutboxRow>, StoreError> {
     records.into_iter().map(OutboxRow::try_from).collect()
+}
+
+/// The operations on `op`'s entity queued after it and not resolved yet,
+/// in order, with their payloads: what goes on top of Graph's answer to it.
+pub(crate) async fn later_ops(
+    tx: &mut SqliteConnection,
+    op: &OutboxRow,
+) -> Result<Vec<(OpKind, Value)>, StoreError> {
+    let later: Vec<(String, String)> = sqlx::query_as(concat!(
+        "SELECT op, payload_json FROM outbox WHERE entity_local_id = ? AND seq > ? AND state IN ",
+        unresolved!(),
+        " ORDER BY seq"
+    ))
+    .bind(&op.entity_local_id)
+    .bind(op.seq)
+    .fetch_all(&mut *tx)
+    .await?;
+    later
+        .into_iter()
+        .map(|(kind, payload)| {
+            Ok((
+                OpKind::parse(&kind)?,
+                parse_optional(Some(payload))?.unwrap_or_default(),
+            ))
+        })
+        .collect()
+}
+
+/// An operation as it's queued.
+pub(crate) struct Queued<'a> {
+    pub op_id: &'a str,
+    pub seq: i64,
+    pub command_id: &'a str,
+    pub undoes: Option<&'a str>,
+    pub created_at: i64,
+    pub entity_local_id: &'a str,
+    pub list_local_id: &'a str,
+    pub op: OpKind,
+    pub action: &'a str,
+    pub payload: &'a Value,
+    pub rollback: Option<&'a Entity>,
+}
+
+/// Add `op` to the queue, `pending`, waiting for the latest unresolved
+/// operation on the same entity.
+pub(crate) async fn insert_op(
+    tx: &mut SqliteConnection,
+    op: &Queued<'_>,
+) -> Result<(), StoreError> {
+    let depends_on: Option<String> = sqlx::query_scalar(concat!(
+        "SELECT op_id FROM outbox WHERE entity_local_id = ? AND state IN ",
+        unresolved!(),
+        " ORDER BY seq DESC LIMIT 1"
+    ))
+    .bind(op.entity_local_id)
+    .fetch_optional(&mut *tx)
+    .await?;
+    sqlx::query(
+        "INSERT INTO outbox (op_id, seq, command_id, created_at, entity_kind, entity_local_id, \
+         list_local_id, op, action, payload_json, depends_on_op_id, undoes_command_id, \
+         state, rollback_json) \
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?)",
+    )
+    .bind(op.op_id)
+    .bind(op.seq)
+    .bind(op.command_id)
+    .bind(op.created_at)
+    // A folder write is the only operation on a list.
+    .bind(if op.op == OpKind::Extension {
+        "list"
+    } else {
+        "task"
+    })
+    .bind(op.entity_local_id)
+    .bind(op.list_local_id)
+    .bind(op.op.as_str())
+    .bind(op.action)
+    .bind(op.payload.to_string())
+    .bind(depends_on)
+    .bind(op.undoes)
+    .bind(op.rollback.map(to_json).transpose()?)
+    .execute(&mut *tx)
+    .await?;
+    Ok(())
 }
 
 /// Fail the `pending` and `unknown` operations of tasks in the list
@@ -890,7 +989,7 @@ async fn cascade(
     Ok(waiting)
 }
 
-async fn op_in(tx: &mut SqliteConnection, op_id: &str) -> Result<OutboxRow, StoreError> {
+pub(crate) async fn op_in(tx: &mut SqliteConnection, op_id: &str) -> Result<OutboxRow, StoreError> {
     let record: Option<OpRecord> = sqlx::query_as(AssertSqlSafe(ops_sql("o.op_id = ?")))
         .bind(op_id)
         .fetch_optional(&mut *tx)
@@ -901,7 +1000,7 @@ async fn op_in(tx: &mut SqliteConnection, op_id: &str) -> Result<OutboxRow, Stor
         .ok_or_else(|| StoreError::Invalid(format!("no outbox operation {op_id}")))
 }
 
-async fn finish(
+pub(crate) async fn finish(
     tx: &mut SqliteConnection,
     op_id: &str,
     state: OpState,
@@ -956,25 +1055,13 @@ async fn write_attributed(
             .execute(&mut *tx)
             .await?;
     }
-    let later: Vec<(String, String)> = sqlx::query_as(concat!(
-        "SELECT op, payload_json FROM outbox WHERE entity_local_id = ? AND seq > ? AND state IN ",
-        unresolved!(),
-        " ORDER BY seq"
-    ))
-    .bind(local_id)
-    .bind(op.seq)
-    .fetch_all(&mut *tx)
-    .await?;
     let mut raw = task.raw;
     let mut deleted = false;
-    for (kind, payload) in &later {
-        match OpKind::parse(kind)? {
-            OpKind::Update => {
-                let payload = parse_optional(Some(payload.clone()))?.unwrap_or_default();
-                apply_body(&mut raw, &payload["body"]);
-            }
+    for (kind, payload) in later_ops(tx, op).await? {
+        match kind {
+            OpKind::Update => apply_body(&mut raw, &payload["body"]),
             OpKind::Delete => deleted = true,
-            OpKind::Create => {}
+            OpKind::Create | OpKind::Extension => {}
         }
     }
     write_task(
@@ -997,12 +1084,18 @@ async fn write_attributed(
     Ok(())
 }
 
+/// Undo `op`'s local change by `restore`: on its task, or for a list
+/// extension write, on the list's extension.
 async fn apply_restore(
     tx: &mut SqliteConnection,
-    local_id: &str,
+    op: &OutboxRow,
     restore: &Restore,
     rev: i64,
 ) -> Result<(), StoreError> {
+    let local_id = op.entity_local_id.as_str();
+    if op.op == OpKind::Extension {
+        return restore_list_extension(tx, local_id, restore, rev).await;
+    }
     match restore {
         Restore::Nothing => Ok(()),
         Restore::Tombstone => tombstone_row(tx, local_id, rev).await,

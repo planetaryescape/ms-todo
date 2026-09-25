@@ -25,6 +25,13 @@ expression: pretty
               },
               "type": "array"
             },
+            "folder": {
+              "description": "The folder the list is in (ms-todo's own; the To Do apps don't show it), or null",
+              "type": [
+                "string",
+                "null"
+              ]
+            },
             "graph_id": {
               "description": "Microsoft Graph's ID, for `raw` and debugging; commands take it too",
               "type": [

@@ -42,6 +42,7 @@ pub(crate) async fn add_task(
             action: TaskAction::Add,
             list: Some(list.candidate()),
             targets: Vec::new(),
+            lists: Vec::new(),
             changes: body,
         }));
     }
@@ -101,6 +102,7 @@ pub(crate) async fn change_tasks(
                     list_id: target.list.local_id.clone(),
                 })
                 .collect(),
+            lists: Vec::new(),
             changes,
         }));
     }
@@ -232,6 +234,11 @@ pub(crate) fn action_name(action: TaskAction) -> &'static str {
         TaskAction::Reopen => "reopen",
         TaskAction::Edit => "edit",
         TaskAction::Delete => "delete",
+        TaskAction::MoveList => "move_list",
+        TaskAction::OrderList => "order_list",
+        TaskAction::RenameFolder => "rename_folder",
+        TaskAction::DeleteFolder => "delete_folder",
+        TaskAction::OrderFolder => "order_folder",
         TaskAction::Undo | TaskAction::Unknown => "change",
     }
 }

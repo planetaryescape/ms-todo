@@ -1,10 +1,10 @@
-//! What undoing an operation's local change means for its task, and
-//! failing an operation Graph rejected
-//! (docs/blueprint/02-data-model.md#outbox-semantics).
+//! What undoing an operation's local change means for its task (or, for a
+//! folder write, its list's extension), and failing an operation Graph
+//! rejected (docs/blueprint/02-data-model.md#outbox-semantics).
 
 use ms_todo_core::message_with_causes;
 use ms_todo_protocol::ErrorPayload;
-use ms_todo_store::{Entity, OpKind, OutboxRow, Restore, tasks_scope};
+use ms_todo_store::{Entity, LISTS_SCOPE, OpKind, OutboxRow, Restore, StoreError, tasks_scope};
 use serde_json::Value;
 
 use crate::handlers::State;
@@ -16,7 +16,7 @@ use crate::handlers::State;
 pub(super) fn undo_local(op: &OutboxRow, current: Option<&Entity>) -> Restore {
     match (op.op, current, &op.rollback) {
         (OpKind::Create, ..) => Restore::Tombstone,
-        (OpKind::Update, Some(current), Some(before)) => {
+        (OpKind::Update | OpKind::Extension, Some(current), Some(before)) => {
             Restore::Replace(revert_fields(current, op.body(), before))
         }
         (OpKind::Delete, _, Some(before)) => Restore::Replace(before.clone()),
@@ -43,8 +43,8 @@ pub(crate) fn revert_fields(current: &Entity, body: &Value, before: &Entity) -> 
 /// back, and send `WriteRejected`. The task's list is then read whole on
 /// the next pass, since its changes were skipped while `op` was pending.
 pub(crate) async fn reject(state: &State, op: &OutboxRow, error: &ErrorPayload) {
-    let current = match state.store.task_any(&op.entity_local_id).await {
-        Ok(row) => row.map(|(row, _)| row.raw),
+    let current = match current_of(state, op).await {
+        Ok(current) => current,
         Err(error) => {
             eprintln!(
                 "ms-todo daemon: cannot read task {}: {}",
@@ -70,8 +70,8 @@ pub(crate) async fn reject(state: &State, op: &OutboxRow, error: &ErrorPayload) 
             return;
         }
     };
-    reconcile_list(state, &op.list_local_id).await;
-    state.events.tasks_changed(vec![op.entity_local_id.clone()]);
+    reconcile(state, op).await;
+    announce(state, op);
     state
         .events
         .write_rejected(&op.op_id, &op.entity_local_id, &error.kind, &error.message);
@@ -80,6 +80,57 @@ pub(crate) async fn reject(state: &State, op: &OutboxRow, error: &ErrorPayload) 
         state
             .events
             .write_rejected(&later, &op.entity_local_id, &error.kind, &message);
+    }
+}
+
+/// What `op`'s local change applies to as it is now: its task's JSON, or
+/// for a folder write its list's extension (`{}` for none). `None` if it's
+/// not cached, or the list is gone.
+pub(super) async fn current_of(
+    state: &State,
+    op: &OutboxRow,
+) -> Result<Option<Entity>, StoreError> {
+    if op.op == OpKind::Extension {
+        return Ok(state.store.list(&op.entity_local_id).await?.map(|list| {
+            list.extension
+                .and_then(|extension| extension.as_object().cloned())
+                .unwrap_or_default()
+        }));
+    }
+    Ok(state
+        .store
+        .task_any(&op.entity_local_id)
+        .await?
+        .map(|(row, _)| row.raw))
+}
+
+/// Tell subscribers that `op`'s task or list changed.
+pub(crate) fn announce(state: &State, op: &OutboxRow) {
+    announce_entity(state, op.op, op.entity_local_id.clone());
+}
+
+/// Tell subscribers that the task, or for a folder write (`kind`
+/// `Extension`) the list, `local_id` changed.
+pub(crate) fn announce_entity(state: &State, kind: OpKind, local_id: String) {
+    if kind == OpKind::Extension {
+        state.events.changed(vec![local_id], Vec::new());
+    } else {
+        state.events.tasks_changed(vec![local_id]);
+    }
+}
+
+/// After `op`'s outcome was decided without Graph's copy, have the next
+/// pass read what it changed whole: its task's list, or for a folder
+/// write every list, since the lists are one scope.
+pub(super) async fn reconcile(state: &State, op: &OutboxRow) {
+    if op.op != OpKind::Extension {
+        return reconcile_list(state, &op.list_local_id).await;
+    }
+    if let Err(error) = state.store.reset_scope(LISTS_SCOPE).await {
+        eprintln!(
+            "ms-todo daemon: cannot reset the sync of the lists: {}",
+            message_with_causes(&error)
+        );
     }
 }
 

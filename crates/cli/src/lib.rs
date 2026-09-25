@@ -16,6 +16,7 @@ mod daemon_commands;
 mod data_commands;
 mod doctor_commands;
 mod error;
+mod folder_commands;
 mod outbox_commands;
 mod output;
 mod output_schemas;
@@ -37,8 +38,8 @@ use ms_todo_protocol::TaskChange;
 
 pub use args::Cli;
 use args::{
-    AuthCommand, Command, DaemonCommand, GlobalArgs, ListsCommand, OutboxCommand, TasksCommand,
-    TuiArgs,
+    AuthCommand, Command, DaemonCommand, FoldersCommand, GlobalArgs, ListsCommand, OutboxCommand,
+    TasksCommand, TuiArgs,
 };
 use error::CliError;
 use output::{OutputFormat, print_collection, print_error, print_raw, print_success};
@@ -147,6 +148,25 @@ async fn dispatch(command: Command, paths: &Paths, format: OutputFormat) -> Resu
         Command::Lists(ListsCommand::List) => {
             let (items, sync) = data_commands::lists(paths).await?;
             print_collection(format, &items, sync, &data_commands::LISTS_TABLE)
+        }
+        Command::Lists(ListsCommand::Move(args)) => {
+            folder_commands::move_lists(paths, args, format).await
+        }
+        Command::Lists(ListsCommand::Order(args)) => {
+            folder_commands::order_list(paths, args, format).await
+        }
+        Command::Folders(FoldersCommand::List) => {
+            let (items, sync) = folder_commands::list(paths).await?;
+            print_collection(format, &items, sync, &folder_commands::FOLDERS_TABLE)
+        }
+        Command::Folders(FoldersCommand::Rename(args)) => {
+            folder_commands::rename(paths, args, format).await
+        }
+        Command::Folders(FoldersCommand::Delete(args)) => {
+            folder_commands::delete(paths, args, format).await
+        }
+        Command::Folders(FoldersCommand::Order(args)) => {
+            folder_commands::order_folder(paths, args, format).await
         }
         Command::Tasks(TasksCommand::List { list, search }) => {
             let (items, sync) = data_commands::tasks(paths, list, search).await?;

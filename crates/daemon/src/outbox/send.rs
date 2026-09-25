@@ -14,16 +14,17 @@ use ms_todo_core::{DATE_FORMAT, ErrorKind, local_date_time, local_due_date, mess
 use ms_todo_graph::GraphError;
 use ms_todo_protocol::ErrorPayload;
 use ms_todo_store::{Entity, OpKind, OutboxRow};
-use serde_json::Value;
+use serde_json::{Map, Value};
 
-use super::rollback::reject;
+use super::extension_write;
+use super::rollback::{announce_entity, reject};
 use super::{backoff, now};
 use crate::entities::split_extension;
 use crate::handlers::{State, error_payload, graph_error};
 use crate::task_fields::graph_due_date;
 
 /// How one attempt ended, before it's recorded.
-enum Attempt {
+pub(super) enum Attempt {
     /// Graph's task after the change, and our extension if it said.
     Changed(Entity, Option<Option<Value>>),
     /// A 201: recorded, but not `done` until its list is confirmed live.
@@ -33,9 +34,11 @@ enum Attempt {
         list_graph_id: String,
     },
     Deleted,
+    /// A folder write: our extension on the list as Graph now holds it.
+    ExtensionWritten(Map<String, Value>),
 }
 
-enum Failure {
+pub(super) enum Failure {
     Temporary(ErrorPayload),
     Rejected(ErrorPayload),
     /// Nothing says whether Graph applied it; `note` says what was seen.
@@ -72,8 +75,8 @@ pub(super) async fn send_ready(state: &State) -> bool {
                 }
             }
             sent = true;
-            // Whatever the outcome, the task's sync state moved.
-            let task_id = op.entity_local_id.clone();
+            // Whatever the outcome, the task's (or list's) sync state moved.
+            let (kind, entity) = (op.op, op.entity_local_id.clone());
             match attempt(state, &op).await {
                 Ok(Attempt::Created {
                     task,
@@ -89,6 +92,18 @@ pub(super) async fn send_ready(state: &State) -> bool {
                 }
                 Ok(Attempt::Deleted) => {
                     if let Err(error) = state.store.mark_done(&op.op_id).await {
+                        log_store(&error);
+                    }
+                }
+                Ok(Attempt::ExtensionWritten(extension)) => {
+                    // If the cache can't take it, the operation stays
+                    // `inflight` until a restart makes it `pending`, and the
+                    // resend writes the same document again.
+                    if let Err(error) = state
+                        .store
+                        .record_list_extension(&op.op_id, &extension)
+                        .await
+                    {
                         log_store(&error);
                     }
                 }
@@ -108,7 +123,7 @@ pub(super) async fn send_ready(state: &State) -> bool {
                 Err(Failure::Rejected(error)) => reject(state, &op, &error).await,
                 Err(Failure::Unknown(error)) => mark_unknown(state, &op, &error, None).await,
             }
-            state.events.tasks_changed(vec![task_id]);
+            announce_entity(state, kind, entity);
         }
         for (list_graph_id, ops) in created {
             confirm_list(state, &list_graph_id, &ops).await;
@@ -170,6 +185,9 @@ async fn attempt(state: &State, op: &OutboxRow) -> Result<Attempt, Failure> {
                 .into(),
         ));
     };
+    if op.op == OpKind::Extension {
+        return extension_write::send(state, &list_graph_id, op).await;
+    }
     let task = state
         .store
         .task_any(&op.entity_local_id)
@@ -336,7 +354,7 @@ fn touched_keys(before: &Entity, now: &Entity, body: &Value, recurring: bool) ->
 /// A failure's meaning for the outbox. Only a create or a recurring
 /// completion can be `OutcomeUnknown`: every other request is idempotent,
 /// so the client retries it itself.
-fn classify(error: GraphError) -> Failure {
+pub(super) fn classify(error: GraphError) -> Failure {
     match error.kind() {
         ErrorKind::OutcomeUnknown => Failure::Unknown(graph_error(error)),
         ErrorKind::InvalidInput

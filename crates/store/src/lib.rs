@@ -9,6 +9,7 @@
 
 mod graph_columns;
 mod idempotency;
+mod list_extension;
 mod lists;
 mod outbox;
 mod pool;
@@ -20,7 +21,8 @@ mod views;
 use serde_json::{Map, Value};
 
 pub use idempotency::{Claim, IDEMPOTENCY_WINDOW_SECS};
-pub use lists::{ListRow, ListsApplied, ListsPass};
+pub use list_extension::{ListExtensionOp, merge_extension};
+pub use lists::{FOLDER_FIELD, FOLDER_ORDER_FIELD, ListRow, ListsApplied, ListsPass, ORDER_FIELD};
 pub use outbox::{
     LocalChange, NewOp, OpKind, OpState, OutboxRow, Restore, UNKNOWN_LOOKUP_SECS, apply_body,
 };

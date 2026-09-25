@@ -18,6 +18,7 @@
 //! After sending anything it asks for a sync pass.
 
 mod commands;
+mod extension_write;
 mod rollback;
 mod send;
 mod unknown;

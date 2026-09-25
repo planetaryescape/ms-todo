@@ -6,10 +6,12 @@
 // "gtgr" finds "Go to Groceries"; no categories or recent commands.
 
 //! The command palette (`:`): every action in the keybinding registry and
-//! every list and view, found by typing part of the name.
+//! every list and view, even one in a collapsed folder, found by typing
+//! part of the name.
 
 use ms_todo_protocol::Scope;
 
+use super::scope::VIEWS;
 use super::{App, Effect, LineEditor, Mode, Pane};
 use crate::action::Action;
 use crate::keybindings;
@@ -38,13 +40,13 @@ impl App {
                 keys,
                 command: Command::Run(action),
             });
-        let places = self.entries().into_iter().map(|entry| {
-            let scope = entry.scope();
-            Item {
-                label: format!("Go to {}", self.scope_name(Some(&scope))),
-                keys: String::new(),
-                command: Command::Go(scope),
-            }
+        let lists = self.lists.iter().map(|list| Scope::List {
+            id: list.id.clone(),
+        });
+        let places = VIEWS.iter().cloned().chain(lists).map(|scope| Item {
+            label: format!("Go to {}", self.scope_name(Some(&scope))),
+            keys: String::new(),
+            command: Command::Go(scope),
         });
         let query = query.trim().to_lowercase();
         let mut ranked: Vec<((u8, usize), usize, Item)> = actions
@@ -96,10 +98,16 @@ impl App {
             }
             Command::Go(scope) => {
                 self.focus = Pane::Tasks;
+                // A list in a collapsed folder: open the folder to show it.
+                if let Scope::List { id } = &scope
+                    && let Some(folder) = self.folder_of(id).map(str::to_owned)
+                {
+                    self.collapsed.remove(&folder);
+                }
                 match self
                     .entries()
                     .iter()
-                    .position(|entry| entry.scope() == scope)
+                    .position(|entry| entry.scope().as_ref() == Some(&scope))
                 {
                     Some(index) => self.open_entry(index),
                     None => Vec::new(),

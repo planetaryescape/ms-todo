@@ -1,25 +1,123 @@
 //! What the sidebar offers, which tasks belong where, and how a scope's
 //! tasks are ordered and grouped.
 
+use std::collections::{BTreeMap, HashSet};
+
 use chrono::{Datelike, Duration, NaiveDate};
-use ms_todo_protocol::Scope;
+use ms_todo_protocol::{Entity, Scope};
+use serde_json::Value;
 
 use super::task::Task;
 
-/// A sidebar row: a smart view, or a list.
+/// A list as the sidebar knows it.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct SidebarList {
+    pub id: String,
+    pub name: String,
+    /// Its folder's name, if it's in one.
+    pub folder: Option<String>,
+}
+
+impl SidebarList {
+    /// A list as the daemon sends it: `id`, `displayName` and `folder`.
+    pub fn from_entity(list: &Entity) -> Option<Self> {
+        Some(Self {
+            id: list.get("id").and_then(Value::as_str)?.to_owned(),
+            name: list.get("displayName").and_then(Value::as_str)?.to_owned(),
+            folder: list
+                .get("folder")
+                .and_then(Value::as_str)
+                .map(str::to_owned),
+        })
+    }
+}
+
+/// Every folder `lists` are in, in the order they first come: the
+/// daemon's folder order.
+pub fn folder_names(lists: &[SidebarList]) -> Vec<&str> {
+    let mut names: Vec<&str> = Vec::new();
+    for folder in lists.iter().filter_map(|list| list.folder.as_deref()) {
+        if !names.contains(&folder) {
+            names.push(folder);
+        }
+    }
+    names
+}
+
+/// A sidebar row: a smart view, a folder, or a list.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Entry {
     View(Scope),
-    List { id: String, name: String },
+    /// A folder's heading; its lists follow it unless it's collapsed.
+    Folder {
+        name: String,
+        collapsed: bool,
+        /// Open tasks in all its lists.
+        count: u64,
+    },
+    List {
+        id: String,
+        name: String,
+        /// Whether it's drawn under a folder's heading.
+        in_folder: bool,
+    },
 }
 
 impl Entry {
-    pub fn scope(&self) -> Scope {
+    /// What choosing the row shows; a folder's heading shows nothing.
+    pub fn scope(&self) -> Option<Scope> {
         match self {
-            Self::View(scope) => scope.clone(),
-            Self::List { id, .. } => Scope::List { id: id.clone() },
+            Self::View(scope) => Some(scope.clone()),
+            Self::Folder { .. } => None,
+            Self::List { id, .. } => Some(Scope::List { id: id.clone() }),
         }
     }
+
+    /// Whether `other` is the same row, whatever its count or state.
+    pub fn same(&self, other: &Self) -> bool {
+        match (self, other) {
+            (Self::View(a), Self::View(b)) => a == b,
+            (Self::Folder { name: a, .. }, Self::Folder { name: b, .. }) => a == b,
+            (Self::List { id: a, .. }, Self::List { id: b, .. }) => a == b,
+            _ => false,
+        }
+    }
+}
+
+/// The sidebar's rows (docs/blueprint/08-tui.md#layout): the smart views,
+/// then each folder with its lists under it unless it's `collapsed`, then
+/// the lists in no folder. `lists` come in the daemon's order, folder by
+/// folder; `counts` are open tasks by list.
+pub fn sidebar_entries(
+    lists: &[SidebarList],
+    collapsed: &HashSet<String>,
+    counts: &BTreeMap<String, u64>,
+) -> Vec<Entry> {
+    let mut entries: Vec<Entry> = VIEWS.iter().cloned().map(Entry::View).collect();
+    let row = |list: &SidebarList| Entry::List {
+        id: list.id.clone(),
+        name: list.name.clone(),
+        in_folder: list.folder.is_some(),
+    };
+    for folder in folder_names(lists) {
+        let members = lists
+            .iter()
+            .filter(|list| list.folder.as_deref() == Some(folder));
+        let is_collapsed = collapsed.contains(folder);
+        entries.push(Entry::Folder {
+            name: folder.to_owned(),
+            collapsed: is_collapsed,
+            count: members
+                .clone()
+                .map(|list| counts.get(&list.id).copied().unwrap_or(0))
+                .sum(),
+        });
+        if !is_collapsed {
+            entries.extend(members.map(row));
+        }
+    }
+    entries.extend(lists.iter().filter(|list| list.folder.is_none()).map(row));
+    entries
 }
 
 /// The smart views, in sidebar order (docs/blueprint/08-tui.md#layout;

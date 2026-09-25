@@ -13,15 +13,17 @@ use serde_json::{Value, json};
 /// Our open extension (docs/blueprint/05-custom-features.md).
 pub(crate) const EXTENSION_NAME: &str = "com.planetaryescape.mstodo";
 
+/// A list, with `folder`, its folder's name or null, beside Graph's
+/// fields (docs/blueprint/07-cli.md#output-contract).
 pub(crate) fn list_entity(row: &ListRow) -> Entity {
     let mut entity = row.raw.clone();
-    // Lists are only ever changed through Graph so far.
     identify(
         &mut entity,
         &row.local_id,
         row.graph_id.as_deref(),
-        "synced",
+        &row.sync_state,
     );
+    entity.insert("folder".into(), json!(row.folder()));
     add_extension(&mut entity, row.extension.as_ref());
     entity
 }

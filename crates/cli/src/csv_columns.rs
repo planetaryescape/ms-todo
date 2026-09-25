@@ -27,7 +27,15 @@ pub const TASK_COLUMNS: &[&str] = &[
 /// A search result: enough to recognise the task and where it matched.
 pub const SEARCH_COLUMNS: &[&str] = &["id", "title", "list", "status", "due", "snippet"];
 
-pub const LIST_COLUMNS: &[&str] = &["id", "name", "wellknown", "is_owner", "is_shared"];
+pub const LIST_COLUMNS: &[&str] = &[
+    "id",
+    "name",
+    "wellknown",
+    "is_owner",
+    "is_shared",
+    "folder",
+    "sync_state",
+];
 
 pub fn task_row(task: &Entity) -> Vec<String> {
     vec![
@@ -71,6 +79,8 @@ pub fn list_row(list: &Entity) -> Vec<String> {
         text(list, "wellknownListName").to_owned(),
         boolean(list, "isOwner"),
         boolean(list, "isShared"),
+        text(list, "folder").to_owned(),
+        text(list, "sync_state").to_owned(),
     ]
 }
 

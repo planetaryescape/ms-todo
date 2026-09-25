@@ -91,6 +91,24 @@ pub fn draw(frame: &mut Frame, area: Rect, app: &App) {
             spans.extend(hint_spans(Context::Fields));
             Line::from(spans)
         }
+        // The folder prompt: what's typed, then the folders it could be.
+        Mode::MovingList { list_id, input } => {
+            let name = app.list_name(list_id).unwrap_or("list");
+            let mut spans = vec![Span::styled(
+                format!(" Move {name} to folder: "),
+                Style::default().fg(ACCENT),
+            )];
+            spans.extend(typed(input));
+            let suggestions = app.folder_suggestions(&input.text());
+            if !suggestions.is_empty() {
+                spans.push(Span::styled(
+                    format!("  {} ", suggestions.join(" \u{b7} ")),
+                    Style::default().fg(DIM),
+                ));
+            }
+            spans.extend(hint_spans(Context::Folder));
+            Line::from(spans)
+        }
         Mode::ChoosingImportance { .. } => {
             let mut spans = vec![Span::styled(" importance: ", Style::default().fg(ACCENT))];
             spans.extend(hint_spans(Context::Importance));

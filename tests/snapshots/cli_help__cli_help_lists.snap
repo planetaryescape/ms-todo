@@ -2,13 +2,15 @@
 source: tests/cli_help.rs
 expression: help_output(args)
 ---
-Your task lists
+Your task lists, and which folder each is in
 
 Usage: ms-todo lists [OPTIONS] <COMMAND>
 
 Commands:
-  list  Every task list
-  help  Print this message or the help of the given subcommand(s)
+  list   Every task list, folder by folder, then those in no folder
+  move   Put lists in a folder (made if it's new), or take them out of theirs
+  order  Put a list just before or after another list in its folder
+  help   Print this message or the help of the given subcommand(s)
 
 Options:
       --format <FORMAT>  Output format: jsonl is one object per line, ids one ID per line, csv has a header row [default: table in a terminal, json when piped] [possible values: table, json, jsonl, ids, csv]

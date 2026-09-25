@@ -1,4 +1,4 @@
-use clap::{Args, Parser, Subcommand, ValueEnum};
+use clap::{ArgGroup, Args, Parser, Subcommand, ValueEnum};
 use ms_todo_protocol::{Clearable, Importance};
 
 use crate::output::OutputFormat;
@@ -36,9 +36,13 @@ pub enum Command {
     /// Sign in to Microsoft, check the sign-in, or sign out
     #[command(subcommand)]
     Auth(AuthCommand),
-    /// Your task lists
+    /// Your task lists, and which folder each is in
     #[command(subcommand)]
     Lists(ListsCommand),
+    /// Folders that group your lists, as in the To Do app. Only ms-todo
+    /// sees them, on every machine it runs on
+    #[command(subcommand)]
+    Folders(FoldersCommand),
     /// Tasks in a list
     #[command(subcommand)]
     Tasks(TasksCommand),
@@ -145,8 +149,114 @@ pub enum AuthCommand {
 
 #[derive(Debug, Subcommand)]
 pub enum ListsCommand {
-    /// Every task list
+    /// Every task list, folder by folder, then those in no folder
     List,
+    /// Put lists in a folder (made if it's new), or take them out of theirs
+    Move(MoveListsArgs),
+    /// Put a list just before or after another list in its folder
+    Order(OrderListArgs),
+}
+
+#[derive(Debug, Args)]
+#[command(group(ArgGroup::new("to").required(true).args(["folder", "no_folder"])))]
+pub struct MoveListsArgs {
+    /// The lists, by exact name or ID; several move together. `-` reads
+    /// IDs from stdin, one per line
+    #[arg(required = true, value_name = "LIST")]
+    pub lists: Vec<String>,
+    /// The folder to put them in. A folder that exists matches ignoring
+    /// case; any other name makes a new one
+    #[arg(long, value_name = "FOLDER")]
+    pub folder: Option<String>,
+    /// Take them out of their folder
+    #[arg(long)]
+    pub no_folder: bool,
+    /// Show what would change without changing anything
+    #[arg(long)]
+    pub dry_run: bool,
+    #[command(flatten)]
+    pub idempotency: IdempotencyArgs,
+}
+
+#[derive(Debug, Args)]
+#[command(group(ArgGroup::new("place").required(true).args(["before", "after"])))]
+pub struct OrderListArgs {
+    /// The list to move, by exact name or ID
+    #[arg(value_name = "LIST")]
+    pub list: String,
+    /// Put it just before this list, in the same folder
+    #[arg(long, value_name = "LIST")]
+    pub before: Option<String>,
+    /// Put it just after this list, in the same folder
+    #[arg(long, value_name = "LIST")]
+    pub after: Option<String>,
+    /// Show what would change without changing anything
+    #[arg(long)]
+    pub dry_run: bool,
+    #[command(flatten)]
+    pub idempotency: IdempotencyArgs,
+}
+
+#[derive(Debug, Subcommand)]
+pub enum FoldersCommand {
+    /// Every folder in order, with its lists and open tasks
+    List,
+    /// Rename a folder; every list in it moves with it
+    Rename(RenameFolderArgs),
+    /// Delete a folder. Its lists stay, in no folder; no list or task is
+    /// deleted. Asks first in a terminal; anywhere else it needs --yes
+    Delete(DeleteFolderArgs),
+    /// Put a folder just before or after another folder
+    Order(OrderFolderArgs),
+}
+
+#[derive(Debug, Args)]
+pub struct RenameFolderArgs {
+    /// The folder's name (case doesn't matter)
+    #[arg(value_name = "FOLDER")]
+    pub folder: String,
+    /// Its new name, which no other folder may have
+    #[arg(value_name = "NEW")]
+    pub name: String,
+    /// Show what would change without changing anything
+    #[arg(long)]
+    pub dry_run: bool,
+    #[command(flatten)]
+    pub idempotency: IdempotencyArgs,
+}
+
+#[derive(Debug, Args)]
+pub struct DeleteFolderArgs {
+    /// The folder's name (case doesn't matter)
+    #[arg(value_name = "FOLDER")]
+    pub folder: String,
+    /// Delete without asking
+    #[arg(long)]
+    pub yes: bool,
+    /// Show what would change without changing anything
+    #[arg(long)]
+    pub dry_run: bool,
+    #[command(flatten)]
+    pub idempotency: IdempotencyArgs,
+}
+
+#[derive(Debug, Args)]
+#[command(group(ArgGroup::new("place").required(true).args(["before", "after"])))]
+pub struct OrderFolderArgs {
+    /// The folder to move (case doesn't matter)
+    #[arg(value_name = "FOLDER")]
+    pub folder: String,
+    /// Put it just before this folder
+    #[arg(long, value_name = "FOLDER")]
+    pub before: Option<String>,
+    /// Put it just after this folder
+    #[arg(long, value_name = "FOLDER")]
+    pub after: Option<String>,
+    /// Show what would change without changing anything
+    #[arg(long)]
+    pub dry_run: bool,
+    #[command(flatten)]
+    pub idempotency: IdempotencyArgs,
 }
 
 #[derive(Debug, Subcommand)]

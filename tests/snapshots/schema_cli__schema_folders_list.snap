@@ -1,0 +1,76 @@
+---
+source: tests/schema_cli.rs
+expression: pretty
+---
+{
+  "input": {
+    "additionalProperties": false,
+    "properties": {},
+    "required": [],
+    "type": "object"
+  },
+  "output": {
+    "properties": {
+      "items": {
+        "items": {
+          "properties": {
+            "list_count": {
+              "type": "integer"
+            },
+            "lists": {
+              "description": "The local IDs of its lists, in order",
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            "name": {
+              "type": "string"
+            },
+            "open_count": {
+              "description": "Open tasks in all its lists",
+              "type": "integer"
+            }
+          },
+          "required": [
+            "name",
+            "lists",
+            "list_count",
+            "open_count"
+          ],
+          "type": "object"
+        },
+        "type": "array"
+      },
+      "schema_version": {
+        "const": 2
+      },
+      "sync": {
+        "properties": {
+          "generation": {
+            "description": "Goes up by one per finished sync of the scope",
+            "type": "integer"
+          },
+          "state": {
+            "description": "initial until this scope's first sync finishes: an empty `items` then doesn't mean empty",
+            "enum": [
+              "initial",
+              "ready"
+            ]
+          }
+        },
+        "required": [
+          "state",
+          "generation"
+        ],
+        "type": "object"
+      }
+    },
+    "required": [
+      "schema_version",
+      "sync",
+      "items"
+    ],
+    "type": "object"
+  }
+}

@@ -20,8 +20,10 @@ use serde_json::{Map, Value};
 
 /// Bumped on any change an older peer can't read. 5: `Seed` and
 /// `Subscribe`, which the TUI needs from its first request, and the events
-/// a subscription streams.
-pub const PROTOCOL_VERSION: u32 = 5;
+/// a subscription streams. 6: folders (`ListFolders`, `ChangeLists`), and
+/// lists in folder order, so a client restarts an older daemon rather
+/// than show lists ungrouped.
+pub const PROTOCOL_VERSION: u32 = 6;
 
 /// The socket buffer both ends ask for: room for a large list's `Seed` in
 /// one write. macOS gives a Unix socket 8 KiB, so a 350 KiB seed crossed
@@ -69,8 +71,12 @@ pub enum Payload {
 pub enum Request {
     /// Readiness and version check; answers even while signed out.
     Status,
-    /// Lists from the cache.
+    /// Lists from the cache, in the sidebar's order: each folder's lists,
+    /// folder by folder, then the lists in no folder. Each list has
+    /// `folder`, its folder's name or null.
     ListLists,
+    /// The folders, in order, from the cache.
+    ListFolders,
     /// Tasks from the cache, of the list named or identified by `list`, or
     /// of the default list ("Tasks") when `None`.
     ListTasks {
@@ -139,6 +145,21 @@ pub enum Request {
         #[serde(default)]
         list: Option<String>,
         change: TaskChange,
+        #[serde(default)]
+        dry_run: bool,
+        /// Chosen by the client before sending (see `AddTask`).
+        #[serde(default)]
+        op_id: Option<String>,
+        /// See `AddTask`.
+        #[serde(default)]
+        idempotency_key: Option<String>,
+    },
+    /// Change lists' folders or order, or rename, delete or reorder a
+    /// folder (docs/blueprint/05-custom-features.md#folders-list-groups):
+    /// one extension write per list changed, through the outbox. With
+    /// `dry_run`, answers `Plan` and writes nothing.
+    ChangeLists {
+        change: ListChange,
         #[serde(default)]
         dry_run: bool,
         /// Chosen by the client before sending (see `AddTask`).
@@ -225,6 +246,10 @@ pub enum ResponseData {
     Status(DaemonStatus),
     Lists {
         items: Vec<Entity>,
+        sync: SyncInfo,
+    },
+    Folders {
+        items: Vec<Folder>,
         sync: SyncInfo,
     },
     Tasks {
@@ -629,6 +654,7 @@ pub enum Clearable<T> {
     Clear,
 }
 
+/// What a mutation did, for tasks or, since protocol 6, lists.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum TaskAction {
@@ -638,8 +664,70 @@ pub enum TaskAction {
     Edit,
     Delete,
     Undo,
+    /// Lists into a folder, or out of any.
+    MoveList,
+    /// A list before or after another in its folder.
+    OrderList,
+    RenameFolder,
+    /// A folder emptied: its lists stay, in no folder.
+    DeleteFolder,
+    /// A folder before or after another.
+    OrderFolder,
     #[serde(other)]
     Unknown,
+}
+
+/// A folder of lists (docs/blueprint/05-custom-features.md#folders-list-groups).
+/// It exists only as a name its lists carry.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Folder {
+    pub name: String,
+    /// Its lists' local IDs, in order.
+    pub lists: Vec<String>,
+    /// Open tasks in all its lists.
+    pub open_count: u64,
+}
+
+/// A change to lists' folders or order.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "action", rename_all = "snake_case")]
+pub enum ListChange {
+    /// Put `lists` (names or IDs) in the folder `folder`, made if it's
+    /// new, or in no folder for `None`. Each goes last in its folder.
+    MoveList {
+        lists: Vec<String>,
+        #[serde(default)]
+        folder: Option<String>,
+    },
+    /// Put `list` next to `anchor`, a list in the same folder (or both in
+    /// none).
+    OrderList { list: String, anchor: Anchor },
+    /// Rename the folder `folder` (its lists all move) to `name`, which no
+    /// other folder has.
+    RenameFolder { folder: String, name: String },
+    /// Take every list out of the folder `folder`; no list is deleted.
+    DeleteFolder { folder: String },
+    /// Put the folder `folder` next to the folder in `anchor`.
+    OrderFolder { folder: String, anchor: Anchor },
+    #[serde(other)]
+    Unknown,
+}
+
+/// Where a list or folder goes: just before or just after this one.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Anchor {
+    Before(String),
+    After(String),
+}
+
+/// A list a plan changes, and the extension fields it gets (a null
+/// removes one).
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct PlannedList {
+    pub id: String,
+    pub name: String,
+    pub changes: Value,
 }
 
 /// A mutation's typed plan: the verb and its resolved targets. A dry run
@@ -654,6 +742,9 @@ pub struct Plan {
     /// The tasks changed, in order. Empty for `add`.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub targets: Vec<PlannedTask>,
+    /// For a change to lists: each list changed, in order.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub lists: Vec<PlannedList>,
     /// The Graph fields each target gets (the POST body for `add`, without
     /// the `opId` extension a real run adds). Null for `delete`.
     #[serde(default)]
@@ -675,7 +766,8 @@ pub struct Applied {
     pub op_id: String,
     pub action: TaskAction,
     /// Each task as Graph returned it after the change, in the entity shape
-    /// (local `id`, `graph_id`). For `delete`, as it was last read.
+    /// (local `id`, `graph_id`). For `delete`, as it was last read. For a
+    /// change to lists, each list as it is now.
     pub items: Vec<Entity>,
     /// The local ID of the list each of `items` is in, in the same order.
     #[serde(default)]

@@ -1,0 +1,19 @@
+---
+source: tests/cli_help.rs
+expression: help_output(args)
+---
+Rename a folder; every list in it moves with it
+
+Usage: ms-todo folders rename [OPTIONS] <FOLDER> <NEW>
+
+Arguments:
+  <FOLDER>  The folder's name (case doesn't matter)
+  <NEW>     Its new name, which no other folder may have
+
+Options:
+      --dry-run                Show what would change without changing anything
+      --format <FORMAT>        Output format: jsonl is one object per line, ids one ID per line, csv has a header row [default: table in a terminal, json when piped] [possible values: table, json, jsonl, ids, csv]
+      --idempotency-key <KEY>  Run this change at most once: repeating the command with the same key returns the first result for 24 hours, and the same key with a different change exits 2
+      --instance <NAME>        Use a separate copy of ms-todo's data (also MS_TODO_INSTANCE). Builds run from Cargo's target/ directory default to "dev"; "default" is the installed copy
+  -h, --help                   Print help
+  -V, --version                Print version

@@ -16,6 +16,9 @@ pub struct Glyphs {
     pub all: &'static str,
     pub completed: &'static str,
     pub list: &'static str,
+    /// A folder's heading in the sidebar, expanded and collapsed.
+    pub folder_open: &'static str,
+    pub folder_closed: &'static str,
     pub connected: &'static str,
     pub disconnected: &'static str,
     pub cursor: &'static str,
@@ -38,6 +41,8 @@ pub const UNICODE: Glyphs = Glyphs {
     all: "\u{221e}",                 // ∞
     completed: "\u{2713}",           // ✓
     list: "\u{2261}",                // ≡
+    folder_open: "\u{25be}",         // ▾
+    folder_closed: "\u{25b8}",       // ▸
     connected: "\u{25cf}",           // ●
     disconnected: "\u{25cb}",        // ○
     cursor: "\u{2588}",              // █
@@ -58,6 +63,8 @@ pub const ASCII: Glyphs = Glyphs {
     all: "*",
     completed: "x",
     list: "-",
+    folder_open: "v",
+    folder_closed: ">",
     connected: "+",
     disconnected: "-",
     cursor: "_",
