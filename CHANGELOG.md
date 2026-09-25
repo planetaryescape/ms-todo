@@ -1,5 +1,22 @@
 # Changelog
 
+## [0.1.14](https://github.com/planetaryescape/ms-todo/compare/v0.1.13...v0.1.14) (2026-09-25)
+
+
+### Features
+
+* see what I finished and clear what's overdue (rung 5d) ([a7b6361](https://github.com/planetaryescape/ms-todo/commit/a7b6361631e6df9a1b126eb10828f2a1159632c1))
+
+
+### Bug Fixes
+
+* read completion dates as the UTC date Graph records ([c758c5a](https://github.com/planetaryescape/ms-todo/commit/c758c5aa7bbca7d2726dc09f504c1f2851c55a2a))
+
+
+### Documentation
+
+* rung 5d in the README, blueprint, roadmap, D-048 and the skill ([c8b31dc](https://github.com/planetaryescape/ms-todo/commit/c8b31dc93d42488b86e0063763d137455d29725c))
+
 ## [0.1.13](https://github.com/planetaryescape/ms-todo/compare/v0.1.12...v0.1.13) (2026-09-25)
 
 
