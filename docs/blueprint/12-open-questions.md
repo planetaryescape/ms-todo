@@ -121,7 +121,7 @@ Opened on 2026-09-24 by phase 0 (S4, S7, S8) and its review. The placeholders in
 - **Q6. Open.** A bare weekday that is today: does `thursday` typed on a Thursday mean today or next week? (Placeholder: next week, as Todoist does.)
 - **Q7. Open.** What hours do `tonight`, `eod`, `morning` and `evening` mean? (Placeholders: `tonight` is today with no time, `eod` 17:00, `morning` 09:00, `evening` 19:00.)
 - **Q8. Open.** Is D/M the default date order, so `12/10` is 12 October? (Placeholder: yes, UK.)
-- **Q9. Open.** Does lowercase `tom` mean tomorrow? It clashes with the name Tom. (Placeholder: yes, lowercase only, so `Ask Tom` stays in the title.)
+- **Q9. Open.** Does lowercase `tom` mean tomorrow? It clashes with the name Tom. (Placeholder: yes, lowercase only, so `Ask Tom` stays in the title. Quick add applies it to `tod` and `sat` too, so `Sat nav` stays whole; D-052.)
 - **Q10. Open.** BK supplies ten of his own phrases for the corpus, [S8-corpus.tsv](../research/spikes/S8-corpus.tsv).
 - **Q11. Moot (D-037).** My Day colour: `preset3` (Yellow) or `preset4` (Green)? The iOS app shows no categories (S7), and My Day no longer uses one.
 - **Q13. Open.** A task added to My Day with no due date gets today as its due date (D-037). If it's taken out of My Day by hand before the rollover, should ms-todo clear that due date straight away? (Placeholder: yes, by the same rule as the rollover.)

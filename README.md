@@ -65,6 +65,35 @@ ms-todo tasks open <TASK> --index 2     # in the browser or mail app; http, http
 
 Search looks through every task's title and notes (html notes as text), ignoring case and accents, and ranks title matches first. Words can end in `*` to match a prefix; `OR`, `NOT` and parentheses work too, in capitals. It shows open tasks by default (`--status completed|all` for the rest) and at most 50 (`--limit`). Each JSON item is the task plus `list`, its list's name, and `snippet`, the passage that matched with each match between `**`; CSV has `id,title,list,status,due,snippet`. A query ms-todo can't read, like `OR milk` or an unclosed quote, exits 2. It answers from the local cache, in a few milliseconds.
 
+## Quick add
+
+Type a task the way you'd say it, and ms-todo files it:
+
+```sh
+mst tasks add "Pay rent every 1st #Finances p1 9am"
+#   "Pay rent" in Finances, importance high, every month on the 1st,
+#   due the next 1st, with a reminder at 09:00
+mst tasks add "Call mum in 2 days"          # "Call mum", due the day after tomorrow
+mst tasks add "Dentist fri 3pm @errands"    # due Friday, reminder at 15:00, category errands
+mst tasks add "Stand-up every weekday 9:30" # weekly Monday to Friday, reminder at 09:30
+mst tasks parse "Tax return #\"Admin stuff\" 31 jan start mon"   # shows the reading, adds nothing
+mst tasks add "Email Friday's report" --no-parse   # the text as the title, exactly as given
+```
+
+| Typed | Means |
+| --- | --- |
+| `#Home`, `#"Two words"` | the list: its name or the start of it, when only one list starts that way. With none, "Tasks" |
+| `@errands` | a category (Outlook's). One you don't have yet is still put on the task; `--create-categories` creates it |
+| `p1` `p2` `p3` `p4` | importance: p1 high, p2 and p3 normal, p4 low |
+| `tomorrow`, `fri 5pm`, `in 3 days`, `on 12 oct`, `9am` | the due date. A time also sets a reminder then (Microsoft To Do keeps no time on a due date); a time alone is its next one |
+| `!9am`, `!tomorrow 8:30` | a reminder only; a day alone is 09:00 on it |
+| `start mon` | the start date. With no due date, Microsoft To Do makes it the due date too, and ms-todo says so |
+| `every day`, `daily`, `every 3 days`, `every weekday`, `every mon, wed`, `every other week`, `every 2 weeks on fri`, `every 1st`, `every month on the 15th`, `every last friday`, `every year`, `every 12 oct` | a recurrence, due first on its next day (or the date you typed). `until 31 dec`, `for 10 times` and a time (`every mon 9am`) can follow |
+| `"quoted text"`, `\#`, `\@`, `\!` | kept as typed |
+| `+myday`, `*` | recognised, but My Day arrives in rung 7, so it's only a warning for now |
+
+What isn't recognised stays in the title. The date words are whole words only, so `Monitor the build`, `Sat nav update`, `Ask Tom about invoice`, `Call May about the lease`, `Email Friday's report` and `Fix the 9am standup bot` keep their titles; `tom`, `tod` and `sat` count only in lower case. Only the first date counts; others stay in the title with a warning. Flags always win over the text: `--list`, `--due`, `--reminder` and `--importance` replace what it says. Anything typed but not used (an unknown `#List`, a second date) is a `note:` on stderr, and in `tasks parse`'s `warnings`. An agent's or a script's text should use `--no-parse` with flags, so a title is never read as a date.
+
 ## Add and finish tasks
 
 ```sh
@@ -77,7 +106,7 @@ ms-todo tasks delete <ID>...          # asks first; pass --yes when not in a ter
 ms-todo tasks list --format ids | ms-todo tasks complete -   # `-` reads IDs from stdin
 ```
 
-- The text of `tasks add` is the title, exactly as given. With no `--list`, it goes to "Tasks".
+- `tasks add` reads its text for dates and more ([Quick add](#quick-add)); `--no-parse` takes it as the title, exactly as given. With no `--list` or `#List`, it goes to "Tasks".
 - Due dates are dates only; put a time in `--reminder`. Dates are written in your local time zone (`TZ`, or the system's).
 - `--due` takes `2026-10-02` or a phrase: `today`, `tomorrow` (`tom`), `yesterday`, `fri` (the next one, never today), `this fri`, `next fri` (next week's), `in 3 days`, `three days from today`, `+2w`, `-1d`, `2 days ago`, `next week` (its Monday), `next month` (the 1st), `eow`, `eom`, `12 oct`, `oct 12`, `12/10` (day first). A day and month already past means next year's. `--reminder` takes the same with a time: `17:30` alone (today's, or tomorrow's once it's past), `tomorrow 9am`, `fri 5:30pm`, `noon`, `2026-10-02 09:30`. On `tasks edit`, an empty value or `-` clears either. A phrase ms-todo can't read exits 2 and names the part it didn't understand.
 - `--importance` takes `high`, `normal` or `low`, or Todoist's levels: `1` or `p1` is high, `2`, `3`, `p2` and `p3` are normal (Microsoft To Do has one level for both), `4` or `p4` is low.
@@ -174,7 +203,7 @@ A title bar with the version and the view you're in, a sidebar of smart views (I
 | `h` / `l`, `Tab` | move between the sidebar, the list and the detail pane |
 | `Enter` / `Space` in the sidebar | on a folder, collapse or expand it (remembered until you quit); on a list or view, open it |
 | `M` | move the current list to a folder: type its name (`Tab` takes the first of the folders suggested), or `Enter` on an empty name (`Ctrl-u` clears it) to take the list out of its folder |
-| `a` | add a task to the current list; the text is taken literally |
+| `a` | quick add, in a box in the middle of the screen: the text is read as you type it, as `tasks add` reads it, with each part it recognised in its own colour and the task it makes underneath (`→ Finances · p1 · due Thu 1 Oct · every month on the 1st · remind 09:00`). `Tab` completes a `#List` or `@label`, `Ctrl-r` takes the text literally (and back), `Enter` adds. It goes to a `#List` you typed, else the list on screen, else "Tasks"; from Important or Planned, it's important or due today unless the text says otherwise |
 | `x` | complete, or reopen a completed task; with a selection, completes its open tasks (or reopens them all) in one change |
 | `e` | pick a field to edit, from the list or the detail pane: `t` title, `d` due date, `r` reminder, `i` importance, `n` notes, `I` cycles importance low, normal, high and saves; `Esc` cancels |
 | `Enter` in the detail pane | edit the field under the detail pane's cursor (`j` / `k` there move between title, due date, reminder, importance and notes) |
@@ -241,12 +270,11 @@ Its socket is private to your user (0600, in a 0700 directory), and its log is `
 
 ## Plan
 
-The design is in [`docs/blueprint/`](docs/blueprint/README.md), the Phase 0 results are in [`12-open-questions.md`](docs/blueprint/12-open-questions.md), and the evidence is in `docs/research/spikes/`. Still open: the S4 deltaLink replay, and product questions Q3, Q6–Q10 and Q12. The build climbs a ladder of usable releases: a foundation turn (install and sign in), rung 1 (see my tasks), rung 2 (capture and finish tasks), rung 3a (instant reads from a local cache), rung 3b (live sync through delta), rung 4 (offline writes that are never lost, and undo), rung 4b (search), rung 5a (a TUI to browse and act in), rung 5b (a TUI to live in: editing, multi-select, the palette, diagnostics, and Homebrew), rung 5c (folders), rung 5d (what I finished, and clearing what's overdue), rung 5e (moving tasks between lists), and next rung 6 (quick add).
+The design is in [`docs/blueprint/`](docs/blueprint/README.md), the Phase 0 results are in [`12-open-questions.md`](docs/blueprint/12-open-questions.md), and the evidence is in `docs/research/spikes/`. Still open: the S4 deltaLink replay, and product questions Q3, Q6–Q10 and Q12. The build climbs a ladder of usable releases: a foundation turn (install and sign in), rung 1 (see my tasks), rung 2 (capture and finish tasks), rung 3a (instant reads from a local cache), rung 3b (live sync through delta), rung 4 (offline writes that are never lost, and undo), rung 4b (search), rung 5a (a TUI to browse and act in), rung 5b (a TUI to live in: editing, multi-select, the palette, diagnostics, and Homebrew), rung 5c (folders), rung 5d (what I finished, and clearing what's overdue), rung 5e (moving tasks between lists), rung 6a (quick add), and next rung 6b (Jev filing a quick-added task into the right list).
 
 What's planned:
 
 - The whole Microsoft Graph To Do API: lists, tasks (every field, including recurrence), steps, links, attachments up to 25 MB, categories, open extensions, delta sync.
 - Features the API lacks, built on top of it: My Day (kept by ms-todo, and shown in the phone app's My Day by giving a task with no due date today's date), folders for lists, and assignment.
-- Todoist-style natural-language quick add, parsed deterministically: `Pay rent every 1st #Home p1 !9am`.
 
 Licensed under MIT or Apache-2.0, at your option.

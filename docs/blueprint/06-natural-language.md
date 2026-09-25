@@ -15,6 +15,20 @@ pub trait QuickAddParser { fn parse(&self, input: &str, ctx: &ParseContext) -> P
 
 `DeterministicParser` is the only implementation in v1. The trait is where an optional local-LLM parser can go later (D-016), with no other changes.
 
+**As built (rung 6a, D-052).** The shapes differ from the sketch above where the rest of the build had already decided:
+
+```rust
+pub struct QuickAddContext<'a> { when: ParseContext /* now, FixedOffset, D-045 */, lists: &'a [ListRef],
+                                 categories: Option<&'a [String]> /* None: couldn't be read, so none is called unknown */ }
+pub struct ParsedTask { title: String, list: Option<ListRef>, due: Option<NaiveDate>, start: Option<NaiveDate>,
+                        reminder: Option<NaiveDateTime>, recurrence: Option<Recurrence>, importance: Option<Importance>,
+                        priority: Option<u8> /* the p-level typed */, categories: Vec<String>, my_day: bool,
+                        spans: Vec<Span> /* start, end (bytes), kind */, warnings: Vec<String> }
+pub trait QuickAddParser { fn parse(&self, input: &str, ctx: &QuickAddContext) -> ParsedTask; }
+```
+
+Due and start are dates (D-027), so they're `NaiveDate`, not `DueSpec`. `ParsedTask::summary` gives the preview's parts and `to_json` the CLI's shape. A `Recurrence` is a `Pattern` (daily, weekly, absolute or relative monthly, absolute yearly), a `RecurrenceEnd` (never, until, count) and its `start`; `to_graph()` is Graph's `patternedRecurrence` without the zone, and `describe()` reads it back. Locale isn't in the context yet: weeks start on Monday and dates are D/M (Q8's placeholder).
+
 ## Grammar (v1)
 
 | Token | Meaning | Example |
@@ -44,6 +58,10 @@ Two more rules:
 Custom code is justified here because the job is narrow and the crates fail at its core: finding a date inside a title without eating the title.
 
 **Shipped early: whole-string mode** (D-045). The editing fix built the rule table's first slice in `crates/nlp` (`src/dates/`): one regex per phrase shape plus a resolver (`rules.rs`), exact word tables (`words.rs`), and whole-string mode (`whole_string.rs`), where the input must be a date phrase from end to end, for the `--due` and `--reminder` flags and the TUI's date fields. `ParseContext` carries `now` as a `DateTime<FixedOffset>` in the user's zone (chrono-tz can replace it when quick add needs zone rules, such as `in 2 hours` across a DST change). It reads 71 of S8's corpus phrases as graded; the ones it doesn't are listed in its tests (`27th`, `mid January`, `someday`, `in 2 hours`, `eod`, `morning`, `friday week`, `3rd friday jan`, US and dotted dates, `at 1900`, `today at 10`). One grading differs on purpose: `next month` is the 1st of next month, not S8's same day next month (S8 flagged its value as a guess). Placeholders applied: Q6 (a weekday that is today means next week), Q7 (`tonight` is today with no time), Q8 (D/M). Q9's lowercase-only `tom` is for span mode; whole-string mode lowercases everything. `ms_todo_nlp::read_importance` has D-017's `p1`–`p4` mapping. Rung 6 adds span mode over the same patterns, with the masking passes and guards below.
+
+**Span mode, as built (6a).** `dates/span.rs` runs the same rule regexes at each word start of the title (lowercased ASCII-only, so byte offsets are the input's), longest match wins, and a date may take a time after it (`fri 5pm`, `fri at 5pm`) or a time a date (`9am tomorrow`), with a leading `on` or `at` in the span. A phrase must end a word: the end, a space, a claimed byte, or punctuation that ends the word (`fri, then`); so `Friday's` and `12/10/26` are text. Masking replaces claimed bytes with a mark that starts a new word, and quoted or escaped bytes with one that doesn't, so `\!9am` stays text. The passes, in order: quotes and escapes (`"…"`, and `\#`, `\@`, `\!`, `\*`, `\+`, `\"`, `\\`); `#List` or `#"Two words"` (the first that names a list counts; an unknown or ambiguous one stays in the title with a warning naming the candidates); `@label` (every one); `p1`–`p4` (any case, the first counts); `+myday` or a lone `*` (recognised and warned about: My Day arrives in rung 7); `every …` or a lowercase `daily`; `!` with a phrase; `start ` with a phrase; then the bare phrases, with three more guards: `tom`, `tod` and `sat` in lower case only (Q9), a capitalised one-word phrase before another capitalised word is a name (`Mark Wednesday Addams`), and a phrase after `the` is an adjective (`the 9am standup`). The first phrase with a date is the due date, and a time-only phrase may join it; any other phrase stays in the title with a warning. Removing a span leaves a space (an escape or a quote mark leaves nothing, so `C\#` is `C#`), runs of spaces become one, and a comma after a span rejoins the text before it (`on 12 oct, then pack` → `…, then pack`).
+
+**Settling the fields, as built.** A due date given outside the text (`QuickAddContext.due`, the CLI's `--due`) is the stated date, over the text's, so the reminder and a recurrence's start follow the flag. With a recurrence, the first due date is the stated date, else the pattern's next day from today (tomorrow when the typed time has gone today). With no recurrence, a date is the due date, and a time alone is its next occurrence. A time from the date phrase (or after `every …`) becomes the reminder on the due date. A `!` reminder wins over that time (with a warning); a `!` day alone is 09:00 on it, and a `!` time alone is on the due date if there is one, else its next occurrence. `start <date>` with no due date also sets the due date, as Graph would (S11), with a warning. An `until` before the start is dropped, with a warning.
 
 **How it works:**
 
@@ -76,6 +94,8 @@ None of the date crates parse "every …". We write a small grammar that maps **
 | `every year`, `every 12 oct` | `absoluteYearly`, month and day | |
 | `… until 31 dec` / `… for 10 times` | | `endDate` / `numbered` |
 
+As built, the grammar also takes `every weekend` (Saturday and Sunday), `every mon and thu`, `every 2 weeks on fri`, `every month on the last fri`, `every 15th of the month`, `every oct 12`, spelled counts (`every three days`), a lowercase `daily`, and a time after any of them (`every mon 9am`, the first occurrence's reminder). `every week`, `every month` and `every year` take their day from the start date. `firstDayOfWeek` is Monday.
+
 `firstDayOfWeek` comes from the locale. **Always send `range.recurrenceTimeZone`**, set to the user's timezone, the same zone as the due date. Leaving it out moved the due date a day later in S12. If the input also has a date, it becomes the `range.startDate` and the first due date.
 
 ## Agent safety
@@ -85,8 +105,10 @@ None of the date crates parse "every …". We write a small grammar that maps **
 - **Explicit flags always win over parsed values** (`--due`, `--list`, `--importance`, …).
 - `--dry-run --json` returns the `ParsedTask` without writing anything, so an agent can check how its text will be read before committing.
 
-The agent skill tells agents to use `--no-parse` plus explicit flags for anything generated (D-018). Otherwise "Email Friday's report" would get a due date of Friday.
+The agent skill tells agents to use `--no-parse` plus explicit flags for anything generated (D-018). Otherwise "Email Friday's report" would get a due date of Friday. (As built, the possessive guard keeps that one whole, but `Email report Friday` would still be read, which is the point of the flag.)
 
 ## Testing
 
 Table-driven tests with a fixed `now` and timezone, plus `insta` snapshots of `ParsedTask` for the phrase corpus. Start from S8's corpus, [S8-corpus.tsv](../research/spikes/S8-corpus.tsv). Add `proptest` checks that parsing never panics and that the title plus the recognised spans cover the whole input.
+
+As built (6a): every one of S8's 127 rows is parsed as a quick-add title with Thursday 24 September 2026 14:00 London as now; 105 read as graded, and the 22 that don't are listed in the test with the reason for each (US and dotted dates, `27th`, `mid January`, `someday`, `in 2 hours`, `eod`, `morning`, `evening`, `next weekend`, `next year`, `friday week`, `3rd friday jan`, `6 weeks before 21 Jul`, `at 1900`, `today at 10`, and `next month` as the 1st), so one that starts passing has to come off the list. 44 representative inputs and 26 recurrences are `insta` snapshots. The proptest property is exact: the title equals the input with each span replaced by a space, runs of spaces collapsed (and a comma rejoined, as above). A parse takes about 20 µs in a release build.

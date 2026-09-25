@@ -327,6 +327,8 @@ BK pulled `tasks move` forward from 8c (D-051). It's the one operation that can 
 
 ## Rung 6: Car: quick add
 
+Split into **6a**, the deterministic quick add below, and **6b**, where Jev files a quick-added task into the right list by itself (to be specified). 6a is built (D-052).
+
 **Previously:** a CLI and TUI that take task text literally. **Now:** the same, plus Todoist-style quick add in both.
 
 **Promise:** "I type a task the way I think it, and ms-todo files it correctly."
@@ -347,6 +349,8 @@ BK pulled `tasks move` forward from 8c (D-051). It's the one operation that can 
 - The phrase corpus passes.
 
 **Left out:** My Day (the `+myday` token arrives in rung 7), folders, assignment.
+
+**As built, 6a (2026-09-25, D-052):** span mode over the date rule table and ordered masking passes in `crates/nlp` (`quick_add/`, `recurrence.rs`, `dates/span.rs`); `tasks add` parses by default, `--no-parse`, `--create-categories` and `tasks parse` in the CLI; the TUI's `a` is a centred modal with live highlighting, a preview line, Tab completion and `Ctrl-r`. The S8 corpus reads 105 of 127 phrases as graded inside titles (22 known misses, listed in the tests with reasons); 44 representative inputs and 26 recurrences are snapshotted; proptest checks that parsing never panics and that the title plus the spans cover the input. A parse takes about 20 µs, a TUI keypress with it about 50 µs (release), and `--bench-startup` against the live cache gave a keypress p95 of 0.71 ms with quick-add typing in the script. Driven live on the `livetest` instance, spike list only: `Pay rent every 1st #ms-todo-spike p1 9am` came back importance high, due 1 Oct (London midnight), reminder 09:00 London, `absoluteMonthly` day 1 from 2026-10-01 (sent with `recurrenceTimeZone: Europe/London`; a plain GET reports `UTC`, and the due date didn't move); `Call mum in 2 days` came back "Call mum", due 27 Sep, no reminder; a `--no-parse` add kept its title whole with no fields. The three tasks were deleted; the spike list is back to 31. Not driven live: `--create-categories` (it would write outside the spike list), tested against the fake Graph only.
 
 ## Rung 7: Convertible: My Day
 

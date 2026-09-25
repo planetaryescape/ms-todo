@@ -81,6 +81,15 @@ Press `a` and type. The **parse highlights live as you type**: spans from `crate
 - Tab accepts a completion for `#List` or `@label`.
 - `ctrl+r` switches parsing off for this entry (the `--no-parse` equivalent).
 
+As built (rung 6a, D-052):
+
+- **A modal in the middle of the screen** (BK: "when I press a to add it should be a modal in the middle instead of me having to look down at the bottom"), about 60% of the width (56 to 100 columns, less a margin on a narrow terminal), titled "Add task → <target list>", over the panes dimmed with the theme's `backdrop` style. The status line and the hint bar stay as they are, the hint bar showing the modal's keys. It holds the text (wrapped, up to four rows), the preview line (`→ Finances · p1 · due Thu 1 Oct · every month on the 1st · remind 09:00`), up to three warnings in the `warning` role, and its keys (`Enter add · Tab complete · Ctrl-r literal · Esc cancel`, from the registry's new `Adding` context). The field editor, the due-date prompt and the filter stay in the hint bar: moving them was more than a small, consistent change, and they have their own previews there.
+- **Highlighting** uses five new theme roles, `nlp_date` (due, start and `!` reminder), `nlp_list`, `nlp_label`, `nlp_priority` and `nlp_recurrence`, in every theme: plain foreground colours taken from each palette's own (due today, title or accent, link, important, search match), with no bold; `NO_COLOR` underlines them. Escapes and quote marks are drawn muted, `+myday` dim.
+- **Parsed on every key** in `update`, stored in `Mode::Adding { parsed }`, so drawing stays a pure read. About 50 µs a key in a release build; `--bench-startup` now types a quick-add line too.
+- **Where it goes:** a `#List` typed, else the list on screen, else "Tasks" (D-022). From Important or Planned the task gets high importance or today's due date unless the text sets one.
+- **Categories:** the first `a` of a session asks the daemon for `raw GET /me/outlook/masterCategories`, once; `@label` then keeps the category's own spelling and warns about one that isn't there. If the answer fails, no label is called unknown. Tab completes from those categories, or else from the categories on the tasks read so far. The TUI never creates a category; the task still gets the name (the CLI's `--create-categories` creates it).
+- Nothing left for the title keeps the modal open with an error banner, pointing at `Ctrl-r`.
+
 ## Other interactions
 
 Copy these from mxr, including its keybinding registry:

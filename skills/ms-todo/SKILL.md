@@ -5,7 +5,7 @@ description: Read, find, add, complete, reopen, edit, reschedule, move and delet
 
 # ms-todo
 
-**Skill v5, for ms-todo rung 5e** (instant reads from a local cache kept live by delta sync; search across every list; what was completed, by day; instant writes that queue offline and are never dropped; bulk reschedules and edits; moving tasks between lists without losing anything; undo. No quick-add parsing yet).
+**Skill v6, for ms-todo rung 6a** (instant reads from a local cache kept live by delta sync; search across every list; what was completed, by day; instant writes that queue offline and are never dropped; bulk reschedules and edits; moving tasks between lists without losing anything; undo; quick add, which reads a task's text for its list, dates, recurrence and importance, and which agents turn off with `--no-parse`).
 
 `ms-todo tui` (`mst tui`) is a full-screen view for people at a keyboard. Don't use it: it needs a terminal, and everything it does is a command below. Always pass a subcommand: a bare `ms-todo` opens the TUI in a terminal, and elsewhere only prints help and exits 2.
 
@@ -72,9 +72,9 @@ ms-todo tasks open <ID> --index 2 --format json   # opens it on the user's machi
 ## Capture and finish
 
 ```bash
-# The text is the title, exactly as given: no date or tag parsing yet.
-ms-todo tasks add "Buy milk" --list "Groceries" --due 2026-09-26 --format json
-ms-todo tasks add "Call the dentist" --reminder 2026-09-26T09:30 --importance high --body "re: filling" --format json
+# Always --no-parse, with flags for the fields: the text is the title, exactly as given.
+ms-todo tasks add "Buy milk" --no-parse --list "Groceries" --due 2026-09-26 --format json
+ms-todo tasks add "Call the dentist" --no-parse --reminder 2026-09-26T09:30 --importance high --body "re: filling" --format json
 
 ms-todo tasks complete <ID> [<ID>...] --format json
 ms-todo tasks reopen <ID> --format json
@@ -88,6 +88,15 @@ ms-todo tasks list --list "Groceries" --format ids | ms-todo tasks complete - --
 
 - Due dates are dates only (`YYYY-MM-DD`). A time goes in `--reminder` (`YYYY-MM-DDTHH:MM`, local time). Both also take phrases such as `tomorrow` or `fri 17:30`, resolved on the machine running the CLI; for generated commands, pass the explicit forms. `--importance` takes `high|normal|low`, `1`–`4` or `p1`–`p4`.
 - Without `--list`, `tasks add` goes to the default "Tasks" list.
+- **Pass `--no-parse` on every `tasks add` whose text you composed** (D-018), which is nearly always. Without it, `tasks add` reads its text the way a person types it: `#List`, `@category`, `p1`–`p4`, `every …`, `!9am`, `start mon` and dates are taken out of the title and become fields, so "Email Friday's report" could lose words or gain a due date. Give the fields as flags instead; flags always win over the text.
+- The one exception: the user gave you quick-add text of their own and wants it read that way ("add `Pay rent every 1st #Finances p1 9am`"). Preview it first, then add it as given, without `--no-parse`:
+
+  ```bash
+  ms-todo tasks parse "Pay rent every 1st #Finances p1 9am" --format json   # writes nothing
+  ```
+
+  The result has `title`, `list` (`{id, name}`, or `null` for "Tasks"), `due`, `start`, `reminder`, `recurrence` (Graph's `patternedRecurrence` with a `description`), `importance`, `priority`, `categories`, `spans` (what was recognised, with `kind` and `text`) and `warnings` (what was typed but not used, and why). Show the user anything in `warnings` before adding. `tasks add --dry-run` shows the plan the daemon would send.
+- An `@category` that isn't one of the user's Outlook categories is still put on the task; `--create-categories` creates it too. Only pass that when the user asked for a new category.
 - Every change returns at once, even with no network: `{"schema_version", "op_id", "action", "items": [...], "list_ids": [...]}`, each task as ms-todo has it now, in the same shape as `tasks list`. The change is queued in the outbox, and the daemon sends it to Microsoft To Do in the background. Until it gets there the task's `sync_state` is `pending`, and a new task's `graph_id` is `null`. Its local `id` never changes, so you can edit or complete it straight away.
 - Completing a **recurring** task keeps the same task open with its due date moved on, and Microsoft To Do adds the completed occurrence as a new task. Once synced, `tasks list` shows the new due date. That's success, not a failure.
 
@@ -179,7 +188,7 @@ Undoing a **recurring** completion deletes the completed copy Microsoft To Do ma
 Pass `--idempotency-key <KEY>` on every change you might need to repeat, with a key unique to that change (for example one you generate per task you add). Repeating the command with the same key returns the first result and doesn't queue anything again, for as long as the change is unresolved and 24 hours after. The same key with a different change exits 2. A change that failed before it was queued (bad input, not found) frees the key, so you can retry with it.
 
 ```bash
-ms-todo tasks add "Buy milk" --list "Groceries" --idempotency-key add-buy-milk-7f3a --format json
+ms-todo tasks add "Buy milk" --no-parse --list "Groceries" --idempotency-key add-buy-milk-7f3a --format json
 ```
 
 ## Preview first
