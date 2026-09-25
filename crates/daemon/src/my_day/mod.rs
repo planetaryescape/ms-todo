@@ -134,27 +134,48 @@ pub(crate) fn plan_ops(
     plan: &TaskPlan,
     action: TaskAction,
 ) -> Vec<NewOp> {
-    let mut payload = json!({ "body": Value::Object(plan.fields.clone()) });
-    if let Some(expect) = &plan.expect {
-        payload["expect"] = expect.clone();
-    }
-    let mut ops = vec![NewOp {
-        op_id: op_id_for(command_id, first),
+    let extension_op = |op_id: String, fields: Map<String, Value>| NewOp {
+        op_id,
         entity_local_id: row.local_id.clone(),
         list_local_id: row.list_local_id.clone(),
         op: OpKind::TaskExtension,
         action: action_name(action).to_owned(),
-        payload,
+        payload: json!({ "body": Value::Object(fields) }),
         change: LocalChange::Extension,
-    }];
+    };
+    // `myDayDueSet: true` is written last, and only once ms-todo's own
+    // due-date edit was made: an edit skipped because the phone set a
+    // date meanwhile must never leave the flag on that date (D-054).
+    let mut fields = plan.fields.clone();
+    let sets_flag = fields.get(DUE_SET) == Some(&Value::Bool(true)) && plan.due.is_some();
+    if sets_flag {
+        if has_due_set(row) {
+            fields.insert(DUE_SET.into(), Value::Null);
+        } else {
+            fields.remove(DUE_SET);
+        }
+    }
+    let mut first_op = extension_op(op_id_for(command_id, first), fields);
+    if let Some(expect) = &plan.expect {
+        first_op.payload["expect"] = expect.clone();
+    }
+    let mut ops = vec![first_op];
     if let Some(due) = plan.due {
         let body = graph_body(&[Field::Due(due)], &user_time_zone());
-        let mut edit = update_op(op_id_for(command_id, first + 1), row, &body, action);
+        let edit_id = op_id_for(command_id, first + 1);
+        let mut edit = update_op(edit_id.clone(), row, &body, action);
         // Only while the due date is still the one this was planned from:
         // a change from the phone meanwhile is kept.
         let planned_from = graph_due_date(&row.raw).map(|day| day.format(DATE_FORMAT).to_string());
         edit.payload["expect_due"] = json!(planned_from);
         ops.push(edit);
+        if sets_flag {
+            let mut flag = Map::new();
+            flag.insert(DUE_SET.into(), Value::Bool(true));
+            let mut flag_op = extension_op(op_id_for(command_id, first + 2), flag);
+            flag_op.payload["after"] = json!(edit_id);
+            ops.push(flag_op);
+        }
     }
     ops
 }
@@ -423,12 +444,17 @@ mod tests {
         let task = row(json!({ "status": "notStarted" }), None);
         let plan = add_plan(&task, day("2026-09-25")).expect("plan");
         let ops = plan_ops("op", 0, &task, &plan, TaskAction::MyDayAdd);
-        assert_eq!(ops.len(), 2);
+        assert_eq!(ops.len(), 3);
         assert_eq!(ops[0].op, OpKind::TaskExtension);
         assert_eq!(ops[0].op_id, "op");
+        assert_eq!(ops[0].payload["body"], json!({ "myDay": "2026-09-25" }));
         assert_eq!(ops[1].op, OpKind::Update);
         assert_eq!(ops[1].op_id, "op.1");
         assert_eq!(ops[1].action, "my_day_add");
+        // The flag only after ms-todo's own due-date edit.
+        assert_eq!(ops[2].op, OpKind::TaskExtension);
+        assert_eq!(ops[2].payload["body"], json!({ "myDayDueSet": true }));
+        assert_eq!(ops[2].payload["after"], "op.1");
         assert_eq!(ops[1].payload["expect_due"], Value::Null);
         assert!(ops[1].payload.get("expect_due").is_some());
     }

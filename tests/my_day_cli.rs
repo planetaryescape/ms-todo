@@ -58,6 +58,17 @@ fn today(env: &Env) -> String {
         .to_owned()
 }
 
+/// (Re)start the daemon with My Day's day fixed at `day` (a debug-build
+/// hook), so a test never depends on the clock.
+fn start_on(env: &Env, day: &str) {
+    env.json(&["daemon", "stop"]);
+    env.cmd()
+        .env("MS_TODO_MY_DAY_TODAY", day)
+        .args(["--format", "json", "daemon", "start"])
+        .assert()
+        .success();
+}
+
 /// Wait up to 20 seconds for the daemon's first rollover to be recorded.
 fn rolled_over(env: &Env) -> String {
     let deadline = std::time::Instant::now() + std::time::Duration::from_secs(20);
@@ -569,15 +580,6 @@ async fn doctor_reports_my_day_and_the_phone_setting_and_a_bad_rollover_time() {
 #[tokio::test]
 async fn a_plain_undo_takes_back_your_last_change_not_the_automatic_rollover() {
     let mut env = Env::new();
-    let config = env.home.path().join("config/ms-todo");
-    std::fs::create_dir_all(&config).expect("config dir");
-    // My Day's day is yesterday until 23:59, so the first start rolls over
-    // for yesterday and the next start, at 00:00, is due again.
-    std::fs::write(
-        config.join("config.toml"),
-        "[my_day]\nrollover_time = \"23:59\"\n",
-    )
-    .expect("config");
     let graph = graph_with(
         &mut env,
         vec![
@@ -587,6 +589,7 @@ async fn a_plain_undo_takes_back_your_last_change_not_the_automatic_rollover() {
         Vec::new(),
     )
     .await;
+    start_on(&env, "2026-09-20");
     env.synced();
     rolled_over(&env);
     let milk = env.local_id(&["tasks", "list"], "T1");
@@ -594,7 +597,7 @@ async fn a_plain_undo_takes_back_your_last_change_not_the_automatic_rollover() {
     let edit = edited["op_id"].as_str().expect("op_id").to_owned();
     env.settled();
 
-    // T2 is in an earlier day's My Day, and the daemon restarts at 00:00.
+    // T2 is in an earlier day's My Day, and the daemon restarts a day on.
     graph.edit(|data| {
         data.extensions
             .insert("T2".into(), my_day_extension(OLD_DAY, false));
@@ -606,8 +609,7 @@ async fn a_plain_undo_takes_back_your_last_change_not_the_automatic_rollover() {
         task["@odata.etag"] = json!("W/\"2\"");
     });
     env.synced();
-    std::fs::remove_file(config.join("config.toml")).expect("remove config");
-    env.json(&["daemon", "stop"]);
+    start_on(&env, "2026-09-21");
     env.synced();
     let deadline = std::time::Instant::now() + std::time::Duration::from_secs(20);
     while graph.extension("T2").is_some() {
@@ -631,4 +633,90 @@ async fn a_plain_undo_takes_back_your_last_change_not_the_automatic_rollover() {
     assert_eq!(by_name["undoes"], rollover.as_str());
     env.settled();
     assert_eq!(graph.extension("T2").expect("back")["myDay"], OLD_DAY);
+}
+
+/// The phone sets a due date on My Day's day, 2026-09-20, right after the
+/// extension write reads the task back: ms-todo's due-date edit is skipped.
+fn phone_sets_t1(data: &mut support::fake_graph::Data) {
+    phone_sets(data, "T1");
+}
+
+fn phone_sets_t2(data: &mut support::fake_graph::Data) {
+    phone_sets(data, "T2");
+}
+
+fn phone_sets(data: &mut support::fake_graph::Data, id: &str) {
+    if let Some(task) = data
+        .tasks
+        .get_mut("L-tasks")
+        .and_then(|tasks| tasks.iter_mut().find(|task| task["id"] == id))
+    {
+        task["dueDateTime"] = due("2026-09-20");
+    }
+}
+
+#[tokio::test]
+async fn a_due_date_the_phone_set_while_adding_is_never_taken_away() {
+    let mut env = Env::new();
+    let graph = graph_with(
+        &mut env,
+        vec![
+            task("T1", "Call the bank", "W/\"1\""),
+            task("T2", "Book dentist", "W/\"1\""),
+        ],
+        Vec::new(),
+    )
+    .await;
+    // The extension write reads the task, writes, and reads it again; the
+    // phone's change lands after that, before the due-date edit's read.
+    graph
+        .edit_after_gets(r"^/v1\.0/me/todo/lists/L-tasks/tasks/T1$", 2, phone_sets_t1)
+        .await;
+    graph
+        .edit_after_gets(r"^/v1\.0/me/todo/lists/L-tasks/tasks/T2$", 2, phone_sets_t2)
+        .await;
+    start_on(&env, "2026-09-20");
+    env.synced();
+    rolled_over(&env);
+    let one = env.local_id(&["tasks", "list"], "T1");
+    let two = env.local_id(&["tasks", "list"], "T2");
+    env.json(&["myday", "add", &one, &two]);
+    env.settled();
+    for id in ["T1", "T2"] {
+        let extension = graph.extension(id).expect("in My Day");
+        assert_eq!(extension["myDay"], "2026-09-20");
+        assert!(extension.get("myDayDueSet").is_none(), "{id}: {extension}");
+        assert_eq!(graph_task(&graph, id)["dueDateTime"], due("2026-09-20"));
+    }
+    let skipped = env
+        .outbox()
+        .into_iter()
+        .filter(|op| {
+            op["state"] == "done"
+                && op["note"]
+                    .as_str()
+                    .is_some_and(|note| note.starts_with("skipped:"))
+        })
+        .count();
+    assert_eq!(skipped, 4, "each task's due-date edit and flag");
+
+    // Removing keeps the phone's date.
+    env.json(&["myday", "remove", &one]);
+    env.settled();
+    assert!(graph.extension("T1").is_none());
+    assert_eq!(graph_task(&graph, "T1")["dueDateTime"], due("2026-09-20"));
+
+    // So does the rollover, a day on.
+    start_on(&env, "2026-09-21");
+    env.synced();
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(20);
+    while graph.extension("T2").is_some() {
+        assert!(
+            std::time::Instant::now() < deadline,
+            "the rollover never took T2 out"
+        );
+        std::thread::sleep(std::time::Duration::from_millis(100));
+    }
+    env.settled();
+    assert_eq!(graph_task(&graph, "T2")["dueDateTime"], due("2026-09-20"));
 }

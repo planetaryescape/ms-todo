@@ -20,13 +20,20 @@ pub(crate) struct Config {
     pub rollover_time: NaiveTime,
     /// Why `my_day.rollover_time` wasn't used, if it wasn't.
     pub problem: Option<String>,
+    /// My Day's day, fixed by [`TODAY_ENV`] in a debug build, so tests
+    /// don't depend on the clock.
+    pub today: Option<NaiveDate>,
 }
+
+/// Debug builds only: My Day's day as `YYYY-MM-DD`, for tests.
+const TODAY_ENV: &str = "MS_TODO_MY_DAY_TODAY";
 
 impl Default for Config {
     fn default() -> Self {
         Self {
             rollover_time: NaiveTime::MIN,
             problem: None,
+            today: None,
         }
     }
 }
@@ -44,6 +51,17 @@ struct Section {
 
 impl Config {
     pub fn load(config_file: &Path) -> Self {
+        let today = cfg!(debug_assertions)
+            .then(|| std::env::var(TODAY_ENV).ok())
+            .flatten()
+            .and_then(|day| NaiveDate::parse_from_str(&day, "%Y-%m-%d").ok());
+        Self {
+            today,
+            ..Self::from_file(config_file)
+        }
+    }
+
+    fn from_file(config_file: &Path) -> Self {
         let loaded = match std::fs::read_to_string(config_file) {
             Ok(raw) => Self::parse(&raw),
             Err(error) if error.kind() == ErrorKind::NotFound => Ok(Self::default()),
@@ -71,7 +89,7 @@ impl Config {
         })?;
         Ok(Self {
             rollover_time,
-            problem: None,
+            ..Self::default()
         })
     }
 
@@ -85,7 +103,8 @@ impl Config {
 
     /// My Day's day now.
     pub fn today(&self) -> NaiveDate {
-        self.day_at(chrono::Local::now().naive_local())
+        self.today
+            .unwrap_or_else(|| self.day_at(chrono::Local::now().naive_local()))
     }
 
     /// `HH:MM`, for `doctor`.

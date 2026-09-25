@@ -90,7 +90,8 @@ pub(crate) async fn undo(
     let mut refused: Vec<Refused> = Vec::new();
     let id = |queued: usize| op_id_for(&op_id, queued);
     for op in &ops {
-        if rejected(op)? {
+        // Rejected or skipped, it changed nothing.
+        if rejected(op)? || op.was_skipped() {
             continue;
         }
         let (row, deleted) = state

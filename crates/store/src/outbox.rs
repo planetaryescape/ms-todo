@@ -18,6 +18,9 @@ use crate::pool::next_local_rev;
 use crate::tasks::{TaskRecord, WriteTask, task_record_columns, write_task};
 use crate::{Entity, Store, StoreError, TaskRow, now, parse_object, parse_optional, to_json};
 
+/// How the note of an operation that [`OutboxRow::was_skipped`] starts.
+pub const SKIPPED_NOTE: &str = "skipped:";
+
 /// How long an `unknown` operation is looked for before it's flagged for
 /// the user (`outbox.unknown_lookup_hours`, 04).
 pub const UNKNOWN_LOOKUP_SECS: i64 = 24 * 60 * 60;
@@ -203,6 +206,16 @@ impl OutboxRow {
                 .unknown_since
                 .is_some_and(|since| since <= now - UNKNOWN_LOOKUP_SECS)
                 || self.needs_user())
+    }
+
+    /// Done without sending anything: its send-time precondition didn't
+    /// hold (My Day's `expect` and `expect_due`), so it changed nothing.
+    pub fn was_skipped(&self) -> bool {
+        self.state == OpState::Done
+            && self
+                .note
+                .as_deref()
+                .is_some_and(|note| note.starts_with(SKIPPED_NOTE))
     }
 
     /// A move paused where no lookup can find the answer (04).

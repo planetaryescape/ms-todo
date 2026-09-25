@@ -6,6 +6,11 @@
 
 ms-todo writes an open extension as GET, merge, then a PATCH of the whole document, because Graph replaces the extension on PATCH ([S2](../research/spikes/S2.md)). If two devices edit different fields of the same extension inside that GET–PATCH window, one edit is lost without any error.
 
+The fields exposed, by where they live:
+
+- **A list's extension:** `folder`, `order`, `folderOrder` (rung 5c, D-047).
+- **A task's extension:** `opId` and `originalCreatedAt` (written with the create or move itself, not by a later GET–PATCH), and since rung 7 `myDay` and `myDayDueSet` (D-054), written by `myday add|remove` and the rollover. A lost `myDay` puts a task in or out of My Day on one device only; a lost `myDayDueSet` can at worst leave a due date My Day set on the task after it leaves My Day. `assignee` (rung 8d) will share the same document.
+
 ## Why it's accepted today
 
 There's one user, and the window is short, so it should be rare. It's documented in [04](../blueprint/04-sync-cache.md#children-of-a-task) and in S2's open item in [12](../blueprint/12-open-questions.md#s2-result-2026-09-24).

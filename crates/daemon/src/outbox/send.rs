@@ -13,7 +13,7 @@ use std::collections::BTreeMap;
 use ms_todo_core::{DATE_FORMAT, ErrorKind, local_date_time, local_due_date, message_with_causes};
 use ms_todo_graph::GraphError;
 use ms_todo_protocol::ErrorPayload;
-use ms_todo_store::{Entity, OpKind, OutboxRow};
+use ms_todo_store::{Entity, OpKind, OutboxRow, SKIPPED_NOTE};
 use serde_json::{Map, Value};
 
 use super::extension_write;
@@ -37,6 +37,15 @@ pub(super) enum Attempt {
     Deleted,
     /// A folder write: our extension on the list as Graph now holds it.
     ExtensionWritten(Map<String, Value>),
+    /// Nothing sent: a precondition didn't hold. Graph's task (and our
+    /// extension, when read) is recorded, and the operation is done with
+    /// a note saying why, so undo and later operations know it changed
+    /// nothing.
+    Skipped {
+        task: Entity,
+        extension: Option<Option<Value>>,
+        why: &'static str,
+    },
 }
 
 pub(super) enum Failure {
@@ -100,6 +109,20 @@ pub(super) async fn send_ready(state: &State) -> bool {
                 }
                 Ok(Attempt::Changed(task, extension)) => {
                     record(state, &op, &task, extension, true).await;
+                }
+                Ok(Attempt::Skipped {
+                    task,
+                    extension,
+                    why,
+                }) => {
+                    if record(state, &op, &task, extension, true).await
+                        && let Err(error) = state
+                            .store
+                            .set_note(&op.op_id, &format!("{SKIPPED_NOTE} {why}"))
+                            .await
+                    {
+                        log_store(&error);
+                    }
                 }
                 Ok(Attempt::Deleted) => {
                     if let Err(error) = state.store.mark_done(&op.op_id).await {
@@ -310,7 +333,11 @@ async fn attempt(state: &State, op: &OutboxRow) -> Result<Attempt, Failure> {
         let (current, extension) = split_extension(fetched);
         let due = graph_due_date(&current).map(|day| day.format(DATE_FORMAT).to_string());
         if expected.as_str() != due.as_deref() {
-            return Ok(Attempt::Changed(current, extension));
+            return Ok(Attempt::Skipped {
+                task: current,
+                extension,
+                why: "the due date changed on another device meanwhile, so it was left alone",
+            });
         }
         return patch(state, op, &list_graph_id, &graph_id, &current).await;
     }

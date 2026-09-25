@@ -27,7 +27,8 @@ pub use idempotency::{Claim, IDEMPOTENCY_WINDOW_SECS};
 pub use list_extension::{ListExtensionOp, merge_extension};
 pub use lists::{FOLDER_FIELD, FOLDER_ORDER_FIELD, ListRow, ListsApplied, ListsPass, ORDER_FIELD};
 pub use outbox::{
-    LocalChange, NewOp, OpKind, OpState, OutboxRow, Restore, UNKNOWN_LOOKUP_SECS, apply_body,
+    LocalChange, NewOp, OpKind, OpState, OutboxRow, Restore, SKIPPED_NOTE, UNKNOWN_LOOKUP_SECS,
+    apply_body,
 };
 pub use pool::Store;
 pub use search::{SearchHit, StatusFilter, TaskSearch};

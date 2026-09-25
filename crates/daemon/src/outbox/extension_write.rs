@@ -86,11 +86,35 @@ pub(super) async fn send_task(
     if !holds(current.as_ref(), &op.payload["expect"]) {
         // Moved on since the write was queued (another ms-todo, or a
         // later change here): nothing to do.
-        return Ok(Attempt::Changed(task, Some(current)));
+        return Ok(Attempt::Skipped {
+            task,
+            extension: Some(current),
+            why: "ms-todo's data on the task changed meanwhile, so it was left alone",
+        });
+    }
+    if let Some(edit) = op.payload.get("after").and_then(Value::as_str)
+        && !edit_was_made(state, edit).await?
+    {
+        return Ok(Attempt::Skipped {
+            task,
+            extension: Some(current),
+            why: "the due-date edit it followed wasn't made, so ms-todo didn't set the date",
+        });
     }
     write(state, owner, current, op).await?;
     let (task, extension) = split_extension(owner.get(state).await.map_err(classify)?);
     Ok(Attempt::Changed(task, Some(extension.flatten())))
+}
+
+/// Whether the operation `op_id` was sent, not skipped: `myDayDueSet`
+/// is written only after ms-todo's own due-date edit (D-054).
+async fn edit_was_made(state: &State, op_id: &str) -> Result<bool, Failure> {
+    let edit = state
+        .store
+        .outbox_op(op_id)
+        .await
+        .map_err(|error| Failure::Temporary(crate::handlers::store_error(error)))?;
+    Ok(edit.is_some_and(|edit| !edit.was_skipped()))
 }
 
 async fn current(state: &State, owner: Owner<'_>) -> Result<Option<Value>, Failure> {
