@@ -1,5 +1,23 @@
 # Changelog
 
+## [0.1.18](https://github.com/planetaryescape/ms-todo/compare/v0.1.17...v0.1.18) (2026-09-25)
+
+
+### Features
+
+* quick add reads a task the way it's typed (rung 6a) ([5270e66](https://github.com/planetaryescape/ms-todo/commit/5270e66380cf8209f19a11301a5698eadc612392))
+
+
+### Bug Fixes
+
+* quick-add honours clearing flags, refuses duplicate list names, and completes safely ([089081e](https://github.com/planetaryescape/ms-todo/commit/089081ea6b7f14bf43bb4ad734cdfdbe1927992a))
+* quick-add priorities match lowercase only ([3285449](https://github.com/planetaryescape/ms-todo/commit/32854496ee9f3c606cafe97376466f75eedcc7c7))
+
+
+### Documentation
+
+* rung 6a quick add in the README, blueprint, roadmap, D-052 and the skill ([7876136](https://github.com/planetaryescape/ms-todo/commit/7876136a1a086e6f00d6be6e469300734d1902fa))
+
 ## [0.1.17](https://github.com/planetaryescape/ms-todo/compare/v0.1.16...v0.1.17) (2026-09-25)
 
 
