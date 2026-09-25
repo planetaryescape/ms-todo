@@ -287,6 +287,14 @@ pub enum TasksCommand {
     Add(AddArgs),
     /// Show how `tasks add` would read the text, without adding anything
     Parse(ParseArgs),
+    /// Suggest a list for a task with this title, without adding anything
+    ///
+    /// Asks TypeSafe's Jev model, through the daemon, which of your lists
+    /// the task belongs in. Off unless `[suggest]` turns it on in
+    /// config.toml; it sends the title and your lists' folders, names and a
+    /// few open task titles. Prints the list only when the model is at
+    /// least `min_confidence` sure, else no suggestion
+    SuggestList(SuggestListArgs),
     /// Mark tasks completed. A recurring task moves on to its next due date
     Complete(TargetArgs),
     /// Mark completed tasks as not started again
@@ -484,6 +492,12 @@ pub struct AddArgs {
     pub dry_run: bool,
     #[command(flatten)]
     pub idempotency: IdempotencyArgs,
+}
+
+#[derive(Debug, Args)]
+pub struct SuggestListArgs {
+    /// The task's title
+    pub title: String,
 }
 
 #[derive(Debug, Args)]

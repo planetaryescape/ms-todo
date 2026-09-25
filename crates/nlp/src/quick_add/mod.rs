@@ -22,6 +22,19 @@ pub struct ListRef {
     pub name: String,
 }
 
+/// How to type the list `name` so quick add reads it back whole: `#Name`
+/// for one word the reader keeps as it is, else `#"Two words"`.
+pub fn list_token(name: &str) -> String {
+    let bare = !name.is_empty()
+        && !name.contains(|ch: char| ch.is_whitespace() || ch == '"')
+        && !name.ends_with([',', '.', ';', ':', '!', '?', ')']);
+    if bare {
+        format!("#{name}")
+    } else {
+        format!("#\"{name}\"")
+    }
+}
+
 /// What quick add reads against: now, the lists `#` can name, and the
 /// categories `@` knows. `categories` is `None` when they couldn't be
 /// read, and then no label is called unknown. `due` is a due date given

@@ -20,6 +20,7 @@ pub mod edit;
 pub(crate) mod folders;
 pub mod line_editor;
 mod links;
+pub mod list_hint;
 pub mod move_tasks;
 pub mod palette;
 pub mod quick_add;
@@ -203,6 +204,8 @@ pub enum Tag {
     Diagnostics(Part),
     /// The user's Outlook categories, for `@label` (quick add).
     Categories,
+    /// A list suggestion for the task being added (rung 6b).
+    ListHint,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
@@ -323,6 +326,8 @@ pub struct App {
     pub painted_from_cache: bool,
     /// The categories quick add's `@label` knows.
     pub categories: quick_add::Categories,
+    /// Quick add's list suggestion.
+    pub list_hint: list_hint::ListHint,
 }
 
 impl App {
@@ -362,6 +367,7 @@ impl App {
             cache: HashMap::new(),
             painted_from_cache: false,
             categories: quick_add::Categories::default(),
+            list_hint: list_hint::ListHint::default(),
         }
     }
 
@@ -487,7 +493,7 @@ impl App {
                         self.banner = None;
                     }
                 }
-                Vec::new()
+                self.tick_list_hint()
             }
         }
     }
@@ -562,6 +568,11 @@ impl App {
             }
             (Mode::Adding { .. }, Action::ToggleParse) => {
                 self.toggle_parse();
+                self.quick_add_typed();
+                Vec::new()
+            }
+            (Mode::Adding { .. }, Action::AcceptList) => {
+                self.accept_list_hint();
                 Vec::new()
             }
             (Mode::MovingList { .. }, Action::Submit) => self.submit_move(),
@@ -791,6 +802,7 @@ impl App {
                 let changed = edit(input);
                 if changed {
                     self.reread_quick_add();
+                    self.quick_add_typed();
                 }
                 return Vec::new();
             }
@@ -967,6 +979,11 @@ impl App {
             // Without them, no label is called unknown; nothing to say.
             (Tag::Categories, result) => {
                 self.categories_answered(result);
+                Vec::new()
+            }
+            // Only a hint: without one, nothing to say.
+            (Tag::ListHint, result) => {
+                self.list_hint_answered(result);
                 Vec::new()
             }
             (Tag::Write(write), Ok(ResponseData::Applied(applied))) => {

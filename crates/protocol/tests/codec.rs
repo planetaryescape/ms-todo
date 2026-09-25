@@ -1,11 +1,12 @@
 use bytes::BytesMut;
 use ms_todo_protocol::{
     Anchor, Applied, Candidate, Clearable, Codec, Counts, DaemonStatus, DoctorReport,
-    EntityChanged, ErrorPayload, Event, Folder, Importance, ListChange, Message, NewTask, OpError,
-    OutboxDepth, OutboxOp, OutboxState, PROTOCOL_VERSION, Payload, Plan, PlannedList, PlannedTask,
-    RawWriteMethod, Refused, Request, Response, ResponseData, Rolled, Scope, ScopeError,
-    ScopeStatus, SearchStatus, Seed, SyncActivity, SyncInfo, SyncMode, SyncProgress, SyncReport,
-    SyncState, TaskAction, TaskChange, TaskEdit, TaskSelect, WriteRejected,
+    EntityChanged, ErrorPayload, Event, Folder, Importance, ListChange, ListSuggestion, Message,
+    NewTask, OpError, OutboxDepth, OutboxOp, OutboxState, PROTOCOL_VERSION, Payload, Plan,
+    PlannedList, PlannedTask, RawWriteMethod, Refused, Request, Response, ResponseData, Rolled,
+    Scope, ScopeError, ScopeStatus, SearchStatus, Seed, SuggestStatus, SyncActivity, SyncInfo,
+    SyncMode, SyncProgress, SyncReport, SyncState, TaskAction, TaskChange, TaskEdit, TaskSelect,
+    WriteRejected,
 };
 use serde_json::json;
 use tokio_util::codec::{Decoder, Encoder};
@@ -140,7 +141,27 @@ fn every_request_and_response_round_trips() {
                     flagged: 1,
                     ..OutboxDepth::default()
                 },
+                suggest: Some(SuggestStatus {
+                    enabled: true,
+                    provider: Some("typesafe".into()),
+                    problem: Some("TypeSafe answered 500".into()),
+                }),
             }),
+        }),
+        Payload::Request(Request::SuggestList {
+            title: "pay council tax".into(),
+        }),
+        Payload::Response(Response::Ok {
+            data: ResponseData::ListSuggestion {
+                suggestion: Some(ListSuggestion {
+                    list_id: "5b9c".into(),
+                    list_name: "Finances".into(),
+                    confidence: 0.86,
+                }),
+            },
+        }),
+        Payload::Response(Response::Ok {
+            data: ResponseData::ListSuggestion { suggestion: None },
         }),
         Payload::Response(Response::Ok {
             data: ResponseData::Raw {

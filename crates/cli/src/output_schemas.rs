@@ -64,6 +64,18 @@ pub fn output_schema(command: &str) -> Option<Value> {
         "folders list" => collection(folder()),
         "tasks links" => collection(link()),
         "tasks parse" => parsed_task(),
+        "tasks suggest-list" => versioned(
+            json!({
+                "title": { "type": "string" },
+                "list_id": nullable("string", "The suggested list's ID; null for no suggestion"),
+                "list_name": nullable("string", ""),
+                "confidence": {
+                    "type": ["number", "null"],
+                    "description": "From 0 to 1, at least suggest.min_confidence"
+                }
+            }),
+            &["title", "list_id", "list_name", "confidence"],
+        ),
         "tasks open" => versioned(
             json!({
                 "url": { "type": "string", "description": "The URL handed to the system's opener" },
@@ -628,6 +640,16 @@ fn doctor() -> Value {
                     "failed": { "type": "integer" },
                     "done": { "type": "integer" },
                     "flagged": { "type": "integer" }
+                }
+            },
+            "suggest": {
+                "type": ["object", "null"],
+                "description": "List suggestions (rung 6b); null when the daemon didn't report",
+                "properties": {
+                    "enabled": { "type": "boolean" },
+                    "provider": nullable("string", "typesafe"),
+                    "sends": nullable("string", "What leaves this machine when enabled"),
+                    "problem": nullable("string", "Why suggestions are off or failing")
                 }
             },
             "problems": { "type": "array", "items": { "type": "string" } }

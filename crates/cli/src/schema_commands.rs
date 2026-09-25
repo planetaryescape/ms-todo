@@ -28,6 +28,7 @@ const COMMANDS: &[&str] = &[
     "tasks list",
     "tasks add",
     "tasks parse",
+    "tasks suggest-list",
     "tasks complete",
     "tasks reopen",
     "tasks edit",

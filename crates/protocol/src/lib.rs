@@ -30,7 +30,9 @@ use serde_json::{Map, Value};
 /// rather than have a move refused as unknown. 10: `NewTask.start`,
 /// `recurrence` and `categories` (quick add, rung 6a), so an older daemon
 /// never drops a recurrence it doesn't know and creates a one-off task.
-pub const PROTOCOL_VERSION: u32 = 10;
+/// 11: `SuggestList` (rung 6b), so a client restarts an older daemon
+/// rather than have the request refused as unknown.
+pub const PROTOCOL_VERSION: u32 = 11;
 
 /// The socket buffer both ends ask for: room for a large list's `Seed` in
 /// one write. macOS gives a Unix socket 8 KiB, so a 350 KiB seed crossed
@@ -246,6 +248,13 @@ pub enum Request {
     /// request's message ID. Answered `Ack`, then a `SyncState`. The
     /// connection still takes requests.
     Subscribe,
+    /// Which list a task with this title might belong in, from the
+    /// optional suggestion provider (rung 6b), answered `ListSuggestion`.
+    /// Only a suggestion: nothing is filed. An error when suggestions are
+    /// off; a failure to reach the provider is no suggestion, not an
+    /// error. Answered out of order, so a slow provider never holds up
+    /// the connection's other requests.
+    SuggestList { title: String },
     /// A valid access token, for `auth bearer --reveal-secret`.
     Bearer,
     /// Stop the daemon. It answers `Ack`, then exits.
@@ -265,6 +274,14 @@ pub enum Response {
     },
     #[serde(other)]
     Unknown,
+}
+
+impl Request {
+    /// Whether the daemon may answer this after requests sent later on
+    /// the same connection: slow, read-only, and needing nothing in order.
+    pub fn answered_out_of_order(&self) -> bool {
+        matches!(self, Self::SuggestList { .. })
+    }
 }
 
 impl From<Result<ResponseData, ErrorPayload>> for Response {
@@ -321,9 +338,23 @@ pub enum ResponseData {
         expires_at: i64,
     },
     Seed(Seed),
+    /// The answer to `SuggestList`: `None` when no list is likely enough.
+    ListSuggestion {
+        suggestion: Option<ListSuggestion>,
+    },
     Ack,
     #[serde(other)]
     Unknown,
+}
+
+/// A list a task might belong in, and how sure the provider is.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct ListSuggestion {
+    /// The list's local ID.
+    pub list_id: String,
+    pub list_name: String,
+    /// From 0 to 1; at least the configured `min_confidence`.
+    pub confidence: f64,
 }
 
 /// What a client shows: a smart view over every list, or one list.
@@ -472,6 +503,22 @@ pub struct DoctorReport {
     pub scopes: Vec<ScopeStatus>,
     #[serde(default)]
     pub outbox: OutboxDepth,
+    /// List suggestions (rung 6b); `None` from a daemon before them.
+    #[serde(default)]
+    pub suggest: Option<SuggestStatus>,
+}
+
+/// How list suggestions stand, for `doctor`.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SuggestStatus {
+    pub enabled: bool,
+    /// Who suggests, when enabled: `typesafe`.
+    #[serde(default)]
+    pub provider: Option<String>,
+    /// Why suggestions are off or failing: a bad `[suggest]` setting, or
+    /// the last failure since the last suggestion that worked.
+    #[serde(default)]
+    pub problem: Option<String>,
 }
 
 /// How many outbox operations are in each state.

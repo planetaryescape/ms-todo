@@ -1873,13 +1873,19 @@ dependencies = [
  "ms-todo-graph",
  "ms-todo-protocol",
  "ms-todo-store",
+ "reqwest",
  "serde",
  "serde_json",
  "sha2 0.10.9",
+ "shlex",
  "socket2",
+ "tempfile",
+ "thiserror 2.0.21",
  "tokio",
  "tokio-util",
+ "toml",
  "uuid",
+ "wiremock",
 ]
 
 [[package]]

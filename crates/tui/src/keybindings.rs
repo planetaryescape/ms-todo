@@ -162,6 +162,9 @@ pub const BINDINGS: &[Binding] = &[
     bind(ADDING, "Enter", Action::Submit, "Add", true),
     bind(ADDING, "Tab", Action::Complete, "Complete", true),
     bind(ADDING, "Ctrl-r", Action::ToggleParse, "Literal", true),
+    // The modal shows it with the suggestion; there's nothing to accept
+    // otherwise.
+    bind(ADDING, "Ctrl-l", Action::AcceptList, "Accept list", false),
     bind(NOTES, "Ctrl-s", Action::Submit, "Save", true),
     bind(NOTES, "Alt-Enter", Action::Submit, "Save", false),
     bind(NOTES, "Enter", Action::Newline, "New line", true),

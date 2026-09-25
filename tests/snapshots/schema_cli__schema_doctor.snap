@@ -265,6 +265,39 @@ expression: pretty
         ],
         "type": "object"
       },
+      "suggest": {
+        "description": "List suggestions (rung 6b); null when the daemon didn't report",
+        "properties": {
+          "enabled": {
+            "type": "boolean"
+          },
+          "problem": {
+            "description": "Why suggestions are off or failing",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "provider": {
+            "description": "typesafe",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "sends": {
+            "description": "What leaves this machine when enabled",
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "type": [
+          "object",
+          "null"
+        ]
+      },
       "syncing": {
         "type": [
           "boolean",

@@ -18,6 +18,8 @@ pub const ACCESS_TOKEN: &str = "test-access-token";
 pub struct Env {
     pub home: tempfile::TempDir,
     pub graph_url: Option<String>,
+    /// A mock TypeSafe for list suggestions, set before the daemon starts.
+    pub typesafe_url: Option<String>,
 }
 
 impl Env {
@@ -31,6 +33,7 @@ impl Env {
         Self {
             home,
             graph_url: None,
+            typesafe_url: None,
         }
     }
 
@@ -50,10 +53,16 @@ impl Env {
             .env_remove("MS_TODO_INSTANCE")
             .env_remove("MS_TODO_CONFIG_DIR")
             .env_remove("MS_TODO_GRAPH_URL")
+            // List suggestions reach TypeSafe only when a test says so.
+            .env_remove("MS_TODO_TYPESAFE_URL")
+            .env_remove("TYPESAFE_API_KEY")
             // Due dates and reminders are written in this zone.
             .env("TZ", "Europe/London");
         if let Some(url) = &self.graph_url {
             command.env("MS_TODO_GRAPH_URL", url);
+        }
+        if let Some(url) = &self.typesafe_url {
+            command.env("MS_TODO_TYPESAFE_URL", url);
         }
         command
     }

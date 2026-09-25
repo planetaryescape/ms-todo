@@ -26,6 +26,7 @@ mod output_schemas;
 mod phrases;
 mod quick_add;
 mod schema_commands;
+mod suggest_commands;
 mod sync_commands;
 mod task_commands;
 mod task_output;
@@ -187,6 +188,9 @@ async fn dispatch(command: Command, paths: &Paths, format: OutputFormat) -> Resu
         Command::Schema { command } => print_raw(format, &schema_commands::schema(&command)?),
         Command::Tasks(TasksCommand::Add(args)) => task_commands::add(paths, args, format).await,
         Command::Tasks(TasksCommand::Parse(args)) => quick_add::parse(paths, args, format).await,
+        Command::Tasks(TasksCommand::SuggestList(args)) => {
+            suggest_commands::suggest_list(paths, args.title, format).await
+        }
         Command::Tasks(TasksCommand::Complete(args)) => {
             task_commands::change(paths, args, TaskChange::Complete, format).await
         }

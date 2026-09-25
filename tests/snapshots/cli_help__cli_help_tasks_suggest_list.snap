@@ -1,0 +1,28 @@
+---
+source: tests/cli_help.rs
+expression: help_output(args)
+---
+Suggest a list for a task with this title, without adding anything
+
+Asks TypeSafe's Jev model, through the daemon, which of your lists the task belongs in. Off unless `[suggest]` turns it on in config.toml; it sends the title and your lists' folders, names and a few open task titles. Prints the list only when the model is at least `min_confidence` sure, else no suggestion
+
+Usage: ms-todo tasks suggest-list [OPTIONS] <TITLE>
+
+Arguments:
+  <TITLE>
+          The task's title
+
+Options:
+      --format <FORMAT>
+          Output format: jsonl is one object per line, ids one ID per line, csv has a header row [default: table in a terminal, json when piped]
+
+          [possible values: table, json, jsonl, ids, csv]
+
+      --instance <NAME>
+          Use a separate copy of ms-todo's data (also MS_TODO_INSTANCE). Builds run from Cargo's target/ directory default to "dev"; "default" is the installed copy
+
+  -h, --help
+          Print help (see a summary with '-h')
+
+  -V, --version
+          Print version

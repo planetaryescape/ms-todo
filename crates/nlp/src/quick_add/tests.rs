@@ -625,3 +625,15 @@ fn parsing_is_fast_enough_for_every_keystroke() {
         "{each:?} per parse"
     );
 }
+
+#[test]
+fn a_list_token_reads_back_as_its_list() {
+    assert_eq!(list_token("Finances"), "#Finances");
+    assert_eq!(list_token("Admin stuff"), "#\"Admin stuff\"");
+    assert_eq!(list_token("Home."), "#\"Home.\"");
+    for list in lists() {
+        let parsed = parse(&format!("Pay rent {}", list_token(&list.name)));
+        assert_eq!(parsed.list.as_ref(), Some(&list), "{}", list.name);
+        assert_eq!(parsed.title, "Pay rent");
+    }
+}

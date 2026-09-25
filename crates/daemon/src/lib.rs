@@ -28,6 +28,7 @@ mod outbox;
 mod reads;
 mod seed;
 mod server;
+mod suggest;
 mod sync;
 mod task_fields;
 mod task_resolution;

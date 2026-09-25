@@ -171,6 +171,35 @@ fn only_the_daemon_touches_the_store() {
     );
 }
 
+// List suggestions send task titles to TypeSafe: only the daemon may,
+// where the opt-in and the key are checked (D-053).
+#[test]
+fn only_the_daemon_talks_to_typesafe() {
+    let offenders: Vec<String> = [
+        "crates/cli/src",
+        "crates/core/src",
+        "crates/nlp/src",
+        "crates/protocol/src",
+        "crates/graph/src",
+        "crates/store/src",
+        "crates/tui/src",
+        "src",
+    ]
+    .iter()
+    .flat_map(|dir| rust_files(&repo_root().join(dir)))
+    .filter(|file| {
+        std::fs::read_to_string(file)
+            .expect("read source")
+            .contains("api.typesafe.ai")
+    })
+    .map(|file| file.display().to_string())
+    .collect();
+    assert!(
+        offenders.is_empty(),
+        "only crates/daemon may call TypeSafe: {offenders:?}"
+    );
+}
+
 fn rust_files(dir: &Path) -> Vec<PathBuf> {
     let mut files = Vec::new();
     for entry in std::fs::read_dir(dir).expect("read dir") {

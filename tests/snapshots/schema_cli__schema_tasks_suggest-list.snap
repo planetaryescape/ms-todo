@@ -1,0 +1,58 @@
+---
+source: tests/schema_cli.rs
+expression: pretty
+---
+{
+  "input": {
+    "additionalProperties": false,
+    "properties": {
+      "title": {
+        "description": "The task's title",
+        "type": "string",
+        "x-cli": "<TITLE>"
+      }
+    },
+    "required": [
+      "title"
+    ],
+    "type": "object"
+  },
+  "output": {
+    "properties": {
+      "confidence": {
+        "description": "From 0 to 1, at least suggest.min_confidence",
+        "type": [
+          "number",
+          "null"
+        ]
+      },
+      "list_id": {
+        "description": "The suggested list's ID; null for no suggestion",
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "list_name": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "schema_version": {
+        "const": 2
+      },
+      "title": {
+        "type": "string"
+      }
+    },
+    "required": [
+      "schema_version",
+      "title",
+      "list_id",
+      "list_name",
+      "confidence"
+    ],
+    "type": "object"
+  }
+}

@@ -35,6 +35,8 @@ pub(crate) struct State {
     pub started_at: i64,
     /// Where a move keeps its attachments' bytes until it's settled.
     pub moves_dir: std::path::PathBuf,
+    /// List suggestions, when `[suggest]` turns them on.
+    pub suggest: crate::suggest::Suggester,
 }
 
 impl State {
@@ -105,6 +107,14 @@ pub(crate) async fn handle(state: &State, request: Request) -> Response {
         Request::OutboxList { state: wanted } => crate::outbox::list(state, wanted).await,
         Request::OutboxRetry { op_id } => crate::outbox::retry(state, &op_id).await,
         Request::OutboxDiscard { op_id } => crate::outbox::discard(state, &op_id).await,
+        Request::SuggestList { title } => {
+            let generation = state.syncer.status().finished;
+            state
+                .suggest
+                .suggest(&state.store, generation, &title)
+                .await
+                .map(|suggestion| ResponseData::ListSuggestion { suggestion })
+        }
         Request::Bearer => match state.auth.valid_token().await {
             Ok(token) => Ok(ResponseData::Bearer {
                 access_token: token.access_token,

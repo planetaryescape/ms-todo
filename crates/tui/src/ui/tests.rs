@@ -705,3 +705,38 @@ fn the_add_modal_taking_the_text_literally() {
     app.update(Msg::Action(crate::action::Action::ToggleParse));
     insta::assert_snapshot!(render(&app));
 }
+
+#[test]
+fn the_add_modal_offers_a_likely_list_for_the_inbox() {
+    let mut app = App::new(crate::glyphs::UNICODE, crate::app::tests::clock());
+    app.version = "9.9.9";
+    let effects = app.update(Msg::Connected);
+    crate::app::tests::answer_seed(
+        &mut app,
+        &effects[0],
+        crate::app::tests::seed(
+            ms_todo_protocol::Scope::List { id: "tasks".into() },
+            Vec::new(),
+        ),
+    );
+    let mut app = adding(app, "mow the lawn");
+    for _ in 0..crate::app::list_hint::QUIET_TICKS {
+        app.update(Msg::Tick(crate::app::tests::clock()));
+    }
+    app.update(Msg::Response {
+        tag: crate::app::Tag::ListHint,
+        result: Ok(ms_todo_protocol::ResponseData::ListSuggestion {
+            suggestion: Some(ms_todo_protocol::ListSuggestion {
+                list_id: "home".into(),
+                list_name: "Home".into(),
+                confidence: 0.9,
+            }),
+        }),
+    });
+    let screen = render(&app);
+    assert!(
+        screen.contains("\u{2192} Home? (Ctrl-l to accept)"),
+        "{screen}"
+    );
+    insta::assert_snapshot!(screen);
+}

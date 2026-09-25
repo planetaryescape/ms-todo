@@ -16,5 +16,6 @@ pub use dates::{
 pub use importance::{Importance, read_importance};
 pub use quick_add::{
     DeterministicParser, ListRef, ParsedTask, QuickAddContext, QuickAddParser, Span, SpanKind,
+    list_token,
 };
 pub use recurrence::{Pattern, Recurrence, RecurrenceEnd, WeekIndex};

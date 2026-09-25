@@ -6,7 +6,8 @@
 use ms_todo_core::Paths;
 use ms_todo_graph::auth::{Authenticator, Endpoints};
 use ms_todo_protocol::{
-    DoctorReport, OutboxDepth, Request, ResponseData, ScopeStatus, SyncMode, SyncState,
+    DoctorReport, OutboxDepth, Request, ResponseData, ScopeStatus, SuggestStatus, SyncMode,
+    SyncState,
 };
 use serde::Serialize;
 
@@ -28,8 +29,35 @@ pub struct Doctor {
     pub last_error: Option<LastError>,
     /// How many writes are in each outbox state.
     pub outbox: Option<OutboxDepth>,
+    /// List suggestions (rung 6b), when the daemon reported.
+    pub suggest: Option<Suggest>,
     /// What needs attention, for people.
     pub problems: Vec<String>,
+}
+
+#[derive(Serialize)]
+pub struct Suggest {
+    pub enabled: bool,
+    pub provider: Option<String>,
+    /// What leaves this machine when enabled, for privacy.
+    pub sends: Option<String>,
+    /// Why suggestions are off or failing.
+    pub problem: Option<String>,
+}
+
+/// What a suggestion sends, as `doctor` states it.
+const SUGGEST_SENDS: &str =
+    "task titles, and your lists' folders, names and up to 5 open task titles each, to TypeSafe";
+
+impl From<SuggestStatus> for Suggest {
+    fn from(status: SuggestStatus) -> Self {
+        Self {
+            sends: status.enabled.then(|| SUGGEST_SENDS.to_owned()),
+            enabled: status.enabled,
+            provider: status.provider,
+            problem: status.problem,
+        }
+    }
 }
 
 #[derive(Serialize)]
@@ -115,6 +143,7 @@ pub async fn doctor(paths: &Paths) -> Result<Doctor, CliError> {
             scopes: Vec::new(),
             last_error: None,
             outbox: None,
+            suggest: None,
             problems,
         });
     };
@@ -124,7 +153,15 @@ pub async fn doctor(paths: &Paths) -> Result<Doctor, CliError> {
         syncing,
         scopes,
         outbox,
+        suggest,
     } = report;
+    let suggest = suggest.map(Suggest::from);
+    if let Some(problem) = suggest
+        .as_ref()
+        .and_then(|suggest| suggest.problem.as_ref())
+    {
+        problems.push(format!("suggest: {problem}"));
+    }
     let scopes: Vec<Scope> = scopes.into_iter().map(Scope::from).collect();
     let last_error = scopes
         .iter()
@@ -171,6 +208,7 @@ pub async fn doctor(paths: &Paths) -> Result<Doctor, CliError> {
         scopes,
         last_error,
         outbox: Some(outbox),
+        suggest,
         problems,
     })
 }
@@ -273,6 +311,13 @@ impl Render for Doctor {
                     outbox.pending, outbox.inflight, outbox.unknown, outbox.failed, outbox.done
                 ),
             ));
+        }
+        if let Some(suggest) = &self.suggest {
+            let state = match &suggest.sends {
+                Some(sends) => format!("on; sends {sends}"),
+                None => "off".into(),
+            };
+            rows.push(("Suggest", state));
         }
         for scope in self
             .scopes

@@ -16,6 +16,8 @@ pub struct SidebarList {
     pub name: String,
     /// Its folder's name, if it's in one.
     pub folder: Option<String>,
+    /// The default "Tasks" list, the inbox.
+    pub default: bool,
 }
 
 impl SidebarList {
@@ -28,6 +30,7 @@ impl SidebarList {
                 .get("folder")
                 .and_then(Value::as_str)
                 .map(str::to_owned),
+            default: list.get("wellknownListName").and_then(Value::as_str) == Some("defaultList"),
         })
     }
 }

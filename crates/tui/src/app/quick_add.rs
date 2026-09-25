@@ -180,6 +180,7 @@ impl App {
             *input = LineEditor::single_at(&new_text, column);
         }
         self.reread_quick_add();
+        self.quick_add_typed();
     }
 
     /// The labels Tab offers: the user's categories, else those on the

@@ -177,9 +177,12 @@ fn lost(tag: Tag, why: &str) -> Msg {
         Tag::Write(_) | Tag::Folders | Tag::Undo => {
             format!("{why}; the change may or may not have been made, so check before trying again")
         }
-        Tag::Seed(_) | Tag::Prefetch | Tag::Sync | Tag::Diagnostics(_) | Tag::Categories => {
-            why.to_owned()
-        }
+        Tag::Seed(_)
+        | Tag::Prefetch
+        | Tag::Sync
+        | Tag::Diagnostics(_)
+        | Tag::Categories
+        | Tag::ListHint => why.to_owned(),
     };
     Msg::Response {
         tag,

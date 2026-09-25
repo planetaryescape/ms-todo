@@ -26,6 +26,8 @@ pub enum Action {
     Add,
     /// `Ctrl-r` in quick add: take the text literally, or read it again.
     ToggleParse,
+    /// `Ctrl-l` in quick add: type the suggested list in as `#List`.
+    AcceptList,
     /// Complete an open task, or reopen a completed one.
     ToggleComplete,
     /// Delete, after an inline confirmation.

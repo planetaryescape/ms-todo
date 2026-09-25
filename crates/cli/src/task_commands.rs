@@ -19,7 +19,7 @@ use crate::confirm::{can_prompt, confirm};
 use crate::error::CliError;
 use crate::output::OutputFormat;
 use crate::task_output::{describe_plan, print_applied, print_plan};
-use crate::{daemon_client, data_commands, phrases, quick_add};
+use crate::{daemon_client, data_commands, phrases, quick_add, suggest_commands};
 
 /// Read from stdin in place of a task argument.
 const STDIN_MARKER: &str = "-";
@@ -40,13 +40,38 @@ pub async fn add(paths: &Paths, args: AddArgs, format: OutputFormat) -> Result<(
     } else {
         quick_add::new_task(paths, &args, format).await?
     };
+    // Headed for the inbox: once it's there, a likely list is worth a
+    // note (rung 6b). Only for people; JSON's stderr is the contract.
+    let inbox_title = (task.list.is_none()
+        && !matches!(format, OutputFormat::Json | OutputFormat::Jsonl))
+    .then(|| task.title.clone());
     let request = Request::AddTask {
         task,
         dry_run: args.dry_run,
         op_id: op_id_unless(args.dry_run),
         idempotency_key: args.idempotency.idempotency_key,
     };
-    send(paths, request, format).await
+    // Asked alongside the add, so the add never waits on the provider.
+    let suggest = async {
+        match &inbox_title {
+            Some(title) => suggest_commands::ask(paths, title).await.ok().flatten(),
+            None => None,
+        }
+    };
+    let (answer, suggestion) = tokio::join!(send_and_print(paths, request, format), suggest);
+    let answer = answer?;
+    // Quiet when suggestions are off or fail: the add has done its job.
+    if let Some(list) = suggestion {
+        let added = match &answer {
+            ResponseData::Applied(applied) => applied
+                .items
+                .first()
+                .and_then(|task| task.get("id")?.as_str()),
+            _ => None,
+        };
+        eprintln!("note: {}", suggest_commands::add_note(&list, added));
+    }
+    Ok(())
 }
 
 /// `tasks edit`: one task, several named, or those `--overdue` or
@@ -283,6 +308,15 @@ pub(crate) async fn send(
     request: Request,
     format: OutputFormat,
 ) -> Result<(), CliError> {
+    send_and_print(paths, request, format).await.map(|_| ())
+}
+
+/// [`send`], giving back what was printed.
+async fn send_and_print(
+    paths: &Paths,
+    request: Request,
+    format: OutputFormat,
+) -> Result<ResponseData, CliError> {
     let op_id = match &request {
         Request::AddTask { op_id, .. }
         | Request::ChangeTasks { op_id, .. }
@@ -296,11 +330,12 @@ pub(crate) async fn send(
         }
         None => daemon_client::ask(paths, request).await?,
     };
-    match answer {
-        ResponseData::Plan(plan) => print_plan(format, &plan),
-        ResponseData::Applied(applied) => print_applied(format, &applied),
-        _ => Err(crate::unexpected_response()),
+    match &answer {
+        ResponseData::Plan(plan) => print_plan(format, plan)?,
+        ResponseData::Applied(applied) => print_applied(format, applied)?,
+        _ => return Err(crate::unexpected_response()),
     }
+    Ok(answer)
 }
 
 /// Replace `-` with the IDs on stdin, one per line, blank lines skipped, so

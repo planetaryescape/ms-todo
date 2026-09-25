@@ -39,7 +39,9 @@ pub(crate) fn seed(scope: Scope, tasks: Vec<ms_todo_protocol::Entity>) -> Seed {
     Seed {
         scope: Some(scope),
         lists: vec![
-            entity(json!({ "id": "tasks", "displayName": "Tasks" })),
+            entity(
+                json!({ "id": "tasks", "displayName": "Tasks", "wellknownListName": "defaultList" }),
+            ),
             entity(json!({ "id": "home", "displayName": "Home" })),
         ],
         lists_sync: ready,

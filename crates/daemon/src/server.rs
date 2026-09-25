@@ -177,6 +177,7 @@ async fn build_state(paths: &Paths) -> Result<State, Fatal> {
         instance: paths.instance.label().to_owned(),
         started_at: chrono::Utc::now().timestamp(),
         moves_dir: paths.data_dir.join("moves"),
+        suggest: crate::suggest::Suggester::load(&paths.config_file),
     })
 }
 
@@ -234,11 +235,21 @@ async fn serve_connection(stream: UnixStream, state: Arc<State>, shutdown: Arc<N
     let _ = socket2::SockRef::from(&stream).set_send_buffer_size(SOCKET_BUFFER_BYTES);
     let mut framed = Framed::new(stream, Codec::new());
     let mut subscription: Option<Subscription> = None;
+    // Requests answered out of order (`SuggestList`), so a slow provider
+    // never holds up the requests behind them. Dropped with the
+    // connection, which aborts them.
+    let mut background: JoinSet<(u64, Response)> = JoinSet::new();
     loop {
         let frame = tokio::select! {
             frame = framed.next() => frame,
             Some((id, event)) = pushed(&mut subscription) => {
                 if push(&mut framed, id, event).await.is_err() {
+                    return;
+                }
+                continue;
+            }
+            Some(answered) = background.join_next(), if !background.is_empty() => {
+                if send_late(&mut framed, answered).await.is_err() {
                     return;
                 }
                 continue;
@@ -283,6 +294,11 @@ async fn serve_connection(stream: UnixStream, state: Arc<State>, shutdown: Arc<N
             }
             continue;
         }
+        if request.answered_out_of_order() {
+            let (state, id) = (Arc::clone(&state), message.id);
+            background.spawn(async move { (id, handle(&state, request).await) });
+            continue;
+        }
         let stopping = request == Request::Shutdown;
         // Progress of any sync the request waits for goes back as events
         // with its ID, each resetting the client's stall deadline.
@@ -305,6 +321,11 @@ async fn serve_connection(stream: UnixStream, state: Arc<State>, shutdown: Arc<N
                 // A slow request doesn't hold up the subscriber's events.
                 Some((id, event)) = pushed(&mut subscription) => {
                     if push(&mut framed, id, event).await.is_err() {
+                        return;
+                    }
+                }
+                Some(answered) = background.join_next(), if !background.is_empty() => {
+                    if send_late(&mut framed, answered).await.is_err() {
                         return;
                     }
                 }
@@ -423,6 +444,18 @@ async fn send(
                 .await
         }
         other => other,
+    }
+}
+
+/// Send an answer from the connection's background requests. One that
+/// panicked has no answer to send; its client sees the request unanswered.
+async fn send_late(
+    framed: &mut Framed<UnixStream, Codec>,
+    answered: Result<(u64, Response), tokio::task::JoinError>,
+) -> Result<(), std::io::Error> {
+    match answered {
+        Ok((id, response)) => send(framed, id, response).await,
+        Err(_) => Ok(()),
     }
 }
 

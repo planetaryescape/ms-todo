@@ -50,6 +50,7 @@ pub(crate) async fn doctor(state: &State) -> Result<ResponseData, ErrorPayload> 
         syncing: state.syncer.status().running(),
         scopes,
         outbox: outbox_depth(state).await?,
+        suggest: Some(state.suggest.status()),
     }))
 }
 

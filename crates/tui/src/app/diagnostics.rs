@@ -232,6 +232,7 @@ pub(crate) mod tests {
                 flagged: 1,
                 ..OutboxDepth::default()
             },
+            suggest: None,
         }
     }
 

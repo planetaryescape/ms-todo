@@ -1,7 +1,8 @@
 //! Quick add's modal (`a`), in the middle of the screen over a dimmed
 //! background: the text with what was recognised highlighted by kind, the
-//! task it makes, anything that wasn't used and why, and the keys. The
-//! status line and hint bar stay as they are.
+//! task it makes, a likely list when one was suggested, anything that
+//! wasn't used and why, and the keys. The status line and hint bar stay
+//! as they are.
 
 use ratatui::Frame;
 use ratatui::layout::Rect;
@@ -80,6 +81,18 @@ pub fn draw(frame: &mut Frame, app: &App, input: &LineEditor, parsed: Option<&Pa
             .into_iter()
             .map(|row| Line::styled(row, theme.text_dim)),
     );
+    // A likely list for a task headed for the inbox (rung 6b).
+    if let Some(list) = app.list_hint() {
+        let hint = format!(
+            "\u{2192} {}? (Ctrl-l to accept)",
+            ms_todo_core::one_line_safe(&list.list_name)
+        );
+        lines.extend(
+            wrap_words(&hint, inner)
+                .into_iter()
+                .map(|row| Line::styled(row, theme.accent)),
+        );
+    }
     for warning in parsed
         .map(|parsed| parsed.warnings.as_slice())
         .unwrap_or_default()
