@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.16](https://github.com/planetaryescape/ms-todo/compare/v0.1.15...v0.1.16) (2026-09-25)
+
+
+### Features
+
+* add one-dark, kanagawa, night-owl and cobalt2 themes ([8093473](https://github.com/planetaryescape/ms-todo/commit/80934737d7978f4342373165d727a697f6c9d02c))
+
 ## [0.1.15](https://github.com/planetaryescape/ms-todo/compare/v0.1.14...v0.1.15) (2026-09-25)
 
 
