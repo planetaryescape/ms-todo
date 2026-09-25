@@ -1,5 +1,23 @@
 # Changelog
 
+## [0.1.10](https://github.com/planetaryescape/ms-todo/compare/v0.1.9...v0.1.10) (2026-09-25)
+
+
+### Features
+
+* --due, --reminder and --importance take phrases ([471bf58](https://github.com/planetaryescape/ms-todo/commit/471bf58f6959f3f7b1d1a48182d3277de210c054))
+* read date phrases and importance levels in a new nlp crate ([56753eb](https://github.com/planetaryescape/ms-todo/commit/56753eb371abb2c62a6704e4fbe7809ffa4dc782))
+
+
+### Bug Fixes
+
+* edit any task field with a real line editor and a field picker ([6b2185f](https://github.com/planetaryescape/ms-todo/commit/6b2185fa305d62430766036e33cfe5ae7b4777ad))
+
+
+### Documentation
+
+* line editor, field picker, date phrases and D-045 ([36af625](https://github.com/planetaryescape/ms-todo/commit/36af625fe6d193a55345e800f1e8c1fa18fb8180))
+
 ## [0.1.9](https://github.com/planetaryescape/ms-todo/compare/v0.1.8...v0.1.9) (2026-09-24)
 
 
