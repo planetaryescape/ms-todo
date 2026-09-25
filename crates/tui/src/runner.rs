@@ -158,8 +158,8 @@ where
     Ok(latency)
 }
 
-/// What a key means now: an action from the registry, or text typed into
-/// a prompt or the palette.
+/// What a key means now: an action from the registry, or in a prompt or
+/// the palette, text typed or a key for its line editor.
 fn key_msg(app: &App, key: &KeyEvent) -> Option<Msg> {
     if key.kind == KeyEventKind::Release {
         return None;
@@ -168,15 +168,18 @@ fn key_msg(app: &App, key: &KeyEvent) -> Option<Msg> {
     if let Some(action) = resolve(context, key) {
         return Some(Msg::Action(action));
     }
-    match (context, key.code) {
-        (Context::Prompt | Context::Palette, KeyCode::Char(ch))
+    if !matches!(context, Context::Prompt | Context::Notes | Context::Palette) {
+        return None;
+    }
+    match key.code {
+        KeyCode::Char(ch)
             if !key
                 .modifiers
                 .intersects(KeyModifiers::CONTROL | KeyModifiers::ALT) =>
         {
             Some(Msg::Char(ch))
         }
-        _ => None,
+        _ => Some(Msg::Key(*key)),
     }
 }
 
@@ -185,4 +188,38 @@ fn draw<B: Backend>(terminal: &mut Terminal<B>, app: &App) -> Result<(), RunErro
         .draw(|frame| crate::ui::draw(frame, app))
         .map(|_| ())
         .map_err(|error| RunError::Draw(error.to_string()))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::action::Action;
+    use crate::app::tests::seeded;
+
+    fn key(code: KeyCode, modifiers: KeyModifiers) -> KeyEvent {
+        KeyEvent::new(code, modifiers)
+    }
+
+    #[test]
+    fn in_a_prompt_unbound_keys_go_to_its_line_editor() {
+        let mut app = seeded();
+        let left = key(KeyCode::Left, KeyModifiers::NONE);
+        assert_eq!(key_msg(&app, &left), None, "nothing to edit in the list");
+        app.update(Msg::Action(Action::Filter));
+        assert_eq!(key_msg(&app, &left), Some(Msg::Key(left)));
+        let ctrl_w = key(KeyCode::Char('w'), KeyModifiers::CONTROL);
+        assert_eq!(key_msg(&app, &ctrl_w), Some(Msg::Key(ctrl_w)));
+        assert_eq!(
+            key_msg(&app, &key(KeyCode::Char('x'), KeyModifiers::NONE)),
+            Some(Msg::Char('x'))
+        );
+        assert_eq!(
+            key_msg(&app, &key(KeyCode::Enter, KeyModifiers::NONE)),
+            Some(Msg::Action(Action::Submit))
+        );
+        // The field picker takes its own keys only.
+        app.update(Msg::Action(Action::Cancel));
+        app.update(Msg::Action(Action::Edit));
+        assert_eq!(key_msg(&app, &left), None);
+    }
 }

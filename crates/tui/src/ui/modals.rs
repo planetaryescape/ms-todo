@@ -6,28 +6,37 @@ use ratatui::widgets::{Clear, List, ListItem, ListState, Paragraph, Wrap};
 
 use super::{ACCENT, DIM, centered, pane, selection};
 use crate::app::App;
-use crate::keybindings::help_rows;
+use crate::keybindings::{EDITOR_KEYS, help_rows};
 
-/// Every key, from the registry.
+/// Every key, from the registry, then the line editor's.
 pub fn help(frame: &mut Frame, app: &App) {
     let rows = help_rows();
+    let editor = EDITOR_KEYS
+        .iter()
+        .map(|(keys, label)| ((*keys).to_owned(), *label));
     let key_width = rows
         .iter()
-        .map(|(keys, _)| keys.chars().count())
+        .map(|(keys, _)| keys.as_str())
+        .chain(EDITOR_KEYS.iter().map(|(keys, _)| *keys))
+        .map(|keys| keys.chars().count())
         .max()
         .unwrap_or(0);
-    let mut lines: Vec<Line> = rows
-        .into_iter()
-        .map(|(keys, label)| {
-            Line::from(vec![
-                Span::styled(
-                    format!(" {keys:<key_width$}  "),
-                    Style::default().fg(ACCENT).add_modifier(Modifier::BOLD),
-                ),
-                Span::raw(label),
-            ])
-        })
-        .collect();
+    let row = |(keys, label): (String, &'static str)| {
+        Line::from(vec![
+            Span::styled(
+                format!(" {keys:<key_width$}  "),
+                Style::default().fg(ACCENT).add_modifier(Modifier::BOLD),
+            ),
+            Span::raw(label),
+        ])
+    };
+    let mut lines: Vec<Line> = rows.into_iter().map(row).collect();
+    lines.push(Line::default());
+    lines.push(Line::styled(
+        " Typing, in any prompt:",
+        Style::default().fg(DIM),
+    ));
+    lines.extend(editor.map(row));
     lines.push(Line::default());
     lines.push(Line::styled(
         " Scripts and agents: use the `ms-todo` commands.",

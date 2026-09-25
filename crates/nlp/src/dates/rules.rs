@@ -115,7 +115,7 @@ fn weekday(captures: &Captures) -> Option<Weekday> {
 
 /// Days from `from` to the next `target`, 0 when `from` is one.
 fn days_until(from: Weekday, target: Weekday) -> u64 {
-    u64::from((7 + target.num_days_from_monday() - from.num_days_from_monday()) % 7)
+    u64::from(target.days_since(from))
 }
 
 /// The next one, never today: typed on a Thursday, `thursday` is next
@@ -206,7 +206,12 @@ fn signed(captures: &Captures, ctx: &ParseContext) -> Option<Value> {
 }
 
 fn add_days(date: NaiveDate, days: i64) -> Option<NaiveDate> {
-    date.checked_add_signed(chrono::Duration::try_days(days)?)
+    let by = Days::new(days.unsigned_abs());
+    if days < 0 {
+        date.checked_sub_days(by)
+    } else {
+        date.checked_add_days(by)
+    }
 }
 
 /// A day and month in `year`, or with none given, the next one from

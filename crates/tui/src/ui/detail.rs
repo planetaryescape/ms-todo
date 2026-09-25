@@ -5,14 +5,15 @@ use ratatui::text::{Line, Span};
 use ratatui::widgets::{Paragraph, Wrap};
 
 use super::task_list::{due_label, sync_marker};
-use super::{ACCENT, AMBER, DIM, ERROR, focused, pane, selection};
+use super::{ACCENT, AMBER, DIM, ERROR, focused, line_input, pane, selection};
 use crate::app::edit::{Field, importance_name};
+use crate::app::line_editor::LineEditor;
 use crate::app::{App, Mode, Pane, SyncMarker, Task};
 
 /// The detail pane: every field of the selected task. The fields `e`
 /// edits are always shown, empty or not, so the cursor can reach them;
-/// the one being edited shows what's typed, and under it the format or
-/// why it can't be sent.
+/// the one being edited shows what's typed with its cursor, and under it
+/// what a date resolves to, the format, or why it can't be sent.
 pub fn draw(frame: &mut Frame, area: Rect, app: &App) {
     let has_focus = focused(app, Pane::Detail);
     let block = pane(" Detail ".into(), has_focus);
@@ -20,15 +21,17 @@ pub fn draw(frame: &mut Frame, area: Rect, app: &App) {
         frame.render_widget(block, area);
         return;
     };
-    let editing = match &app.mode {
+    let editing: Option<(Field, &LineEditor, Option<&str>)> = match &app.mode {
         Mode::Editing {
             id,
             field,
-            text,
+            input,
             error,
-        } if *id == task.id => Some((*field, text.as_str(), error.as_deref())),
+        } if *id == task.id => Some((*field, input, error.as_deref())),
         _ => None,
     };
+    let choosing_importance =
+        matches!(&app.mode, Mode::ChoosingImportance { id } if *id == task.id);
     let label = |name: &'static str| Span::styled(format!("{name:<11}"), Style::default().fg(DIM));
     let field = |name: &'static str, value: String| Line::from(vec![label(name), Span::raw(value)]);
     let none = || Span::styled("none", Style::default().fg(DIM));
@@ -36,14 +39,12 @@ pub fn draw(frame: &mut Frame, area: Rect, app: &App) {
     // what's being typed.
     let editable = |which: Field, value: Vec<Span<'static>>| -> Vec<Line<'static>> {
         match editing {
-            Some((edited, text, error)) if edited == which => {
-                let mut typed = text.lines().map(str::to_owned).collect::<Vec<_>>();
-                if typed.is_empty() || text.ends_with('\n') {
-                    typed.push(String::new());
-                }
-                let last = typed.len() - 1;
-                let mut lines: Vec<Line> = typed
-                    .into_iter()
+            Some((edited, input, error)) if edited == which => {
+                let (row, column) = input.cursor();
+                let typing = Style::default().fg(ACCENT);
+                let mut lines: Vec<Line> = input
+                    .lines()
+                    .iter()
                     .enumerate()
                     .map(|(at, line)| {
                         let mut spans = vec![if at == 0 {
@@ -51,31 +52,26 @@ pub fn draw(frame: &mut Frame, area: Rect, app: &App) {
                         } else {
                             label("")
                         }];
-                        spans.push(Span::styled(line, Style::default().fg(ACCENT)));
-                        if at == last {
-                            spans
-                                .push(Span::styled(app.glyphs.cursor, Style::default().fg(ACCENT)));
-                        }
+                        let cursor = (at == row).then_some(column);
+                        spans.extend(line_input::spans(line, cursor, typing, &app.glyphs));
                         Line::from(spans)
                     })
                     .collect();
-                lines.push(match error {
-                    Some(why) => Line::from(vec![
-                        label(""),
-                        Span::styled(why.to_owned(), Style::default().fg(ERROR)),
-                    ]),
-                    None => Line::from(vec![
-                        label(""),
-                        Span::styled(which.format_hint(), Style::default().fg(DIM)),
-                    ]),
-                });
+                let under = match (error, app.date_preview()) {
+                    (Some(why), _) => Span::styled(why.to_owned(), Style::default().fg(ERROR)),
+                    (None, Some(Ok(resolved))) => Span::styled(resolved, typing),
+                    (None, Some(Err(why))) => Span::styled(why, Style::default().fg(DIM)),
+                    (None, None) => Span::styled(which.format_hint(), Style::default().fg(DIM)),
+                };
+                lines.push(Line::from(vec![label(""), under]));
                 lines
             }
             _ => {
                 let mut spans = vec![label(which.name())];
                 spans.extend(value);
                 let line = Line::from(spans);
-                if has_focus && app.detail_field == which {
+                let picking = which == Field::Importance && choosing_importance;
+                if (has_focus && app.detail_field == which) || picking {
                     vec![line.style(selection(true))]
                 } else {
                     vec![line]
@@ -174,7 +170,7 @@ fn due(task: &Task, app: &App) -> Vec<Span<'static>> {
         return vec![Span::styled("none", Style::default().fg(DIM))];
     };
     let mut shown = due.format("%a %-d %b %Y").to_string();
-    let today = app.clock.today;
+    let today = app.clock.today();
     if due < today && !task.completed {
         shown.push_str(" (overdue)");
     } else if due.signed_duration_since(today).num_days().abs() <= 1 {

@@ -1,7 +1,8 @@
 //! Frames drawn with `TestBackend` for fixed states, as insta snapshots:
 //! the sidebar, the task list and the detail pane, the Planned view's
 //! groups, a banner, the undo picker, help, the syncing state, ASCII,
-//! editing a field, the selection, the palette and the diagnostics page.
+//! editing a field (the picker, the cursor, notes, a resolved date), the
+//! selection, the palette and the diagnostics page.
 
 use ms_todo_protocol::{Candidate, Scope};
 use ratatui::Terminal;
@@ -127,7 +128,7 @@ fn help_lists_every_key() {
 fn prompts_take_over_the_hint_bar() {
     let mut app = seeded();
     app.mode = Mode::Adding {
-        text: "Buy milk".into(),
+        input: crate::app::line_editor::LineEditor::single("Buy milk"),
     };
     let adding = render(&app);
     app.mode = Mode::ConfirmDelete {
@@ -166,7 +167,7 @@ fn editing_a_field_shows_the_text_and_why_it_cant_be_sent() {
     app.update(Msg::Action(Action::MoveDown));
     // The cursor on Due, not yet editing.
     let cursor = render(&app);
-    app.update(Msg::Action(Action::Edit));
+    app.update(Msg::Action(Action::EditHere));
     for _ in 0.."2026-10-01".len() {
         app.update(Msg::Action(Action::Backspace));
     }
@@ -184,6 +185,107 @@ fn editing_a_field_shows_the_text_and_why_it_cant_be_sent() {
         }
     ));
     insta::assert_snapshot!(format!("{cursor}\n{typing}\n{}", render(&app)));
+}
+
+/// `e` puts the field picker in the hint bar; `i` there, the levels.
+#[test]
+fn the_field_picker_and_the_importance_levels() {
+    use crate::action::Action;
+    use crate::app::edit::Field;
+    let mut app = seeded();
+    app.update(Msg::Action(Action::Edit));
+    let picker = render(&app);
+    app.update(Msg::Action(Action::EditField(Field::Importance)));
+    let levels = render(&app);
+    let last = |frame: &str| frame.lines().last().unwrap_or_default().to_owned();
+    insta::assert_snapshot!(format!("{}\n{levels}", last(&picker)));
+}
+
+/// The cursor mid-title reverses the character under it; at the end, the
+/// cursor glyph follows the text. The hint bar says how to move.
+#[test]
+fn an_edit_shows_its_cursor() {
+    use crate::action::Action;
+    use crate::app::edit::Field;
+    use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+    let mut app = seeded();
+    app.update(Msg::Action(Action::Edit));
+    app.update(Msg::Action(Action::EditField(Field::Title)));
+    let at_end = render(&app);
+    app.update(Msg::Key(KeyEvent::new(
+        KeyCode::Char('b'),
+        KeyModifiers::ALT,
+    )));
+    let mut terminal = Terminal::new(TestBackend::new(110, 16)).expect("terminal");
+    terminal
+        .draw(|frame| super::draw(frame, &app))
+        .expect("draw");
+    // "Title      Pay rent" in the detail pane: the cursor is on the `r`.
+    let buffer = terminal.backend().buffer();
+    let reversed: Vec<(u16, &str)> = (77..109)
+        .filter(|&x| buffer[(x, 2)].modifier.contains(Modifier::REVERSED))
+        .map(|x| (x, buffer[(x, 2)].symbol()))
+        .collect();
+    assert_eq!(reversed, [(92, "r")]);
+    insta::assert_snapshot!(at_end);
+}
+
+#[test]
+fn the_notes_editor_takes_several_lines() {
+    use crate::action::Action;
+    use crate::app::edit::Field;
+    let mut app = seeded();
+    app.update(Msg::Action(Action::Edit));
+    app.update(Msg::Action(Action::EditField(Field::Notes)));
+    for ch in "Standing order".chars() {
+        app.update(Msg::Char(ch));
+    }
+    app.update(Msg::Action(Action::Newline));
+    for ch in "on the 1st".chars() {
+        app.update(Msg::Char(ch));
+    }
+    let mut terminal = Terminal::new(TestBackend::new(110, 20)).expect("terminal");
+    terminal
+        .draw(|frame| super::draw(frame, &app))
+        .expect("draw");
+    insta::assert_snapshot!(terminal.backend().to_string());
+}
+
+/// What a typed date resolves to shows under it as it's typed.
+#[test]
+fn the_resolved_date_shows_under_the_input() {
+    use crate::action::Action;
+    use crate::app::edit::Field;
+    use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+    let mut app = seeded();
+    app.update(Msg::Action(Action::Edit));
+    app.update(Msg::Action(Action::EditField(Field::Due)));
+    app.update(Msg::Key(KeyEvent::new(
+        KeyCode::Char('u'),
+        KeyModifiers::CONTROL,
+    )));
+    let mut frames = Vec::new();
+    for typed in ["next fri", "yesterday", "tomo"] {
+        app.update(Msg::Key(KeyEvent::new(
+            KeyCode::Char('u'),
+            KeyModifiers::CONTROL,
+        )));
+        for ch in typed.chars() {
+            app.update(Msg::Char(ch));
+        }
+        // The detail pane's Due rows.
+        let frame = render(&app);
+        frames.push(
+            frame
+                .lines()
+                .skip(6)
+                .take(3)
+                .map(|line| line.chars().skip(76).collect::<String>())
+                .collect::<Vec<_>>()
+                .join("\n"),
+        );
+    }
+    insta::assert_snapshot!(frames.join("\n\n"));
 }
 
 #[test]
@@ -272,6 +374,12 @@ fn escape_sequences_from_graph_never_reach_the_terminal() {
     app.lists[1].1 = evil.into();
     app.show(Level::Error, evil);
     let mut screens = vec![render(&app)];
+    // Editing the title shows it as it came, in the line editor.
+    app.update(Msg::Action(crate::action::Action::EditField(
+        crate::app::edit::Field::Title,
+    )));
+    screens.push(render(&app));
+    app.update(Msg::Action(crate::action::Action::Cancel));
     app.update(Msg::Action(crate::action::Action::Palette));
     screens.push(render(&app));
     let mut terminal = Terminal::new(TestBackend::new(110, 16)).expect("terminal");

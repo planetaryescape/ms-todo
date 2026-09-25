@@ -37,7 +37,7 @@ pub fn draw<'a>(frame: &mut Frame, area: Rect, app: &'a App) {
         return;
     }
     let glyphs = &app.glyphs;
-    let today = app.clock.today;
+    let today = app.clock.today();
     let row = |task: &'a Task| task_row(task, app.selection.contains(&task.id), glyphs, today);
     // Planned is grouped; a header row goes before each group.
     let (rows, selected) = if app.shown == Some(Scope::Planned) && app.filter.is_none() {

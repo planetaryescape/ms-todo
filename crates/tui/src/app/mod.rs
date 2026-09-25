@@ -16,6 +16,7 @@
 
 pub mod diagnostics;
 pub mod edit;
+pub mod line_editor;
 pub mod palette;
 pub mod scope;
 mod selection;
@@ -23,7 +24,8 @@ pub mod task;
 
 use std::collections::{HashMap, HashSet};
 
-use chrono::{Local, NaiveDate};
+use chrono::{DateTime, FixedOffset, Local, NaiveDate};
+use crossterm::event::KeyEvent;
 use ms_todo_protocol::{
     Candidate, Counts, ErrorPayload, Event, Importance, NewTask, OutboxDepth, Request,
     ResponseData, Scope, Seed, SyncActivity, SyncState, TaskChange,
@@ -35,6 +37,7 @@ use crate::glyphs::Glyphs;
 use crate::keybindings::Context;
 use diagnostics::{Diagnostics, Part};
 use edit::Field;
+use line_editor::LineEditor;
 use scope::{Entry, VIEWS, belongs, order};
 pub use task::{SyncMarker, Task};
 
@@ -53,17 +56,25 @@ pub enum Mode {
     Normal,
     /// Typing a new task's title.
     Adding {
-        text: String,
+        input: LineEditor,
     },
     /// Typing a filter; the list follows each key.
     Filtering {
-        text: String,
+        input: LineEditor,
+    },
+    /// `e`: which field of the task `id` to edit.
+    ChoosingField {
+        id: String,
+    },
+    /// Which importance to give the task `id`.
+    ChoosingImportance {
+        id: String,
     },
     /// Typing a new value for one field of a task.
     Editing {
         id: String,
         field: Field,
-        text: String,
+        input: LineEditor,
         /// Why the text can't be sent, shown under it.
         error: Option<String>,
     },
@@ -76,7 +87,7 @@ pub enum Mode {
     },
     /// The command palette: the query typed, and which match is chosen.
     Palette {
-        query: String,
+        query: LineEditor,
         index: usize,
     },
     Diagnostics,
@@ -109,21 +120,28 @@ pub struct Banner {
     pub ticks_left: u32,
 }
 
-/// Now, for what's drawn relative to it ("synced 5s ago", Overdue). Set by
-/// ticks, so tests pick their own.
+/// Now, for what's drawn relative to it ("synced 5s ago", Overdue) and
+/// what typed dates mean ("tomorrow"). Set by ticks, so tests pick their
+/// own.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Clock {
-    pub unix: i64,
-    pub today: NaiveDate,
+    /// In the local zone.
+    pub now: DateTime<FixedOffset>,
 }
 
 impl Clock {
     pub fn now() -> Self {
-        let now = Local::now();
         Self {
-            unix: now.timestamp(),
-            today: now.date_naive(),
+            now: Local::now().fixed_offset(),
         }
+    }
+
+    pub fn unix(&self) -> i64 {
+        self.now.timestamp()
+    }
+
+    pub fn today(&self) -> NaiveDate {
+        self.now.date_naive()
     }
 }
 
@@ -157,6 +175,8 @@ pub enum Msg {
     Action(Action),
     /// A character typed into a prompt.
     Char(char),
+    /// Any other key in a prompt, for its line editor: a move or a delete.
+    Key(KeyEvent),
     /// Connected to the daemon and subscribed.
     Connected,
     Disconnected(String),
@@ -273,7 +293,13 @@ impl App {
     /// Where keys go now.
     pub fn context(&self) -> Context {
         match self.mode {
+            Mode::Editing {
+                field: Field::Notes,
+                ..
+            } => Context::Notes,
             Mode::Adding { .. } | Mode::Filtering { .. } | Mode::Editing { .. } => Context::Prompt,
+            Mode::ChoosingField { .. } => Context::Fields,
+            Mode::ChoosingImportance { .. } => Context::Importance,
             Mode::ConfirmDelete { .. } => Context::Confirm,
             Mode::Picker { .. } => Context::Picker,
             Mode::Palette { .. } => Context::Palette,
@@ -359,7 +385,11 @@ impl App {
     pub fn update(&mut self, msg: Msg) -> Vec<Effect> {
         match msg {
             Msg::Action(action) => self.act(action),
-            Msg::Char(ch) => self.type_char(ch),
+            Msg::Char(ch) => self.edit_with(|input| {
+                input.insert(ch);
+                true
+            }),
+            Msg::Key(key) => self.edit_with(|input| input.key(key)),
             Msg::Connected => {
                 self.connection = Connection::Connected;
                 vec![self.seed_now()]
@@ -407,21 +437,17 @@ impl App {
                 Vec::new()
             }
             (Mode::Palette { .. }, Action::Submit) => self.run_palette(),
-            (Mode::Palette { query, index }, Action::Backspace) => {
-                query.pop();
-                *index = 0;
-                Vec::new()
-            }
+            (_, Action::Backspace) => self.edit_with(LineEditor::backspace),
+            (Mode::Editing { .. }, Action::Newline) => self.edit_with(LineEditor::newline),
             (Mode::Diagnostics, Action::MoveDown | Action::MoveUp) => {
                 self.scroll_diagnostics(action == Action::MoveDown);
                 Vec::new()
             }
             (Mode::Diagnostics, Action::Refresh) => self.refresh_diagnostics(),
             (Mode::Editing { .. }, Action::Submit) => self.submit_edit(),
-            (Mode::Editing { text, error, .. }, Action::Backspace) => {
-                text.pop();
-                *error = None;
-                Vec::new()
+            (Mode::ChoosingField { .. }, Action::EditField(_) | Action::CycleImportance)
+            | (Mode::ChoosingImportance { .. }, Action::SetImportance(_)) => {
+                self.edit_action(action)
             }
             (Mode::Adding { .. }, Action::Submit) => self.submit_add(),
             (Mode::Filtering { .. }, Action::Submit) => {
@@ -432,10 +458,6 @@ impl App {
             (Mode::Filtering { .. }, Action::Cancel) => {
                 self.mode = Mode::Normal;
                 self.set_filter(None)
-            }
-            (Mode::Adding { text } | Mode::Filtering { text }, Action::Backspace) => {
-                text.pop();
-                self.filter_typed()
             }
             (Mode::ConfirmDelete { ids, .. }, Action::Confirm) => {
                 let ids = std::mem::take(ids);
@@ -483,7 +505,7 @@ impl App {
             Action::Add => {
                 if self.lists_ready {
                     self.mode = Mode::Adding {
-                        text: String::new(),
+                        input: LineEditor::single(""),
                     };
                 } else {
                     self.show(
@@ -506,7 +528,9 @@ impl App {
                 self.mode = Mode::ConfirmDelete { ids, what };
                 Vec::new()
             }
-            Action::Edit => self.start_edit(),
+            Action::Edit | Action::EditHere | Action::EditField(_) | Action::CycleImportance => {
+                self.edit_action(action)
+            }
             Action::ToggleSelect => {
                 self.toggle_select();
                 Vec::new()
@@ -531,7 +555,7 @@ impl App {
             }],
             Action::Filter => {
                 self.mode = Mode::Filtering {
-                    text: self.filter.clone().unwrap_or_default(),
+                    input: LineEditor::single(self.filter.as_deref().unwrap_or_default()),
                 };
                 Vec::new()
             }
@@ -607,23 +631,32 @@ impl App {
         vec![self.seed_now()]
     }
 
-    fn type_char(&mut self, ch: char) -> Vec<Effect> {
-        match &mut self.mode {
-            Mode::Adding { text } | Mode::Filtering { text } => {
-                text.push(ch);
-                self.filter_typed()
-            }
-            Mode::Editing { text, error, .. } => {
-                text.push(ch);
-                *error = None;
-                Vec::new()
+    /// A key for the prompt's line editor. When the text changes, a
+    /// filter searches again, an edit's error goes and the palette goes
+    /// back to its best match.
+    fn edit_with(&mut self, edit: impl FnOnce(&mut LineEditor) -> bool) -> Vec<Effect> {
+        let changed = match &mut self.mode {
+            Mode::Adding { input } | Mode::Filtering { input } => edit(input),
+            Mode::Editing { input, error, .. } => {
+                let changed = edit(input);
+                if changed {
+                    *error = None;
+                }
+                changed
             }
             Mode::Palette { query, index } => {
-                query.push(ch);
-                *index = 0;
-                Vec::new()
+                let changed = edit(query);
+                if changed {
+                    *index = 0;
+                }
+                changed
             }
-            _ => Vec::new(),
+            _ => false,
+        };
+        if changed {
+            self.filter_typed()
+        } else {
+            Vec::new()
         }
     }
 
@@ -652,8 +685,8 @@ impl App {
     /// After the filter's text changed, search again.
     fn filter_typed(&mut self) -> Vec<Effect> {
         match &self.mode {
-            Mode::Filtering { text } => {
-                let text = text.clone();
+            Mode::Filtering { input } => {
+                let text = input.text();
                 self.set_filter(Some(text))
             }
             _ => Vec::new(),
@@ -671,9 +704,10 @@ impl App {
     }
 
     fn submit_add(&mut self) -> Vec<Effect> {
-        let Mode::Adding { text } = std::mem::replace(&mut self.mode, Mode::Normal) else {
+        let Mode::Adding { input } = std::mem::replace(&mut self.mode, Mode::Normal) else {
             return Vec::new();
         };
+        let text = input.text();
         let title = text.trim();
         if title.is_empty() || self.still_loading() {
             return Vec::new();
@@ -688,7 +722,7 @@ impl App {
                 None,
                 Some(
                     self.clock
-                        .today
+                        .today()
                         .format(ms_todo_core::DATE_FORMAT)
                         .to_string(),
                 ),

@@ -1,7 +1,6 @@
 //! `App::update` for every action and daemon message: what the state
 //! becomes and which requests come out. No daemon, no terminal.
 
-use chrono::NaiveDate;
 use ms_todo_protocol::{
     Candidate, Counts, EntityChanged, ErrorPayload, Event, OpError, OutboxDepth, Request,
     ResponseData, Scope, Seed, SyncActivity, SyncInfo, SyncState, TaskAction, TaskChange,
@@ -14,9 +13,8 @@ use crate::glyphs::UNICODE;
 
 pub(crate) fn clock() -> Clock {
     Clock {
-        // Thursday 24 September 2026, 12:00 UTC.
-        unix: 1_790_251_200,
-        today: NaiveDate::from_ymd_opt(2026, 9, 24).expect("date"),
+        // Thursday 24 September 2026, 12:00 UTC: 13:00 in London.
+        now: chrono::DateTime::parse_from_rfc3339("2026-09-24T13:00:00+01:00").expect("now"),
     }
 }
 
@@ -57,7 +55,7 @@ pub(crate) fn seed(scope: Scope, tasks: Vec<ms_todo_protocol::Entity>) -> Seed {
         activity: SyncActivity {
             generation: 5,
             in_progress: false,
-            last_finished_at: Some(clock().unix - 12),
+            last_finished_at: Some(clock().unix() - 12),
             last_error: None,
         },
         outbox: OutboxDepth::default(),
@@ -647,7 +645,7 @@ fn before_the_first_sync_the_list_is_syncing_not_empty() {
     let done = SyncActivity {
         generation: 1,
         in_progress: false,
-        last_finished_at: Some(clock().unix),
+        last_finished_at: Some(clock().unix()),
         last_error: None,
     };
     let effects = app.update(Msg::Event(Event::SyncState(done.clone())));

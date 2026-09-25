@@ -34,7 +34,7 @@ fn lines(app: &App, page: &Diagnostics) -> Vec<Line<'static>> {
     let row = |name: &'static str, value: Span<'static>| Line::from(vec![label(name), value]);
     let waiting = || Span::styled("checking…", dim);
     let failed = |why: &str| Span::styled(why.to_owned(), Style::default().fg(ERROR));
-    let now = app.clock.unix;
+    let now = app.clock.unix();
     let mut lines = Vec::new();
 
     lines.push(row(

@@ -19,6 +19,8 @@ pub struct Glyphs {
     pub connected: &'static str,
     pub disconnected: &'static str,
     pub cursor: &'static str,
+    /// The line editor's Left and Right, in the hint bar.
+    pub left_right: &'static str,
     /// Marks a task `v` selected.
     pub selected: &'static str,
 }
@@ -31,15 +33,16 @@ pub const UNICODE: Glyphs = Glyphs {
     reminder: "\u{25f7}",  // ◷
     pending: "\u{25cc}",   // ◌
     unknown: "?",
-    failed: "\u{2717}",       // ✗
-    planned: "\u{25a6}",      // ▦
-    all: "\u{221e}",          // ∞
-    completed: "\u{2713}",    // ✓
-    list: "\u{2261}",         // ≡
-    connected: "\u{25cf}",    // ●
-    disconnected: "\u{25cb}", // ○
-    cursor: "\u{2588}",       // █
-    selected: "\u{25c6}",     // ◆
+    failed: "\u{2717}",              // ✗
+    planned: "\u{25a6}",             // ▦
+    all: "\u{221e}",                 // ∞
+    completed: "\u{2713}",           // ✓
+    list: "\u{2261}",                // ≡
+    connected: "\u{25cf}",           // ●
+    disconnected: "\u{25cb}",        // ○
+    cursor: "\u{2588}",              // █
+    left_right: "\u{2190}/\u{2192}", // ←/→
+    selected: "\u{25c6}",            // ◆
 };
 
 pub const ASCII: Glyphs = Glyphs {
@@ -58,5 +61,6 @@ pub const ASCII: Glyphs = Glyphs {
     connected: "+",
     disconnected: "-",
     cursor: "_",
+    left_right: "Left/Right",
     selected: "*",
 };

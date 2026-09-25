@@ -5,12 +5,9 @@
 //! and the daemon only ever sees the canonical forms.
 
 use chrono::Local;
-use ms_todo_core::DATE_FORMAT;
+use ms_todo_core::{DATE_FORMAT, REMINDER_FORMAT};
 use ms_todo_nlp::{NotUnderstood, ParseContext, Reading, read_due, read_importance, read_reminder};
 use ms_todo_protocol::{Clearable, Importance};
-
-/// A reminder as the daemon reads it: local time.
-const REMINDER_FORMAT: &str = "%Y-%m-%dT%H:%M";
 
 fn now() -> ParseContext {
     ParseContext::new(Local::now().fixed_offset())

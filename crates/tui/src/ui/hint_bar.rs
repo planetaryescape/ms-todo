@@ -9,9 +9,12 @@ use ratatui::style::{Modifier, Style};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::Paragraph;
 
-use super::{ACCENT, DIM, ERROR};
+use super::{ACCENT, DIM, ERROR, line_input};
+use crate::action::Action;
+use crate::app::edit::Field;
+use crate::app::line_editor::LineEditor;
 use crate::app::{App, Mode};
-use crate::keybindings::hints;
+use crate::keybindings::{Context, hints, key_for};
 
 pub fn draw(frame: &mut Frame, area: Rect, app: &App) {
     let glyphs = &app.glyphs;
@@ -26,26 +29,31 @@ pub fn draw(frame: &mut Frame, area: Rect, app: &App) {
         }
         spans
     };
+    let typed = |input: &LineEditor| line_input::single(input, Style::default(), glyphs);
+    let key = |keys: &str| {
+        Span::styled(
+            keys.to_owned(),
+            Style::default().fg(ACCENT).add_modifier(Modifier::BOLD),
+        )
+    };
     let left = match &app.mode {
-        Mode::Adding { text } => {
+        Mode::Adding { input } => {
             let list = match &app.shown {
                 Some(ms_todo_protocol::Scope::List { id }) => {
                     app.list_name(id).unwrap_or("Tasks").to_owned()
                 }
                 shown => format!("Tasks, from {}", app.scope_name(shown.as_ref())),
             };
-            Line::from(vec![
-                Span::styled(format!(" Add to {list}: "), Style::default().fg(ACCENT)),
-                Span::raw(text.clone()),
-                Span::raw(glyphs.cursor),
-            ])
+            let mut spans = vec![Span::styled(
+                format!(" Add to {list}: "),
+                Style::default().fg(ACCENT),
+            )];
+            spans.extend(typed(input));
+            Line::from(spans)
         }
-        Mode::Filtering { text } => {
-            let mut spans = vec![
-                Span::styled(" / ", Style::default().fg(ACCENT)),
-                Span::raw(text.clone()),
-                Span::raw(glyphs.cursor),
-            ];
+        Mode::Filtering { input } => {
+            let mut spans = vec![Span::styled(" / ", Style::default().fg(ACCENT))];
+            spans.extend(typed(input));
             if let Some(error) = &app.filter_error {
                 spans.push(Span::styled(
                     format!("  {error}"),
@@ -60,6 +68,32 @@ pub fn draw(frame: &mut Frame, area: Rect, app: &App) {
                 Style::default().fg(ACCENT),
             )];
             spans.extend(hint_spans(app.context()));
+            spans.push(key(&format!(" {} ", glyphs.left_right)));
+            spans.push(Span::styled("Move ", Style::default().fg(DIM)));
+            Line::from(spans)
+        }
+        // The one-line field picker: each field with its key in brackets,
+        // `[t]itle`, then the picker's other keys.
+        Mode::ChoosingField { .. } => {
+            let mut spans = vec![Span::styled(" edit: ", Style::default().fg(ACCENT))];
+            for field in Field::ALL {
+                let name = field.name().to_lowercase();
+                let Some(bound) = key_for(Context::Fields, Action::EditField(field)) else {
+                    continue;
+                };
+                let (shown, rest) = match name.strip_prefix(bound) {
+                    Some(rest) => (format!("[{bound}]"), rest.to_owned()),
+                    None => (format!("[{bound}]"), format!(" {name}")),
+                };
+                spans.push(key(&shown));
+                spans.push(Span::raw(format!("{rest} ")));
+            }
+            spans.extend(hint_spans(Context::Fields));
+            Line::from(spans)
+        }
+        Mode::ChoosingImportance { .. } => {
+            let mut spans = vec![Span::styled(" importance: ", Style::default().fg(ACCENT))];
+            spans.extend(hint_spans(Context::Importance));
             Line::from(spans)
         }
         Mode::ConfirmDelete { what, .. } => {

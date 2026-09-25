@@ -10,7 +10,7 @@
 
 use ms_todo_protocol::Scope;
 
-use super::{App, Effect, Mode, Pane};
+use super::{App, Effect, LineEditor, Mode, Pane};
 use crate::action::Action;
 use crate::keybindings;
 
@@ -58,7 +58,7 @@ impl App {
 
     pub(super) fn open_palette(&mut self) {
         self.mode = Mode::Palette {
-            query: String::new(),
+            query: LineEditor::single(""),
             index: 0,
         };
     }
@@ -68,7 +68,7 @@ impl App {
         let Mode::Palette { query, .. } = &self.mode else {
             return;
         };
-        let last = self.palette_items(query).len().saturating_sub(1);
+        let last = self.palette_items(&query.text()).len().saturating_sub(1);
         if let Mode::Palette { index, .. } = &mut self.mode {
             *index = if down {
                 (*index + 1).min(last)
@@ -84,7 +84,7 @@ impl App {
         let Mode::Palette { query, index } = std::mem::replace(&mut self.mode, Mode::Normal) else {
             return Vec::new();
         };
-        let Some(item) = self.palette_items(&query).into_iter().nth(index) else {
+        let Some(item) = self.palette_items(&query.text()).into_iter().nth(index) else {
             return Vec::new();
         };
         match item.command {

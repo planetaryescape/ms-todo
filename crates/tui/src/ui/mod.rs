@@ -10,6 +10,7 @@
 mod detail;
 mod diagnostics;
 mod hint_bar;
+mod line_input;
 mod modals;
 mod palette;
 mod sidebar;

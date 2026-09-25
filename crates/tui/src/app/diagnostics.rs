@@ -191,7 +191,7 @@ pub(crate) mod tests {
             version: "0.1.9".into(),
             pid: 4242,
             instance: "default".into(),
-            started_at: clock().unix - 300,
+            started_at: clock().unix() - 300,
             signed_in: true,
         }
     }
@@ -204,17 +204,17 @@ pub(crate) mod tests {
             state: SyncState::Ready,
             generation: 3,
             in_progress: false,
-            last_success_at: Some(clock().unix - 12),
+            last_success_at: Some(clock().unix() - 12),
             last_changed_count: 2,
             last_error: None,
             mode: SyncMode::Delta,
-            last_delta_at: Some(clock().unix - 12),
+            last_delta_at: Some(clock().unix() - 12),
         };
         let mut failing = scope("tasks:L-work", Some("Work"));
         failing.last_error = Some(ScopeError {
             kind: "network".into(),
             message: "the connection was reset".into(),
-            at: Some(clock().unix - 30),
+            at: Some(clock().unix() - 30),
         });
         DoctorReport {
             database_path: "/home/bk/.local/share/ms-todo/default/ms-todo.db".into(),
@@ -239,7 +239,7 @@ pub(crate) mod tests {
         serde_json::from_value(serde_json::json!({
             "op_id": "op-9", "command_id": "op-9", "action": "complete",
             "task_id": "t1", "list_id": "home", "title": "Pay rent",
-            "state": "unknown", "attempts": 1, "created_at": clock().unix - 90_000,
+            "state": "unknown", "attempts": 1, "created_at": clock().unix() - 90_000,
             "flagged": true
         }))
         .expect("op")

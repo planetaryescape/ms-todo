@@ -1,3 +1,5 @@
+use crate::app::edit::Field;
+
 /// What a key asks for. The keybinding registry maps keys to these, and
 /// `App::update` is the only place they take effect.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
@@ -23,9 +25,18 @@ pub enum Action {
     Filter,
     /// Esc in the list: drop the selection, else the filter.
     Clear,
-    /// `e`, and Enter in the detail pane: edit the field under the detail
-    /// pane's cursor.
+    /// `e`: pick which field of the task to edit.
     Edit,
+    /// Enter in the detail pane: edit the field under its cursor.
+    EditHere,
+    /// A field picked, in the picker or the palette. Importance asks for
+    /// a level; the others open their editor.
+    EditField(Field),
+    /// `I` in the picker: low, normal, high, low, saved at once.
+    CycleImportance,
+    /// A level typed in the importance picker, as `ms_todo_nlp`'s
+    /// `read_importance` reads it: `1`–`4`, `high`, `normal`, `low`.
+    SetImportance(&'static str),
     /// `v`: add the task to the selection, or take it out.
     ToggleSelect,
     /// `V`: select every task in the view.
@@ -46,4 +57,6 @@ pub enum Action {
     /// `y` in the delete confirmation.
     Confirm,
     Backspace,
+    /// Enter in the notes editor.
+    Newline,
 }

@@ -1,19 +1,19 @@
-//! Editing one field of the selected task in the detail pane: what the
-//! field starts as, and what's typed is checked before anything is sent,
-//! so invalid input costs nothing but an inline error.
+//! Editing the fields of a task: `e` picks a field, and its editor opens
+//! in the detail pane; importance is set by level, with no typing. What's
+//! typed is checked before anything is sent, so invalid input costs
+//! nothing but an inline error. Dates are read by `ms_todo_nlp`, as the
+//! CLI's `--due` and `--reminder` are.
 
-use chrono::{NaiveDate, NaiveDateTime};
-use ms_todo_core::DATE_FORMAT;
+use ms_todo_core::REMINDER_FORMAT;
+use ms_todo_nlp::{NotUnderstood, ParseContext, Reading, read_due, read_importance, read_reminder};
 use ms_todo_protocol::{Clearable, Importance, TaskChange, TaskEdit};
 
-use super::{App, Effect, Level, Mode, Pane, Task, Write, change};
-
-/// The reminder as typed, in local time (the daemon's format).
-const REMINDER_FORMAT: &str = "%Y-%m-%dT%H:%M";
+use super::{App, Effect, Level, LineEditor, Mode, Pane, Task, Write, change};
+use crate::action::Action;
 
 /// A field the detail pane edits, in the order it shows them: j and k
 /// move through them in this order.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
 pub enum Field {
     #[default]
     Title,
@@ -42,13 +42,14 @@ impl Field {
         }
     }
 
-    /// What to type, shown under the field while it's edited.
+    /// What to type, shown under the field while it's edited and nothing
+    /// better can be said.
     pub fn format_hint(self) -> &'static str {
         match self {
             Self::Title => "the new title",
-            Self::Due => "YYYY-MM-DD, or empty to clear",
-            Self::Importance => "low, normal or high",
-            Self::Reminder => "YYYY-MM-DDTHH:MM in local time, or empty to clear",
+            Self::Due => "today, fri, next mon, +3d, 12 oct or 2026-10-02; empty clears",
+            Self::Importance => "1 high, 2 or 3 normal, 4 low",
+            Self::Reminder => "17:30, tomorrow 9am or fri 5:30pm; empty clears",
             Self::Notes => "plain text, or empty to clear",
         }
     }
@@ -59,12 +60,12 @@ impl Field {
             Self::Title => task.title.clone(),
             Self::Due => task
                 .due
-                .map(|due| due.format(DATE_FORMAT).to_string())
+                .map(|due| due.format(ms_todo_core::DATE_FORMAT).to_string())
                 .unwrap_or_default(),
             Self::Importance => importance_name(task.importance).to_owned(),
             Self::Reminder => task
                 .reminder
-                .map(|at| at.format(REMINDER_FORMAT).to_string())
+                .map(|at| at.format("%Y-%m-%d %H:%M").to_string())
                 .unwrap_or_default(),
             Self::Notes => task.notes().unwrap_or_default(),
         }
@@ -89,9 +90,23 @@ pub fn importance_name(importance: Importance) -> &'static str {
     }
 }
 
+/// `I` in the picker: round the three levels.
+fn next_importance(importance: Importance) -> Importance {
+    match importance {
+        Importance::Low => Importance::Normal,
+        Importance::Normal => Importance::High,
+        Importance::High => Importance::Low,
+    }
+}
+
 /// The edit `text` makes to `field` of `task`: `None` when it changes
 /// nothing, and why not when it can't be sent.
-pub fn parse(field: Field, text: &str, task: &Task) -> Result<Option<TaskEdit>, String> {
+pub fn parse(
+    field: Field,
+    text: &str,
+    task: &Task,
+    now: &ParseContext,
+) -> Result<Option<TaskEdit>, String> {
     let typed = text.trim();
     let edit = match field {
         Field::Title => {
@@ -104,42 +119,16 @@ pub fn parse(field: Field, text: &str, task: &Task) -> Result<Option<TaskEdit>, 
             })
         }
         Field::Due => {
-            let due = match typed {
-                "" => None,
-                _ => Some(NaiveDate::parse_from_str(typed, DATE_FORMAT).map_err(|_| {
-                    "Not a date: type YYYY-MM-DD, or clear it to remove the due date".to_owned()
-                })?),
-            };
+            let due = set_value(read_due(typed, now))?;
             (due != task.due).then(|| TaskEdit {
                 due: Some(clearable(
-                    due.map(|due| due.format(DATE_FORMAT).to_string()),
+                    due.map(|due| due.format(ms_todo_core::DATE_FORMAT).to_string()),
                 )),
                 ..TaskEdit::default()
             })
         }
-        Field::Importance => {
-            let importance = match typed.to_ascii_lowercase().as_str() {
-                "low" => Importance::Low,
-                "normal" => Importance::Normal,
-                "high" => Importance::High,
-                _ => return Err("Type low, normal or high".into()),
-            };
-            (importance != task.importance).then(|| TaskEdit {
-                importance: Some(importance),
-                ..TaskEdit::default()
-            })
-        }
         Field::Reminder => {
-            let at = match typed {
-                "" => None,
-                _ => Some(
-                    NaiveDateTime::parse_from_str(typed, REMINDER_FORMAT).map_err(|_| {
-                        "Not a date and time: type YYYY-MM-DDTHH:MM, or clear it to remove \
-                         the reminder"
-                            .to_owned()
-                    })?,
-                ),
-            };
+            let at = set_value(read_reminder(typed, now))?;
             (at != task.reminder).then(|| TaskEdit {
                 reminder: Some(clearable(
                     at.map(|at| at.format(REMINDER_FORMAT).to_string()),
@@ -147,6 +136,8 @@ pub fn parse(field: Field, text: &str, task: &Task) -> Result<Option<TaskEdit>, 
                 ..TaskEdit::default()
             })
         }
+        // Set by level in the picker, never typed.
+        Field::Importance => None,
         // Compared as rendered, so html notes left alone stay html.
         Field::Notes => (typed != task.notes().unwrap_or_default()).then(|| TaskEdit {
             body: Some(typed.to_owned()),
@@ -156,54 +147,175 @@ pub fn parse(field: Field, text: &str, task: &Task) -> Result<Option<TaskEdit>, 
     Ok(edit)
 }
 
+fn set_value<T>(reading: Result<Reading<T>, NotUnderstood>) -> Result<Option<T>, String> {
+    match reading.map_err(|why| capitalised(&why.0))? {
+        Reading::Clear => Ok(None),
+        Reading::Set { value, .. } => Ok(Some(value)),
+    }
+}
+
+/// `→ Fri 2 Oct`, or what clearing means.
+fn preview_line<T>(reading: Reading<T>) -> String {
+    match reading {
+        Reading::Clear => "\u{2192} none: clears it".to_owned(),
+        Reading::Set { preview, .. } => format!("\u{2192} {preview}"),
+    }
+}
+
+fn capitalised(text: &str) -> String {
+    let mut chars = text.chars();
+    chars
+        .next()
+        .map(|first| first.to_uppercase().chain(chars).collect())
+        .unwrap_or_default()
+}
+
 fn clearable(value: Option<String>) -> Clearable<String> {
     value.map_or(Clearable::Clear, Clearable::Set)
 }
 
 impl App {
-    /// `e`, or Enter in the detail pane: edit the field under the detail
-    /// pane's cursor.
-    pub(super) fn start_edit(&mut self) -> Vec<Effect> {
-        if self.still_loading() {
-            return Vec::new();
+    /// What typed dates are read against.
+    pub fn parse_context(&self) -> ParseContext {
+        ParseContext::new(self.clock.now)
+    }
+
+    /// What the date being typed resolves to, for the line under it:
+    /// `→ Fri 2 Oct`, or why it can't be read yet. `None` for a field
+    /// that isn't a date, or nothing typed that would change it.
+    pub fn date_preview(&self) -> Option<Result<String, String>> {
+        let Mode::Editing { field, input, .. } = &self.mode else {
+            return None;
+        };
+        let now = self.parse_context();
+        let text = input.text();
+        let resolved = match field {
+            Field::Due => read_due(&text, &now).map(preview_line),
+            Field::Reminder => read_reminder(&text, &now).map(preview_line),
+            _ => return None,
+        };
+        Some(resolved.map_err(|why| capitalised(&why.0)))
+    }
+
+    /// The task an edit is for: the one the picker was opened on, else
+    /// the selected one.
+    fn edit_target(&self) -> Option<String> {
+        match &self.mode {
+            Mode::ChoosingField { id } | Mode::ChoosingImportance { id } => Some(id.clone()),
+            Mode::Normal => self.selected().map(|task| task.id.clone()),
+            _ => None,
         }
-        let Some(task) = self.selected() else {
-            return Vec::new();
-        };
-        let field = self.detail_field;
-        self.mode = Mode::Editing {
-            id: task.id.clone(),
-            field,
-            text: field.current(task),
-            error: None,
-        };
-        self.focus = Pane::Detail;
+    }
+
+    /// The rows may have changed since the edit began: only a task still
+    /// on screen, found by its ID, is edited (5a).
+    fn task_in_scope(&self, id: &str) -> Option<&Task> {
+        self.tasks
+            .iter()
+            .find(|task| task.id == id)
+            .filter(|_| !self.loading())
+    }
+
+    fn gone(&mut self) -> Vec<Effect> {
+        self.mode = Mode::Normal;
+        self.show(Level::Info, "That task is gone; nothing was changed");
         Vec::new()
     }
 
-    /// Enter while editing: send the change, or say why it can't be sent
-    /// and keep editing.
+    /// `e` (the picker), Enter in the detail pane, a field picked, and
+    /// importance by level or cycled.
+    pub(super) fn edit_action(&mut self, action: Action) -> Vec<Effect> {
+        if self.mode == Mode::Normal && self.still_loading() {
+            return Vec::new();
+        }
+        let Some(id) = self.edit_target() else {
+            self.mode = Mode::Normal;
+            return Vec::new();
+        };
+        match action {
+            Action::Edit => {
+                self.mode = Mode::ChoosingField { id };
+                Vec::new()
+            }
+            Action::EditHere => self.open_field(id, self.detail_field),
+            Action::EditField(field) => self.open_field(id, field),
+            Action::CycleImportance => {
+                let Some(task) = self.task_in_scope(&id) else {
+                    return self.gone();
+                };
+                let next = next_importance(task.importance);
+                self.set_importance(id, next)
+            }
+            Action::SetImportance(level) => match read_importance(level) {
+                Ok(level) => self.set_importance(id, protocol_importance(level)),
+                Err(why) => {
+                    self.mode = Mode::Normal;
+                    self.show(Level::Error, &why.0);
+                    Vec::new()
+                }
+            },
+            _ => Vec::new(),
+        }
+    }
+
+    /// Open `field`'s editor on the task `id`, or for importance, the
+    /// level picker. The detail pane's cursor follows, for the next one.
+    fn open_field(&mut self, id: String, field: Field) -> Vec<Effect> {
+        let Some(task) = self.task_in_scope(&id) else {
+            return self.gone();
+        };
+        let input = match field {
+            Field::Importance => None,
+            Field::Notes => Some(LineEditor::multi(&field.current(task))),
+            _ => Some(LineEditor::single(&field.current(task))),
+        };
+        self.focus = Pane::Detail;
+        self.detail_field = field;
+        self.mode = match input {
+            None => Mode::ChoosingImportance { id },
+            Some(input) => Mode::Editing {
+                id,
+                field,
+                input,
+                error: None,
+            },
+        };
+        Vec::new()
+    }
+
+    /// Send `importance` for the task `id`, unless it has it already.
+    fn set_importance(&mut self, id: String, importance: Importance) -> Vec<Effect> {
+        let Some(task) = self.task_in_scope(&id) else {
+            return self.gone();
+        };
+        let same = task.importance == importance;
+        self.mode = Mode::Normal;
+        self.detail_field = Field::Importance;
+        if same {
+            return Vec::new();
+        }
+        let edit = TaskEdit {
+            importance: Some(importance),
+            ..TaskEdit::default()
+        };
+        vec![change(Write::Edit, vec![id], TaskChange::Edit(edit))]
+    }
+
+    /// Enter while editing (Ctrl-s in notes): send the change, or say why
+    /// it can't be sent and keep editing.
     pub(super) fn submit_edit(&mut self) -> Vec<Effect> {
         let Mode::Editing {
-            id, field, text, ..
+            id, field, input, ..
         } = &self.mode
         else {
             return Vec::new();
         };
-        let (id, field, text) = (id.clone(), *field, text.clone());
-        // The rows may have changed while typing: only a task still on
-        // screen, found by its ID, is edited.
-        let task = self
-            .tasks
-            .iter()
-            .find(|task| task.id == id)
-            .filter(|_| !self.loading());
-        let Some(task) = task else {
-            self.mode = Mode::Normal;
-            self.show(Level::Info, "That task is gone; nothing was changed");
-            return Vec::new();
+        let (id, field, text) = (id.clone(), *field, input.text());
+        let now = self.parse_context();
+        let Some(task) = self.task_in_scope(&id) else {
+            return self.gone();
         };
-        match parse(field, &text, task) {
+        match parse(field, &text, task, &now) {
             Err(why) => {
                 if let Mode::Editing { error, .. } = &mut self.mode {
                     *error = Some(why);
@@ -222,235 +334,13 @@ impl App {
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use ms_todo_protocol::{Request, ResponseData, TaskAction};
-    use serde_json::json;
-
-    use super::*;
-    use crate::action::Action;
-    use crate::app::tests::{act, applied, seeded, task, titles};
-    use crate::app::{Msg, Tag};
-
-    fn type_text(app: &mut App, text: &str) {
-        for ch in text.chars() {
-            app.update(Msg::Char(ch));
-        }
-    }
-
-    /// Erase what the field started as and type `text`.
-    fn retype(app: &mut App, text: &str) {
-        while matches!(&app.mode, Mode::Editing { text, .. } if !text.is_empty()) {
-            act(app, Action::Backspace);
-        }
-        type_text(app, text);
-    }
-
-    fn edit_sent(effects: &[Effect]) -> (Vec<String>, TaskEdit) {
-        match effects {
-            [
-                Effect {
-                    tag: Tag::Write(Write::Edit),
-                    request:
-                        Request::ChangeTasks {
-                            tasks,
-                            change: TaskChange::Edit(edit),
-                            dry_run: false,
-                            ..
-                        },
-                },
-            ] => (tasks.clone(), edit.clone()),
-            other => unreachable!("not one edit: {other:?}"),
-        }
-    }
-
-    /// Move the detail pane's cursor to `field`, from the title.
-    fn to_field(app: &mut App, field: Field) {
-        act(app, Action::FocusRight);
-        act(app, Action::JumpTop);
-        while app.detail_field != field {
-            act(app, Action::MoveDown);
-        }
-    }
-
-    #[test]
-    fn e_edits_the_title_and_sends_one_change_tasks_edit() {
-        let mut app = seeded();
-        assert!(act(&mut app, Action::Edit).is_empty());
-        assert_eq!(
-            app.mode,
-            Mode::Editing {
-                id: "t1".into(),
-                field: Field::Title,
-                text: "Pay rent".into(),
-                error: None
-            }
-        );
-        assert_eq!(app.focus, Pane::Detail);
-        retype(&mut app, "Pay the rent ");
-        let (tasks, edit) = edit_sent(&act(&mut app, Action::Submit));
-        assert_eq!(tasks, ["t1"]);
-        assert_eq!(
-            edit,
-            TaskEdit {
-                title: Some("Pay the rent".into()),
-                ..TaskEdit::default()
-            }
-        );
-        assert_eq!(app.mode, Mode::Normal);
-
-        // The answer is drawn at once, pending.
-        let renamed = task(
-            "t1",
-            "Pay the rent",
-            json!({ "importance": "high", "sync_state": "pending" }),
-        );
-        app.update(Msg::Response {
-            tag: Tag::Write(Write::Edit),
-            result: Ok(applied(TaskAction::Edit, vec![renamed])),
-        });
-        assert_eq!(titles(&app)[0], "Pay the rent");
-    }
-
-    #[test]
-    fn enter_in_the_detail_pane_edits_the_field_under_the_cursor() {
-        let mut app = seeded();
-        to_field(&mut app, Field::Due);
-        act(&mut app, Action::Edit);
-        assert!(
-            matches!(&app.mode, Mode::Editing { field: Field::Due, text, .. } if text == "2026-10-01")
-        );
-        retype(&mut app, "2026-10-05");
-        let (_, edit) = edit_sent(&act(&mut app, Action::Submit));
-        assert_eq!(edit.due, Some(Clearable::Set("2026-10-05".into())));
-        // The cursor stays on the field, for the next one.
-        assert_eq!((app.focus, app.detail_field), (Pane::Detail, Field::Due));
-
-        // Down the pane, in the order it shows the fields.
-        act(&mut app, Action::MoveDown);
-        act(&mut app, Action::Edit);
-        retype(&mut app, "2026-10-01T09:30");
-        let (_, edit) = edit_sent(&act(&mut app, Action::Submit));
-        assert_eq!(
-            edit.reminder,
-            Some(Clearable::Set("2026-10-01T09:30".into()))
-        );
-
-        act(&mut app, Action::MoveDown);
-        act(&mut app, Action::Edit);
-        assert!(
-            matches!(&app.mode, Mode::Editing { field: Field::Importance, text, .. } if text == "high")
-        );
-        retype(&mut app, "Low");
-        let (_, edit) = edit_sent(&act(&mut app, Action::Submit));
-        assert_eq!(edit.importance, Some(Importance::Low));
-
-        act(&mut app, Action::MoveDown);
-        act(&mut app, Action::Edit);
-        type_text(&mut app, "Standing order on the 1st");
-        let (_, edit) = edit_sent(&act(&mut app, Action::Submit));
-        assert_eq!(edit.body.as_deref(), Some("Standing order on the 1st"));
-        // At the last field, Down stays.
-        act(&mut app, Action::MoveDown);
-        assert_eq!(app.detail_field, Field::Notes);
-    }
-
-    #[test]
-    fn an_empty_due_date_or_reminder_clears_it() {
-        let mut app = seeded();
-        to_field(&mut app, Field::Due);
-        act(&mut app, Action::Edit);
-        retype(&mut app, "");
-        let (_, edit) = edit_sent(&act(&mut app, Action::Submit));
-        assert_eq!(edit.due, Some(Clearable::Clear));
-
-        // No reminder to clear: nothing to send.
-        to_field(&mut app, Field::Reminder);
-        act(&mut app, Action::Edit);
-        assert!(act(&mut app, Action::Submit).is_empty());
-        assert_eq!(app.mode, Mode::Normal);
-    }
-
-    #[test]
-    fn invalid_input_shows_why_and_sends_nothing_until_fixed() {
-        let mut app = seeded();
-        for (field, bad) in [
-            (Field::Title, "   "),
-            (Field::Due, "2026-13-40"),
-            (Field::Due, "tomorrow"),
-            (Field::Importance, "urgent"),
-            (Field::Reminder, "2026-10-01 9am"),
-        ] {
-            to_field(&mut app, field);
-            act(&mut app, Action::Edit);
-            retype(&mut app, bad);
-            assert!(
-                act(&mut app, Action::Submit).is_empty(),
-                "{field:?} {bad:?}"
-            );
-            let Mode::Editing { error, .. } = &app.mode else {
-                unreachable!("still editing after {bad:?}");
-            };
-            assert!(error.is_some(), "{field:?} {bad:?}");
-            // Typing again takes the error away.
-            type_text(&mut app, "x");
-            assert!(matches!(&app.mode, Mode::Editing { error: None, .. }));
-            act(&mut app, Action::Cancel);
-        }
-    }
-
-    #[test]
-    fn escape_cancels_and_an_unchanged_value_sends_nothing() {
-        let mut app = seeded();
-        act(&mut app, Action::Edit);
-        type_text(&mut app, " now");
-        assert!(act(&mut app, Action::Cancel).is_empty());
-        assert_eq!(app.mode, Mode::Normal);
-        assert_eq!(titles(&app)[0], "Pay rent");
-
-        act(&mut app, Action::Edit);
-        assert!(act(&mut app, Action::Submit).is_empty());
-        assert_eq!(app.mode, Mode::Normal);
-    }
-
-    #[test]
-    fn html_notes_left_as_they_are_are_not_rewritten_as_text() {
-        let mut app = seeded();
-        let notes = task(
-            "t1",
-            "Pay rent",
-            json!({ "body": { "content": "<p>Call <b>Sam</b></p>", "contentType": "html" } }),
-        );
-        let effects = app.update(Msg::Event(ms_todo_protocol::Event::ResyncNeeded));
-        crate::app::tests::answer_seed(
-            &mut app,
-            &effects[0],
-            crate::app::tests::seed(crate::app::tests::scope_home(), vec![notes]),
-        );
-        to_field(&mut app, Field::Notes);
-        act(&mut app, Action::Edit);
-        assert!(matches!(&app.mode, Mode::Editing { text, .. } if text == "Call Sam"));
-        assert!(act(&mut app, Action::Submit).is_empty());
-    }
-
-    #[test]
-    fn a_task_gone_while_typing_is_not_edited() {
-        let mut app = seeded();
-        act(&mut app, Action::Edit);
-        type_text(&mut app, "!");
-        // Deleted on the phone meanwhile.
-        let effects = app.update(Msg::Event(ms_todo_protocol::Event::ResyncNeeded));
-        let mut tasks = crate::app::tests::home_tasks();
-        tasks.remove(0);
-        app.update(Msg::Response {
-            tag: effects[0].tag,
-            result: Ok(ResponseData::Seed(crate::app::tests::seed(
-                crate::app::tests::scope_home(),
-                tasks,
-            ))),
-        });
-        assert!(act(&mut app, Action::Submit).is_empty());
-        assert_eq!(app.mode, Mode::Normal);
-        assert!(app.banner.is_some());
+fn protocol_importance(level: ms_todo_nlp::Importance) -> Importance {
+    match level {
+        ms_todo_nlp::Importance::High => Importance::High,
+        ms_todo_nlp::Importance::Normal => Importance::Normal,
+        ms_todo_nlp::Importance::Low => Importance::Low,
     }
 }
+
+#[cfg(test)]
+mod tests;

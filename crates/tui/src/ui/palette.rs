@@ -4,16 +4,17 @@ use ratatui::style::{Modifier, Style};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Clear, List, ListItem, ListState, Paragraph};
 
-use super::{ACCENT, DIM, centered, pane, selection};
+use super::{ACCENT, DIM, centered, line_input, pane, selection};
 use crate::app::App;
+use crate::app::line_editor::LineEditor;
 
 /// The most matches shown at once; the list scrolls past them.
 const ROWS: u16 = 12;
 
 /// The command palette: the query, then the matches, best first, each with
 /// the keys that do the same.
-pub fn draw(frame: &mut Frame, app: &App, query: &str, index: usize) {
-    let items = app.palette_items(query);
+pub fn draw(frame: &mut Frame, app: &App, query: &LineEditor, index: usize) {
+    let items = app.palette_items(&query.text());
     let rows = u16::try_from(items.len()).unwrap_or(ROWS).clamp(1, ROWS);
     let area = centered(frame.area(), 60, rows + 4);
     frame.render_widget(Clear, area);
@@ -27,11 +28,12 @@ pub fn draw(frame: &mut Frame, app: &App, query: &str, index: usize) {
     ])
     .areas(inner);
     frame.render_widget(
-        Paragraph::new(Line::from(vec![
-            Span::styled(": ", Style::default().fg(ACCENT)),
-            Span::raw(query.to_owned()),
-            Span::raw(app.glyphs.cursor),
-        ])),
+        Paragraph::new(Line::from(
+            [Span::styled(": ", Style::default().fg(ACCENT))]
+                .into_iter()
+                .chain(line_input::single(query, Style::default(), &app.glyphs))
+                .collect::<Vec<_>>(),
+        )),
         input,
     );
     if items.is_empty() {

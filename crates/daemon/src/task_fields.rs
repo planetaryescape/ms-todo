@@ -3,13 +3,11 @@
 //! a time goes to the reminder, which sets `isReminderOn`.
 
 use chrono::{NaiveDate, NaiveDateTime};
-use ms_todo_core::{DATE_FORMAT, ErrorKind, local_due_date};
+use ms_todo_core::{DATE_FORMAT, ErrorKind, REMINDER_FORMAT, local_due_date};
 use ms_todo_protocol::{Clearable, Entity, ErrorPayload, Importance, NewTask, TaskEdit};
 use serde_json::{Map, Value, json};
 
 use crate::handlers::error_payload;
-
-const REMINDER_FORMAT: &str = "%Y-%m-%dT%H:%M";
 
 /// One field a mutation sets.
 #[derive(Clone, Debug, PartialEq)]

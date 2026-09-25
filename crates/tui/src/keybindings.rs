@@ -2,8 +2,8 @@
 // (unchanged at fec4aefc): `KeyPress`, `parse_key_string`, and hints and
 // help read from the same default table. Changes: one static table of (context, key, action, label) rather
 // than per-view maps of action names, since ms-todo has no keys.toml yet;
-// single keys only (`g` is top, not `gg`); named keys for arrows and
-// Backspace.
+// single keys only (`g` is top, not `gg`, and the field picker is a
+// mode, not an `e t` chord); named keys for arrows and Backspace.
 
 //! The one keybinding registry: every key the TUI answers is in [`BINDINGS`],
 //! and the hint bar and the help screen are read from it, so they can't
@@ -12,6 +12,7 @@
 use crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
 
 use crate::action::Action;
+use crate::app::edit::Field;
 
 /// Where a key is pressed. Each has its own bindings.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
@@ -22,9 +23,15 @@ pub enum Context {
     Tasks,
     /// The detail pane, where j and k move between the fields.
     Detail,
-    /// Typing a new task, a filter or a field's new value. Other printable
-    /// keys are text.
+    /// Typing a new task, a filter or a field's new value on one line.
+    /// Other keys go to the line editor ([`EDITOR_KEYS`]).
     Prompt,
+    /// Typing notes, where Enter is a new line.
+    Notes,
+    /// Picking which field of a task to edit.
+    Fields,
+    /// Picking an importance level.
+    Importance,
     /// The command palette. Other printable keys are its query.
     Palette,
     /// The diagnostics page.
@@ -63,6 +70,10 @@ const LISTS: &[Context] = &[
     Context::Diagnostics,
 ];
 const PALETTE: &[Context] = &[Context::Palette];
+const PROMPTS: &[Context] = &[Context::Prompt, Context::Notes];
+const NOTES: &[Context] = &[Context::Notes];
+const FIELDS: &[Context] = &[Context::Fields];
+const LEVELS: &[Context] = &[Context::Importance];
 const DIAGNOSTICS: &[Context] = &[Context::Diagnostics];
 
 /// Every binding, in the order help shows them.
@@ -80,7 +91,13 @@ pub const BINDINGS: &[Binding] = &[
     bind(BROWSE, "a", Action::Add, "Add", true),
     bind(TASKS, "x", Action::ToggleComplete, "Done", true),
     bind(TASKS, "e", Action::Edit, "Edit", true),
-    bind(&[Context::Detail], "Enter", Action::Edit, "Edit", false),
+    bind(
+        &[Context::Detail],
+        "Enter",
+        Action::EditHere,
+        "Edit this field",
+        false,
+    ),
     bind(TASKS, "d", Action::Delete, "Delete", true),
     bind(TASKS, "v", Action::ToggleSelect, "Select", true),
     bind(TASKS, "V", Action::SelectAll, "Select all", false),
@@ -100,21 +117,65 @@ pub const BINDINGS: &[Binding] = &[
     bind(BROWSE, "q", Action::Quit, "Quit", true),
     bind(BROWSE, "Ctrl-c", Action::Quit, "Quit", false),
     bind(&[Context::Prompt], "Enter", Action::Submit, "Done", true),
-    bind(&[Context::Prompt], "Esc", Action::Cancel, "Cancel", true),
+    bind(NOTES, "Ctrl-s", Action::Submit, "Save", true),
+    bind(NOTES, "Alt-Enter", Action::Submit, "Save", false),
+    bind(NOTES, "Enter", Action::Newline, "New line", true),
+    bind(PROMPTS, "Esc", Action::Cancel, "Cancel", true),
+    bind(PROMPTS, "Backspace", Action::Backspace, "Erase", false),
+    bind(PROMPTS, "Ctrl-c", Action::Cancel, "Cancel", false),
     bind(
-        &[Context::Prompt],
-        "Backspace",
-        Action::Backspace,
-        "Erase",
+        FIELDS,
+        "t",
+        Action::EditField(Field::Title),
+        "Edit title",
         false,
     ),
     bind(
-        &[Context::Prompt],
-        "Ctrl-c",
-        Action::Cancel,
-        "Cancel",
+        FIELDS,
+        "d",
+        Action::EditField(Field::Due),
+        "Edit due date",
         false,
     ),
+    bind(
+        FIELDS,
+        "r",
+        Action::EditField(Field::Reminder),
+        "Edit reminder",
+        false,
+    ),
+    bind(
+        FIELDS,
+        "i",
+        Action::EditField(Field::Importance),
+        "Set importance",
+        false,
+    ),
+    bind(
+        FIELDS,
+        "n",
+        Action::EditField(Field::Notes),
+        "Edit notes",
+        false,
+    ),
+    bind(
+        FIELDS,
+        "I",
+        Action::CycleImportance,
+        "Cycle importance",
+        true,
+    ),
+    bind(FIELDS, "Esc", Action::Cancel, "Cancel", true),
+    bind(FIELDS, "Ctrl-c", Action::Cancel, "Cancel", false),
+    bind(LEVELS, "1", Action::SetImportance("1"), "High", true),
+    bind(LEVELS, "2", Action::SetImportance("2"), "Normal", true),
+    bind(LEVELS, "3", Action::SetImportance("3"), "Normal", true),
+    bind(LEVELS, "4", Action::SetImportance("4"), "Low", true),
+    bind(LEVELS, "h", Action::SetImportance("high"), "High", true),
+    bind(LEVELS, "n", Action::SetImportance("normal"), "Normal", true),
+    bind(LEVELS, "l", Action::SetImportance("low"), "Low", true),
+    bind(LEVELS, "Esc", Action::Cancel, "Cancel", true),
+    bind(LEVELS, "Ctrl-c", Action::Cancel, "Cancel", false),
     bind(&[Context::Confirm], "y", Action::Confirm, "Delete", true),
     bind(&[Context::Confirm], "n", Action::Cancel, "Keep", true),
     bind(&[Context::Confirm], "Esc", Action::Cancel, "Keep", false),
@@ -143,6 +204,14 @@ pub const BINDINGS: &[Binding] = &[
     bind(&[Context::Help], "q", Action::Cancel, "Close", false),
 ];
 
+/// What the line editor in every prompt does with the keys the table
+/// doesn't bind, for help (`app/line_editor.rs` has the mapping).
+pub const EDITOR_KEYS: &[(&str, &str)] = &[
+    ("Left/Right", "Move (Home/End, Ctrl-a/e: line start/end)"),
+    ("Alt-b/Alt-f", "Word back/forward (also Ctrl-Left/Right)"),
+    ("Ctrl-w/u/k", "Delete word back, to line start, to end"),
+];
+
 const fn bind(
     contexts: &'static [Context],
     key: &'static str,
@@ -159,8 +228,13 @@ const fn bind(
     }
 }
 
-/// Parse a key string like "j", "G", "Ctrl-c", "Enter" or "Down".
+/// Parse a key string like "j", "G", "Ctrl-c", "Alt-Enter" or "Down".
 pub fn parse_key_string(key: &str) -> Result<KeyPress, String> {
+    if let Some(rest) = key.strip_prefix("Alt-") {
+        let mut press = parse_key_string(rest)?;
+        press.modifiers |= KeyModifiers::ALT;
+        return Ok(press);
+    }
     let named = |code| KeyPress {
         code,
         modifiers: KeyModifiers::NONE,
@@ -212,7 +286,8 @@ pub fn resolve(context: Context, key: &KeyEvent) -> Option<Action> {
 }
 
 fn normalize(key: &KeyEvent) -> KeyPress {
-    let mut modifiers = key.modifiers & (KeyModifiers::CONTROL | KeyModifiers::SHIFT);
+    let mut modifiers =
+        key.modifiers & (KeyModifiers::CONTROL | KeyModifiers::SHIFT | KeyModifiers::ALT);
     if let KeyCode::Char(ch) = key.code
         && !modifiers.contains(KeyModifiers::CONTROL)
     {
@@ -227,6 +302,14 @@ fn normalize(key: &KeyEvent) -> KeyPress {
         code: key.code,
         modifiers,
     }
+}
+
+/// The first key bound to `action` in `context`.
+pub fn key_for(context: Context, action: Action) -> Option<&'static str> {
+    BINDINGS
+        .iter()
+        .find(|binding| binding.contexts.contains(&context) && binding.action == action)
+        .map(|binding| binding.key)
 }
 
 /// The hint bar's `(keys, label)` pairs for `context`.
@@ -244,9 +327,10 @@ pub fn help_rows() -> Vec<(String, &'static str)> {
 }
 
 /// What the command palette offers: every browsing action but moving
-/// around and the palette itself, as `(keys, label, action)`.
+/// around and the palette itself, then each field the picker edits, with
+/// its keys after the picker's, as `e t`; as `(keys, label, action)`.
 pub fn commands() -> Vec<(String, &'static str, Action)> {
-    let rows = grouped(|binding| {
+    let browsing = grouped(|binding| {
         binding.contexts.iter().any(|c| BROWSE.contains(c))
             && !matches!(
                 binding.action,
@@ -258,9 +342,19 @@ pub fn commands() -> Vec<(String, &'static str, Action)> {
                     | Action::FocusRight
                     | Action::FocusNext
                     | Action::Palette
+                    // The palette names each field instead.
+                    | Action::EditHere
             )
     });
-    rows.into_iter()
+    let fields = grouped(|binding| binding.contexts == FIELDS && binding.action != Action::Cancel)
+        .into_iter()
+        .map(|(keys, binding)| {
+            let picker = key_for(Context::Tasks, Action::Edit).unwrap_or_default();
+            (format!("{picker} {keys}"), binding)
+        });
+    browsing
+        .into_iter()
+        .chain(fields)
         .map(|(keys, binding)| (keys, binding.label, binding.action))
         .collect()
 }
@@ -353,7 +447,8 @@ mod tests {
         let help = help_rows();
         assert!(help.contains(&("j/Down".into(), "Down")));
         assert!(help.contains(&("q/Ctrl-c".into(), "Quit")));
-        assert!(help.contains(&("e/Enter".into(), "Edit")));
+        assert!(help.contains(&("e".into(), "Edit")));
+        assert!(help.contains(&("Enter".into(), "Edit this field")));
     }
 
     #[test]
@@ -361,6 +456,10 @@ mod tests {
         let commands = commands();
         assert!(commands.contains(&("x".into(), "Done", Action::ToggleComplete)));
         assert!(commands.contains(&("D".into(), "Diagnostics", Action::Diagnostics)));
+        // Each field the picker edits, by its keys.
+        assert!(commands.contains(&("e d".into(), "Edit due date", Action::EditField(Field::Due))));
+        assert!(commands.contains(&("e I".into(), "Cycle importance", Action::CycleImportance)));
+        assert!(!commands.iter().any(|(keys, _, _)| keys == "e Esc"));
         assert!(
             !commands
                 .iter()

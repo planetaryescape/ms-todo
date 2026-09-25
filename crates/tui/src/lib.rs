@@ -75,6 +75,10 @@ pub async fn run(options: Options) -> Result<Option<String>, TuiError> {
         glyphs::UNICODE
     };
     let app = app::App::new(glyphs, app::Clock::now());
+    // The date rules' regexes compile on first use, about 3 ms: do it
+    // now, off the render path, not in the first frame of a date editor.
+    let now = app.parse_context();
+    std::thread::spawn(move || ms_todo_nlp::read_when("today", &now));
     let (link, daemon) = ipc::connect(options.socket.clone());
     // Restores the terminal on a panic too.
     let mut terminal = ratatui::init();
@@ -126,17 +130,40 @@ fn write_to_terminal(sequence: &str) -> std::io::Result<()> {
 }
 
 /// Once the first list is painted: move through the tasks, across to the
-/// sidebar and through the views and back, then quit. Spaced so each
-/// view's seed lands before the next key.
+/// sidebar and through the views and back; open the title's editor, move
+/// and type in it and cancel; filter and cancel; then quit. Nothing is
+/// written. Spaced so each view's seed lands before the next key.
 async fn bench_script(first_paint: oneshot::Receiver<()>, keys: mpsc::UnboundedSender<TermEvent>) {
     if first_paint.await.is_err() {
         return;
     }
-    let press = |ch: char| TermEvent::Key(KeyEvent::new(KeyCode::Char(ch), KeyModifiers::NONE));
-    let script = "jjjjjjjjjjkkkkkkkkkkGghkkkkkjjjjjl";
-    for ch in script.chars().chain(std::iter::once('q')) {
+    let key = |code, modifiers| TermEvent::Key(KeyEvent::new(code, modifiers));
+    let none = KeyModifiers::NONE;
+    let typed = |text: &str| -> Vec<TermEvent> {
+        text.chars()
+            .map(|ch| key(KeyCode::Char(ch), KeyModifiers::NONE))
+            .collect()
+    };
+    let mut script = typed("jjjjjjjjjjkkkkkkkkkkGghkkkkkjjjjjl");
+    script.extend(typed("et"));
+    script.extend([
+        key(KeyCode::Left, none),
+        key(KeyCode::Left, none),
+        key(KeyCode::Home, none),
+        key(KeyCode::Char('f'), KeyModifiers::ALT),
+        key(KeyCode::End, none),
+    ]);
+    script.extend(typed("xy"));
+    script.extend([
+        key(KeyCode::Char('w'), KeyModifiers::CONTROL),
+        key(KeyCode::Esc, none),
+    ]);
+    script.extend(typed("/a"));
+    script.extend([key(KeyCode::Backspace, none), key(KeyCode::Esc, none)]);
+    script.extend(typed("q"));
+    for event in script {
         tokio::time::sleep(Duration::from_millis(40)).await;
-        if keys.send(press(ch)).is_err() {
+        if keys.send(event).is_err() {
             return;
         }
     }

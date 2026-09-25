@@ -7,15 +7,17 @@ publish = false
 description = "ms-todo's terminal UI: ratatui over the daemon protocol, seeded from the daemon's cache."
 
 [dependencies]
-# The protocol and core only: the TUI reads the cache over IPC (D-031,
-# tests/workspace_boundaries.rs).
+# The protocol, core and the pure phrase reader only: the TUI reads the
+# cache over IPC (D-031, tests/workspace_boundaries.rs).
 ms-todo-core = { workspace = true }
+ms-todo-nlp = { workspace = true }
 ms-todo-protocol = { workspace = true }
 chrono = { workspace = true }
 crossterm = { workspace = true }
 futures-util = { workspace = true }
 html2text = { workspace = true }
 ratatui = { workspace = true }
+ratatui-textarea = { workspace = true }
 serde_json = { workspace = true }
 socket2 = { workspace = true }
 thiserror = { workspace = true }

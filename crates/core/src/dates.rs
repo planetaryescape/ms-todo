@@ -9,6 +9,9 @@ use chrono::{Duration, Local, NaiveDate, NaiveDateTime, TimeZone, Utc};
 /// How ms-todo writes a date, in flags, output and CSV.
 pub const DATE_FORMAT: &str = "%Y-%m-%d";
 
+/// How a reminder travels from a client to the daemon: local time.
+pub const REMINDER_FORMAT: &str = "%Y-%m-%dT%H:%M";
+
 /// The local date of a Graph `dateTimeTimeZone` due date.
 pub fn local_due_date(date_time: &str, time_zone: &str) -> Option<NaiveDate> {
     let local = local_date_time(date_time, time_zone)?;

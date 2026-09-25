@@ -54,7 +54,7 @@ pub fn draw(frame: &mut Frame, area: Rect, app: &App) {
             Style::default().fg(AMBER),
         ),
         (None, false) => match activity.last_finished_at {
-            Some(at) => Span::styled(format!("synced {}", ago(app.clock.unix - at)), dim),
+            Some(at) => Span::styled(format!("synced {}", ago(app.clock.unix() - at)), dim),
             None => Span::styled("not synced yet", dim),
         },
     });

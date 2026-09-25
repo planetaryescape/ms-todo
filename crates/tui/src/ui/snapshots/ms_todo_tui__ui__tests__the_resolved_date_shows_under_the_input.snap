@@ -1,0 +1,15 @@
+---
+source: crates/tui/src/ui/tests.rs
+expression: "frames.join(\"\\n\\n\")"
+---
+││Due        next fri█            │"
+││           → Fri 2 Oct          │"
+││Reminder   none                 │"
+
+││Due        yesterday█           │"
+││           → Wed 23 Sep, in the │"
+││past                            │"
+
+││Due        tomo█                │"
+││           Didn't understand    │"
+││"tomo"                          │"
