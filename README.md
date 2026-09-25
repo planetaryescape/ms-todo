@@ -484,7 +484,7 @@ Microsoft Graph's To Do API leaves out some things the To Do apps do. ms-todo wo
 
 ## Status and roadmap
 
-ms-todo is at 0.1.18 and built in rungs, each a usable release: rung 7, My Day, is the latest. The [roadmap](docs/blueprint/10-roadmap.md) lists what's next, and the [decision log](docs/blueprint/11-decision-log.md) says why things are the way they are.
+ms-todo is built in rungs, each a usable release; [Releases](https://github.com/planetaryescape/ms-todo/releases) has the current version and what each one added. The [roadmap](docs/blueprint/10-roadmap.md) lists what's next, and the [decision log](docs/blueprint/11-decision-log.md) says why things are the way they are.
 
 ## Contributing
 
