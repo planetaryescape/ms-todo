@@ -211,10 +211,12 @@ impl<'i> Scan<'i> {
         }
     }
 
-    /// `p1`–`p4`, any case (D-017). The first one counts.
+    /// `p1`–`p4` (D-017), in lower case only, so `P1 incident` stays a
+    /// title, as `Tom` does (Q9). The first one counts.
     fn priority(&mut self, task: &mut ParsedTask) {
         for at in self.word_starts() {
-            let token = self.scan.get(at..at + 2).unwrap_or_default();
+            // The input, not the lowercased scan: `P1` isn't a priority.
+            let token = self.input.get(at..at + 2).unwrap_or_default();
             let level = match token.as_bytes() {
                 [b'p', level @ b'1'..=b'4'] => level - b'0',
                 _ => continue,

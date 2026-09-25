@@ -505,6 +505,20 @@ fn my_day_is_recognised_and_warned_about() {
 }
 
 #[test]
+fn priorities_count_in_lower_case_only() {
+    for input in ["P1 incident review", "P3 review"] {
+        let parsed = parse(input);
+        assert_eq!(parsed.importance, None, "{input:?}");
+        assert_eq!(parsed.title, input);
+        assert!(parsed.spans.is_empty(), "{input:?}");
+    }
+    assert_eq!(
+        parse("Incident review p1").importance,
+        Some(Importance::High)
+    );
+}
+
+#[test]
 fn only_the_first_date_counts() {
     let parsed = parse("Call bank fri or mon");
     assert_eq!(parsed.title, "Call bank or mon");

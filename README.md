@@ -84,7 +84,7 @@ mst tasks add "Email Friday's report" --no-parse   # the text as the title, exac
 | --- | --- |
 | `#Home`, `#"Two words"` | the list: its name or the start of it, when only one list starts that way. With none, "Tasks" |
 | `@errands` | a category (Outlook's). One you don't have yet is still put on the task; `--create-categories` creates it |
-| `p1` `p2` `p3` `p4` | importance: p1 high, p2 and p3 normal, p4 low |
+| `p1` `p2` `p3` `p4` | importance: p1 high, p2 and p3 normal, p4 low. Lower case only, so `P1 incident` stays a title |
 | `tomorrow`, `fri 5pm`, `in 3 days`, `on 12 oct`, `9am` | the due date. A time also sets a reminder then (Microsoft To Do keeps no time on a due date); a time alone is its next one |
 | `!9am`, `!tomorrow 8:30` | a reminder only; a day alone is 09:00 on it |
 | `start mon` | the start date. With no due date, Microsoft To Do makes it the due date too, and ms-todo says so |
