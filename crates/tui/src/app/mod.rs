@@ -339,6 +339,10 @@ pub struct App {
     pub focus: Pane,
     pub mode: Mode,
     pub connection: Connection,
+    /// The command for this instance while no credential is stored.
+    pub sign_in_command: Option<String>,
+    /// The first seed could not read any cached tasks without sign-in.
+    pub sign_in_required: bool,
     /// Every list, in the daemon's order: folder by folder, then those in
     /// no folder.
     pub lists: Vec<SidebarList>,
@@ -414,6 +418,8 @@ impl App {
             focus: Pane::Tasks,
             mode: Mode::Normal,
             connection: Connection::Connecting,
+            sign_in_command: None,
+            sign_in_required: false,
             lists: Vec::new(),
             collapsed: HashSet::new(),
             counts: Counts::default(),
@@ -452,6 +458,11 @@ impl App {
     /// With the download directory and where typed paths start.
     pub fn with_places(mut self, places: attachments::Places) -> Self {
         self.places = places;
+        self
+    }
+
+    pub fn with_sign_in_command(mut self, command: Option<String>) -> Self {
+        self.sign_in_command = command;
         self
     }
 
@@ -573,6 +584,13 @@ impl App {
 
     fn handle(&mut self, msg: Msg) -> Vec<Effect> {
         match msg {
+            Msg::Action(action)
+                if self.sign_in_required
+                    && self.mode == Mode::Normal
+                    && !matches!(action, Action::Quit | Action::Help | Action::Diagnostics) =>
+            {
+                Vec::new()
+            }
             Msg::Action(action) => self.act(action),
             Msg::Char(ch) => self.edit_with(|input| {
                 input.insert(ch);
@@ -1227,6 +1245,10 @@ impl App {
     }
 
     fn seed_failed(&mut self, error: ErrorPayload) -> Vec<Effect> {
+        if error.kind == "auth_required" && !self.seeded && self.sign_in_command.is_some() {
+            self.sign_in_required = true;
+            return Vec::new();
+        }
         if self.filter.is_some() && error.kind == "invalid_input" {
             // Mid-typing, like an unclosed quote: keep the last results.
             self.filter_error = Some(error.message);
@@ -1243,6 +1265,7 @@ impl App {
     }
 
     fn apply_seed(&mut self, seed: Seed) {
+        self.sign_in_required = false;
         let keep = self.selected().map(|task| task.id.clone());
         let row = self.entries().get(self.sidebar_index).cloned();
         let tasks = seed_tasks(&seed);

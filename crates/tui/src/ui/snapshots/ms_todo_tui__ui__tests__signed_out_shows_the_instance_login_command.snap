@@ -1,0 +1,20 @@
+---
+source: crates/tui/src/ui/tests.rs
+expression: frame
+---
+" ms-todo 9.9.9 · Tasks                                                                              ○ sign in "
+"╭ Sign in ───────────────────────────────────────────────────────────────────────────────────────────────────╮"
+"│                                                                                                            │"
+"│                                                                                                            │"
+"│                                         Sign in to Microsoft To Do                                         │"
+"│                                                                                                            │"
+"│                                       Open another terminal and run:                                       │"
+"│                                    ms-todo --instance scratch auth login                                   │"
+"│                                                                                                            │"
+"│                                            Then reopen this TUI.                                           │"
+"│                                                                                                            │"
+"│                                                                                                            │"
+"│                                                                                                            │"
+"╰────────────────────────────────────────────────────────────────────────────────────────────────────────────╯"
+" Sign-in needed to load your tasks                                                                            "
+" q Quit  ? Help  D Diagnostics                                                                                "

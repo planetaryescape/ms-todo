@@ -15,6 +15,7 @@ mod line_input;
 mod link_picker;
 mod modals;
 mod move_picker;
+mod onboarding;
 mod palette;
 mod sidebar;
 mod status_line;
@@ -54,9 +55,15 @@ pub fn draw(frame: &mut Frame, app: &App) {
     title_bar::draw(frame, title, app);
     // The diagnostics page covers the panes, so they aren't drawn under it.
     if app.mode != Mode::Diagnostics {
-        sidebar::draw(frame, side, app);
-        task_list::draw(frame, list, app);
-        detail::draw(frame, detail, app);
+        if app.sign_in_required
+            && let Some(command) = &app.sign_in_command
+        {
+            onboarding::draw(frame, main, app, command);
+        } else {
+            sidebar::draw(frame, side, app);
+            task_list::draw(frame, list, app);
+            detail::draw(frame, detail, app);
+        }
     }
     status_line::draw(frame, status, app);
     hint_bar::draw(frame, hints, app);

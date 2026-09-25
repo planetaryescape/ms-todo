@@ -20,6 +20,21 @@ use crate::keybindings::{Context, hints, key_for};
 pub fn draw(frame: &mut Frame, area: Rect, app: &App) {
     let glyphs = &app.glyphs;
     let theme = &app.theme;
+    if app.sign_in_required && app.mode == Mode::Normal {
+        let mut spans = Vec::new();
+        for (action, label) in [
+            (Action::Quit, "Quit"),
+            (Action::Help, "Help"),
+            (Action::Diagnostics, "Diagnostics"),
+        ] {
+            if let Some(key) = key_for(Context::Tasks, action) {
+                spans.push(Span::styled(format!(" {key} "), theme.key));
+                spans.push(Span::styled(format!("{label} "), theme.text_dim));
+            }
+        }
+        frame.render_widget(Paragraph::new(Line::from(spans)), area);
+        return;
+    }
     let hint_spans = |context| {
         let mut spans = Vec::new();
         for (keys, label) in hints(context) {

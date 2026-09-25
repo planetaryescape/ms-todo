@@ -42,6 +42,8 @@ pub use runner::RunError;
 pub struct Options {
     /// The daemon's socket; the caller has made sure it's running.
     pub socket: PathBuf,
+    /// Shown until the user signs in and reopens the TUI.
+    pub sign_in_command: Option<String>,
     /// Plain ASCII instead of Unicode symbols.
     pub ascii: bool,
     /// The theme, from [`theme::load`].
@@ -87,7 +89,8 @@ pub async fn run(options: Options) -> Result<Option<String>, TuiError> {
     };
     let app = app::App::new(glyphs, app::Clock::now())
         .with_theme(options.theme)
-        .with_places(options.places);
+        .with_places(options.places)
+        .with_sign_in_command(options.sign_in_command);
     // The date rules' regexes compile on first use, about 3 ms: do it
     // now, off the render path, not in the first frame of a date editor.
     let now = app.parse_context();

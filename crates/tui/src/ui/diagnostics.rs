@@ -43,7 +43,12 @@ fn lines(app: &App, page: &Diagnostics) -> Vec<Line<'static>> {
         match &page.status {
             None => waiting(),
             Some(Ok(status)) if status.signed_in => Span::raw("yes"),
-            Some(Ok(_)) => failed("no: run `ms-todo auth login`"),
+            Some(Ok(_)) => failed(&format!(
+                "no: run `{}`",
+                app.sign_in_command
+                    .as_deref()
+                    .unwrap_or("ms-todo auth login")
+            )),
             Some(Err(_)) => Span::styled("unknown", dim),
         },
     ));
