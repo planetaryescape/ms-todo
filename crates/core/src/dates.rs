@@ -1,8 +1,8 @@
 //! Reading Graph's due dates. A due date is a date, not an instant (S11,
 //! D-027): Graph stores it as midnight in whatever zone the writer used and
 //! returns that instant in UTC, so BK's data holds 23:00Z, 00:00Z and 20:00Z
-//! for "midnight". Converting to the local zone and rounding to the nearest
-//! midnight gives the right day for all of them; truncating doesn't.
+//! for "midnight". The writer's zone is lost (D-059), so dates written across
+//! widely separated zones cannot always be recovered exactly.
 
 use chrono::{Datelike, Duration, Local, NaiveDate, NaiveDateTime, TimeZone, Utc};
 
@@ -14,8 +14,24 @@ pub const REMINDER_FORMAT: &str = "%Y-%m-%dT%H:%M";
 
 /// The local date of a Graph `dateTimeTimeZone` due date.
 pub fn local_due_date(date_time: &str, time_zone: &str) -> Option<NaiveDate> {
-    let local = local_date_time(date_time, time_zone)?;
-    Some((local + Duration::hours(12)).date())
+    local_due_date_in(date_time, time_zone, &Local)
+}
+
+fn local_due_date_in<Tz: TimeZone>(
+    date_time: &str,
+    time_zone: &str,
+    local: &Tz,
+) -> Option<NaiveDate> {
+    let naive = parse_graph_date_time(date_time)?;
+    if time_zone.eq_ignore_ascii_case("UTC") {
+        let local_time = Utc.from_utc_datetime(&naive).with_timezone(local);
+        if local_time.time() == chrono::NaiveTime::MIN {
+            return Some(local_time.date_naive());
+        }
+    }
+    naive
+        .checked_add_signed(Duration::hours(12))
+        .map(|at| at.date())
 }
 
 /// The day a task was completed. Graph records `completedDateTime` as a
@@ -110,12 +126,44 @@ mod tests {
     }
 
     #[test]
-    fn a_utc_value_near_midnight_rounds_rather_than_truncates() {
-        // Whatever the local zone is, within 12 hours of UTC, a UTC midnight
-        // is the same local day after rounding.
+    fn utc_due_dates_keep_the_day_in_eastern_reader_zones() {
+        let zone = |hours: i32| chrono::FixedOffset::east_opt(hours * 3600).expect("offset");
+        for hours in [13, 14] {
+            // Midnight UTC, London and Dubai as returned by Graph all mean 26 Sep.
+            for time in ["00:00", "23:00", "20:00"] {
+                let day = if time == "00:00" { "26" } else { "25" };
+                let value = format!("2026-09-{day}T{time}:00.0000000");
+                assert_eq!(
+                    local_due_date_in(&value, "UTC", &zone(hours)),
+                    Some(date("2026-09-26")),
+                    "reader {hours:+}, UTC time {time}"
+                );
+            }
+            // UTC+13/+14 writers also mean 26 Sep. Their UTC instant is
+            // exactly midnight in the matching reader zone.
+            let utc_hour = 24 - hours;
+            let value = format!("2026-09-25T{utc_hour:02}:00:00.0000000");
+            assert_eq!(
+                local_due_date_in(&value, "UTC", &zone(hours)),
+                Some(date("2026-09-26")),
+                "reader and writer {hours:+}"
+            );
+        }
         assert_eq!(
-            local_due_date("2026-09-26T00:00:00.0000000", "UTC"),
+            local_due_date_in("2026-09-26T00:00:00.0000000", "UTC", &zone(-5)),
             Some(date("2026-09-26"))
+        );
+    }
+
+    #[test]
+    fn non_utc_due_value_is_wall_time() {
+        assert_eq!(
+            local_due_date_in(
+                "2026-09-26T13:00:00.0000000",
+                "Pacific/Kiritimati",
+                &chrono::FixedOffset::west_opt(5 * 3600).expect("offset"),
+            ),
+            Some(date("2026-09-27"))
         );
     }
 
