@@ -36,6 +36,12 @@ Why not a special list, copies of tasks, an Outlook category, or always setting 
 - The official apps can't see ms-todo folders. That's accepted.
 - List delta reports that a list's extension changed but not what it holds (S2). After any `lists/delta` round that reports a list, one filtered-`$expand` GET refreshes every list's folder and order; see [04](04-sync-cache.md#children-of-a-task).
 
+**As built (rung 5c, D-047):**
+
+- The fields are `folder` (a string), `order` (the list's place in its folder, or among the lists in no folder) and `folderOrder` (its folder's place among the folders, the same on every list in it). A blank `folder` is no folder. Missing numbers sort after every number; ties keep the order ms-todo first saw the lists in. `lists order` and `folders order` number the whole group 1, 2, 3, … and write only the lists whose number changed. A list moved into a folder drops its `order`, so it goes after the folder's numbered lists, and takes the folder's `folderOrder`.
+- Folder names match ignoring case (an exact match first), and an existing folder's spelling wins. Renaming to another folder's name is refused rather than merging by accident; `lists move … --folder` merges on purpose.
+- Every change is an outbox operation per list (op `extension`, `entity_kind` `list`): the cache changes at once and the worker sends GET (the list with the filtered `$expand`), merge and write. The write is a PATCH of the whole document; a list with no extension yet gets a POST (an upsert, S2); and a document left with no fields is **deleted**, because Graph answers a PATCH of `{}` with 400 `RequestBroker--ParseUri` (seen live on 2026-09-25). All three are idempotent, so a folder write is resent after a failure and is never `unknown`. Graph's `id`, `extensionName` and `@odata` annotations are never sent back.
+
 ## Assignment
 
 - The extension field `assignee: "<free text or email>"` on a task. It means something only to ms-todo. There's no notification and no second user.

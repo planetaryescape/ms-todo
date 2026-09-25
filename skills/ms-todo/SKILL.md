@@ -81,6 +81,24 @@ ms-todo tasks list --list "Groceries" --format ids | ms-todo tasks complete - --
 - Every change returns at once, even with no network: `{"schema_version", "op_id", "action", "items": [...], "list_ids": [...]}`, each task as ms-todo has it now, in the same shape as `tasks list`. The change is queued in the outbox, and the daemon sends it to Microsoft To Do in the background. Until it gets there the task's `sync_state` is `pending`, and a new task's `graph_id` is `null`. Its local `id` never changes, so you can edit or complete it straight away.
 - Completing a **recurring** task keeps the same task open with its due date moved on, and Microsoft To Do adds the completed occurrence as a new task. Once synced, `tasks list` shows the new due date. That's success, not a failure.
 
+## Folders
+
+Lists can be grouped into folders, one level deep, like the To Do app's groups. Only ms-todo sees them (on every machine it syncs to).
+
+```bash
+ms-todo lists list --format json                                   # each list has "folder" (null for none), folder by folder
+ms-todo folders list --format json                                 # [{ "name", "lists": [ids], "list_count", "open_count" }]
+ms-todo lists move <LIST> [<LIST>...] --folder "Areas" --format json   # several at once; a new name makes the folder
+ms-todo lists move <LIST> --no-folder --format json
+ms-todo folders rename "Areas" "Responsibilities" --format json
+ms-todo folders delete "Someday" --yes --format json               # lists stay; nothing is deleted
+ms-todo folders order "Projects" --before "Areas" --format json
+ms-todo lists order <LIST> --after <LIST> --format json            # same folder only
+```
+
+- Folder names match ignoring case. Renaming onto another folder's name exits 2; to merge, `lists move` the lists.
+- Each change is queued like a task change: the lists come back with `sync_state: "pending"`, one `op_id` covers every list changed, `undo <op_id>` reverses it, and `--dry-run` / `--idempotency-key` work. `folders delete` needs `--yes` off a terminal.
+
 ## `sync_state`: has the change reached Microsoft To Do?
 
 Every task carries `sync_state`:

@@ -58,7 +58,7 @@ The **My Day view** has:
 - A heading with the date.
 - Today's tasks, with a "Suggestions" section below them: due today, overdue, and yesterday's unfinished My Day tasks. One key adds a suggestion.
 
-**Folders** are collapsible groups in the sidebar, from the list extension.
+**Folders** are collapsible groups in the sidebar, from the list extension. As built (rung 5c, D-047): after the smart views come the folders in order, each a heading with the open-task total of its lists and the lists indented under it, then the lists in no folder. `Enter` or `Space` on a heading collapses or expands it, remembered for the session; moving onto a heading shows nothing new. The cursor follows its row by ID, not position, across a collapse and a seed that reorders lists; a shown list hidden in a collapsed folder is stood for by its heading. `M` (and the palette's "Move list to folder…") asks for a folder for the list under the cursor or on screen, prefilled with its folder, suggesting existing folders as you type (`Tab` takes the first); empty takes it out. The answer redraws the sidebar at once; the palette's "Go to" reaches a list in a collapsed folder and opens the folder.
 
 ## Quick add
 

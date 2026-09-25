@@ -35,14 +35,14 @@ Release builds sign in through the maintainer's Entra app registration. You can 
 ## See your tasks
 
 ```sh
-ms-todo lists list                    # every list
+ms-todo lists list                    # every list, folder by folder
 ms-todo tasks list                    # every task in "Tasks", completed ones included
 ms-todo tasks list --list Groceries   # by exact name, or by the ID from `lists list`
 ms-todo raw GET /me/todo/lists        # any Graph v1.0 path, authenticated
 ms-todo auth bearer --reveal-secret   # a valid access token, for curl
 ```
 
-Output is a table in a terminal and JSON when piped. `--format json|jsonl|ids|csv|table` picks one. JSON is `{ "schema_version": 2, "sync": { "state", "generation" }, "items": [...] }`. Each item has every field Graph returns, except that `id` is ms-todo's own stable ID, with Graph's beside it as `graph_id` (commands take either), plus `sync_state` (below). `sync.state` is `initial` until that list's first sync has finished, so an empty `initial` list isn't really empty (other formats say so on stderr). `--format ids` prints one ID per line. `--format csv` has a header row and fixed columns (tasks: `id,title,status,importance,due,reminder,categories,created,modified,sync_state`; lists: `id,name,wellknown,is_owner,is_shared`); a task's notes aren't a column, so use JSON for those. A `--list` name that matches more than one list is an error that lists the candidates; ms-todo never picks one for you.
+Output is a table in a terminal and JSON when piped. `--format json|jsonl|ids|csv|table` picks one. JSON is `{ "schema_version": 2, "sync": { "state", "generation" }, "items": [...] }`. Each item has every field Graph returns, except that `id` is ms-todo's own stable ID, with Graph's beside it as `graph_id` (commands take either), plus `sync_state` (below). `sync.state` is `initial` until that list's first sync has finished, so an empty `initial` list isn't really empty (other formats say so on stderr). `--format ids` prints one ID per line. `--format csv` has a header row and fixed columns (tasks: `id,title,status,importance,due,reminder,categories,created,modified,sync_state`; lists: `id,name,wellknown,is_owner,is_shared,folder,sync_state`); a task's notes aren't a column, so use JSON for those. A `--list` name that matches more than one list is an error that lists the candidates; ms-todo never picks one for you.
 
 ## Find a task
 
@@ -79,6 +79,20 @@ ms-todo tasks list --format ids | ms-todo tasks complete -   # `-` reads IDs fro
 - Each change answers at once with the task as ms-todo now has it and an `op_id`, and the daemon sends it to Microsoft To Do in the background (see [Offline, and never lose a write](#offline-and-never-lose-a-write)).
 - If someone changed the same field on another device since ms-todo last read the task, the change is rejected (and rolled back) rather than overwriting theirs.
 
+## Group lists into folders
+
+```sh
+ms-todo lists move Finances Health --folder Areas   # one list or several; the folder is made if it's new
+ms-todo lists move Groceries --no-folder            # out of its folder
+ms-todo folders list                                # each folder, its lists and open tasks
+ms-todo folders rename Areas Responsibilities       # every list in it moves with it
+ms-todo folders delete Someday --yes                # the lists stay, in no folder; nothing is deleted
+ms-todo folders order Projects --before Areas
+ms-todo lists order Health --before Finances        # within a folder
+```
+
+Folders work like the To Do app's list groups, one level deep, and exist only as a name on each list: a folder with no lists is gone. They're kept in ms-todo's own data on each list in Microsoft To Do, so every ms-todo you sign in to shows them after its next sync, while the To Do apps don't see them. A folder name that exists matches ignoring case. `lists list` gives each list's `folder` (null for none) and lists them folder by folder, then those in no folder; lists without an order go last, in the order ms-todo first saw them. Every folder change is a change like any other: queued, sent in the background, shown `pending` until then, undone with `ms-todo undo`, and it takes `--dry-run` and `--idempotency-key`. One command that moves or renames several lists is one change, so one `undo` reverses all of it.
+
 ## Offline, and never lose a write
 
 Every change is applied to the local cache and queued in an outbox in one step, so it answers in milliseconds even with no network. The daemon sends the queue in order, each task's changes one after another, and backs off while the network is down. Each task shows how its changes are doing in `sync_state`, and `tasks list` marks it in its `SYNC` column:
@@ -114,12 +128,14 @@ mst tui --ascii      # plain ASCII instead of Unicode symbols
 
 `mst` with no command opens the TUI only when both its input and output are a terminal; from a script, a pipe or an agent it prints help and exits 2, as before. Global flags still work (`mst --instance work`); TUI flags such as `--ascii` need `tui`.
 
-A title bar with the version and the view you're in, a sidebar of smart views (Important, Planned, All, Completed) and your lists with their counts, the task list, and a detail pane. It opens from the local cache, and changes made anywhere, the phone included, show up as the daemon syncs them. A change you make shows at once, marked pending (dim) until it reaches Microsoft To Do; unknown outcomes are amber and rejected changes red, with a banner saying why.
+A title bar with the version and the view you're in, a sidebar of smart views (Important, Planned, All, Completed), then your folders, each with its lists under it and their total, then the lists in no folder, all with their counts, the task list, and a detail pane. It opens from the local cache, and changes made anywhere, the phone included, show up as the daemon syncs them. A change you make shows at once, marked pending (dim) until it reaches Microsoft To Do; unknown outcomes are amber and rejected changes red, with a banner saying why.
 
 | Key | Does |
 | --- | --- |
 | `j` / `k`, `g` / `G` | down, up, top, bottom |
 | `h` / `l`, `Tab` | move between the sidebar, the list and the detail pane |
+| `Enter` / `Space` in the sidebar | on a folder, collapse or expand it (remembered until you quit); on a list or view, open it |
+| `M` | move the current list to a folder: type its name (`Tab` takes the first of the folders suggested), or leave it empty to take the list out of its folder |
 | `a` | add a task to the current list; the text is taken literally |
 | `x` | complete, or reopen a completed task; with a selection, completes its open tasks (or reopens them all) in one change |
 | `e` | pick a field to edit, from the list or the detail pane: `t` title, `d` due date, `r` reminder, `i` importance, `n` notes, `I` cycles importance low, normal, high and saves; `Esc` cancels |

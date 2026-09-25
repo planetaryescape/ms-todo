@@ -248,6 +248,31 @@ Split in two during the build, because one session couldn't hold it (D-043). 5a 
 
 **Left out:** quick-add parsing and live highlighting, the My Day and Assigned views, folders in the sidebar, a multi-line notes editor (existing line breaks are kept, new ones can't be typed yet), and the steps editor.
 
+### Rung 5c: Motorbike with panniers: folders
+
+Pulled forward from 8d at BK's request (D-047): his To Do app groups lists PARA-style (Projects, Areas, Someday / Maybe…), and ms-todo showed them ungrouped.
+
+**Promise:** "My lists are grouped into folders in ms-todo, like in the To Do app, and it syncs across my ms-todo machines."
+
+**Build:**
+
+- Folders and ordering in the list extension (`folder`, `order`, `folderOrder`), written through the outbox as a new operation kind: GET, merge, write the whole document; offline-safe and undoable ([05](05-custom-features.md#folders-list-groups)).
+- `lists move L... --folder F | --no-folder`, `lists order`, `folders list|rename|delete|order` ([07](07-cli.md)).
+- The TUI sidebar's collapsible folders and "Move list to folder…" ([08](08-tui.md)).
+- Folder changes from another machine arrive with lists delta and the lists enumeration, which already carries the extension (D-036).
+
+**Demo:** `mst lists move Finances --folder Areas`, `mst folders list`, then `mst` shows a collapsible **Areas** folder. Rename and delete it; delete never deletes a list.
+
+**Done when:**
+
+- A folder set in the CLI shows in the TUI sidebar, collapses and expands, and shows on another ms-todo machine after its next sync.
+- Rename and delete patch every list in the folder, and no list is ever deleted; `undo` reverses each.
+- The latency budget still holds.
+
+**As built (2026-09-25, D-047):** driven live on the `livetest` instance on the spike list only: moved into `ms-todo-test` (a POST when the list had no extension, a PATCH that kept an unrelated field when it had one, both read back with `raw GET`), renamed, undone, deleted (the list stayed), a folder set by a raw write arrived with `sync --wait`, and `--no-folder` on a document left empty deleted the extension. The spike list is left with no folder. Latency with `--bench-startup`: keypress p95 about 1 ms and view switch p95 5–7 ms, as in 0.1.12; with the spike list in a folder the scripted path steps onto that uncached list and its seed takes p95 14–19 ms, the uncached-list round trip D-043 measured at 5–30 ms.
+
+**Left out:** `lists create --folder` (with `lists create`, 8e), moving a list by keys in the TUI (only by typing a folder name), and ordering in the TUI (the CLI's `lists order` and `folders order`).
+
 ## Rung 6: Car: quick add
 
 **Previously:** a CLI and TUI that take task text literally. **Now:** the same, plus Todoist-style quick add in both.
@@ -300,7 +325,7 @@ Split in two during the build, because one session couldn't hold it (D-043). 5a 
 - **8a: steps and links.** Promise: "I can break a task into steps and attach links." Demo: add three steps in the CLI, tick one on the phone, see it ticked in the TUI. `steps` and `links` in the CLI and the detail pane. A checklist-item PATCH always includes `isChecked` ([02](02-data-model.md#outbox-semantics)). **Done when:** steps and links added in ms-todo show on the phone, and a step checked on the phone shows as checked in ms-todo.
 - **8b: attachments.** Promise: "I can attach files to a task and get them back." Demo: attach a PDF in the CLI, open it on the phone, download it back. Direct upload, upload sessions, download (safe filenames, `.part` then rename, 0600), and the final-chunk `unknown` rule ([03](03-graph-provider.md#endpoints-the-whole-surface)). **Done when:** a 10 MB attachment uploads and downloads with identical bytes (compare the sha256), and it opens on the phone.
 - **8c: `tasks move`.** Promise: "I can move a task between lists without losing anything." Demo: move a task with steps and an attachment, then `show` it in the new list. The resumable move job ([05](05-custom-features.md#move-between-lists)). **Done when:** `tasks move` keeps the steps, links, attachments and extension (check with `show` before and after), and an agent session using only the skill moves a task with the right exit codes.
-- **8d: folders and assignment.** Promise: "I can group lists into folders and track who I'm waiting on." Demo: put two lists in a folder and assign a task, then see both in the TUI. List folders and ordering (`folders`, `lists move|order`), the folder sidebar in the TUI, assignment (`--assignee`) and the Assigned view. **Done when:** a folder created in the CLI shows in the TUI sidebar, and `tasks list --assignee` returns the right tasks.
+- **8d: assignment.** Promise: "I can track who I'm waiting on." Demo: assign a task, then see it in the TUI's Assigned view. Assignment (`--assignee`) and the Assigned view; folders moved to rung 5c (D-047). **Done when:** `tasks list --assignee` returns the right tasks.
 - **8e: categories, extensions, lists and the remaining task fields.** Promise: "Anything the To Do API can do, ms-todo can do." Demo: create a list, recolour a category, and set a start date and a recurrence from the CLI. `categories list|create|recolor|delete`, `extensions`, `lists create|rename|delete`, start dates and recurrence editing. **Done when:** every command in [07](07-cli.md) is implemented, has wiremock tests, and has run live against a throwaway list, behind a feature-gated live smoke test.
 
 **Left out:** the items under "Deferred".
