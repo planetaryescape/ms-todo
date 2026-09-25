@@ -188,6 +188,29 @@ TASK is an ID, or an exact title with `--list`. A step is named by its number fr
 - **A step or link whose add got no answer** stays `unknown` in `ms-todo outbox list`, flagged for you: Microsoft To Do may have it, and nothing can tell which step is which, so it's never sent twice by itself. Look at the task, then `outbox retry` to send it again or `outbox discard` if it's there.
 - **In the TUI**, the detail pane shows Steps with each step's checkbox, then the link, and a task's row shows `2/5`. Move the cursor onto them with `j`/`k`: `Space` checks or unchecks a step, `a` adds steps (Enter adds one and opens the next; Esc stops), `e` or Enter edits a step or the link's URL (or adds a link), and `d` deletes either after asking.
 
+## Attachments
+
+```sh
+ms-todo attachments list <TASK>                          # numbered from 1, with Microsoft To Do's size
+ms-todo attachments add <TASK> ./invoice.pdf scan.png    # up to 25 MB each, in order
+ms-todo attachments download <TASK>                      # every file, into the current directory
+ms-todo attachments download <TASK> 1 --out ~/Downloads  # one, by number, ID or exact name
+ms-todo attachments delete <TASK> invoice.pdf --yes      # asks first in a terminal
+```
+
+TASK is an ID, or an exact title with `--list`. A file goes by its path: the daemon reads it when it sends it, and nothing else of it is kept. The file shows on the task at once, marked as uploading, and on the phone once it's there. `ms-todo undo` reverses an add, and a delete too, for a week: ms-todo keeps a copy of a file before deleting it, in its data directory, readable by you only.
+
+- **Size.** Microsoft To Do takes files up to 25 MB; a bigger one is refused before anything is sent. Files over 3 MB go up in pieces, and a piece whose answer is lost is sent again. The size `attachments list` shows is Microsoft To Do's, a few hundred bytes more than the file.
+- **A file changed after `add`**, before it was sent, isn't sent: the write fails in `ms-todo outbox list`, and you add it again.
+- **An upload whose last answer was lost** stays `unknown` in `ms-todo outbox list`, flagged for you: Microsoft To Do may have the file, and ms-todo never sends it twice by itself. Look at the task, then `outbox retry` or `outbox discard`.
+- **Downloads** go into `--out` (the current directory by default), which must be a real directory, not a symlink. A name from Microsoft To Do is made safe first (no `/`, `..` or leading dot), the file is readable by you only, and it never replaces a file already there: the new one is `name (1).pdf`, unless you pass `--force`. `--format json` gives each file's path, byte count and sha256.
+- **In the TUI**, the detail pane lists the task's files under Files, and a task with files shows `⎘` on its row. `A` asks for a file's path (`~` works, and a relative path starts where you opened the TUI). On a file, `Enter`, `e` or `o` saves it into `download_dir` and opens it, and `d` deletes it after asking. To save somewhere other than `~/Downloads`:
+
+  ```toml
+  [attachments]
+  download_dir = "~/Documents/To Do"
+  ```
+
 ## Group lists into folders
 
 ```sh

@@ -163,6 +163,7 @@ In the TUI's add box, a likely list shows as `→ Finances? (Ctrl-l to accept)`.
 | `e` | edit a field: `t` title, `d` due date, `r` reminder, `i` importance, `n` notes, `I` cycles importance; in the detail pane, edits the field under the cursor |
 | `Enter` in the detail pane | edit the field under the cursor |
 | `Space` on a step in the detail pane | check or uncheck it; `a` adds steps, `e` / `Enter` edits a step or the link, `d` deletes one |
+| `A` | attach a file by its path; on a file in the detail pane, `Enter`, `e` or `o` saves it to `~/Downloads` and opens it, `d` deletes it |
 | `v` / `V` | select a task, or every task in the view; `Esc` clears the selection |
 | `t` | put the task or the selection in My Day, or take it out; on a suggestion in the My Day view, add it |
 | `m` | move the task or the selection to another list |
@@ -250,6 +251,17 @@ mst links add <id> https://example.com/colours --name "Colour chart"
 ```
 
 Steps checked on the phone show as checked here after the next sync. A task holds one link, as the To Do apps allow. In the TUI, the detail pane lists the steps and the link: `Space` ticks the step under the cursor. [Steps and links](docs/usage.md#steps-and-links) has the rest.
+
+### Attachments
+
+```sh
+mst attachments add <id> ./invoice.pdf           # up to 25 MB each; several at once
+mst attachments list <id>
+mst attachments download <id> --out ~/Downloads  # every file, or name one by number or name
+mst attachments delete <id> 1 --yes              # `mst undo` attaches it again, for a week
+```
+
+Files show on the phone once they're uploaded, and files added on the phone show here after the next sync. Downloads never overwrite a file: a second copy is saved as `invoice (1).pdf`. In the TUI, the detail pane lists them under Files: `A` attaches one, and `Enter` on a file saves it to `[attachments] download_dir` (`~/Downloads` by default) and opens it. [Attachments](docs/usage.md#attachments) has the rest.
 
 ### My Day
 

@@ -21,6 +21,7 @@ For each, record the request, the response (with private data removed), the date
 | S13 | Can a task create carry a unique marker (our extension with the outbox `opId`), and can a lookup find it? (Added after review, 2026-09-24.) | Attributing a create whose outcome is unknown | [04](04-sync-cache.md#unknown-outcome-d-028) |
 | S14 | What does a task copied to another list keep, and which requests copy it? (Rung 5e, 2026-09-25.) | Moving a task without losing anything | [05](05-custom-features.md#move-between-lists), D-051 |
 | S15 | How do step and link writes behave: which fields a link needs, whether its PATCH and DELETE honour `If-Match`, whether a field can be cleared, and whether steps can be reordered? (Rung 8a, 2026-09-25.) | Steps and links through the outbox | [07](07-cli.md), D-055 |
+| S16 | How does an upload session resume, and what does an attachment look like? (Rung 8b, 2026-09-25.) | Uploads that survive a lost answer; safe downloads | [03](03-graph-provider.md), D-056 |
 | P1 | What is the default page size for task lists and delta, and does `Prefer: odata.maxpagesize` work? (Added during phase 0.) | Pagination, and rung 1's "more than 100 tasks" check | [03](03-graph-provider.md) |
 
 ### S5 result (2026-09-24)
@@ -106,6 +107,10 @@ Confidence: high. Evidence: [S11](../research/spikes/S11.md). Changed: [02](02-d
 ### S15 result (2026-09-25)
 
 **Links behave like steps for `If-Match`, but a field can't be cleared; steps can't be reordered.** A link needs `applicationName` (400 without); its PATCH and DELETE honour the parent task's etag as a step's do (412 when stale); its PATCH is partial, and a null or empty value is ignored, so a field can be set and never cleared; any URL scheme is kept, but not a string that isn't a URL. A step can be created checked, with its `checkedDateTime` kept. Steps come back in the order they were added, and nothing reorders them: `createdDateTime` can't be updated and `$orderby` is ignored. Confidence: high. Evidence: [S15](../research/spikes/S15.md). Changed: [07](07-cli.md), [08](08-tui.md), D-055.
+
+### S16 result (2026-09-25)
+
+**A session can't be asked where it stands; each PUT's answer says.** A GET of the upload URL, bare or with `/content`, is 404. Each PUT but the last answers `nextExpectedRanges: ["N"]` (no dash); a range the session already has is 400 `InvalidStart` and the session goes on, so a chunk whose answer was lost can be sent again; skipping ahead is refused (once as a 504 after 29 s, committing nothing). The last PUT's `Location` is the attachment's URL, ending in its ID. A listing never includes `contentBytes` (a POST's answer echoes it); `size` is the bytes plus about 240; an attachment DELETE ignores `If-Match`; Graph keeps any name, `../` included. Confidence: high. Evidence: [S16](../research/spikes/S16.md). Changed: [03](03-graph-provider.md), D-056.
 
 ### P1 result (2026-09-24)
 

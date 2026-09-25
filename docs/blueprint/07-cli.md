@@ -52,7 +52,7 @@ reschedule [--overdue | --due-before W | T... | -] --to W [--list L | --folder F
 steps      list T | add T "text"... | edit T S "text" | check T S... | uncheck T S... | delete T S... [--yes]
            # S: a number from 1, an ID or the exact text; no `order`: Graph can't reorder steps (S15)
 links      list T | add T URL [--name N] [--app A] [--external-id X] | edit T [R] [--url U] [--name N] … | delete T [R] [--yes]
-attachments list T | add T FILE... | download T [A] [--out DIR] | delete T A   # paths only; the daemon moves the bytes
+attachments list T | add T FILE... | download T [A...] [--out DIR] [--force] | delete T A... [--yes]   # paths only; the daemon moves the bytes
 extensions list (list|task) ID | get … NAME | set … NAME --json '{…}' | delete … NAME
 categories list | create NAME [--color presetN] | recolor … | delete …
            # no rename: Graph ignores it (S7). A new name means create, re-tag the tasks, then delete
@@ -108,6 +108,16 @@ raw        GET|POST|PATCH|DELETE PATH [--body JSON]   # authenticated passthroug
 - `links add T URL [--name N] [--app A] [--external-id X]` gives the task its link; `applicationName` is `ms-todo` without `--app` (Graph requires one, S15). A task with a link already is refused (exit 2): Graph allows one (S14). `links edit T [R] [--url U] [--name N] [--app A] [--external-id X]` sets fields; Graph can't clear one, so an empty value is refused. `links delete T [R] [--yes]` as `steps delete`. R is the link's number or ID, and can be left out. A URL must parse (`url` crate); any scheme is kept, and in table, CSV and ids formats a `note:` on stderr says when it won't open.
 - Writes answer `Applied` with the task (its `checklistItems` and `linkedResources` as they are now, `sync_state` `pending`) and actions `step_add`, `step_edit`, `step_check`, `step_uncheck`, `step_delete`, `link_add`, `link_edit`, `link_delete`; the table lists the task's steps or link after the change. `--dry-run` answers `Plan` with the task as `targets` and each write as `{ collection, verb, id, body, carried }` in `changes`. Each step or link written is one outbox operation under the command's `op_id`; `undo` reverses them, leaving alone (in `refused`) a step changed since. A create whose answer was lost is `unknown` and `flagged` at once.
 - **Protocol 13:** `TaskChange::AddSteps`, `EditStep`, `CheckSteps`, `DeleteSteps`, `AddLink`, `EditLink` and `DeleteLink`.
+
+**Attachments, as built (rung 8b, D-056).** Each command works on one task (`--list L` lets T be an exact title there). No file's bytes cross the socket: the CLI sends absolute paths and the daemon reads and writes the files.
+
+- `attachments list T` is a collection of the task's attachments in Graph's order: `id`, `name`, `contentType`, `size` (Microsoft To Do's, a few hundred bytes over the file's; the file's own while it uploads), `lastModifiedDateTime`, plus `index` from 1. Table `#  NAME  SIZE  TYPE  MODIFIED  ID`; CSV `index,id,name,size,content_type,modified`. A task whose attachments haven't synced yet says so on stderr.
+- An attachment A is named by its number from 1, its ID or its exact name, as a step is.
+- `attachments add T FILE... [--dry-run]` resolves each FILE to an absolute path and checks it's a regular file of 25 MB or less (exit 2 otherwise, before anything is queued). Each is one outbox operation (`attachment_add`), read when it's sent: under 3 MB in one POST, else through an upload session. A file changed after the command (its size or modified time) is refused then, and the operation is `failed`. A lost answer to the POST or to the session's last PUT is `unknown` and `flagged`, never sent again by itself.
+- `attachments download T [A...] [--out DIR] [--force]` saves each named attachment, or all of them, into DIR (the current directory by default; not a symlink). Names are made safe (no separators, control characters, leading dots or `..`), written 0600 through a `.part` file, and never replace a file unless `--force`: `name (1).pdf` instead. JSON is `{ task_id, files: [{ id, name, path, bytes, sha256 }] }`; `ids` prints the paths; CSV `id,name,path,bytes,sha256`.
+- `attachments delete T A... [--yes]` asks in a terminal and needs `--yes` elsewhere (exit 2). Before the DELETE is sent the daemon keeps a copy for a week, so `undo` attaches it again; after that `undo` refuses it, saying why.
+- Writes answer `Applied` with actions `attachment_add` and `attachment_delete` and the task's `attachments` as they are now; a new one has a `local-…` ID until it's uploaded. `--dry-run` shows each write, an add's with `file: { path, bytes, modified }`.
+- **Protocol 14:** `TaskChange::AddAttachments`, `DeleteAttachments`, and `DownloadAttachments`, answered `Downloaded`.
 
 `raw` counts as coverage of the full surface: anything Graph adds later can be reached before it gets a proper command.
 

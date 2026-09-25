@@ -1,11 +1,11 @@
 ---
 name: ms-todo
-description: Read, find, add, complete, reopen, edit, reschedule, move and delete Microsoft To Do tasks, break them into steps, attach a link, and plan My Day, from the terminal by driving the `ms-todo` CLI. Use when the user wants to capture a task, tick one off, change a due date or reminder, move overdue tasks, move tasks to another list, add or tick off a task's steps, attach a link to a task, plan today (My Day), see what's in a list, find a task by what it says, summarise what they finished (for a standup or a weekly review), or otherwise work with their Microsoft To Do lists and tasks.
+description: Read, find, add, complete, reopen, edit, reschedule, move and delete Microsoft To Do tasks, break them into steps, attach a link or files, and plan My Day, from the terminal by driving the `ms-todo` CLI. Use when the user wants to capture a task, tick one off, change a due date or reminder, move overdue tasks, move tasks to another list, add or tick off a task's steps, attach a link or a file to a task, download a task's files, plan today (My Day), see what's in a list, find a task by what it says, summarise what they finished (for a standup or a weekly review), or otherwise work with their Microsoft To Do lists and tasks.
 ---
 
 # ms-todo
 
-**Skill v9, for ms-todo rung 8a** (instant reads from a local cache kept live by delta sync; search across every list; what was completed, by day; instant writes that queue offline and are never dropped; bulk reschedules and edits; moving tasks between lists without losing anything; undo; quick add, which reads a task's text for its list, dates, recurrence and importance, and which agents turn off with `--no-parse`; optional list suggestions for inbox tasks; My Day, ms-todo's plan for today, mirrored on the phone through the due date; and a task's steps and its one link).
+**Skill v10, for ms-todo rung 8b** (instant reads from a local cache kept live by delta sync; search across every list; what was completed, by day; instant writes that queue offline and are never dropped; bulk reschedules and edits; moving tasks between lists without losing anything; undo; quick add, which reads a task's text for its list, dates, recurrence and importance, and which agents turn off with `--no-parse`; optional list suggestions for inbox tasks; My Day, ms-todo's plan for today, mirrored on the phone through the due date; a task's steps and its one link; and its files, attached and downloaded by path).
 
 `ms-todo tui` (`mst tui`) is a full-screen view for people at a keyboard. Don't use it: it needs a terminal, and everything it does is a command below. Always pass a subcommand: a bare `ms-todo` opens the TUI in a terminal, and elsewhere only prints help and exits 2.
 
@@ -159,6 +159,20 @@ ms-todo links delete <ID> --yes --format json               # "link_delete"
 - Each command works on one task. The answer is the usual `Applied`, the task with its `checklistItems` and `linkedResources` as they are now, `sync_state: "pending"` until sent. A step you just added has an `id` starting `local-` until Microsoft To Do has it; you can check or edit it straight away.
 - **A task holds one link.** `links add` on a task with one exits 2: ask the user whether to replace it (`links edit`), don't delete it yourself. The link's URL is kept whatever it is; `tasks open` opens only http, https and mailto.
 - A step or link add with no answer is `unknown` and `flagged` at once, since nothing identifies a step: tell the user, and never add it again yourself.
+
+## Attachments
+
+```bash
+ms-todo attachments list <ID> --format json                        # items: id, name, contentType, size, index (from 1)
+ms-todo attachments add <ID> /abs/path/file.pdf --format json      # action "attachment_add"; up to 25 MB each
+ms-todo attachments download <ID> [<ATTACHMENT>] --out <DIR> --format json   # files: [{id, name, path, bytes, sha256}]
+ms-todo attachments delete <ID> <ATTACHMENT> --dry-run --format json         # then --yes, once the user agrees
+```
+
+- Paths only: the daemon reads the file when it sends it, so don't move or edit it until `outbox list` shows the write `done`. A file over 25 MB, a missing one or a directory exits 2 before anything is queued.
+- **Name an attachment by its `id`.** A download never overwrites: read the real `path` from the answer, don't assume the name. Use `--force` only when the user asks to replace a file.
+- An upload with no answer is `unknown` and `flagged`: tell the user; never add the file again yourself.
+- `undo` of a delete re-attaches the file from a copy kept for a week.
 
 ## My Day: plan today
 

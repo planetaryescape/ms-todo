@@ -100,8 +100,9 @@ $batch                                  POST
 **Attachments:**
 
 - Under 3 MB: a single POST with `contentBytes` in base64.
-- Up to 25 MB: an upload session. PUT chunks under 4 MB each, in order, and use `nextExpectedRanges` to resume an interrupted upload. The final PUT returns 201 with a `Location` header containing the attachment ID. Cancel with DELETE on the session URL. The final PUT is what commits the attachment, so it's non-idempotent: if its response is lost, the outcome is `unknown` ([04](04-sync-cache.md#unknown-outcome-d-028)), and the upload is never retried or recreated automatically.
+- Up to 25 MB: an upload session. PUT chunks under 4 MB each, in order, and use `nextExpectedRanges` to resume an interrupted upload. As built (S16, D-056): a session can't be asked where it stands, so a chunk whose answer was lost is sent again, and 400 `InvalidStart` says it had landed. The final PUT returns 201 with a `Location` header containing the attachment ID. Cancel with DELETE on the session URL. The final PUT is what commits the attachment, so it's non-idempotent: if its response is lost, the outcome is `unknown` ([04](04-sync-cache.md#unknown-outcome-d-028)), and the upload is never retried or recreated automatically.
 - Refuse anything over 25 MB before uploading, with a clear error.
+- An attachment DELETE ignores `If-Match` (S16), and a listing never includes `contentBytes`.
 - **Downloads are a trust boundary** (vault: `Attachment Writes Are a Trust Boundary`, `Spotuify Security Audit Synthesis`). Strip unsafe characters from the filename, reject `..` and symlinks, keep the result under the chosen directory, write to `<name>.part` and then rename, and use mode 0600.
 
 ## Testing

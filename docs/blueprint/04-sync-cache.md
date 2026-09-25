@@ -29,7 +29,7 @@ Settled by S1 and S2 (D-029). Every child change bumps the parent task's `lastMo
 |---|---|---|
 | Checklist items | Inline in every task, no `$expand` needed | Nothing more. An absent `checklistItems` key means the task has none |
 | Linked resources | Inline, same as checklist items | Nothing more |
-| Attachments | Only `hasAttachments` flips | For a task delta reports with `hasAttachments` true, fetch `GET …/attachments` (metadata only) and make the cache match that set: add, update and remove. With `hasAttachments` false, remove the task's cached attachment metadata |
+| Attachments | Only `hasAttachments` flips | For a task delta reports with `hasAttachments` true, fetch `GET …/attachments` (metadata only) and make the cache match that set: add, update and remove. With `hasAttachments` false, remove the task's cached attachment metadata. As built (D-056): the list sits in the task's JSON under `attachments`, fetched in `$batch`, and a task with attachments and no list is fetched too |
 | Extensions | Change detected, content never returned | After the delta round, fetch the content with a filtered `$expand` (below) |
 
 Fetching extension content after a delta round:
