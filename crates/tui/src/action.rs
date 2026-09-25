@@ -70,4 +70,8 @@ pub enum Action {
     Backspace,
     /// Enter in the notes editor.
     Newline,
+    /// `o`: open the task's link, or pick one of its links.
+    OpenLink,
+    /// `y`: copy the task's link, or pick one of its links to copy.
+    CopyLink,
 }

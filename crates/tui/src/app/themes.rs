@@ -39,7 +39,7 @@ impl App {
     /// Enter: keep the theme drawn now, and have it saved.
     pub(super) fn keep_theme(&mut self) {
         self.mode = Mode::Normal;
-        self.save_theme = true;
+        self.local = Some(super::LocalEffect::SaveTheme);
     }
 
     /// Esc: back to the theme from before the picker opened.
@@ -118,7 +118,7 @@ mod tests {
         assert_eq!(app.mode, Mode::Normal);
         assert_eq!(app.theme_choice.builtin.name, "terminal");
         assert_eq!(app.theme, before);
-        assert!(!app.save_theme, "nothing saved");
+        assert_eq!(app.local, None, "nothing saved");
     }
 
     #[test]
@@ -131,7 +131,7 @@ mod tests {
         assert!(effects.is_empty(), "nothing for the daemon");
         assert_eq!(app.mode, Mode::Normal);
         assert_eq!(app.theme_choice.builtin.name, "catppuccin-latte");
-        assert!(app.save_theme);
+        assert_eq!(app.local, Some(crate::app::LocalEffect::SaveTheme));
     }
 
     #[test]

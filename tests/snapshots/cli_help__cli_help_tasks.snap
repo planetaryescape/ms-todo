@@ -13,6 +13,8 @@ Commands:
   reopen    Mark completed tasks as not started again
   edit      Change a task's title, due date, importance, reminder or notes; or the due date, importance or reminder of several tasks at once
   delete    Delete tasks. Asks first in a terminal; anywhere else it needs --yes
+  links     A task's links: its linked resources' web addresses, then the URLs in its notes, each once
+  open      Open a task's link in the browser or mail app (http, https and mailto only). With several, --index picks one; without it they're listed and it exits 2
   help      Print this message or the help of the given subcommand(s)
 
 Options:

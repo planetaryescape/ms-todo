@@ -523,3 +523,54 @@ fn the_theme_picker_lists_every_theme() {
     };
     insta::assert_snapshot!(render(&app));
 }
+
+#[test]
+fn the_link_picker_lists_each_link_and_marks_one_that_wont_open() {
+    let mut app = seeded();
+    app.task_index = 0;
+    app.mode = Mode::Links {
+        links: ms_todo_core::links::links(
+            [
+                ("https://mail.example.com/1", Some("The email")),
+                ("javascript:alert(1)", None),
+            ],
+            Some(("and [docs](https://docs.example.com)", false)),
+        ),
+        index: 1,
+    };
+    insta::assert_snapshot!(render(&app));
+}
+
+#[test]
+fn urls_in_notes_are_drawn_as_links() {
+    let mut app = seeded();
+    app.task_index = 0;
+    app.tasks[0].body = Some(crate::app::task::Body {
+        content: "see https://example.com/a now".into(),
+        html: false,
+    });
+    let mut terminal = Terminal::new(TestBackend::new(110, 24)).expect("terminal");
+    terminal
+        .draw(|frame| super::draw(frame, &app))
+        .expect("draw");
+    let buffer = terminal.backend().buffer();
+    let row = (0..24)
+        .find(|&y| {
+            (0..110)
+                .map(|x| buffer[(x, y)].symbol())
+                .collect::<String>()
+                .contains("see https://example.com/a now")
+        })
+        .expect("the notes line");
+    let line: String = (0..110).map(|x| buffer[(x, row)].symbol()).collect();
+    // A column, not a byte: the borders are several bytes each.
+    let byte = line.find("https").expect("url");
+    let start = u16::try_from(line[..byte].chars().count()).expect("fits");
+    let link = app.theme.link;
+    assert_eq!(buffer[(start, row)].modifier, link.add_modifier);
+    assert_ne!(
+        buffer[(start - 2, row)].modifier,
+        link.add_modifier,
+        "\"see\" isn't a link"
+    );
+}

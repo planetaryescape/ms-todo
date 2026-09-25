@@ -31,6 +31,8 @@ const COMMANDS: &[&str] = &[
     "tasks reopen",
     "tasks edit",
     "tasks delete",
+    "tasks links",
+    "tasks open",
     "search",
     "done",
     "reschedule",

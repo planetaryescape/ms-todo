@@ -82,6 +82,7 @@ ms-todo-tui = { path = "crates/tui" }
 # The nearest 256-colour index for an RGB theme colour, where truecolor is
 # missing.
 ansi_colours = { version = "1", default-features = false }
+base64 = "0.23"
 bytes = "1"
 chrono = { version = "0.4", default-features = false, features = ["clock", "std"] }
 clap = { version = "4", features = ["derive"] }
@@ -92,6 +93,7 @@ fastrand = "2"
 fs2 = "0.4"
 html2text = "0.17"
 iana-time-zone = "0.1"
+linkify = "0.11"
 futures-util = { version = "0.3", default-features = false, features = ["sink", "std"] }
 nix = { version = "0.30", default-features = false, features = ["process", "signal"] }
 ratatui = "0.30"
@@ -111,6 +113,7 @@ toml = "1"
 # Writes the TUI's theme into config.toml, keeping its comments.
 toml_edit = "0.25"
 tracing = "0.1"
+url = "2"
 tracing-subscriber = { version = "0.3", default-features = false, features = ["fmt", "std"] }
 uuid = { version = "1", features = ["v4"] }
 

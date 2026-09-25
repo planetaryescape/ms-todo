@@ -38,6 +38,8 @@ pub struct Task {
     pub recurrence: Option<String>,
     /// The notes as Graph has them; [`Task::notes`] renders them.
     pub body: Option<Body>,
+    /// Graph's `linkedResources`, as `(webUrl, displayName)`.
+    pub linked: Vec<(String, Option<String>)>,
     /// `(checked, total)`; `None` when it has no steps.
     pub steps: Option<(usize, usize)>,
     pub categories: Vec<String>,
@@ -87,6 +89,7 @@ impl Task {
                 .and_then(|(at, zone)| local_date_time(at, zone)),
             recurrence: entity.get("recurrence").and_then(describe_recurrence),
             body: entity.get("body").and_then(Body::of),
+            linked: ms_todo_core::links::linked_resources(entity),
             steps,
             categories: entity
                 .get("categories")
@@ -134,6 +137,19 @@ impl Body {
 }
 
 impl Task {
+    /// Its links, linked resources first, then the notes' (D-050). Found
+    /// when asked for, not on every seed: html notes are costly to read.
+    pub fn links(&self) -> Vec<ms_todo_core::links::Link> {
+        ms_todo_core::links::links(
+            self.linked
+                .iter()
+                .map(|(url, name)| (url.as_str(), name.as_deref())),
+            self.body
+                .as_ref()
+                .map(|body| (body.content.as_str(), body.html)),
+        )
+    }
+
     pub fn important(&self) -> bool {
         self.importance == Importance::High
     }

@@ -79,6 +79,8 @@ palette! {
     banner_info,
     /// The filter's text in the task list's title.
     search_match,
+    /// A URL in a task's notes, underlined too.
+    link,
     /// The line editor's cursor.
     cursor,
     /// The title bar's background.
@@ -209,6 +211,7 @@ pub struct Theme {
     pub banner_error: Style,
     pub banner_info: Style,
     pub search_match: Style,
+    pub link: Style,
     /// The character under the line editor's cursor.
     pub cursor: Style,
     /// The cursor's glyph past the end of the text.
@@ -274,6 +277,7 @@ impl Theme {
             banner_error: fg(palette.banner_error).add_modifier(Modifier::BOLD),
             banner_info: fg(palette.banner_info),
             search_match: fg(palette.search_match).add_modifier(Modifier::BOLD),
+            link: fg(palette.link).add_modifier(Modifier::UNDERLINED),
             cursor: cursor.add_modifier(Modifier::REVERSED),
             cursor_glyph: cursor,
             header_bar: bg(palette.header_bar),
@@ -313,6 +317,7 @@ impl Theme {
             banner_error: bold,
             banner_info: plain,
             search_match: bold,
+            link: plain.add_modifier(Modifier::UNDERLINED),
             cursor: reversed,
             cursor_glyph: plain,
             header_bar: plain,

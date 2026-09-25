@@ -17,6 +17,6 @@ expression: "format!(\"{selected}\\n{}\", last(&confirming))"
 "│                      ││                                                  ││Notes      none                 │"
 "╰──────────────────────╯╰──────────────────────────────────────────────────╯╰────────────────────────────────╯"
 " ◆ 2 selected  ·  ● daemon  ·  synced 12s ago  ·  all changes sent                                            "
-" a Add  x Done  e Edit  d Delete  v Select  u Undo  / Filter  : Palette  r Sync  ? Help  q Quit               "
+" a Add  x Done  e Edit  d Delete  v Select  u Undo  / Filter  : Palette  r Sync  ? Help  q Quit  o Open link  "
 
 " Delete 2 tasks?  y Delete  n Keep                                                                            "

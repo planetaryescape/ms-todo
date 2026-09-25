@@ -19,6 +19,7 @@ mod due_batch;
 pub mod edit;
 pub(crate) mod folders;
 pub mod line_editor;
+mod links;
 pub mod palette;
 pub mod scope;
 mod selection;
@@ -122,6 +123,11 @@ pub enum Mode {
         index: usize,
         before: &'static crate::theme::Builtin,
     },
+    /// A task's links, to open or copy one.
+    Links {
+        links: Vec<ms_todo_core::links::Link>,
+        index: usize,
+    },
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -214,6 +220,17 @@ pub enum Msg {
     Tick(Clock),
 }
 
+/// What the runner does on this machine rather than ask the daemon.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum LocalEffect {
+    /// Write the kept theme to config.toml.
+    SaveTheme,
+    /// Open a link that passed `links::openable`.
+    Open(url::Url),
+    /// Put a link on the clipboard with OSC 52.
+    Copy(String),
+}
+
 /// What comes out: a request for the daemon.
 #[derive(Clone, Debug, PartialEq)]
 pub struct Effect {
@@ -236,9 +253,9 @@ pub struct App {
     /// The styles every frame is drawn with, from `theme_choice`.
     pub theme: Theme,
     pub theme_choice: ThemeChoice,
-    /// The theme was kept in the picker: the runner writes it to
-    /// config.toml, since saving is I/O, which `update` doesn't do.
-    pub save_theme: bool,
+    /// Something for the runner to do on this machine after the frame:
+    /// I/O, which `update` doesn't do.
+    pub local: Option<LocalEffect>,
     /// ms-todo's version, as the title bar and help show it.
     pub version: &'static str,
     pub focus: Pane,
@@ -296,7 +313,7 @@ impl App {
             glyphs,
             theme: Theme::default(),
             theme_choice: ThemeChoice::default(),
-            save_theme: false,
+            local: None,
             version: env!("CARGO_PKG_VERSION"),
             focus: Pane::Tasks,
             mode: Mode::Normal,
@@ -349,6 +366,7 @@ impl App {
             Mode::Diagnostics => Context::Diagnostics,
             Mode::Help => Context::Help,
             Mode::Themes { .. } => Context::Themes,
+            Mode::Links { .. } => Context::Links,
             Mode::Normal => match self.focus {
                 Pane::Sidebar => Context::Sidebar,
                 Pane::Tasks => Context::Tasks,
@@ -482,6 +500,18 @@ impl App {
                 self.keep_theme();
                 Vec::new()
             }
+            (Mode::Links { index, links }, Action::MoveDown) => {
+                *index = (*index + 1).min(links.len().saturating_sub(1));
+                Vec::new()
+            }
+            (Mode::Links { index, .. }, Action::MoveUp) => {
+                *index = index.saturating_sub(1);
+                Vec::new()
+            }
+            (Mode::Links { .. }, Action::Submit | Action::OpenLink | Action::CopyLink) => {
+                self.pick_link(action == Action::CopyLink);
+                Vec::new()
+            }
             (Mode::Themes { .. }, Action::Cancel) => {
                 self.revert_theme();
                 Vec::new()
@@ -611,6 +641,10 @@ impl App {
             }
             Action::Palette => {
                 self.open_palette();
+                Vec::new()
+            }
+            Action::OpenLink | Action::CopyLink => {
+                self.follow_link(action == Action::CopyLink);
                 Vec::new()
             }
             Action::Open => self.open_row(),

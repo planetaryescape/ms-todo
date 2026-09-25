@@ -294,6 +294,31 @@ pub enum TasksCommand {
         #[arg(long)]
         yes: bool,
     },
+    /// A task's links: its linked resources' web addresses, then the URLs
+    /// in its notes, each once
+    Links(LinkArgs),
+    /// Open a task's link in the browser or mail app (http, https and
+    /// mailto only). With several, --index picks one; without it they're
+    /// listed and it exits 2
+    Open {
+        #[command(flatten)]
+        task: LinkArgs,
+        /// Which link, from 1, as `tasks links` numbers them
+        #[arg(long, value_name = "N")]
+        index: Option<usize>,
+    },
+}
+
+#[derive(Debug, Args)]
+pub struct LinkArgs {
+    /// The task's ID from `tasks list`, or its exact title when --list is
+    /// given
+    #[arg(value_name = "TASK")]
+    pub task: String,
+    /// Look for the task in this list (exact name or ID), which also lets
+    /// TASK be an exact title
+    #[arg(long, value_name = "NAME|ID")]
+    pub list: Option<String>,
 }
 
 #[derive(Debug, Args)]

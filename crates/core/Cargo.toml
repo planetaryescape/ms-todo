@@ -7,6 +7,13 @@ publish = false
 description = "Shared error kinds and file locations for ms-todo. No I/O dependencies."
 
 [dependencies]
+# Links in a task's notes and linked resources (`links`): finding them,
+# checking them before they're opened, and copying them with OSC 52.
+base64 = { workspace = true }
+html2text = { workspace = true }
+linkify = { workspace = true }
+serde_json = { workspace = true }
+url = { workspace = true }
 chrono = { workspace = true }
 dirs = { workspace = true }
 thiserror = { workspace = true }

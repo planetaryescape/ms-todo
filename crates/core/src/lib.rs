@@ -5,6 +5,7 @@
 mod dates;
 mod display;
 mod error;
+pub mod links;
 mod paths;
 
 pub use dates::{

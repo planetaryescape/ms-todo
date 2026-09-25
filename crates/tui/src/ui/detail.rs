@@ -8,6 +8,7 @@ use super::{focused, line_input, pane, selection};
 use crate::app::edit::{Field, importance_name};
 use crate::app::line_editor::LineEditor;
 use crate::app::{App, Mode, Pane, SyncMarker, Task};
+use crate::theme::Theme;
 
 /// The detail pane: every field of the selected task. The fields `e`
 /// edits are always shown, empty or not, so the cursor can reach them;
@@ -149,7 +150,7 @@ pub fn draw(frame: &mut Frame, area: Rect, app: &App) {
     match (!editing_notes).then(|| task.notes()).flatten() {
         Some(notes) => {
             lines.extend(editable(Field::Notes, Vec::new()));
-            lines.extend(notes.lines().map(|line| Line::raw(line.to_owned())));
+            lines.extend(notes.lines().map(|line| linked(line, theme)));
         }
         None => lines.extend(editable(Field::Notes, vec![none()])),
     }
@@ -159,6 +160,21 @@ pub fn draw(frame: &mut Frame, area: Rect, app: &App) {
             .wrap(Wrap { trim: false }),
         area,
     );
+}
+
+/// A line of notes with its URLs drawn as links (D-050). They're styled,
+/// not OSC 8 hyperlinks: terminals such as Ghostty and iTerm already make
+/// a URL on screen Cmd-clickable, and `o` and `y` follow one.
+fn linked(line: &str, theme: &Theme) -> Line<'static> {
+    let mut spans = Vec::new();
+    let mut at = 0;
+    for range in ms_todo_core::links::find_urls(line) {
+        spans.push(Span::raw(line[at..range.start].to_owned()));
+        spans.push(Span::styled(line[range.clone()].to_owned(), theme.link));
+        at = range.end;
+    }
+    spans.push(Span::raw(line[at..].to_owned()));
+    Line::from(spans)
 }
 
 /// The due date, with how soon when it's near.

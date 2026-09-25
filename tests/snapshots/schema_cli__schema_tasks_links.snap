@@ -1,0 +1,94 @@
+---
+source: tests/schema_cli.rs
+expression: pretty
+---
+{
+  "input": {
+    "additionalProperties": false,
+    "properties": {
+      "list": {
+        "description": "Look for the task in this list (exact name or ID), which also lets TASK be an exact title",
+        "type": "string",
+        "x-cli": "--list"
+      },
+      "task": {
+        "description": "The task's ID from `tasks list`, or its exact title when --list is given",
+        "type": "string",
+        "x-cli": "<TASK>"
+      }
+    },
+    "required": [
+      "task"
+    ],
+    "type": "object"
+  },
+  "output": {
+    "properties": {
+      "items": {
+        "items": {
+          "properties": {
+            "index": {
+              "description": "From 1: what `tasks open --index` takes",
+              "type": "integer"
+            },
+            "openable": {
+              "description": "Whether `tasks open` opens it: http, https or mailto",
+              "type": "boolean"
+            },
+            "source": {
+              "enum": [
+                "linked_resource",
+                "notes"
+              ]
+            },
+            "text": {
+              "description": "A linked resource's name, a markdown link's text, or the host",
+              "type": "string"
+            },
+            "url": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "index",
+            "url",
+            "text",
+            "source",
+            "openable"
+          ],
+          "type": "object"
+        },
+        "type": "array"
+      },
+      "schema_version": {
+        "const": 2
+      },
+      "sync": {
+        "properties": {
+          "generation": {
+            "description": "Goes up by one per finished sync of the scope",
+            "type": "integer"
+          },
+          "state": {
+            "description": "initial until this scope's first sync finishes: an empty `items` then doesn't mean empty",
+            "enum": [
+              "initial",
+              "ready"
+            ]
+          }
+        },
+        "required": [
+          "state",
+          "generation"
+        ],
+        "type": "object"
+      }
+    },
+    "required": [
+      "schema_version",
+      "sync",
+      "items"
+    ],
+    "type": "object"
+  }
+}

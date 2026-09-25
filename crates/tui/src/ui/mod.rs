@@ -11,6 +11,7 @@ mod detail;
 mod diagnostics;
 mod hint_bar;
 mod line_input;
+mod link_picker;
 mod modals;
 mod palette;
 mod sidebar;
@@ -65,6 +66,7 @@ pub fn draw(frame: &mut Frame, app: &App) {
         Mode::Palette { query, index } => palette::draw(frame, app, query, *index),
         Mode::Diagnostics => diagnostics::draw(frame, main, app),
         Mode::Themes { index, .. } => theme_picker::draw(frame, app, *index),
+        Mode::Links { links, index } => link_picker::draw(frame, app, links, *index),
         _ => {}
     }
 }

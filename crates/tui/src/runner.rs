@@ -19,10 +19,11 @@ use ratatui::Terminal;
 use ratatui::backend::Backend;
 use tokio::sync::{mpsc, oneshot};
 
-use crate::app::{App, Clock, Msg, Tag};
+use crate::app::{App, Clock, Level, LocalEffect, Msg, Tag};
 use crate::ipc::DaemonLink;
 use crate::keybindings::{Context, resolve};
 use crate::latency::Latency;
+use crate::open::{Opener, SystemOpener};
 
 const TICK: Duration = Duration::from_millis(250);
 
@@ -96,8 +97,8 @@ where
                         latency.keypress.push(took);
                         // After the frame, so the picker closes at once and
                         // the file's I/O isn't counted as the keypress.
-                        if std::mem::take(&mut app.save_theme) {
-                            save_theme(&mut app);
+                        if let Some(effect) = app.local.take() {
+                            local(&mut app, effect);
                             paint(terminal, &app)?;
                         }
                         if std::mem::take(&mut app.painted_from_cache) {
@@ -192,11 +193,27 @@ fn key_msg(app: &App, key: &KeyEvent) -> Option<Msg> {
     }
 }
 
-/// Write a theme kept in the picker to config.toml, and say how it went.
-fn save_theme(app: &mut App) {
-    if let Some(path) = app.theme_choice.config_file.clone() {
-        let name = app.theme_choice.builtin.name;
-        app.theme_saved(crate::theme::save(&path, name));
+/// Do what `update` left for this machine: save the theme, open a link or
+/// copy one.
+fn local(app: &mut App, effect: LocalEffect) {
+    match effect {
+        LocalEffect::SaveTheme => {
+            if let Some(path) = app.theme_choice.config_file.clone() {
+                let name = app.theme_choice.builtin.name;
+                app.theme_saved(crate::theme::save(&path, name));
+            }
+        }
+        LocalEffect::Open(url) => {
+            if let Err(error) = SystemOpener.open(&url) {
+                app.show(Level::Error, &format!("Couldn't open {url}: {error}"));
+            }
+        }
+        LocalEffect::Copy(text) => {
+            let copied = crate::write_to_terminal(&ms_todo_core::links::osc52_copy(&text));
+            if let Err(error) = copied {
+                app.show(Level::Error, &format!("Couldn't copy the link: {error}"));
+            }
+        }
     }
 }
 

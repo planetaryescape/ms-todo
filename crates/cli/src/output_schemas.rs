@@ -62,6 +62,14 @@ pub fn output_schema(command: &str) -> Option<Value> {
             json!({ "oneOf": [list_applied(), list_plan()] })
         }
         "folders list" => collection(folder()),
+        "tasks links" => collection(link()),
+        "tasks open" => versioned(
+            json!({
+                "url": { "type": "string", "description": "The URL handed to the system's opener" },
+                "text": { "type": "string" }
+            }),
+            &["url", "text"],
+        ),
         "outbox list" | "outbox retry" | "outbox discard" => versioned(
             json!({
                 "items": {
@@ -444,6 +452,19 @@ fn folder() -> Value {
             "open_count": { "type": "integer", "description": "Open tasks in all its lists" }
         }),
         &["name", "lists", "list_count", "open_count"],
+    )
+}
+
+fn link() -> Value {
+    object(
+        json!({
+            "index": { "type": "integer", "description": "From 1: what `tasks open --index` takes" },
+            "url": { "type": "string" },
+            "text": { "type": "string", "description": "A linked resource's name, a markdown link's text, or the host" },
+            "source": { "enum": ["linked_resource", "notes"] },
+            "openable": { "type": "boolean", "description": "Whether `tasks open` opens it: http, https or mailto" }
+        }),
+        &["index", "url", "text", "source", "openable"],
     )
 }
 

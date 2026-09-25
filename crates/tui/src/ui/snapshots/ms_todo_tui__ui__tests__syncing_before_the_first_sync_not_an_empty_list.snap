@@ -17,4 +17,4 @@ expression: render(&app)
 "│                      ││                                                  ││                                │"
 "╰──────────────────────╯╰──────────────────────────────────────────────────╯╰────────────────────────────────╯"
 " ● daemon  ·  syncing…  ·  all changes sent                                                                   "
-" a Add  x Done  e Edit  d Delete  v Select  u Undo  / Filter  : Palette  r Sync  ? Help  q Quit               "
+" a Add  x Done  e Edit  d Delete  v Select  u Undo  / Filter  : Palette  r Sync  ? Help  q Quit  o Open link  "

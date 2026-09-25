@@ -20,7 +20,7 @@ Buffer {
         "│                      ││                                                  ││Notes      none                 │",
         "╰──────────────────────╯╰──────────────────────────────────────────────────╯╰────────────────────────────────╯",
         " ● daemon  ·  synced 12s ago  ·  all changes sent                                                             ",
-        " a Add  x Done  e Edit  d Delete  v Select  u Undo  / Filter  : Palette  r Sync  ? Help  q Quit               ",
+        " a Add  x Done  e Edit  d Delete  v Select  u Undo  / Filter  : Palette  r Sync  ? Help  q Quit  o Open link  ",
     ],
     styles: [
         x: 0, y: 0, fg: Reset, bg: Reset, underline: Reset, modifier: BOLD,
@@ -143,6 +143,8 @@ Buffer {
         x: 83, y: 15, fg: Reset, bg: Reset, underline: Reset, modifier: DIM,
         x: 88, y: 15, fg: Reset, bg: Reset, underline: Reset, modifier: BOLD,
         x: 91, y: 15, fg: Reset, bg: Reset, underline: Reset, modifier: DIM,
-        x: 96, y: 15, fg: Reset, bg: Reset, underline: Reset, modifier: NONE,
+        x: 96, y: 15, fg: Reset, bg: Reset, underline: Reset, modifier: BOLD,
+        x: 99, y: 15, fg: Reset, bg: Reset, underline: Reset, modifier: DIM,
+        x: 109, y: 15, fg: Reset, bg: Reset, underline: Reset, modifier: BOLD,
     ]
 }

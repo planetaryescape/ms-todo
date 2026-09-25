@@ -1669,6 +1669,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "linkify"
+version = "0.11.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "92f9ae2f3d31697697311f016320fe984127e636b45cf5eb5c175b7eb103dadb"
+dependencies = [
+ "memchr",
+]
+
+[[package]]
 name = "linux-raw-sys"
 version = "0.12.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1832,6 +1841,7 @@ dependencies = [
  "serde_json",
  "tokio",
  "tokio-util",
+ "url",
  "uuid",
 ]
 
@@ -1839,9 +1849,14 @@ dependencies = [
 name = "ms-todo-core"
 version = "0.1.14"
 dependencies = [
+ "base64 0.23.1",
  "chrono",
  "dirs",
+ "html2text",
+ "linkify",
+ "serde_json",
  "thiserror 2.0.21",
+ "url",
 ]
 
 [[package]]
@@ -1943,6 +1958,7 @@ dependencies = [
  "toml_edit",
  "tracing",
  "tracing-subscriber",
+ "url",
 ]
 
 [[package]]

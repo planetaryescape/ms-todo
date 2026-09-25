@@ -19,6 +19,7 @@ mod doctor_commands;
 mod done_command;
 mod error;
 mod folder_commands;
+mod link_commands;
 mod outbox_commands;
 mod output;
 mod output_schemas;
@@ -194,6 +195,13 @@ async fn dispatch(command: Command, paths: &Paths, format: OutputFormat) -> Resu
             task_commands::delete(paths, targets, yes, format).await
         }
         Command::Tasks(TasksCommand::Edit(args)) => task_commands::edit(paths, args, format).await,
+        Command::Tasks(TasksCommand::Links(args)) => {
+            link_commands::links(paths, args, format).await
+        }
+        Command::Tasks(TasksCommand::Open { task, index }) => {
+            let opener = ms_todo_tui::open::SystemOpener;
+            link_commands::open(paths, task, index, format, &opener).await
+        }
         Command::Raw(args) => print_raw(format, &task_commands::raw(paths, args).await?),
         Command::Outbox(OutboxCommand::List { state }) => {
             outbox_commands::list(paths, state, format).await

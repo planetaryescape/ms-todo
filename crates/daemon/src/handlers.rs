@@ -48,6 +48,9 @@ pub(crate) async fn handle(state: &State, request: Request) -> Response {
         Request::Status => Ok(ResponseData::Status(status(state))),
         Request::ListLists => list_lists(state).await,
         Request::ListFolders => crate::list_writes::list_folders(state).await,
+        Request::GetTasks { tasks, list } => {
+            crate::reads::get_tasks(state, &tasks, list.as_deref()).await
+        }
         Request::ListTasks { list, search } => {
             list_tasks(state, list.as_deref(), search.as_deref()).await
         }

@@ -1,0 +1,17 @@
+---
+source: tests/cli_help.rs
+expression: help_output(args)
+---
+A task's links: its linked resources' web addresses, then the URLs in its notes, each once
+
+Usage: ms-todo tasks links [OPTIONS] <TASK>
+
+Arguments:
+  <TASK>  The task's ID from `tasks list`, or its exact title when --list is given
+
+Options:
+      --format <FORMAT>  Output format: jsonl is one object per line, ids one ID per line, csv has a header row [default: table in a terminal, json when piped] [possible values: table, json, jsonl, ids, csv]
+      --list <NAME|ID>   Look for the task in this list (exact name or ID), which also lets TASK be an exact title
+      --instance <NAME>  Use a separate copy of ms-todo's data (also MS_TODO_INSTANCE). Builds run from Cargo's target/ directory default to "dev"; "default" is the installed copy
+  -h, --help             Print help
+  -V, --version          Print version

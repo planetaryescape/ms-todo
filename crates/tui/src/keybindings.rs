@@ -44,6 +44,8 @@ pub enum Context {
     Picker,
     /// The theme picker, previewing each theme.
     Themes,
+    /// A task's links, to open or copy one.
+    Links,
     Help,
 }
 
@@ -72,6 +74,7 @@ const LISTS: &[Context] = &[
     Context::Detail,
     Context::Picker,
     Context::Themes,
+    Context::Links,
     Context::Diagnostics,
 ];
 const PALETTE: &[Context] = &[Context::Palette];
@@ -138,6 +141,9 @@ pub const BINDINGS: &[Binding] = &[
     bind(BROWSE, "?", Action::Help, "Help", true),
     bind(BROWSE, "q", Action::Quit, "Quit", true),
     bind(BROWSE, "Ctrl-c", Action::Quit, "Quit", false),
+    // After Quit, so a narrow hint bar loses these first.
+    bind(TASKS, "o", Action::OpenLink, "Open link", true),
+    bind(TASKS, "y", Action::CopyLink, "Copy link", true),
     bind(&[Context::Prompt], "Enter", Action::Submit, "Done", true),
     bind(NOTES, "Ctrl-s", Action::Submit, "Save", true),
     bind(NOTES, "Alt-Enter", Action::Submit, "Save", false),
@@ -211,6 +217,11 @@ pub const BINDINGS: &[Binding] = &[
         true,
     ),
     bind(&[Context::Picker], "Esc", Action::Cancel, "Cancel", true),
+    bind(&[Context::Links], "Enter", Action::Submit, "Open", true),
+    bind(&[Context::Links], "o", Action::OpenLink, "Open", false),
+    bind(&[Context::Links], "y", Action::CopyLink, "Copy", true),
+    bind(&[Context::Links], "Esc", Action::Cancel, "Cancel", true),
+    bind(&[Context::Links], "Ctrl-c", Action::Cancel, "Cancel", false),
     bind(&[Context::Themes], "Enter", Action::Submit, "Keep", true),
     bind(&[Context::Themes], "Esc", Action::Cancel, "Revert", true),
     bind(

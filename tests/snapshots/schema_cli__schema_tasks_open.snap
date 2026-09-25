@@ -1,0 +1,50 @@
+---
+source: tests/schema_cli.rs
+expression: pretty
+---
+{
+  "input": {
+    "additionalProperties": false,
+    "properties": {
+      "index": {
+        "description": "Which link, from 1, as `tasks links` numbers them",
+        "type": "string",
+        "x-cli": "--index"
+      },
+      "list": {
+        "description": "Look for the task in this list (exact name or ID), which also lets TASK be an exact title",
+        "type": "string",
+        "x-cli": "--list"
+      },
+      "task": {
+        "description": "The task's ID from `tasks list`, or its exact title when --list is given",
+        "type": "string",
+        "x-cli": "<TASK>"
+      }
+    },
+    "required": [
+      "task"
+    ],
+    "type": "object"
+  },
+  "output": {
+    "properties": {
+      "schema_version": {
+        "const": 2
+      },
+      "text": {
+        "type": "string"
+      },
+      "url": {
+        "description": "The URL handed to the system's opener",
+        "type": "string"
+      }
+    },
+    "required": [
+      "schema_version",
+      "url",
+      "text"
+    ],
+    "type": "object"
+  }
+}

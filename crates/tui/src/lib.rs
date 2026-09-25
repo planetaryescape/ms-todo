@@ -18,6 +18,7 @@ mod glyphs;
 mod ipc;
 mod keybindings;
 mod latency;
+pub mod open;
 mod runner;
 pub mod theme;
 mod ui;

@@ -76,6 +76,7 @@ const TERMINAL: Palette = Palette {
     banner_error: Color::Red,
     banner_info: Color::Cyan,
     search_match: Color::Yellow,
+    link: Color::Blue,
     cursor: Color::Reset,
     header_bar: Color::Reset,
 };
@@ -108,6 +109,7 @@ const CATPPUCCIN_MOCHA: Palette = Palette {
     banner_error: hex(0xf38ba8), // red
     banner_info: hex(0x94e2d5),  // teal
     search_match: hex(0xcba6f7), // mauve
+    link: hex(0x74c7ec),         // sapphire
     cursor: hex(0xf5e0dc),       // rosewater
     header_bar: hex(0x181825),   // mantle
 };
@@ -136,6 +138,7 @@ const CATPPUCCIN_LATTE: Palette = Palette {
     banner_error: hex(0xd20f39), // red
     banner_info: hex(0x179299),  // teal
     search_match: hex(0x8839ef), // mauve
+    link: hex(0x209fb5),         // sapphire
     cursor: hex(0xdc8a78),       // rosewater
     header_bar: hex(0xe6e9ef),   // mantle
 };
@@ -165,6 +168,7 @@ const GRUVBOX_DARK: Palette = Palette {
     banner_error: hex(0xfb4934), // bright_red
     banner_info: hex(0x8ec07c),  // bright_aqua
     search_match: hex(0xd3869b), // bright_purple
+    link: hex(0x83a598),         // bright_blue
     cursor: hex(0xebdbb2),       // light1
     header_bar: hex(0x1d2021),   // dark0_hard
 };
@@ -194,6 +198,7 @@ const GRUVBOX_LIGHT: Palette = Palette {
     banner_error: hex(0x9d0006), // faded_red
     banner_info: hex(0x427b58),  // faded_aqua
     search_match: hex(0x8f3f71), // faded_purple
+    link: hex(0x076678),         // faded_blue
     cursor: hex(0x3c3836),       // dark1
     header_bar: hex(0xf9f5d7),   // light0_hard
 };
@@ -223,6 +228,7 @@ const TOKYO_NIGHT: Palette = Palette {
     banner_error: hex(0xf7768e), // red
     banner_info: hex(0x7dcfff),  // cyan
     search_match: hex(0x9ece6a), // green
+    link: hex(0x7dcfff),         // cyan
     cursor: hex(0xc0caf5),       // fg
     header_bar: hex(0x16161e),   // bg_dark
 };
@@ -254,6 +260,7 @@ const NORD: Palette = Palette {
     banner_error: hex(0xbf616a), // nord11
     banner_info: hex(0x8fbcbb),  // nord7
     search_match: hex(0xb48ead), // nord15
+    link: hex(0x81a1c1),         // nord9
     cursor: hex(0xd8dee9),       // nord4
     header_bar: hex(0x3b4252),   // nord1
 };
@@ -285,6 +292,7 @@ const HIGH_CONTRAST: Palette = Palette {
     banner_error: hex(0xff6e6e),
     banner_info: hex(0x00ffff),
     search_match: hex(0xff80ff),
+    link: hex(0x80c0ff),
     cursor: hex(0xffffff),
     header_bar: hex(0x000000),
 };

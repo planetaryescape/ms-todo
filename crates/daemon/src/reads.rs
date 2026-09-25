@@ -44,6 +44,22 @@ pub(crate) async fn list_tasks(
     })
 }
 
+/// The tasks `names` names, as `ChangeTasks` finds them.
+pub(crate) async fn get_tasks(
+    state: &State,
+    names: &[String],
+    list: Option<&str>,
+) -> Result<ResponseData, ErrorPayload> {
+    let targets = crate::task_resolution::resolve_tasks(state, names, list).await?;
+    Ok(ResponseData::Tasks {
+        items: targets
+            .iter()
+            .map(|target| task_entity(&target.row))
+            .collect(),
+        sync: read_state(state, LISTS_SCOPE).await?,
+    })
+}
+
 /// The list `wanted` names among `lists` (the default list for `None`),
 /// its tasks, oldest first, or with `search` those matching it, best
 /// first, and its sync state. `tasks list` and the TUI's `Seed` share it.

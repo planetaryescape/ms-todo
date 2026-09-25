@@ -24,8 +24,9 @@ use serde_json::{Map, Value};
 /// lists in folder order, so a client restarts an older daemon rather
 /// than show lists ungrouped. 7: `CompletedTasks`, `ChangeTasks.select`
 /// and `Applied.refused` (rung 5d), so an older daemon never reads a bulk
-/// change without its selection as a change to no task.
-pub const PROTOCOL_VERSION: u32 = 7;
+/// change without its selection as a change to no task. 8: `GetTasks`,
+/// for `tasks links` and `tasks open`.
+pub const PROTOCOL_VERSION: u32 = 8;
 
 /// The socket buffer both ends ask for: room for a large list's `Seed` in
 /// one write. macOS gives a Unix socket 8 KiB, so a 350 KiB seed crossed
@@ -79,6 +80,13 @@ pub enum Request {
     ListLists,
     /// The folders, in order, from the cache.
     ListFolders,
+    /// The tasks named, from the cache, as `Tasks`: IDs, or with `list`,
+    /// IDs or exact titles in that list, resolved as `ChangeTasks` does.
+    GetTasks {
+        tasks: Vec<String>,
+        #[serde(default)]
+        list: Option<String>,
+    },
     /// Tasks from the cache, of the list named or identified by `list`, or
     /// of the default list ("Tasks") when `None`.
     ListTasks {
