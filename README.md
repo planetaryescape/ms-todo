@@ -2,7 +2,7 @@
 
 A local-first, keyboard-native terminal client for Microsoft To Do. It has a daemon that keeps a local SQLite cache in sync with Microsoft Graph, and two clients of that daemon: a scriptable CLI with stable JSON output and a very fast ratatui TUI.
 
-**Status: Rung 5d: see what I finished, clear what's overdue.** ms-todo signs in to your Microsoft account, shows every task in any of your lists, finds any task by the words in it, and adds, edits, completes, reopens and deletes tasks, from a terminal or an agent. Reads come from a local cache the daemon keeps in step with Microsoft To Do through delta sync, so they answer in milliseconds and a change on your phone shows up by itself within about 30 seconds while you're using ms-todo. Writes answer at once too, with or without a network: they're queued and sent in the background, and nothing you write is silently dropped. `ms-todo undo` reverses a change. `mst` on its own opens a keyboard-driven view of every list, where you can edit any field, act on several tasks at once, run any action from a palette and check ms-todo's health. `ms-todo done` lists what you completed, day by day, and `ms-todo reschedule` moves every overdue task at once, put back with one `undo`. Quick-add parsing comes in a later rung of the [roadmap](docs/blueprint/10-roadmap.md).
+**Status: Rung 5e: move tasks between lists.** ms-todo signs in to your Microsoft account, shows every task in any of your lists, finds any task by the words in it, and adds, edits, completes, reopens and deletes tasks, from a terminal or an agent. Reads come from a local cache the daemon keeps in step with Microsoft To Do through delta sync, so they answer in milliseconds and a change on your phone shows up by itself within about 30 seconds while you're using ms-todo. Writes answer at once too, with or without a network: they're queued and sent in the background, and nothing you write is silently dropped. `ms-todo undo` reverses a change. `mst` on its own opens a keyboard-driven view of every list, where you can edit any field, act on several tasks at once, run any action from a palette and check ms-todo's health. `ms-todo done` lists what you completed, day by day, and `ms-todo reschedule` moves every overdue task at once, put back with one `undo`. `ms-todo tasks move` moves tasks to another list with everything they hold, checking the copy before it deletes anything. Quick-add parsing comes in a later rung of the [roadmap](docs/blueprint/10-roadmap.md).
 
 ## Install
 
@@ -105,6 +105,17 @@ ms-todo undo                                            # puts the whole batch b
 - A change that may reach more than one task shows the tasks and asks first in a terminal; anywhere else it needs `--yes` (exit 2 otherwise). `--dry-run` shows the plan. What runs after a yes is the tasks you were shown.
 - However many tasks it moves, it's one change with one `op_id`, so one `ms-todo undo` puts them all back. A task whose due date has changed again since is left alone and listed under `refused`; only when every task changed is the undo refused (exit 5).
 
+## Move tasks between lists
+
+```sh
+ms-todo tasks move <ID> --to Groceries             # steps, link, attachments and all
+ms-todo tasks move <ID> <ID> --to Someday --yes    # several at once; asks first in a terminal
+ms-todo tasks move <ID> --to Groceries --dry-run
+ms-todo undo                                       # moves them back
+```
+
+Microsoft To Do has no move, so ms-todo copies the task into the other list with every field, its steps (ticked or not), its link, its attachments byte for byte and ms-todo's own data, reads the copy back to check it matches, and only then deletes the original. The task keeps its ID in ms-todo and shows in the new list at once, `pending` until the move is done. If a step fails before the delete, the half-made copy is deleted and the original is untouched; if Microsoft To Do doesn't answer a step, the move pauses in `ms-todo outbox list` and deletes nothing until it's found or you decide (`outbox retry` or `outbox discard`). The To Do apps show the moved task as created at the time of the move; ms-todo keeps the original time as `originalCreatedAt` in its own data. A task that has changed or moved again since isn't moved back by `undo`.
+
 ## Group lists into folders
 
 ```sh
@@ -169,6 +180,7 @@ A title bar with the version and the view you're in, a sidebar of smart views (I
 | `Enter` in the detail pane | edit the field under the detail pane's cursor (`j` / `k` there move between title, due date, reminder, importance and notes) |
 | in an editor | `Enter` saves (`Ctrl-s` or `Alt-Enter` in notes, where `Enter` is a new line), `Esc` cancels; `←` / `→`, `Home` / `End` (`Ctrl-a` / `Ctrl-e`), `Alt-b` / `Alt-f` (or `Ctrl-←` / `Ctrl-→`) a word, `Backspace` / `Delete`, `Ctrl-w` a word back, `Ctrl-u` / `Ctrl-k` to the line's start / end. The add, filter and palette prompts edit the same way |
 | `v` / `V` | select a task, or every task in the view; `Esc` clears the selection |
+| `m` | move the task or the selection to another list: type part of the list's name or its folder's, `Enter` moves; one `u` moves them back |
 | `S` | set one due date on the selection (or the task under the cursor); `e` `d` with a selection does the same |
 | `R` | reschedule every overdue open task in the view to the day you type; one `u` puts them all back |
 | `d` | delete the task or the selection, after a `y` / `n` confirmation that names the count |
@@ -229,7 +241,7 @@ Its socket is private to your user (0600, in a 0700 directory), and its log is `
 
 ## Plan
 
-The design is in [`docs/blueprint/`](docs/blueprint/README.md), the Phase 0 results are in [`12-open-questions.md`](docs/blueprint/12-open-questions.md), and the evidence is in `docs/research/spikes/`. Still open: the S4 deltaLink replay, and product questions Q3, Q6–Q10 and Q12. The build climbs a ladder of usable releases: a foundation turn (install and sign in), rung 1 (see my tasks), rung 2 (capture and finish tasks), rung 3a (instant reads from a local cache), rung 3b (live sync through delta), rung 4 (offline writes that are never lost, and undo), rung 4b (search), rung 5a (a TUI to browse and act in), rung 5b (a TUI to live in: editing, multi-select, the palette, diagnostics, and Homebrew), rung 5c (folders), rung 5d (what I finished, and clearing what's overdue), and next rung 6 (quick add).
+The design is in [`docs/blueprint/`](docs/blueprint/README.md), the Phase 0 results are in [`12-open-questions.md`](docs/blueprint/12-open-questions.md), and the evidence is in `docs/research/spikes/`. Still open: the S4 deltaLink replay, and product questions Q3, Q6–Q10 and Q12. The build climbs a ladder of usable releases: a foundation turn (install and sign in), rung 1 (see my tasks), rung 2 (capture and finish tasks), rung 3a (instant reads from a local cache), rung 3b (live sync through delta), rung 4 (offline writes that are never lost, and undo), rung 4b (search), rung 5a (a TUI to browse and act in), rung 5b (a TUI to live in: editing, multi-select, the palette, diagnostics, and Homebrew), rung 5c (folders), rung 5d (what I finished, and clearing what's overdue), rung 5e (moving tasks between lists), and next rung 6 (quick add).
 
 What's planned:
 

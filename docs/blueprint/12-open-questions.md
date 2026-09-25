@@ -19,6 +19,7 @@ For each, record the request, the response (with private data removed), the date
 | S11 | Does setting `dueDateTime` with a time keep the time, or does To Do cut it back to the date? How does the phone show a due date with a time compared with a reminder? | The mapping for "date with a time" | [06](06-natural-language.md) |
 | S12 | Does creating a task with `recurrence` and completing it make Graph create the next occurrence (as the app does), and what does delta return for it? | How recurrence and sync interact | [04](04-sync-cache.md) |
 | S13 | Can a task create carry a unique marker (our extension with the outbox `opId`), and can a lookup find it? (Added after review, 2026-09-24.) | Attributing a create whose outcome is unknown | [04](04-sync-cache.md#unknown-outcome-d-028) |
+| S14 | What does a task copied to another list keep, and which requests copy it? (Rung 5e, 2026-09-25.) | Moving a task without losing anything | [05](05-custom-features.md#move-between-lists), D-051 |
 | P1 | What is the default page size for task lists and delta, and does `Prefer: odata.maxpagesize` work? (Added during phase 0.) | Pagination, and rung 1's "more than 100 tasks" check | [03](03-graph-provider.md) |
 
 ### S5 result (2026-09-24)
@@ -96,6 +97,10 @@ Confidence: high. Evidence: [S11](../research/spikes/S11.md). Changed: [02](02-d
 ### S13 result (2026-09-24)
 
 **Yes for the create, no for server-side filtering.** A task POST can carry our open extension inline (`"extensions": [{…"extensionName":"com.planetaryescape.mstodo","opId":"…"}]`): it returns 201 with the extension in the response, and a GET with `$expand=extensions($filter=id eq 'com.planetaryescape.mstodo')` returns the `opId`. Filtering on extensions server-side (`$filter=extensions/any(…)`) is a 400, so the match on `opId` happens client-side over a filtered collection GET. Checklist items and linked resources have no extensions, so this doesn't cover them. Confidence: high. Evidence: [S13](../research/spikes/S13.md). Changed: [04](04-sync-cache.md#unknown-outcome-d-028), [02](02-data-model.md#outbox-semantics), D-028.
+
+### S14 result (2026-09-25)
+
+**Everything but `createdDateTime`, and one POST makes all of it but the attachments.** A task POST takes its checklist items (with `isChecked` and `checkedDateTime`), its linked resource and our extension inline; attachments copy byte for byte through a POST or an upload session. A task holds at most one linked resource. An upload session's bytes go to `<uploadUrl>/content`, with the token (the bare URL is 404). A recurring task's dates must be written in the zone its recurrence reports, which a GET gives as UTC, or Graph moves the copy's dates a day on. `createdDateTime` is stamped anew and ignored on create. Confidence: high. Evidence: [S14](../research/spikes/S14.md). Changed: [05](05-custom-features.md#move-between-lists), D-051.
 
 ### P1 result (2026-09-24)
 

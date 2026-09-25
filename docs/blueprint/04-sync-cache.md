@@ -86,7 +86,7 @@ Once the source DELETE may have started, recovery never deletes the target. It G
 - source present, target missing: roll back; nothing is lost.
 - **both missing:** the job stays unresolved and keeps the full local copy (`raw_json` and children). `ms-todo outbox list` flags it, and the user resolves it with `outbox retry` (recreate it in the target list) or `outbox discard`. Nothing is recreated automatically.
 
-See [05](05-custom-features.md#move-between-lists).
+See [05](05-custom-features.md#move-between-lists). As built in rung 5e (D-051): one outbox operation per task, its steps saved in `outbox.progress_json`; the copy and its children are one create attributable by `opId` (S14), so only an attachment with no answer pauses a move for the user.
 
 The worker sends the operation to Graph:
 

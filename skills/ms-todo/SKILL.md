@@ -1,11 +1,11 @@
 ---
 name: ms-todo
-description: Read, find, add, complete, reopen, edit, reschedule and delete Microsoft To Do tasks from the terminal by driving the `ms-todo` CLI. Use when the user wants to capture a task, tick one off, change a due date or reminder, move overdue tasks, see what's in a list, find a task by what it says, summarise what they finished (for a standup or a weekly review), or otherwise work with their Microsoft To Do lists and tasks.
+description: Read, find, add, complete, reopen, edit, reschedule, move and delete Microsoft To Do tasks from the terminal by driving the `ms-todo` CLI. Use when the user wants to capture a task, tick one off, change a due date or reminder, move overdue tasks, move tasks to another list, see what's in a list, find a task by what it says, summarise what they finished (for a standup or a weekly review), or otherwise work with their Microsoft To Do lists and tasks.
 ---
 
 # ms-todo
 
-**Skill v4, for ms-todo rung 5d** (instant reads from a local cache kept live by delta sync; search across every list; what was completed, by day; instant writes that queue offline and are never dropped; bulk reschedules and edits; undo. No quick-add parsing yet).
+**Skill v5, for ms-todo rung 5e** (instant reads from a local cache kept live by delta sync; search across every list; what was completed, by day; instant writes that queue offline and are never dropped; bulk reschedules and edits; moving tasks between lists without losing anything; undo. No quick-add parsing yet).
 
 `ms-todo tui` (`mst tui`) is a full-screen view for people at a keyboard. Don't use it: it needs a terminal, and everything it does is a command below. Always pass a subcommand: a bare `ms-todo` opens the TUI in a terminal, and elsewhere only prints help and exits 2.
 
@@ -120,6 +120,18 @@ echo "<ID>" | ms-todo tasks edit - --reminder "2026-09-26 09:00" --yes --format 
 - The answer is one change: one `op_id` for every task. `ms-todo undo <op_id>` reverses them all; tasks changed again since are left alone and listed in `refused` (`id`, `title`, `reason`). Tell the user which. If every task changed, undo exits 5 (`conflict`) and changes nothing.
 - A selection that matches nothing answers with empty `items`, which is success.
 
+## Move tasks to another list
+
+```bash
+ms-todo tasks move <ID> --to "Groceries" --dry-run --format json          # preview: "list" and "targets"
+ms-todo tasks move <ID> --to "Groceries" --format json
+ms-todo tasks move <ID> <ID> --to "Someday" --yes --format json           # several: --yes off a terminal
+```
+
+- A move copies the task into the list with every field, its steps, its link, its attachments and ms-todo's own data, checks the copy, and only then deletes the original. The task keeps its `id`; its `graph_id` changes. The answer shows it in the new list with `sync_state: "pending"`; it's `synced` once the move is done (`ms-todo outbox list`: the operation's `action` is `move`).
+- A failure before the delete leaves the original untouched: the operation is `failed` and the task is back in its list. A step with no answer pauses the move as `unknown` and deletes nothing. **Never retry or discard a paused move yourself, and never recreate the task**: tell the user what its `note` says and let them choose `outbox retry` or `outbox discard`. A move of a task already in that list exits 2; an unknown list exits 3.
+- `ms-todo undo <op_id>` moves the tasks back the same way. A task moved or changed since is left alone and listed in `refused`; if all are, undo exits 5.
+
 ## Folders
 
 Lists can be grouped into folders, one level deep, like the To Do app's groups. Only ms-todo sees them (on every machine it syncs to).
@@ -158,7 +170,7 @@ ms-todo undo --format json            # the latest change not undone yet
 ms-todo undo <OP_ID> --format json    # a change by the op_id it returned
 ```
 
-Undo queues the reverse change, which is itself a change with its own `op_id` (so `undo <that op_id>` redoes). Undoing an add deletes the task; an edit, complete or reopen puts back the fields it changed; a delete creates the task again, with the same `id` and a new `graph_id`. A change still `unknown` can't be undone yet. If a field the change set has changed since (a later change, or another device), `undo` exits 5 with kind `conflict` and changes nothing: tell the user rather than forcing it. For a change to several tasks it's per task: the answer's `refused` names the tasks left alone, and the rest are undone.
+Undo queues the reverse change, which is itself a change with its own `op_id` (so `undo <that op_id>` redoes). Undoing an add deletes the task; an edit, complete or reopen puts back the fields it changed; a delete creates the task again, with the same `id` and a new `graph_id`; a move moves it back, as a move. A change still `unknown` can't be undone yet. If a field the change set has changed since (a later change, or another device), `undo` exits 5 with kind `conflict` and changes nothing: tell the user rather than forcing it. For a change to several tasks it's per task: the answer's `refused` names the tasks left alone, and the rest are undone.
 
 Undoing a **recurring** completion deletes the completed copy Microsoft To Do made, so you must name it: without `--copy`, `undo` exits 2 with the copies in `candidates` (`id`, `name`, `created_at`, `list_id`). Show them to the user and let them pick, then run `ms-todo undo <OP_ID> --copy <ID> --format json`. Never pick one yourself. "can't undo yet" means the copy hasn't synced: `ms-todo sync --wait`, then try again.
 

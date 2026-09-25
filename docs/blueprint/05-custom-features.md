@@ -66,6 +66,14 @@ What can't be kept: `createdDateTime`, which becomes the move time. We store the
 
 This fixes MAG&Cie's lossy `move_task` (see prior-art.md).
 
+**As built (rung 5e, D-051, S14):**
+
+- Steps 1 and 2 are one POST for everything but attachments: the fields, the checklist items (checked or not, with when), the linked resource (Graph allows one per task) and our extension with the move's `opId` and `originalCreatedAt` (kept from an earlier move). So the copy and its children are one create, attributable by `opId`. Attachments follow one at a time: a POST under 3 MiB, else an upload session to `<uploadUrl>/content`. Their bytes are read from the source first and kept in a 0600 spool until the move is settled; one over 25 MB is refused before anything is written.
+- A recurring task's due and start dates are written as their local day in the zone its recurrence reports, the rest as their local day in the user's zone (S14).
+- Step 3 compares the copy with the source field by field, children by what they hold, attachments by byte count and sha256, and checks the target list is live and the source unchanged since it was read. A mismatch deletes the copy and keeps the source.
+- `tasks move T… --to L` and the TUI's `m` move several tasks as one command; `undo` moves them back the same way, per task, and not a task that has moved or changed since.
+- The To Do apps show the copy as a new task: its `createdDateTime` is the move's. ms-todo shows `originalCreatedAt` in the task's JSON, under its extension.
+
 ## Sharing: not built
 
 See D-014. The daemon still reads `isShared` and `isOwner` and shows a marker, so shared lists (shared through the official app) display correctly. Nothing more.

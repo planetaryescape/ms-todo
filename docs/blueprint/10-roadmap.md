@@ -300,6 +300,31 @@ BK's research pick, trimmed to what's worth building (D-048): a logbook of what 
 
 **Left out:** a `--where` expression language (the selection is `--overdue` or `--due-before`, as `tasks list`'s planned `--due` filter reads); clearing several due dates at once in the TUI; the time of day a task was completed, which Graph doesn't keep; per-day totals and "done this week" summaries beyond what `done --format json` gives an agent.
 
+### Rung 5e: Motorbike with a trailer: move tasks between lists
+
+BK pulled `tasks move` forward from 8c (D-051). It's the one operation that can lose data, so it's built as 05 and 04 describe it and checked against the real API first (S14).
+
+**Promise:** "I can move a task, or several, to another list without losing anything, and undo it."
+
+**Build:**
+
+- The resumable move job ([05](05-custom-features.md#move-between-lists), [04](04-sync-cache.md#instant-local-writes)): one outbox operation per task with saved steps (migration `0005`): read the source and its attachments, create the copy with its children and our extension in one POST, add the attachments, check the copy and the target list, delete the source. Roll back before the delete, pause on an unknown outcome, and 04's four cases after a crash in the delete.
+- `tasks move T… --to L [--list L] [--dry-run] [--yes]`, undo through the same job, `outbox retry` and `outbox discard` for paused moves.
+- TUI: `m` "Move to list…" for the cursor's task or the selection, with a picker that shows folders.
+
+**Unknowns:** what a copy keeps (S14: everything but `createdDateTime`), and how Graph takes a recurring task's dates back (S14: in the recurrence's zone).
+
+**Demo:** `mst tasks move <ID> --to Groceries`, then `mst tasks list --list Groceries` and `mst undo`; in the TUI, `v` two tasks, `m`, type `groc`, Enter.
+
+**Done when:**
+
+- A task with steps, a link, attachments and our extension moves with all of them, byte for byte (sha256), the source is gone, and the task keeps its local ID; `undo` moves it back.
+- A failure at any step before the delete leaves the source untouched; a crash at any step resumes or rolls back; nothing is deleted on a guess.
+
+**As built (2026-09-25, D-051):** S14 first, on the spike list and a throwaway target list: the copy's fields, checked and unchecked steps, link and extension all come back from one POST; attachments' bytes match; `createdDateTime` doesn't survive (kept as `originalCreatedAt`); a task takes one link; upload-session bytes go to `<uploadUrl>/content`; a recurring task's dates must be written in its recurrence's zone. Then driven live on the `livetest` instance: a weekly recurring task with notes, due and start dates, a reminder, a category, three steps (one checked), a link, our extension and two files (88 bytes, and 4.2 MB through an upload session) moved to the target list in one attempt; `raw GET` of the source was 404, the copy held every field and child with the move's `opId` and `originalCreatedAt`, and both files' sha256 matched; the cache held it once, same local ID. `undo` moved it back the same way. A bulk move of two tasks exited 2 without `--yes` and moved both with it, one command. The test tasks and the target list were deleted; the spike list is back to 31 tasks. Fake-Graph tests cover every step's failure, every crash point and the four restart cases.
+
+**Left out:** moving a whole list, moving tasks picked by `--overdue` or `--due-before`, and attributing a paused attachment upload (Graph has no marker for one).
+
 ## Rung 6: Car: quick add
 
 **Previously:** a CLI and TUI that take task text literally. **Now:** the same, plus Todoist-style quick add in both.
@@ -351,7 +376,7 @@ BK's research pick, trimmed to what's worth building (D-048): a logbook of what 
 
 - **8a: steps and links.** Promise: "I can break a task into steps and attach links." Demo: add three steps in the CLI, tick one on the phone, see it ticked in the TUI. `steps` and `links` in the CLI and the detail pane. A checklist-item PATCH always includes `isChecked` ([02](02-data-model.md#outbox-semantics)). **Done when:** steps and links added in ms-todo show on the phone, and a step checked on the phone shows as checked in ms-todo.
 - **8b: attachments.** Promise: "I can attach files to a task and get them back." Demo: attach a PDF in the CLI, open it on the phone, download it back. Direct upload, upload sessions, download (safe filenames, `.part` then rename, 0600), and the final-chunk `unknown` rule ([03](03-graph-provider.md#endpoints-the-whole-surface)). **Done when:** a 10 MB attachment uploads and downloads with identical bytes (compare the sha256), and it opens on the phone.
-- **8c: `tasks move`.** Promise: "I can move a task between lists without losing anything." Demo: move a task with steps and an attachment, then `show` it in the new list. The resumable move job ([05](05-custom-features.md#move-between-lists)). **Done when:** `tasks move` keeps the steps, links, attachments and extension (check with `show` before and after), and an agent session using only the skill moves a task with the right exit codes.
+- **8c: `tasks move`.** Moved to rung 5e (D-051).
 - **8d: assignment.** Promise: "I can track who I'm waiting on." Demo: assign a task, then see it in the TUI's Assigned view. Assignment (`--assignee`) and the Assigned view; folders moved to rung 5c (D-047). **Done when:** `tasks list --assignee` returns the right tasks.
 - **8e: categories, extensions, lists and the remaining task fields.** Promise: "Anything the To Do API can do, ms-todo can do." Demo: create a list, recolour a category, and set a start date and a recurrence from the CLI. `categories list|create|recolor|delete`, `extensions`, `lists create|rename|delete`, start dates and recurrence editing. **Done when:** every command in [07](07-cli.md) is implemented, has wiremock tests, and has run live against a throwaway list, behind a feature-gated live smoke test.
 

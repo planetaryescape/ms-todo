@@ -40,7 +40,7 @@ tasks      list [--list L] [--status S] [--due before/after/today/overdue] [--im
                 [--my-day] [--assignee A]
            edit T... [same field flags, plus --clear-due etc.]   # several, `-`, or --overdue / --due-before (5d)
            complete T... | reopen T... | delete T...
-           move T --to L
+           move T... --to L [--list L] [--dry-run] [--yes]   # copy, check, then delete the source (D-051)
            links T [--list L]           # linked resources' webUrls, then URLs in the notes, deduped (D-050)
            open T [--index N] [--list L]   # http, https, mailto only; several and no --index: listed, exit 2
            parse "text"                 # show how quick add will read the text; no writes
@@ -78,6 +78,8 @@ raw        GET|POST|PATCH|DELETE PATH [--body JSON]   # authenticated passthroug
 - `reschedule --to W` is a due-date edit of the tasks named (`-` reads IDs from stdin) or picked: `--overdue` (open, due before today) or `--due-before W` (open, due before that day), in `--list`, `--folder` or every list. `tasks edit` takes the same selection or several tasks, for `--due`, `--importance` and `--reminder`; `--title` and `--body` over more than one task are invalid input. The selection travels to the daemon (`ChangeTasks.select`, protocol 7) and is resolved there when the change runs, so `--dry-run` and the real run pick by one rule, and a repeat under an `--idempotency-key` repeats the same request.
 - A change that may reach more than one task is previewed first (a dry run). One or none: it runs. More, in a terminal: the plan goes to stderr and it asks; the IDs shown are what runs. Off a terminal, or with the IDs on stdin: exit 2 unless `--yes`. A selection that matches nothing answers `Applied` with no items and queues nothing.
 - One command, one outbox operation per task, one `op_id`: one `undo` reverses the batch. Undo checks each task on its own: a task whose field has changed since is left alone and listed in the answer's `refused` (`{ id, title, reason }`), the rest are undone, and only when every task changed is the undo refused (`conflict`, exit 5).
+
+**Moving tasks, as built (rung 5e, D-051).** `tasks move T… --to L` moves the tasks named (`-` reads IDs from stdin; `--list L` lets T be an exact title there) to the list L. It's previewed and confirmed as 5d's bulk changes are: several tasks ask in a terminal and need `--yes` elsewhere (exit 2); `--dry-run` answers the `Plan` shape with `action: "move"`, `list` the target and `targets` the tasks. A real run answers `Applied` with `action: "move"` and each task as it now shows, in the target list with `sync_state` `pending`; its local ID never changes. A task already in L, or an unknown L, is refused (exit 2, exit 3) before anything is queued. Each task is one outbox operation (`action: "move"`) whose `note` in `outbox list` says why a paused move is waiting; a move paused on something only the user can settle is `flagged` at once. `outbox retry`, `outbox discard` and `undo` act on moves as D-051 describes.
 
 `raw` counts as coverage of the full surface: anything Graph adds later can be reached before it gets a proper command.
 
