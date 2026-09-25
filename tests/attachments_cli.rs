@@ -485,3 +485,40 @@ async fn a_phones_attachments_arrive_by_sync_and_leave_by_it() {
         false
     );
 }
+
+#[tokio::test]
+async fn a_delete_whose_copy_cannot_be_kept_deletes_nothing_unless_told() {
+    let mut env = Env::new();
+    let graph = graph(&mut env).await;
+    graph.attach("L-tasks", "T1", "contract.pdf", b"signed");
+    env.synced();
+    let task = taxes(&env);
+    // Where the copies go is a file, so no copy can be written there.
+    let database = env.json(&["doctor"])["database"]["path"]
+        .as_str()
+        .expect("database path")
+        .to_owned();
+    let data_dir = Path::new(&database).parent().expect("data dir");
+    std::fs::write(data_dir.join("attachments-kept"), b"not a directory").expect("block");
+
+    let deleted = env.json(&["attachments", "delete", &task, "1", "--yes"]);
+    let op = env.op_in_state(deleted["op_id"].as_str().expect("op_id"), "failed");
+    let why = op["last_error"]["message"].as_str().unwrap_or_default();
+    assert!(why.contains("couldn't keep a copy for undo"), "{why}");
+    assert!(why.contains("nothing was deleted"), "{why}");
+    assert_eq!(graph.attachments_of("T1").len(), 1, "still there");
+    assert_eq!(names(&listed(&env, &task)), ["contract.pdf"], "rolled back");
+    assert!(graph.requests("DELETE").await.is_empty());
+
+    let forced = env.json(&["attachments", "delete", &task, "1", "--yes", "--no-undo"]);
+    env.op_in_state(forced["op_id"].as_str().expect("op_id"), "done");
+    assert!(graph.attachments_of("T1").is_empty());
+    let refused = env.failure(&["undo"], 5);
+    assert!(
+        refused["error"]["message"]
+            .as_str()
+            .unwrap_or_default()
+            .contains("--no-undo"),
+        "{refused}"
+    );
+}

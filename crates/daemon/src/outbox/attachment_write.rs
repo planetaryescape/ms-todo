@@ -8,7 +8,8 @@
 //!   the session's last PUT is `unknown`, flagged at once, and never sent
 //!   again by itself (04).
 //! - **Delete:** the attachment's bytes are kept first (`attachments::kept`),
-//!   so `undo` can attach it again; then the DELETE. Graph ignores
+//!   so `undo` can attach it again, and if they can't be, nothing is
+//!   deleted (unless the user said `--no-undo`); then the DELETE. Graph ignores
 //!   `If-Match` on it (S16), so none is sent. One gone already is done.
 
 use ms_todo_core::ErrorKind;
@@ -16,7 +17,7 @@ use ms_todo_store::{ATTACHMENTS, ChildVerb, OutboxRow};
 
 use super::child_write::{done, fetch};
 use super::send::{Attempt, Failure, classify};
-use crate::attachments::{Source, kept};
+use crate::attachments::{NO_UNDO, Source, kept};
 use crate::handlers::{State, error_payload};
 
 pub(super) async fn send(
@@ -91,15 +92,16 @@ async fn delete(state: &State, list: &str, task: &str, op: &OutboxRow) -> Result
     let id = op.payload["id"].as_str().unwrap_or_default();
     let kept = kept::path(&state.kept_dir, &op.op_id);
     // Kept already by an attempt that failed after keeping it.
-    if !kept.is_file() {
+    if op.payload[NO_UNDO] != true && !kept.is_file() {
         match state.graph.download_attachment(list, task, id).await {
             Ok(bytes) => {
+                // Without its copy the delete couldn't be undone, which the
+                // user didn't agree to: nothing is deleted.
                 if let Err(error) = kept::keep(&state.kept_dir, &op.op_id, bytes).await {
-                    // The delete goes on; its undo will say there's no copy.
-                    eprintln!(
-                        "ms-todo daemon: cannot keep a deleted attachment for undo ({}): {error}",
-                        op.op_id
-                    );
+                    return Err(rejected(format!(
+                        "couldn't keep a copy for undo: {error}; nothing was deleted. \
+                         `ms-todo attachments delete --no-undo` deletes it without one"
+                    )));
                 }
             }
             // Gone already: deleted, as asked.

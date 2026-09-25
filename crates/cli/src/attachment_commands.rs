@@ -86,9 +86,13 @@ pub async fn run(
             task,
             attachments,
             yes,
+            no_undo,
             write,
         } => {
-            let change = TaskChange::DeleteAttachments { attachments };
+            let change = TaskChange::DeleteAttachments {
+                attachments,
+                no_undo,
+            };
             delete(paths, task, change, write, yes, format).await
         }
     }

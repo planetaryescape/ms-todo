@@ -2,7 +2,7 @@
 source: tests/cli_help.rs
 expression: help_output(args)
 ---
-Delete attachments. Asks first in a terminal; anywhere else it needs --yes. For a week, `undo` attaches one again from a copy ms-todo keeps
+Delete attachments. Asks first in a terminal; anywhere else it needs --yes. For a week, `undo` attaches one again from a copy ms-todo keeps; if it can't keep one, nothing is deleted
 
 Usage: ms-todo attachments delete [OPTIONS] <TASK> <ATTACHMENT>...
 
@@ -15,6 +15,7 @@ Options:
       --list <NAME|ID>         Look for the task in this list (exact name or ID), which also lets TASK be an exact title
       --instance <NAME>        Use a separate copy of ms-todo's data (also MS_TODO_INSTANCE). Builds run from Cargo's target/ directory default to "dev"; "default" is the installed copy
       --yes                    Delete without asking
+      --no-undo                Keep no copy, so `undo` can't bring it back: for when ms-todo can't keep one
       --dry-run                Show what would change without changing anything
       --idempotency-key <KEY>  Run this change at most once: repeating the command with the same key returns the first result for 24 hours, and the same key with a different change exits 2
   -h, --help                   Print help

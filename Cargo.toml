@@ -109,6 +109,9 @@ futures-util = { version = "0.3", default-features = false, features = ["sink", 
 percent-encoding = "2"
 nix = { version = "0.30", default-features = false, features = ["process", "signal"] }
 ratatui = "0.30"
+# Safe-API openat/linkat/renameat, for writing downloads relative to one
+# directory handle (D-056).
+rustix = { version = "1", default-features = false, features = ["fs", "std"] }
 regex = "1"
 ratatui-textarea = { version = "0.9", default-features = false, features = ["crossterm"] }
 reqwest = { version = "0.13", features = ["json", "form"] }  # rustls is the default TLS in 0.13

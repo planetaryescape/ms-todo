@@ -134,6 +134,7 @@ impl App {
             id: task.id.clone(),
             change: TaskChange::DeleteAttachments {
                 attachments: vec![attachment.id.clone()],
+                no_undo: false,
             },
             what: format!("attachment \"{}\"", attachment.name),
         };
@@ -309,7 +310,8 @@ mod tests {
             Request::ChangeTasks { change, .. } => assert_eq!(
                 change,
                 &TaskChange::DeleteAttachments {
-                    attachments: vec!["A1".into()]
+                    attachments: vec!["A1".into()],
+                    no_undo: false,
                 }
             ),
             other => unreachable!("not a change: {other:?}"),

@@ -29,6 +29,11 @@ expression: pretty
         "type": "string",
         "x-cli": "--list"
       },
+      "no_undo": {
+        "description": "Keep no copy, so `undo` can't bring it back: for when ms-todo can't keep one",
+        "type": "boolean",
+        "x-cli": "--no-undo"
+      },
       "task": {
         "description": "The task's ID from `tasks list`, or its exact title when --list is given",
         "type": "string",

@@ -899,9 +899,12 @@ pub enum TaskChange {
         files: Vec<String>,
     },
     /// Delete attachments of the one task named: each by its number from
-    /// 1, its ID or its exact name.
+    /// 1, its ID or its exact name. The daemon keeps a copy of each first,
+    /// for `undo`, and deletes nothing if it can't, unless `no_undo`.
     DeleteAttachments {
         attachments: Vec<String>,
+        #[serde(default)]
+        no_undo: bool,
     },
     #[serde(other)]
     Unknown,

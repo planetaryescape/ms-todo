@@ -198,7 +198,7 @@ ms-todo attachments download <TASK> 1 --out ~/Downloads  # one, by number, ID or
 ms-todo attachments delete <TASK> invoice.pdf --yes      # asks first in a terminal
 ```
 
-TASK is an ID, or an exact title with `--list`. A file goes by its path: the daemon reads it when it sends it, and nothing else of it is kept. The file shows on the task at once, marked as uploading, and on the phone once it's there. `ms-todo undo` reverses an add, and a delete too, for a week: ms-todo keeps a copy of a file before deleting it, in its data directory, readable by you only.
+TASK is an ID, or an exact title with `--list`. A file goes by its path: the daemon reads it when it sends it, and nothing else of it is kept. The file shows on the task at once, marked as uploading, and on the phone once it's there. `ms-todo undo` reverses an add, and a delete too, for a week: ms-todo keeps a copy of a file before deleting it, in its data directory, readable by you only. If it can't keep the copy (a full disk, say), it deletes nothing and says so in `ms-todo outbox list`; `attachments delete --no-undo` then deletes without one.
 
 - **Size.** Microsoft To Do takes files up to 25 MB; a bigger one is refused before anything is sent. Files over 3 MB go up in pieces, and a piece whose answer is lost is sent again. The size `attachments list` shows is Microsoft To Do's, a few hundred bytes more than the file.
 - **A file changed after `add`**, before it was sent, isn't sent: the write fails in `ms-todo outbox list`, and you add it again.

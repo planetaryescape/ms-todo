@@ -294,7 +294,7 @@ pub enum AttachmentsCommand {
     },
     /// Delete attachments. Asks first in a terminal; anywhere else it
     /// needs --yes. For a week, `undo` attaches one again from a copy
-    /// ms-todo keeps
+    /// ms-todo keeps; if it can't keep one, nothing is deleted
     Delete {
         #[command(flatten)]
         task: LinkArgs,
@@ -305,6 +305,10 @@ pub enum AttachmentsCommand {
         /// Delete without asking
         #[arg(long)]
         yes: bool,
+        /// Keep no copy, so `undo` can't bring it back: for when ms-todo
+        /// can't keep one
+        #[arg(long)]
+        no_undo: bool,
         #[command(flatten)]
         write: WriteArgs,
     },

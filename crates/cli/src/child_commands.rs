@@ -305,7 +305,10 @@ pub(crate) async fn delete(
         TaskChange::DeleteLink { .. } => TaskChange::DeleteLink {
             link: ids.first().cloned(),
         },
-        TaskChange::DeleteAttachments { .. } => TaskChange::DeleteAttachments { attachments: ids },
+        TaskChange::DeleteAttachments { no_undo, .. } => TaskChange::DeleteAttachments {
+            attachments: ids,
+            no_undo,
+        },
         _ => TaskChange::DeleteSteps { steps: ids },
     };
     let request = change_request(vec![target.id.clone()], None, None, change, false, key);

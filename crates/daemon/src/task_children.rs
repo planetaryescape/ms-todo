@@ -49,9 +49,9 @@ pub(crate) struct ChildWrite {
     /// leaves out, not changed by it.
     pub carried: &'static [&'static str],
     pub action: TaskAction,
-    /// For an attachment's create: the file it's read from when sent
-    /// (`crate::attachments`).
-    pub file: Option<Value>,
+    /// More of the payload, beside the child's: an attachment's `file`
+    /// to read, or `no_undo` on its delete (`crate::attachments`).
+    pub extra: Map<String, Value>,
 }
 
 impl ChildWrite {
@@ -63,7 +63,7 @@ impl ChildWrite {
             body,
             carried: &[],
             action,
-            file: None,
+            extra: Map::new(),
         }
     }
 
@@ -75,7 +75,7 @@ impl ChildWrite {
             body,
             carried: &[],
             action,
-            file: None,
+            extra: Map::new(),
         }
     }
 
@@ -87,7 +87,7 @@ impl ChildWrite {
             body: json!({}),
             carried: &[],
             action,
-            file: None,
+            extra: Map::new(),
         }
     }
 
@@ -99,8 +99,8 @@ impl ChildWrite {
             self.body.clone(),
             self.carried,
         );
-        if let Some(file) = &self.file {
-            payload["file"] = file.clone();
+        for (key, value) in &self.extra {
+            payload[key] = value.clone();
         }
         payload
     }

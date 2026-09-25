@@ -37,6 +37,9 @@ use crate::task_children::{ChildWrite, change_children, find_all, invalid};
 use crate::task_resolution::{Target, resolve_tasks};
 use crate::task_writes::Targets;
 
+/// On an attachment's delete: keep no copy for undo, as the user asked.
+pub(crate) const NO_UNDO: &str = "no_undo";
+
 /// A file to attach, as checked when it was queued: what the send
 /// compares it with.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -113,16 +116,22 @@ pub(crate) async fn change(
 ) -> Result<ResponseData, ErrorPayload> {
     let writes = |raw: &Entity| match change {
         TaskChange::AddAttachments { files } => Ok((TaskAction::AttachmentAdd, add(&files)?)),
-        TaskChange::DeleteAttachments { attachments } => {
-            let writes = find_all(
-                children(raw, ATTACHMENTS),
-                &attachments,
-                "attachment",
-                "name",
-            )?
-            .iter()
-            .map(|item| ChildWrite::delete(ATTACHMENTS, id_of(item), TaskAction::AttachmentDelete))
-            .collect();
+        TaskChange::DeleteAttachments {
+            attachments,
+            no_undo,
+        } => {
+            let items = children(raw, ATTACHMENTS);
+            let writes = find_all(items, &attachments, "attachment", "name")?
+                .iter()
+                .map(|item| {
+                    let action = TaskAction::AttachmentDelete;
+                    let mut write = ChildWrite::delete(ATTACHMENTS, id_of(item), action);
+                    if no_undo {
+                        write.extra.insert(NO_UNDO.into(), Value::Bool(true));
+                    }
+                    write
+                })
+                .collect();
             Ok((TaskAction::AttachmentDelete, writes))
         }
         _ => Err(error_payload(
@@ -165,7 +174,7 @@ fn create(source: &Source, name: &str) -> ChildWrite {
         .to_owned();
     let body = json!({ "name": name, "contentType": content_type, "size": source.bytes });
     let mut write = ChildWrite::create(ATTACHMENTS, body, TaskAction::AttachmentAdd);
-    write.file = Some(source.to_json());
+    write.extra.insert("file".into(), source.to_json());
     write
 }
 
@@ -219,9 +228,12 @@ pub(crate) async fn download(
         )));
     }
     let out = PathBuf::from(out_dir);
-    let dir = blocking(move || files::real_dir(&out))
+    // Opened once: every file is written relative to this handle, so the
+    // path swapped for a link during a download can't redirect it.
+    let dir = blocking(move || files::Dir::open(&out))
         .await
         .map_err(|error| invalid(format!("can't save attachments there: {error}")))?;
+    let dir = std::sync::Arc::new(dir);
     let mut written = Vec::new();
     for item in chosen {
         let id = id_of(&item).to_owned();
@@ -232,10 +244,10 @@ pub(crate) async fn download(
             .await
             .map_err(graph_error)?;
         let count = bytes.len() as u64;
-        let (dir, file_name) = (dir.clone(), name.clone());
+        let (dir, file_name) = (std::sync::Arc::clone(&dir), name.clone());
         let (path, sha256) = blocking(move || {
             let sha256 = sha256_hex(&bytes);
-            let path = files::write_new(&dir, &file_name, &bytes, force)?;
+            let path = dir.write_new(&file_name, &bytes, force)?;
             Ok((path, sha256))
         })
         .await
@@ -316,6 +328,11 @@ pub(crate) fn inverse(
                     "ms-todo has no record of the attachment{named} it deleted"
                 ));
             };
+            if op.payload[NO_UNDO] == true {
+                return Err(format!(
+                    "the attachment{named} was deleted with --no-undo, so ms-todo kept no copy"
+                ));
+            }
             if op.state != OpState::Done {
                 return Err(format!(
                     "deleting the attachment{named} hasn't reached Microsoft To Do yet; undo it once it has"
