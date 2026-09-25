@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.11](https://github.com/planetaryescape/ms-todo/compare/v0.1.10...v0.1.11) (2026-09-25)
+
+
+### Bug Fixes
+
+* fully detach the auto-started daemon and treat a zombie as exited ([6a271ea](https://github.com/planetaryescape/ms-todo/commit/6a271eab00ff55261de90da10487318aa1aab9d2))
+
 ## [0.1.10](https://github.com/planetaryescape/ms-todo/compare/v0.1.9...v0.1.10) (2026-09-25)
 
 
