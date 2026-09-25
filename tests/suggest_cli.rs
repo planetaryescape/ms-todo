@@ -353,3 +353,90 @@ async fn a_slow_suggestion_never_holds_up_the_connections_other_requests() {
     }
     assert_eq!(order, [2, 1], "Status waited for the suggestion");
 }
+
+/// What the daemon logged, from `doctor`'s database path.
+fn daemon_log(env: &Env) -> String {
+    let doctor = env.json(&["doctor"]);
+    let database = doctor["database"]["path"].as_str().expect("database path");
+    let log_file = std::path::Path::new(database)
+        .parent()
+        .expect("data dir")
+        .join("logs/daemon.log");
+    std::fs::read_to_string(log_file).expect("daemon log")
+}
+
+#[tokio::test]
+async fn a_failing_key_command_shows_its_status_never_its_output() {
+    let (env, _graph, typesafe) = setup(
+        r#"
+[suggest]
+enabled = true
+api_key_command = ["sh", "-c", "echo sk-fake-stdout; echo sk-fake-secret-on-stderr >&2; exit 3"]
+"#,
+    )
+    .await;
+    let output = env
+        .cmd()
+        .args([
+            "--format",
+            "json",
+            "tasks",
+            "suggest-list",
+            "pay council tax",
+        ])
+        .assert()
+        .success()
+        .get_output()
+        .clone();
+    assert!(sent(&typesafe).await.is_empty(), "no key, nothing sent");
+    let doctor = env.json(&["doctor"]);
+    let problem = doctor["suggest"]["problem"].as_str().unwrap_or_default();
+    assert!(
+        problem.contains("exit status: 3") && problem.contains("output withheld"),
+        "{doctor}"
+    );
+    for seen in [
+        String::from_utf8_lossy(&output.stdout).into_owned(),
+        String::from_utf8_lossy(&output.stderr).into_owned(),
+        doctor.to_string(),
+        daemon_log(&env),
+    ] {
+        assert!(!seen.contains("sk-fake"), "{seen}");
+    }
+}
+
+#[tokio::test]
+async fn an_unknown_choice_is_reported_without_echoing_it() {
+    let (env, _graph, typesafe) = setup(ENABLED).await;
+    // A model answer that repeats the (private) title as its choice.
+    answers(&typesafe, "private title 7c1f", 0.95).await;
+    let output = env
+        .cmd()
+        .args([
+            "--format",
+            "json",
+            "tasks",
+            "suggest-list",
+            "private title 7c1f",
+        ])
+        .assert()
+        .success()
+        .get_output()
+        .clone();
+    let suggested: Value = serde_json::from_slice(&output.stdout).expect("json");
+    assert_eq!(suggested["list_id"], Value::Null);
+    let doctor = env.json(&["doctor"]);
+    assert_eq!(
+        doctor["suggest"]["problem"], "the model returned an unknown list",
+        "{doctor}"
+    );
+    let log = daemon_log(&env);
+    assert!(log.contains("the model returned an unknown list"), "{log}");
+    for seen in [
+        String::from_utf8_lossy(&output.stderr).into_owned(),
+        doctor.to_string(),
+        log,
+    ] {
+        assert!(!seen.contains("7c1f"), "{seen}");
+    }
+}

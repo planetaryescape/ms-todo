@@ -75,17 +75,16 @@ async fn run(argv: &[String]) -> Result<ApiKey, String> {
         })?
         .map_err(|error| format!("suggest.api_key_command failed: {error}"))?;
     if !output.status.success() {
-        // stderr only: stdout may hold part of a secret.
-        let why = String::from_utf8_lossy(&output.stderr);
-        let why = why.lines().next().unwrap_or_default().trim();
+        // The status only: what a password manager prints, even on its
+        // error stream, may hold part of a secret.
+        let printed = if output.stdout.is_empty() && output.stderr.is_empty() {
+            "no output"
+        } else {
+            "output withheld"
+        };
         return Err(format!(
-            "suggest.api_key_command exited with {}{}",
-            output.status,
-            if why.is_empty() {
-                String::new()
-            } else {
-                format!(": {}", ms_todo_core::one_line_safe(why))
-            }
+            "suggest.api_key_command exited with {} ({printed})",
+            output.status
         ));
     }
     let key = String::from_utf8(output.stdout)
@@ -133,19 +132,26 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn a_failing_command_says_why_without_its_output() {
+    async fn a_failing_command_gives_its_status_never_its_output() {
         let failed = resolve(
             None,
             Some(&KeyCommand::Argv(vec![
                 "sh".into(),
                 "-c".into(),
-                "echo sk-secret; echo 'not signed in' >&2; exit 3".into(),
+                "echo sk-secret; echo sk-fake-secret-on-stderr >&2; exit 3".into(),
             ])),
         )
         .await
         .expect_err("failed");
-        assert!(failed.contains("not signed in"), "{failed}");
-        assert!(!failed.contains("sk-secret"), "{failed}");
+        assert!(
+            failed.contains("exit status: 3") && failed.contains("output withheld"),
+            "{failed}"
+        );
+        assert!(!failed.contains("sk-"), "{failed}");
+        let silent = resolve(None, Some(&line("false")))
+            .await
+            .expect_err("failed");
+        assert!(silent.contains("(no output)"), "{silent}");
 
         let missing = resolve(None, Some(&line("ms-todo-no-such-program")))
             .await

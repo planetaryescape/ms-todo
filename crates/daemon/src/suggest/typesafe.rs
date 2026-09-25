@@ -49,8 +49,10 @@ pub(crate) enum TypeSafeError {
     Network(String),
     #[error("TypeSafe didn't answer within {} seconds", DEADLINE.as_secs())]
     Timeout,
-    #[error("TypeSafe's answer wasn't readable: {0}")]
-    Decode(String),
+    /// No detail: a parser's message can quote the answer, which can
+    /// quote the task.
+    #[error("TypeSafe's answer wasn't readable")]
+    Decode,
 }
 
 pub(crate) struct TypeSafe {
@@ -120,10 +122,8 @@ impl TypeSafe {
                 Some(wait) if busy => tokio::time::sleep(*wait).await,
                 _ if !status.is_success() => return Err(TypeSafeError::Status(status.as_u16())),
                 _ => {
-                    let response: Response = response
-                        .json()
-                        .await
-                        .map_err(|error| TypeSafeError::Decode(error.without_url().to_string()))?;
+                    let response: Response =
+                        response.json().await.map_err(|_| TypeSafeError::Decode)?;
                     return answer(response);
                 }
             }
@@ -135,8 +135,8 @@ fn answer(mut response: Response) -> Result<Answer, TypeSafeError> {
     let value = response
         .answers
         .remove(QUESTION)
-        .ok_or_else(|| TypeSafeError::Decode("no answer to the question".into()))?;
-    serde_json::from_value(value).map_err(|error| TypeSafeError::Decode(error.to_string()))
+        .ok_or(TypeSafeError::Decode)?;
+    serde_json::from_value(value).map_err(|_| TypeSafeError::Decode)
 }
 
 #[cfg(test)]
@@ -272,9 +272,6 @@ mod tests {
             .mount(&server)
             .await;
         let answer = client.choose(&key(), "mow", &criteria()).await;
-        assert!(
-            matches!(answer, Err(TypeSafeError::Decode(_))),
-            "{answer:?}"
-        );
+        assert!(matches!(answer, Err(TypeSafeError::Decode)), "{answer:?}");
     }
 }

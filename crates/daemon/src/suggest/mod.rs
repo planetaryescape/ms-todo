@@ -161,11 +161,9 @@ impl Suggester {
             .choose(key, title, &candidates.criteria)
             .await
             .map_err(|error| error.to_string())?;
+        // Not echoed: it may repeat the title, or anything else.
         let Some((list_id, list_name)) = candidates.lists.get(&answer.choice) else {
-            return Err(format!(
-                "TypeSafe chose {:?}, which isn't one of the lists",
-                answer.choice
-            ));
+            return Err("the model returned an unknown list".into());
         };
         Ok(
             (answer.confidence >= config.min_confidence).then(|| ListSuggestion {
