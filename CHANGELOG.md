@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.1.19](https://github.com/planetaryescape/ms-todo/compare/v0.1.18...v0.1.19) (2026-09-25)
+
+
+### Bug Fixes
+
+* bold search matches in a terminal instead of printing U+FFFD ([8d5209c](https://github.com/planetaryescape/ms-todo/commit/8d5209cbbfdc2874de10bceea8a8f87737a555e7))
+* keep task-list markers from overlapping ([bd2c7e0](https://github.com/planetaryescape/ms-todo/commit/bd2c7e01f4711a45f406d241e0d0107b7b82f877))
+
+
+### Documentation
+
+* README with demo ([ec49914](https://github.com/planetaryescape/ms-todo/commit/ec499147ef7d3eef98fcf8d119dc0b563787f0df))
+
 ## [0.1.18](https://github.com/planetaryescape/ms-todo/compare/v0.1.17...v0.1.18) (2026-09-25)
 
 
