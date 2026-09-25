@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.12](https://github.com/planetaryescape/ms-todo/compare/v0.1.11...v0.1.12) (2026-09-25)
+
+
+### Bug Fixes
+
+* a reminder with only a day defaults to 09:00 ([4c4b25d](https://github.com/planetaryescape/ms-todo/commit/4c4b25d8157fe16682629d12f506de7e01b444f1))
+
 ## [0.1.11](https://github.com/planetaryescape/ms-todo/compare/v0.1.10...v0.1.11) (2026-09-25)
 
 
