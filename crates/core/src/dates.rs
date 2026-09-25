@@ -18,6 +18,35 @@ pub fn local_due_date(date_time: &str, time_zone: &str) -> Option<NaiveDate> {
     Some((local + Duration::hours(12)).date())
 }
 
+/// The day a task was completed. Graph records `completedDateTime` as a
+/// UTC date, midnight UTC with no time of day (S12), not as the user's
+/// local midnight, so that value is its UTC calendar date: rounding it in
+/// the local zone would move it a day in Auckland (+13). A value with a
+/// real time is converted to the local zone and its date taken, with no
+/// rounding.
+pub fn completion_date(date_time: &str, time_zone: &str) -> Option<NaiveDate> {
+    completion_date_in(date_time, time_zone, &Local)
+}
+
+fn completion_date_in<Tz: TimeZone>(
+    date_time: &str,
+    time_zone: &str,
+    local: &Tz,
+) -> Option<NaiveDate> {
+    let naive = parse_graph_date_time(date_time)?;
+    if !time_zone.eq_ignore_ascii_case("UTC") {
+        return Some(naive.date());
+    }
+    if naive.time() == chrono::NaiveTime::MIN {
+        return Some(naive.date());
+    }
+    Some(
+        Utc.from_utc_datetime(&naive)
+            .with_timezone(local)
+            .date_naive(),
+    )
+}
+
 /// A day as the heading of what was done on it: `Today`, `Yesterday`,
 /// else `Mon 21 Sep`, with the year when it isn't this year.
 pub fn day_heading(day: NaiveDate, today: NaiveDate) -> String {
@@ -88,6 +117,37 @@ mod tests {
             local_due_date("2026-09-26T00:00:00.0000000", "UTC"),
             Some(date("2026-09-26"))
         );
+    }
+
+    #[test]
+    fn a_utc_midnight_completion_is_its_utc_date_in_any_zone() {
+        let zone = |hours: i32| chrono::FixedOffset::east_opt(hours * 3600).expect("offset");
+        let midnight = "2026-12-10T00:00:00.0000000";
+        // Auckland in summer (NZDT, +13), London in summer (BST, +1), and
+        // New York (EST, -5): Graph's UTC date, never rounded to a
+        // neighbour.
+        for hours in [13, 1, -5] {
+            assert_eq!(
+                completion_date_in(midnight, "UTC", &zone(hours)),
+                Some(date("2026-12-10")),
+                "{hours:+}"
+            );
+        }
+        // A real time is converted and its local date taken.
+        let timed = "2026-12-10T12:30:00.0000000";
+        assert_eq!(
+            completion_date_in(timed, "UTC", &zone(13)),
+            Some(date("2026-12-11"))
+        );
+        assert_eq!(
+            completion_date_in(timed, "UTC", &zone(-5)),
+            Some(date("2026-12-10"))
+        );
+        assert_eq!(
+            completion_date_in("2026-12-10T03:00:00.0000000", "UTC", &zone(-5)),
+            Some(date("2026-12-09"))
+        );
+        assert_eq!(completion_date("junk", "UTC"), None);
     }
 
     #[test]

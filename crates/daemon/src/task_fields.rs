@@ -4,7 +4,7 @@
 
 use chrono::{NaiveDate, NaiveDateTime, NaiveTime};
 use ms_todo_core::{
-    DATE_FORMAT, ErrorKind, REMINDER_FORMAT, local_due_date, parse_graph_date_time,
+    DATE_FORMAT, ErrorKind, REMINDER_FORMAT, completion_date, local_due_date, parse_graph_date_time,
 };
 use ms_todo_protocol::{Clearable, Entity, ErrorPayload, Importance, NewTask, TaskEdit};
 use serde_json::{Map, Value, json};
@@ -135,19 +135,23 @@ pub(crate) fn user_time_zone() -> String {
 
 /// A task's due date as a local date (S11's round-to-midnight rule).
 pub(crate) fn graph_due_date(task: &Entity) -> Option<NaiveDate> {
-    graph_date(task, "dueDateTime")
+    graph_date(task, "dueDateTime", local_due_date)
 }
 
-/// The local day a task was completed on. Graph keeps the day only, as
-/// midnight UTC (S12), so it's read as a due date is. `None` for a
-/// completion Graph hasn't answered yet.
+/// The day a task was completed: Graph's UTC date (S12; see
+/// `ms_todo_core::completion_date`). `None` for a completion Graph hasn't
+/// answered yet.
 pub(crate) fn graph_completion_date(task: &Entity) -> Option<NaiveDate> {
-    graph_date(task, "completedDateTime")
+    graph_date(task, "completedDateTime", completion_date)
 }
 
-fn graph_date(task: &Entity, key: &str) -> Option<NaiveDate> {
+fn graph_date(
+    task: &Entity,
+    key: &str,
+    read: fn(&str, &str) -> Option<NaiveDate>,
+) -> Option<NaiveDate> {
     let value = task.get(key)?;
-    local_due_date(
+    read(
         value.get("dateTime")?.as_str()?,
         value.get("timeZone")?.as_str()?,
     )

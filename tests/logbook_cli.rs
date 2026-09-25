@@ -102,15 +102,15 @@ fn due_of(env: &Env, list: &str, title: &str) -> String {
 }
 
 #[tokio::test]
-async fn done_puts_each_completion_on_its_london_day_newest_first() {
+async fn done_puts_each_completion_on_graphs_day_newest_first() {
     let mut env = Env::new();
     let _graph = graph_with(
         &mut env,
         vec![
-            // Midnight in London in summer, which is 23:00 UTC the day
-            // before: truncating would say the 9th.
+            // Not midnight UTC, so a real time: converted to London,
+            // 00:00 on the 10th in summer.
             completed("T1", "Late one", "2026-09-09T23:00:00"),
-            // What Graph writes (S12): 00:00 UTC is 01:00 in London.
+            // What Graph writes (S12): midnight UTC is the UTC date.
             completed("T2", "Midnight UTC", "2026-09-10T00:00:00"),
             completed("T3", "Earlier", "2026-09-08T00:00:00"),
             task("T4", "Still open", "W/\"T4\""),

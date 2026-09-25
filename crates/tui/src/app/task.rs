@@ -3,7 +3,7 @@
 //! parses JSON.
 
 use chrono::{NaiveDate, NaiveDateTime};
-use ms_todo_core::{local_date_time, local_due_date};
+use ms_todo_core::{completion_date, local_date_time, local_due_date};
 use ms_todo_protocol::{Entity, Importance};
 use serde_json::Value;
 
@@ -44,9 +44,8 @@ pub struct Task {
     pub sync: SyncMarker,
     /// Graph's `completedDateTime`, local, for ordering.
     pub completed_at: Option<NaiveDateTime>,
-    /// The local day it was completed. Graph keeps the day only, as
-    /// midnight UTC (S12), so it's read as a due date is; `None` until
-    /// Graph has answered the completion.
+    /// The day it was completed: Graph's UTC date (S12), as `done` reads
+    /// it; `None` until Graph has answered the completion.
     pub completed_on: Option<NaiveDate>,
 }
 
@@ -108,7 +107,7 @@ impl Task {
             completed_at: date_time("completedDateTime")
                 .and_then(|(at, zone)| local_date_time(at, zone)),
             completed_on: date_time("completedDateTime")
-                .and_then(|(at, zone)| local_due_date(at, zone)),
+                .and_then(|(at, zone)| completion_date(at, zone)),
         })
     }
 }
