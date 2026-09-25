@@ -21,7 +21,7 @@ expression: "format!(\"{browsing}\\n{}\", terminal.backend())"
 "│                      ││                                                  ││Sync       synced               │"
 "╰──────────────────────╯╰──────────────────────────────────────────────────╯╰────────────────────────────────╯"
 " ● daemon  ·  synced 12s ago  ·  all changes sent                                                             "
-" a Add  x Done  e Edit  Space Check step  d Delete  v Select  u Undo  / Filter  : Palette  r Sync  ? Help  q Q"
+" a Add  x Done  e Edit field  Space Check step  d Delete  v Select  u Undo  / Filter  : Palette  r Sync  ? Hel"
 
 " ms-todo 9.9.9 · Home                                                                                ● synced "
 "╭ Lists ───────────────╮╭ Home ────────────────────────────────────────────╮╭ Detail ────────────────────────╮"

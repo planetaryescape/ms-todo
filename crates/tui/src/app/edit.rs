@@ -1,8 +1,9 @@
-//! Editing the fields of a task: `e` picks a field, and its editor opens
-//! in the detail pane; importance is set by level, with no typing. What's
-//! typed is checked before anything is sent, so invalid input costs
-//! nothing but an inline error. Dates are read by `ms_todo_nlp`, as the
-//! CLI's `--due` and `--reminder` are.
+//! Editing the fields of a task: `e` picks a field, or in the detail
+//! pane takes the one under the cursor, and its editor opens there;
+//! importance is set by level, with no typing. What's typed is checked
+//! before anything is sent, so invalid input costs nothing but an inline
+//! error. Dates are read by `ms_todo_nlp`, as the CLI's `--due` and
+//! `--reminder` are.
 
 use ms_todo_core::REMINDER_FORMAT;
 use ms_todo_nlp::{NotUnderstood, ParseContext, Reading, read_due, read_importance, read_reminder};
@@ -221,8 +222,8 @@ impl App {
         Vec::new()
     }
 
-    /// `e` (the picker), Enter in the detail pane, a field picked, and
-    /// importance by level or cycled.
+    /// `e` (the picker, or the field under the detail cursor), Enter in
+    /// the detail pane, a field picked, and importance by level or cycled.
     pub(super) fn edit_action(&mut self, action: Action) -> Vec<Effect> {
         if self.mode == Mode::Normal && self.still_loading() {
             return Vec::new();
@@ -238,10 +239,19 @@ impl App {
             return Vec::new();
         };
         match action {
-            Action::Edit => {
-                self.mode = Mode::ChoosingField { id };
-                Vec::new()
-            }
+            // In the detail pane the cursor already says which field;
+            // elsewhere, or for a selection, the picker asks.
+            Action::Edit => match self.detail_row_now() {
+                Some(DetailRow::Field(field))
+                    if self.focus == Pane::Detail && self.selection.is_empty() =>
+                {
+                    self.open_field(id, field)
+                }
+                _ => {
+                    self.mode = Mode::ChoosingField { id };
+                    Vec::new()
+                }
+            },
             Action::EditHere => match self.detail_row {
                 DetailRow::Field(field) => self.open_field(id, field),
                 // The steps' and link's rows are `steps`' to edit.

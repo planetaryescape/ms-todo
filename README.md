@@ -160,7 +160,7 @@ In the TUI's add box, a likely list shows as `→ Finances? (Ctrl-l to accept)`.
 | `Enter` / `Space` in the sidebar | open a list or view; on a folder, fold or unfold it |
 | `a` | quick add, in a box in the middle of the screen: each part it reads is coloured as you type, with the task it makes underneath. `Tab` completes a `#List` or `@label`, `Ctrl-r` takes the text literally, `Ctrl-l` takes a suggested list, `Enter` adds |
 | `x` | complete, or reopen a completed task |
-| `e` | edit a field: `t` title, `d` due date, `r` reminder, `i` importance, `n` notes, `I` cycles importance |
+| `e` | edit a field: `t` title, `d` due date, `r` reminder, `i` importance, `n` notes, `I` cycles importance; in the detail pane, edits the field under the cursor |
 | `Enter` in the detail pane | edit the field under the cursor |
 | `Space` on a step in the detail pane | check or uncheck it; `a` adds steps, `e` / `Enter` edits a step or the link, `d` deletes one |
 | `v` / `V` | select a task, or every task in the view; `Esc` clears the selection |

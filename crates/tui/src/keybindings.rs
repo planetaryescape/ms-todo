@@ -81,6 +81,7 @@ const BROWSE: &[Context] = &[
     Context::Steps,
 ];
 const TASKS: &[Context] = &[Context::Tasks, Context::Detail, Context::Steps];
+const DETAIL: &[Context] = &[Context::Detail, Context::Steps];
 const SIDEBAR: &[Context] = &[Context::Sidebar];
 const LISTS: &[Context] = &[
     Context::Sidebar,
@@ -122,14 +123,10 @@ pub const BINDINGS: &[Binding] = &[
     bind(BROWSE, "Tab", Action::FocusNext, "Next pane", false),
     bind(BROWSE, "a", Action::Add, "Add", true),
     bind(TASKS, "x", Action::ToggleComplete, "Done", true),
-    bind(TASKS, "e", Action::Edit, "Edit", true),
-    bind(
-        &[Context::Detail, Context::Steps],
-        "Enter",
-        Action::EditHere,
-        "Edit this field",
-        false,
-    ),
+    bind(&[Context::Tasks], "e", Action::Edit, "Edit", true),
+    // The field under the cursor, with no picker.
+    bind(DETAIL, "e", Action::Edit, "Edit field", true),
+    bind(DETAIL, "Enter", Action::EditHere, "Edit this field", false),
     bind(
         &[Context::Steps],
         "Space",
@@ -422,6 +419,8 @@ pub fn help_rows() -> Vec<(String, &'static str)> {
 pub fn commands() -> Vec<(String, &'static str, Action)> {
     let browsing = grouped(|binding| {
         binding.contexts.iter().any(|c| BROWSE.contains(c))
+            // The detail pane's `e` is the task list's, on one field.
+            && binding.contexts != DETAIL
             && !matches!(
                 binding.action,
                 Action::MoveDown
@@ -553,6 +552,8 @@ mod tests {
         assert!(help.contains(&("j/Down".into(), "Down")));
         assert!(help.contains(&("q/Ctrl-c".into(), "Quit")));
         assert!(help.contains(&("e".into(), "Edit")));
+        assert!(help.contains(&("e".into(), "Edit field")));
+        assert!(super::hints(Context::Detail).contains(&("e".into(), "Edit field")));
         assert!(help.contains(&("Enter".into(), "Edit this field")));
     }
 
@@ -565,6 +566,8 @@ mod tests {
         assert!(commands.contains(&("e d".into(), "Edit due date", Action::EditField(Field::Due))));
         assert!(commands.contains(&("e I".into(), "Cycle importance", Action::CycleImportance)));
         assert!(!commands.iter().any(|(keys, _, _)| keys == "e Esc"));
+        // One Edit: the detail pane's is the same action.
+        assert!(!commands.iter().any(|(_, label, _)| *label == "Edit field"));
         assert!(
             !commands
                 .iter()

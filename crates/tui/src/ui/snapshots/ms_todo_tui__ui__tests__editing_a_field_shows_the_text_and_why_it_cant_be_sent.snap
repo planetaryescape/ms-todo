@@ -17,7 +17,7 @@ expression: "format!(\"{cursor}\\n{typing}\\n{}\", render(&app))"
 "│                      ││                                                  ││Sync       synced               │"
 "╰──────────────────────╯╰──────────────────────────────────────────────────╯╰────────────────────────────────╯"
 " ● daemon  ·  synced 12s ago  ·  all changes sent                                                             "
-" a Add  x Done  e Edit  d Delete  v Select  u Undo  / Filter  : Palette  r Sync  ? Help  q Quit  o Open link  "
+" a Add  x Done  e Edit field  d Delete  v Select  u Undo  / Filter  : Palette  r Sync  ? Help  q Quit  o Open "
 
 " ms-todo 9.9.9 · Home                                                                                ● synced "
 "╭ Lists ───────────────╮╭ Home ────────────────────────────────────────────╮╭ Detail ────────────────────────╮"

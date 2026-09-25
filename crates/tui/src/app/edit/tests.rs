@@ -51,8 +51,12 @@ fn edit_sent(effects: &[Effect]) -> (Vec<String>, TaskEdit) {
     }
 }
 
-/// `e`, then the field's key in the picker.
+/// `e` in the task list, then the field's key in the picker.
 fn pick(app: &mut App, field: Field) -> Vec<Effect> {
+    // In the detail pane `e` skips the picker.
+    if app.focus == Pane::Detail {
+        act(app, Action::FocusLeft);
+    }
     act(app, Action::Edit);
     assert_eq!(app.context(), Context::Fields);
     let bound = key_for(Context::Fields, Action::EditField(field)).expect("a picker key");
@@ -204,20 +208,46 @@ fn the_picker_goes_to_each_field() {
 }
 
 #[test]
-fn e_from_the_detail_pane_opens_the_picker_and_enter_edits_the_field_under_the_cursor() {
+fn e_in_the_detail_pane_edits_the_field_under_the_cursor_as_enter_does() {
+    for field in Field::ALL {
+        let mut by_e = seeded();
+        to_field(&mut by_e, field);
+        assert!(act(&mut by_e, Action::Edit).is_empty());
+        let mut by_enter = seeded();
+        to_field(&mut by_enter, field);
+        act(&mut by_enter, Action::EditHere);
+        assert_eq!(by_e.mode, by_enter.mode, "{field:?}");
+        match field {
+            Field::Importance => {
+                assert_eq!(by_e.mode, Mode::ChoosingImportance { id: "t1".into() });
+            }
+            _ => assert!(
+                matches!(&by_e.mode, Mode::Editing { field: editing, .. } if *editing == field),
+                "{field:?}"
+            ),
+        }
+    }
+}
+
+#[test]
+fn e_in_the_task_list_still_asks_which_field() {
     let mut app = seeded();
-    to_field(&mut app, Field::Due);
+    to_field(&mut app, Field::Reminder);
+    act(&mut app, Action::FocusLeft);
+    act(&mut app, Action::Edit);
+    assert_eq!(app.mode, Mode::ChoosingField { id: "t1".into() });
+}
+
+#[test]
+fn e_in_the_detail_pane_with_a_selection_still_asks_which_field() {
+    let mut app = seeded();
+    act(&mut app, Action::ToggleSelect);
+    to_field(&mut app, Field::Title);
     act(&mut app, Action::Edit);
     assert_eq!(app.context(), Context::Fields);
-    act(&mut app, Action::Cancel);
-    act(&mut app, Action::EditHere);
-    assert!(matches!(
-        &app.mode,
-        Mode::Editing {
-            field: Field::Due,
-            ..
-        }
-    ));
+    // Due from the picker still goes to the whole selection.
+    act(&mut app, Action::EditField(Field::Due));
+    assert!(matches!(app.mode, Mode::SettingDue { .. }));
 }
 
 #[test]
