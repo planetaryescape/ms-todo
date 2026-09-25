@@ -1,5 +1,23 @@
 # Changelog
 
+## [0.1.20](https://github.com/planetaryescape/ms-todo/compare/v0.1.19...v0.1.20) (2026-09-25)
+
+
+### Features
+
+* suggest a list for a task captured into the inbox (rung 6b) ([10bbc27](https://github.com/planetaryescape/ms-todo/commit/10bbc27ccb443111f41c07e2f73b7f5d48f06a40))
+
+
+### Bug Fixes
+
+* keep key-command output and model answers out of logs ([a804a1b](https://github.com/planetaryescape/ms-todo/commit/a804a1b66d63e906c92c8c9e508b9562bd264e7c))
+* quick-add never reads a quoted name over a part already read ([a8c9b5c](https://github.com/planetaryescape/ms-todo/commit/a8c9b5ca3647dfc020b2ec6351f40588249ba0df))
+
+
+### Documentation
+
+* rung 6b list suggestions in the README, blueprint, roadmap, D-053 and the skill ([30403ac](https://github.com/planetaryescape/ms-todo/commit/30403ac19fa678177cef61440cab04175ff4d16e))
+
 ## [0.1.19](https://github.com/planetaryescape/ms-todo/compare/v0.1.18...v0.1.19) (2026-09-25)
 
 

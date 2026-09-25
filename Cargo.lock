@@ -1803,7 +1803,7 @@ dependencies = [
 
 [[package]]
 name = "ms-todo"
-version = "0.1.19"
+version = "0.1.20"
 dependencies = [
  "assert_cmd",
  "base64 0.23.1",
@@ -1826,7 +1826,7 @@ dependencies = [
 
 [[package]]
 name = "ms-todo-cli"
-version = "0.1.19"
+version = "0.1.20"
 dependencies = [
  "chrono",
  "clap",
@@ -1849,7 +1849,7 @@ dependencies = [
 
 [[package]]
 name = "ms-todo-core"
-version = "0.1.19"
+version = "0.1.20"
 dependencies = [
  "base64 0.23.1",
  "chrono",
@@ -1863,7 +1863,7 @@ dependencies = [
 
 [[package]]
 name = "ms-todo-daemon"
-version = "0.1.19"
+version = "0.1.20"
 dependencies = [
  "chrono",
  "fs2",
@@ -1890,7 +1890,7 @@ dependencies = [
 
 [[package]]
 name = "ms-todo-demo-graph"
-version = "0.1.19"
+version = "0.1.20"
 dependencies = [
  "chrono",
  "ms-todo-fake-graph",
@@ -1902,7 +1902,7 @@ dependencies = [
 
 [[package]]
 name = "ms-todo-fake-graph"
-version = "0.1.19"
+version = "0.1.20"
 dependencies = [
  "base64 0.23.1",
  "chrono",
@@ -1912,7 +1912,7 @@ dependencies = [
 
 [[package]]
 name = "ms-todo-graph"
-version = "0.1.19"
+version = "0.1.20"
 dependencies = [
  "base64 0.23.1",
  "chrono",
@@ -1931,7 +1931,7 @@ dependencies = [
 
 [[package]]
 name = "ms-todo-nlp"
-version = "0.1.19"
+version = "0.1.20"
 dependencies = [
  "chrono",
  "insta",
@@ -1943,7 +1943,7 @@ dependencies = [
 
 [[package]]
 name = "ms-todo-protocol"
-version = "0.1.19"
+version = "0.1.20"
 dependencies = [
  "bytes",
  "serde",
@@ -1954,7 +1954,7 @@ dependencies = [
 
 [[package]]
 name = "ms-todo-store"
-version = "0.1.19"
+version = "0.1.20"
 dependencies = [
  "chrono",
  "html2text",
@@ -1969,7 +1969,7 @@ dependencies = [
 
 [[package]]
 name = "ms-todo-tui"
-version = "0.1.19"
+version = "0.1.20"
 dependencies = [
  "ansi_colours",
  "chrono",
