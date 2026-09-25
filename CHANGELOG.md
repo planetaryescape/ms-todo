@@ -1,5 +1,24 @@
 # Changelog
 
+## [0.1.15](https://github.com/planetaryescape/ms-todo/compare/v0.1.14...v0.1.15) (2026-09-25)
+
+
+### Features
+
+* follow links from a task ([eb02bb2](https://github.com/planetaryescape/ms-todo/commit/eb02bb21b105aadf32b9e95f48fdb144133c5fbf))
+* themes for the TUI ([e6cb334](https://github.com/planetaryescape/ms-todo/commit/e6cb3341223dfe4997b9e2cfdeeb73885e43ec6e))
+
+
+### Bug Fixes
+
+* never print control characters in ids output ([0dad23a](https://github.com/planetaryescape/ms-todo/commit/0dad23aae8869a65ed0b770fc83cc6f639a644bf))
+
+
+### Documentation
+
+* links in the README, blueprint, skill and D-050 ([eeadeb7](https://github.com/planetaryescape/ms-todo/commit/eeadeb73e6d633bc080be5b6f7dbbaef0d153d60))
+* themes in the README, blueprint and D-049 ([fe7e142](https://github.com/planetaryescape/ms-todo/commit/fe7e142ed993e4906892c818a7495c3c2c5bf4b1))
+
 ## [0.1.14](https://github.com/planetaryescape/ms-todo/compare/v0.1.13...v0.1.14) (2026-09-25)
 
 
