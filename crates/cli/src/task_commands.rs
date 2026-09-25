@@ -1,17 +1,18 @@
-//! `tasks add|complete|reopen|edit|delete` and `raw` writes. The daemon
-//! resolves the targets and builds the plan; `--dry-run` asks it for the
-//! plan only. A destructive command without `--yes` asks in a terminal and
-//! exits 2 anywhere else, before contacting the daemon.
+//! `tasks add|complete|reopen|edit|delete`, `reschedule` and `raw` writes.
+//! The daemon resolves the targets and builds the plan; `--dry-run` asks
+//! it for the plan only. A destructive command without `--yes` asks in a
+//! terminal and exits 2 anywhere else, before contacting the daemon.
 
 use std::io::BufRead;
 
 use ms_todo_core::{ErrorKind, Paths};
 use ms_todo_protocol::{
-    Clearable, NewTask, RawWriteMethod, Request, ResponseData, TaskChange, TaskEdit,
+    Clearable, NewTask, RawWriteMethod, Request, ResponseData, TaskChange, TaskEdit, TaskSelect,
 };
 use serde_json::Value;
 
-use crate::args::{AddArgs, EditArgs, RawArgs, RawMethod, TargetArgs, UndoArgs};
+use crate::args::{AddArgs, EditArgs, RawArgs, RawMethod, RescheduleArgs, TargetArgs, UndoArgs};
+use crate::bulk_commands::{self, Bulk};
 use crate::confirm::{can_prompt, confirm};
 use crate::error::CliError;
 use crate::output::OutputFormat;
@@ -38,6 +39,8 @@ pub async fn add(paths: &Paths, args: AddArgs, format: OutputFormat) -> Result<(
     send(paths, request, format).await
 }
 
+/// `tasks edit`: one task, several named, or those `--overdue` or
+/// `--due-before` picks.
 pub async fn edit(paths: &Paths, args: EditArgs, format: OutputFormat) -> Result<(), CliError> {
     let edit = TaskEdit {
         title: args.title,
@@ -46,14 +49,43 @@ pub async fn edit(paths: &Paths, args: EditArgs, format: OutputFormat) -> Result
         reminder: clearable(args.reminder, args.clear_reminder),
         body: args.body,
     };
-    let request = change_request(
-        vec![args.task],
-        args.list,
-        TaskChange::Edit(edit),
-        args.dry_run,
-        args.idempotency.idempotency_key,
-    );
-    send(paths, request, format).await
+    let (tasks, from_stdin) = expand_stdin(args.task)?;
+    let bulk = Bulk {
+        tasks,
+        from_stdin,
+        list: args.list,
+        select: bulk_commands::select(args.select),
+        change: TaskChange::Edit(edit),
+        dry_run: args.dry_run,
+        yes: args.yes,
+        idempotency_key: args.idempotency.idempotency_key,
+        verb: "Change",
+    };
+    bulk_commands::apply(paths, bulk, format).await
+}
+
+/// `reschedule`: a due-date edit, to the tasks named or picked.
+pub async fn reschedule(
+    paths: &Paths,
+    args: RescheduleArgs,
+    format: OutputFormat,
+) -> Result<(), CliError> {
+    let (tasks, from_stdin) = expand_stdin(args.tasks)?;
+    let bulk = Bulk {
+        tasks,
+        from_stdin,
+        list: args.list,
+        select: bulk_commands::select(args.select),
+        change: TaskChange::Edit(TaskEdit {
+            due: Some(Clearable::Set(args.to)),
+            ..TaskEdit::default()
+        }),
+        dry_run: args.dry_run,
+        yes: args.yes,
+        idempotency_key: args.idempotency.idempotency_key,
+        verb: "Reschedule",
+    };
+    bulk_commands::apply(paths, bulk, format).await
 }
 
 /// `complete` and `reopen`.
@@ -67,6 +99,7 @@ pub async fn change(
     let request = change_request(
         tasks,
         args.list,
+        None,
         change,
         args.dry_run,
         args.idempotency.idempotency_key,
@@ -83,7 +116,14 @@ pub async fn delete(
     let (tasks, from_stdin) = expand_stdin(args.tasks)?;
     let key = args.idempotency.idempotency_key;
     if yes || args.dry_run {
-        let request = change_request(tasks, args.list, TaskChange::Delete, args.dry_run, key);
+        let request = change_request(
+            tasks,
+            args.list,
+            None,
+            TaskChange::Delete,
+            args.dry_run,
+            key,
+        );
         return send(paths, request, format).await;
     }
     // stdin can't be both the IDs and the answer.
@@ -95,7 +135,7 @@ pub async fn delete(
                 .into(),
         ));
     }
-    let preview = change_request(tasks, args.list, TaskChange::Delete, true, None);
+    let preview = change_request(tasks, args.list, None, TaskChange::Delete, true, None);
     let plan = match daemon_client::ask(paths, preview).await? {
         ResponseData::Plan(plan) => plan,
         _ => return Err(crate::unexpected_response()),
@@ -109,7 +149,7 @@ pub async fn delete(
     let ids = plan.targets.into_iter().map(|target| target.id).collect();
     send(
         paths,
-        change_request(ids, None, TaskChange::Delete, false, key),
+        change_request(ids, None, None, TaskChange::Delete, false, key),
         format,
     )
     .await
@@ -177,9 +217,10 @@ pub async fn undo(paths: &Paths, args: UndoArgs, format: OutputFormat) -> Result
     send(paths, request, format).await
 }
 
-fn change_request(
+pub(crate) fn change_request(
     tasks: Vec<String>,
     list: Option<String>,
+    select: Option<TaskSelect>,
     change: TaskChange,
     dry_run: bool,
     idempotency_key: Option<String>,
@@ -187,6 +228,7 @@ fn change_request(
     Request::ChangeTasks {
         tasks,
         list,
+        select,
         change,
         dry_run,
         op_id: op_id_unless(dry_run),

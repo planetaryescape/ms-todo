@@ -44,6 +44,10 @@ pub struct Task {
     pub sync: SyncMarker,
     /// Graph's `completedDateTime`, local, for ordering.
     pub completed_at: Option<NaiveDateTime>,
+    /// The local day it was completed. Graph keeps the day only, as
+    /// midnight UTC (S12), so it's read as a due date is; `None` until
+    /// Graph has answered the completion.
+    pub completed_on: Option<NaiveDate>,
 }
 
 impl Task {
@@ -103,6 +107,8 @@ impl Task {
             },
             completed_at: date_time("completedDateTime")
                 .and_then(|(at, zone)| local_date_time(at, zone)),
+            completed_on: date_time("completedDateTime")
+                .and_then(|(at, zone)| local_due_date(at, zone)),
         })
     }
 }

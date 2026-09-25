@@ -44,6 +44,10 @@ pub enum Action {
     /// A level typed in the importance picker, as `ms_todo_nlp`'s
     /// `read_importance` reads it: `1`–`4`, `high`, `normal`, `low`.
     SetImportance(&'static str),
+    /// `S`: one due date for the selection, or the task under the cursor.
+    SetDue,
+    /// `R`: a new due date for every overdue open task on screen.
+    RescheduleOverdue,
     /// `v`: add the task to the selection, or take it out.
     ToggleSelect,
     /// `V`: select every task in the view.

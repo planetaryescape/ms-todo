@@ -97,6 +97,7 @@ async fn fake_daemon(listener: UnixListener, requests: Arc<Mutex<Vec<Request>>>)
                     items,
                     rolled: Vec::new(),
                     undoes: None,
+                    refused: Vec::new(),
                 };
                 framed
                     .send(reply(ResponseData::Applied(applied)))

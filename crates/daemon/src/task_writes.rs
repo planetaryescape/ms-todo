@@ -12,6 +12,7 @@
 use ms_todo_core::DATE_FORMAT;
 use ms_todo_protocol::{
     Applied, ErrorPayload, NewTask, Plan, PlannedTask, ResponseData, TaskAction, TaskChange,
+    TaskSelect,
 };
 use ms_todo_store::{Entity, LISTS_SCOPE, LocalChange, NewOp, OpKind, TaskRow, apply_body};
 use serde_json::{Map, Value, json};
@@ -24,7 +25,7 @@ use crate::outbox::op_id_for;
 use crate::task_fields::{
     Field, edit_fields, graph_body, graph_due_date, new_task_fields, user_time_zone,
 };
-use crate::task_resolution::resolve_tasks;
+use crate::task_resolution::{Target, resolve_tasks, select_tasks};
 
 pub(crate) async fn add_task(
     state: &State,
@@ -63,10 +64,17 @@ pub(crate) async fn add_task(
     queue(state, &op_id, None, vec![op], TaskAction::Add).await
 }
 
+/// The tasks a change names, or with `select` the open tasks it matches
+/// (rung 5d's bulk changes).
+pub(crate) struct Targets<'a> {
+    pub names: &'a [String],
+    pub list: Option<&'a str>,
+    pub select: Option<&'a TaskSelect>,
+}
+
 pub(crate) async fn change_tasks(
     state: &State,
-    names: &[String],
-    list: Option<&str>,
+    targets: Targets<'_>,
     change: TaskChange,
     dry_run: bool,
     op_id: String,
@@ -84,7 +92,16 @@ pub(crate) async fn change_tasks(
             ));
         }
     };
-    let targets = resolve_tasks(state, names, list).await?;
+    let bulk = targets.select.is_some();
+    let targets = resolve(state, &targets).await?;
+    if (bulk || targets.len() > 1) && fields.iter().any(Field::one_task_only) {
+        return Err(error_payload(
+            ms_todo_core::ErrorKind::InvalidInput,
+            "a title or notes change one task at a time; several tasks together take \
+             --due, --importance and --reminder"
+                .into(),
+        ));
+    }
     let changes = if action == TaskAction::Delete {
         Value::Null
     } else {
@@ -122,6 +139,17 @@ pub(crate) async fn change_tasks(
     queue(state, &op_id, None, ops, action).await
 }
 
+async fn resolve(state: &State, targets: &Targets<'_>) -> Result<Vec<Target>, ErrorPayload> {
+    match targets.select {
+        Some(_) if !targets.names.is_empty() => Err(error_payload(
+            ms_todo_core::ErrorKind::InvalidInput,
+            "name the tasks or select them (--overdue, --due-before), not both".into(),
+        )),
+        Some(select) => select_tasks(state, select, targets.list).await,
+        None => resolve_tasks(state, targets.names, targets.list).await,
+    }
+}
+
 /// Queue `ops`, one command's, wake the worker, and answer with what the
 /// tasks look like now.
 pub(crate) async fn queue(
@@ -131,12 +159,19 @@ pub(crate) async fn queue(
     ops: Vec<NewOp>,
     action: TaskAction,
 ) -> Result<ResponseData, ErrorPayload> {
-    let rows = state
-        .store
-        .enqueue(command_id, undoes, ops)
-        .await
-        .map_err(store_error)?;
-    state.outbox.wake();
+    // A selection that matched nothing queues nothing, and has nothing
+    // to undo.
+    let rows = if ops.is_empty() {
+        Vec::new()
+    } else {
+        let rows = state
+            .store
+            .enqueue(command_id, undoes, ops)
+            .await
+            .map_err(store_error)?;
+        state.outbox.wake();
+        rows
+    };
     state
         .events
         .tasks_changed(rows.iter().map(|row| row.local_id.clone()).collect());
@@ -147,6 +182,7 @@ pub(crate) async fn queue(
         list_ids: rows.iter().map(|row| row.list_local_id.clone()).collect(),
         rolled: Vec::new(),
         undoes: undoes.map(str::to_owned),
+        refused: Vec::new(),
     }))
 }
 

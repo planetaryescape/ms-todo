@@ -50,6 +50,20 @@ pub(crate) fn search_entity(hit: &SearchHit) -> Entity {
     entity
 }
 
+/// A completed task for `done`: the task, its list's name as `list`, and
+/// `completed_on`, its local day as `YYYY-MM-DD`, or null while the
+/// completion hasn't reached Microsoft To Do.
+pub(crate) fn completed_entity(
+    row: &TaskRow,
+    list_name: &str,
+    completed_on: Option<&str>,
+) -> Entity {
+    let mut entity = task_entity(row);
+    entity.insert("list".into(), json!(list_name));
+    entity.insert("completed_on".into(), json!(completed_on));
+    entity
+}
+
 fn identify(entity: &mut Entity, local_id: &str, graph_id: Option<&str>, sync_state: &str) {
     entity.insert("id".into(), json!(local_id));
     entity.insert("graph_id".into(), json!(graph_id));

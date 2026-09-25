@@ -22,8 +22,10 @@ use serde_json::{Map, Value};
 /// `Subscribe`, which the TUI needs from its first request, and the events
 /// a subscription streams. 6: folders (`ListFolders`, `ChangeLists`), and
 /// lists in folder order, so a client restarts an older daemon rather
-/// than show lists ungrouped.
-pub const PROTOCOL_VERSION: u32 = 6;
+/// than show lists ungrouped. 7: `CompletedTasks`, `ChangeTasks.select`
+/// and `Applied.refused` (rung 5d), so an older daemon never reads a bulk
+/// change without its selection as a change to no task.
+pub const PROTOCOL_VERSION: u32 = 7;
 
 /// The socket buffer both ends ask for: room for a large list's `Seed` in
 /// one write. macOS gives a Unix socket 8 KiB, so a 350 KiB seed crossed
@@ -101,6 +103,24 @@ pub enum Request {
         #[serde(default)]
         limit: Option<u32>,
     },
+    /// Completed tasks from the cache, newest completion first, each with
+    /// `completed_on` (its local day, or null while the completion hasn't
+    /// reached Microsoft To Do) and `list`, its list's name. Only those
+    /// completed from `since` to `until` (`YYYY-MM-DD`, local, both
+    /// included; `until` open-ended when `None`), in `list` or `folder`
+    /// (every list when neither).
+    CompletedTasks {
+        since: String,
+        #[serde(default)]
+        until: Option<String>,
+        #[serde(default)]
+        list: Option<String>,
+        #[serde(default)]
+        folder: Option<String>,
+        /// At most this many; `None` is all of them.
+        #[serde(default)]
+        limit: Option<u32>,
+    },
     /// Refresh the cache from Graph. With `wait`, the daemon sends
     /// `SyncProgress` events while it works and answers when a pass that
     /// started after this request has finished.
@@ -138,12 +158,16 @@ pub enum Request {
         idempotency_key: Option<String>,
     },
     /// Apply one change to each task in `tasks`: Graph IDs, or with `list`,
-    /// IDs or exact titles within that list. With `dry_run`, answers `Plan`
-    /// and writes nothing.
+    /// IDs or exact titles within that list. Or, with `select` and no
+    /// `tasks`, to the open tasks it matches (in `list` when given), found
+    /// when the change runs. With `dry_run`, answers `Plan` and writes
+    /// nothing.
     ChangeTasks {
         tasks: Vec<String>,
         #[serde(default)]
         list: Option<String>,
+        #[serde(default)]
+        select: Option<TaskSelect>,
         change: TaskChange,
         #[serde(default)]
         dry_run: bool,
@@ -629,6 +653,18 @@ pub enum TaskChange {
     Unknown,
 }
 
+/// Which open tasks a bulk change means, in place of naming them
+/// (`--overdue`, `--due-before`).
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct TaskSelect {
+    /// Open tasks due before this day, `YYYY-MM-DD` (local); `--overdue`
+    /// is before today.
+    pub due_before: String,
+    /// Only tasks in this folder's lists.
+    #[serde(default)]
+    pub folder: Option<String>,
+}
+
 /// The fields `tasks edit` changes; `None` leaves a field alone.
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct TaskEdit {
@@ -779,6 +815,19 @@ pub struct Applied {
     /// For an undo: the `op_id` it undoes.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub undoes: Option<String>,
+    /// For an undo of a change to several tasks: the tasks it left alone,
+    /// because a field the change set has changed since.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub refused: Vec<Refused>,
+}
+
+/// A task an undo left alone, and why.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Refused {
+    /// The task's local ID.
+    pub id: String,
+    pub title: String,
+    pub reason: String,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]

@@ -7,6 +7,7 @@ mod dates;
 mod importance;
 
 pub use dates::{
-    DueSpec, NotUnderstood, ParseContext, Reading, read_due, read_reminder, read_when,
+    DueSpec, Lean, NotUnderstood, ParseContext, Reading, read_due, read_past_date, read_reminder,
+    read_when,
 };
 pub use importance::{Importance, read_importance};

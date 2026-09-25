@@ -13,6 +13,7 @@
 // would only add noise.
 #![allow(clippy::result_large_err)]
 
+mod completed;
 mod doctor;
 mod entities;
 mod events;
@@ -21,6 +22,7 @@ mod freshness;
 mod handlers;
 mod idempotency;
 mod list_resolution;
+mod list_scope;
 mod list_writes;
 mod outbox;
 mod reads;

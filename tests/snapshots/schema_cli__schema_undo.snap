@@ -140,6 +140,29 @@ expression: pretty
             "description": "What `undo` and `outbox list` know the change by",
             "type": "string"
           },
+          "refused": {
+            "description": "For an undo of a change to several tasks: those left alone because a field it set has changed since",
+            "items": {
+              "properties": {
+                "id": {
+                  "type": "string"
+                },
+                "reason": {
+                  "type": "string"
+                },
+                "title": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "id",
+                "title",
+                "reason"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          },
           "rolled": {
             "description": "Recurring tasks completed: still open, due on the next date",
             "items": {

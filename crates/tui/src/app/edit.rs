@@ -147,7 +147,9 @@ pub fn parse(
     Ok(edit)
 }
 
-fn set_value<T>(reading: Result<Reading<T>, NotUnderstood>) -> Result<Option<T>, String> {
+pub(super) fn set_value<T>(
+    reading: Result<Reading<T>, NotUnderstood>,
+) -> Result<Option<T>, String> {
     match reading.map_err(|why| capitalised(&why.0))? {
         Reading::Clear => Ok(None),
         Reading::Set { value, .. } => Ok(Some(value)),
@@ -184,8 +186,14 @@ impl App {
     /// `→ Fri 2 Oct`, or why it can't be read yet. `None` for a field
     /// that isn't a date, or nothing typed that would change it.
     pub fn date_preview(&self) -> Option<Result<String, String>> {
-        let Mode::Editing { field, input, .. } = &self.mode else {
-            return None;
+        let (field, input) = match &self.mode {
+            Mode::Editing { field, input, .. } => (field, input),
+            // Several tasks' due date: nothing typed is nothing to show,
+            // not a clear.
+            Mode::SettingDue { input, .. } if !input.text().trim().is_empty() => {
+                (&Field::Due, input)
+            }
+            _ => return None,
         };
         let now = self.parse_context();
         let text = input.text();
@@ -226,6 +234,12 @@ impl App {
     /// importance by level or cycled.
     pub(super) fn edit_action(&mut self, action: Action) -> Vec<Effect> {
         if self.mode == Mode::Normal && self.still_loading() {
+            return Vec::new();
+        }
+        // With a selection, a due date goes to every task in it.
+        if action == Action::EditField(Field::Due) && !self.selection.is_empty() {
+            self.mode = Mode::Normal;
+            self.start_set_due();
             return Vec::new();
         }
         let Some(id) = self.edit_target() else {

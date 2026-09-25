@@ -2,8 +2,10 @@
 //! are dates only, written as midnight in the user's IANA zone (S11, D-027);
 //! a time goes to the reminder, which sets `isReminderOn`.
 
-use chrono::{NaiveDate, NaiveDateTime};
-use ms_todo_core::{DATE_FORMAT, ErrorKind, REMINDER_FORMAT, local_due_date};
+use chrono::{NaiveDate, NaiveDateTime, NaiveTime};
+use ms_todo_core::{
+    DATE_FORMAT, ErrorKind, REMINDER_FORMAT, local_due_date, parse_graph_date_time,
+};
 use ms_todo_protocol::{Clearable, Entity, ErrorPayload, Importance, NewTask, TaskEdit};
 use serde_json::{Map, Value, json};
 
@@ -22,6 +24,12 @@ pub(crate) enum Field {
 }
 
 impl Field {
+    /// A field that makes sense for one task only: several tasks never
+    /// get one title or one set of notes.
+    pub fn one_task_only(&self) -> bool {
+        matches!(self, Self::Title(_) | Self::Body(_))
+    }
+
     fn write(&self, body: &mut Map<String, Value>, zone: &str) {
         match self {
             Self::Title(title) => {
@@ -34,9 +42,7 @@ impl Field {
                 body.insert("importance".into(), json!(importance));
             }
             Self::Due(due) => {
-                let value = due.map_or(Value::Null, |date| {
-                    date_time_time_zone(&format!("{}T00:00:00", date.format(DATE_FORMAT)), zone)
-                });
+                let value = due.map_or(Value::Null, |date| midnight(date, zone));
                 body.insert("dueDateTime".into(), value);
             }
             Self::Reminder(reminder) => {
@@ -129,11 +135,66 @@ pub(crate) fn user_time_zone() -> String {
 
 /// A task's due date as a local date (S11's round-to-midnight rule).
 pub(crate) fn graph_due_date(task: &Entity) -> Option<NaiveDate> {
-    let due = task.get("dueDateTime")?;
+    graph_date(task, "dueDateTime")
+}
+
+/// The local day a task was completed on. Graph keeps the day only, as
+/// midnight UTC (S12), so it's read as a due date is. `None` for a
+/// completion Graph hasn't answered yet.
+pub(crate) fn graph_completion_date(task: &Entity) -> Option<NaiveDate> {
+    graph_date(task, "completedDateTime")
+}
+
+fn graph_date(task: &Entity, key: &str) -> Option<NaiveDate> {
+    let value = task.get(key)?;
     local_due_date(
-        due.get("dateTime")?.as_str()?,
-        due.get("timeZone")?.as_str()?,
+        value.get("dateTime")?.as_str()?,
+        value.get("timeZone")?.as_str()?,
     )
+}
+
+/// A day as the daemon receives it, `YYYY-MM-DD`: `done`'s window and a
+/// bulk change's `due_before`.
+pub(crate) fn parse_day(value: &str) -> Result<NaiveDate, ErrorPayload> {
+    NaiveDate::parse_from_str(value, DATE_FORMAT)
+        .map_err(|_| invalid(format!("invalid day {value:?}: use YYYY-MM-DD")))
+}
+
+/// A task's date-only fields: Graph keeps only the date part of what it's
+/// sent, in the zone sent (S11).
+const DATE_ONLY: [&str; 2] = ["dueDateTime", "startDateTime"];
+
+/// `value`, as Graph gave it for the field `key`, as it's written back.
+/// Graph gives a date as an instant in UTC, midnight London in summer
+/// being 23:00 the day before, and keeps only the date part of what it's
+/// sent, so sending back what it gave would move the date a day earlier.
+/// Such a date is written as its local date at midnight in the user's
+/// zone, as a new due date is. One already at midnight in its own zone,
+/// as Graph re-bases recurring tasks (S12), and any other field, go back
+/// as they came.
+pub(crate) fn as_written(key: &str, value: Value) -> Value {
+    if !DATE_ONLY.contains(&key) {
+        return value;
+    }
+    let Some((at, zone)) = value
+        .get("dateTime")
+        .and_then(Value::as_str)
+        .zip(value.get("timeZone").and_then(Value::as_str))
+    else {
+        return value;
+    };
+    if parse_graph_date_time(at).is_some_and(|at| at.time() == NaiveTime::MIN) {
+        return value;
+    }
+    match local_due_date(at, zone) {
+        Some(date) => midnight(date, &user_time_zone()),
+        None => value,
+    }
+}
+
+/// A date-only field's value: midnight of `date` in `zone` (D-027).
+fn midnight(date: NaiveDate, zone: &str) -> Value {
+    date_time_time_zone(&format!("{}T00:00:00", date.format(DATE_FORMAT)), zone)
 }
 
 fn date_time_time_zone(date_time: &str, zone: &str) -> Value {
@@ -206,6 +267,22 @@ mod tests {
         assert_eq!(error.kind, "invalid_input");
         assert!(error.message.contains("--reminder"), "{}", error.message);
         assert!(parse_reminder("tomorrow").is_err());
+    }
+
+    #[test]
+    fn a_date_read_from_graph_is_written_back_as_its_local_day() {
+        // Midnight London in summer, as Graph reads it back. Wherever the
+        // tests run, within 12 hours of UTC, it's the 24th.
+        let read = json!({ "dateTime": "2026-09-23T23:00:00.0000000", "timeZone": "UTC" });
+        assert_eq!(
+            as_written("dueDateTime", read.clone()),
+            json!({ "dateTime": "2026-09-24T00:00:00", "timeZone": user_time_zone() })
+        );
+        // Already midnight in its own zone: its date part is the day.
+        let midnight = json!({ "dateTime": "2026-09-24T00:00:00.0000000", "timeZone": "UTC" });
+        assert_eq!(as_written("dueDateTime", midnight.clone()), midnight);
+        assert_eq!(as_written("dueDateTime", Value::Null), Value::Null);
+        assert_eq!(as_written("reminderDateTime", read.clone()), read);
     }
 
     #[test]

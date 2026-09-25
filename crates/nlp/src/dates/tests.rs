@@ -262,6 +262,54 @@ fn errors_name_what_was_not_understood() {
     assert!(when("in 99999999999 days").starts_with("error"));
 }
 
+/// A day read looking back, as `YYYY-MM-DD`, from Thursday 24 September.
+fn since(input: &str) -> String {
+    match read_past_date(input, &ctx()) {
+        Ok(date) => date.format("%Y-%m-%d").to_string(),
+        Err(why) => format!("error: {why}"),
+    }
+}
+
+#[test]
+fn looking_back_a_weekday_or_a_day_with_no_year_is_the_latest_one() {
+    for (input, expected) in [
+        ("yesterday", "2026-09-23"),
+        ("today", "2026-09-24"),
+        // Thursday: today counts, and Monday is this week's.
+        ("thu", "2026-09-24"),
+        ("mon", "2026-09-21"),
+        ("fri", "2026-09-18"),
+        ("this week", "2026-09-21"),
+        ("last week", "2026-09-14"),
+        ("this month", "2026-09-01"),
+        ("last month", "2026-08-01"),
+        ("12 sep", "2026-09-12"),
+        ("24 sep", "2026-09-24"),
+        // Still to come this year: last year's.
+        ("12 oct", "2025-10-12"),
+        ("12/10", "2025-10-12"),
+        ("3 days ago", "2026-09-21"),
+        ("-1w", "2026-09-17"),
+        ("2026-09-01", "2026-09-01"),
+        ("12 oct 2026", "2026-10-12"),
+    ] {
+        assert_eq!(since(input), expected, "{input:?}");
+    }
+    // Ahead, the same words keep their meaning.
+    assert_eq!(when("mon"), "2026-09-28");
+    assert_eq!(when("12 oct"), "2026-10-12");
+    assert_eq!(when("last week"), "2026-09-14");
+}
+
+#[test]
+fn looking_back_wants_a_day_and_nothing_else() {
+    assert!(since("yesterday 9am").contains("without a time"));
+    assert!(since("").starts_with("error"));
+    assert!(since("-").starts_with("error"));
+    assert_eq!(since("soonish"), "error: didn't understand \"soonish\"");
+    assert!(when("Last week's receipts").starts_with("error"));
+}
+
 proptest! {
     #[test]
     fn never_panics(input in ".{0,40}") {

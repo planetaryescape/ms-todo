@@ -1,0 +1,20 @@
+---
+source: crates/tui/src/ui/tests.rs
+expression: render(&app)
+---
+" ms-todo 9.9.9 · Completed                                                                           ● synced "
+"╭ Lists ───────────────╮╭ Completed ───────────────────────────────────────╮╭ Detail ────────────────────────╮"
+"│★ Important          1││  Not synced yet                                  ││Title      Call Sam             │"
+"│▦ Planned            2││✓ Just now                                      ◌ ││                                │"
+"│∞ All                3││  Today                                           ││Status     completed            │"
+"│✓ Completed          1││✓ Ship blueprint                                  ││List       Home                 │"
+"│≡ Tasks               ││  Yesterday                                       ││Due        none                 │"
+"│≡ Home               3││✓ Call Sam                                        ││Reminder   none                 │"
+"│                      ││  Mon 21 Sep                                      ││Importance normal               │"
+"│                      ││✓ Pay rent                                        ││Sync       synced               │"
+"│                      ││                                                  ││                                │"
+"│                      ││                                                  ││Notes      none                 │"
+"│                      ││                                                  ││                                │"
+"╰──────────────────────╯╰──────────────────────────────────────────────────╯╰────────────────────────────────╯"
+" ● daemon  ·  synced 12s ago  ·  all changes sent                                                             "
+" a Add  x Done  e Edit  d Delete  v Select  u Undo  / Filter  : Palette  r Sync  ? Help  q Quit               "

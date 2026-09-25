@@ -122,6 +122,7 @@ pub(crate) fn applied(action: TaskAction, items: Vec<ms_todo_protocol::Entity>) 
         items,
         rolled: Vec::new(),
         undoes: None,
+        refused: Vec::new(),
     })
 }
 
@@ -326,6 +327,7 @@ fn x_completes_an_open_task_and_reopens_a_completed_one() {
             request: Request::ChangeTasks {
                 tasks: vec!["t1".into()],
                 list: None,
+                select: None,
                 change: TaskChange::Complete,
                 dry_run: false,
                 op_id: None,

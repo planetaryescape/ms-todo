@@ -49,6 +49,12 @@ pub enum Command {
     /// Find tasks by the words in their title or notes, in every list, best
     /// match first
     Search(SearchArgs),
+    /// What you completed, by day, newest first: for a standup or a weekly
+    /// review. Microsoft To Do keeps the day of a completion, not its time
+    Done(DoneArgs),
+    /// Move open tasks to a new due date: the overdue ones, those due
+    /// before a day, or the ones named. One `undo` puts them all back
+    Reschedule(RescheduleArgs),
     /// Writes waiting to reach Microsoft To Do, and those that didn't
     #[command(subcommand)]
     Outbox(OutboxCommand),
@@ -277,7 +283,8 @@ pub enum TasksCommand {
     Complete(TargetArgs),
     /// Mark completed tasks as not started again
     Reopen(TargetArgs),
-    /// Change a task's title, due date, importance, reminder or notes
+    /// Change a task's title, due date, importance, reminder or notes; or
+    /// the due date, importance or reminder of several tasks at once
     Edit(EditArgs),
     /// Delete tasks. Asks first in a terminal; anywhere else it needs --yes
     Delete {
@@ -305,6 +312,76 @@ pub struct SearchArgs {
     /// At most this many results
     #[arg(long, value_name = "N", default_value_t = 50, value_parser = clap::value_parser!(u32).range(1..))]
     pub limit: u32,
+}
+
+#[derive(Debug, Args)]
+pub struct DoneArgs {
+    /// From this day: yesterday, mon (the latest Monday, today included),
+    /// last week (its Monday), 12 sep, 3 days ago, 2026-09-01 [default: 7
+    /// days ago]
+    #[arg(long, value_name = "WHEN", value_parser = phrases::past_day, allow_hyphen_values = true)]
+    pub since: Option<String>,
+    /// Up to and including this day, in the same forms [default: today]
+    #[arg(long, value_name = "WHEN", value_parser = phrases::past_day, allow_hyphen_values = true)]
+    pub until: Option<String>,
+    /// Only this list (exact name or ID) [default: every list]
+    #[arg(long, value_name = "NAME|ID", conflicts_with = "folder")]
+    pub list: Option<String>,
+    /// Only the lists in this folder
+    #[arg(long, value_name = "FOLDER")]
+    pub folder: Option<String>,
+    /// At most this many, newest first
+    #[arg(long, value_name = "N", value_parser = clap::value_parser!(u32).range(1..))]
+    pub limit: Option<u32>,
+}
+
+/// `--overdue`, `--due-before` and `--folder`: open tasks picked by their
+/// due date, in place of naming them.
+#[derive(Debug, Args)]
+pub struct SelectArgs {
+    /// Every open task due before today
+    #[arg(long)]
+    pub overdue: bool,
+    /// Every open task due before this day: fri, next mon, +1w, 2026-10-02
+    #[arg(long, value_name = "WHEN", value_parser = phrases::day, allow_hyphen_values = true)]
+    pub due_before: Option<String>,
+    /// With --overdue or --due-before: only the lists in this folder
+    #[arg(
+        long,
+        value_name = "FOLDER",
+        requires = "selector",
+        conflicts_with = "list"
+    )]
+    pub folder: Option<String>,
+}
+
+#[derive(Debug, Args)]
+#[command(group(ArgGroup::new("selector").args(["overdue", "due_before"])))]
+#[command(group(ArgGroup::new("which").required(true).args(["tasks", "overdue", "due_before"])))]
+pub struct RescheduleArgs {
+    /// Task IDs from `tasks list`, or exact titles when --list is given.
+    /// `-` reads IDs from stdin, one per line
+    #[arg(value_name = "TASK")]
+    pub tasks: Vec<String>,
+    #[command(flatten)]
+    pub select: SelectArgs,
+    /// The new due date: today, tomorrow, fri, next mon, +3d, 12 oct,
+    /// 2026-10-02
+    #[arg(long, value_name = "WHEN", value_parser = phrases::day, allow_hyphen_values = true)]
+    pub to: String,
+    /// Only tasks in this list (exact name or ID), which also lets TASK be
+    /// an exact title
+    #[arg(long, value_name = "NAME|ID")]
+    pub list: Option<String>,
+    /// Show which tasks would move without changing anything
+    #[arg(long)]
+    pub dry_run: bool,
+    /// Move several tasks without asking. Off a terminal, moving more than
+    /// one needs it
+    #[arg(long)]
+    pub yes: bool,
+    #[command(flatten)]
+    pub idempotency: IdempotencyArgs,
 }
 
 #[derive(Clone, Copy, Debug, ValueEnum)]
@@ -376,10 +453,18 @@ pub struct TargetArgs {
 }
 
 #[derive(Debug, Args)]
+#[command(group(ArgGroup::new("selector").args(["overdue", "due_before"])))]
 pub struct EditArgs {
-    /// The task's ID from `tasks list`, or its exact title when --list is given
-    #[arg(value_name = "TASK")]
-    pub task: String,
+    /// The task's ID from `tasks list`, or its exact title when --list is
+    /// given. Several change together; `-` reads IDs from stdin, one per line
+    #[arg(
+        value_name = "TASK",
+        required_unless_present = "selector",
+        conflicts_with = "selector"
+    )]
+    pub task: Vec<String>,
+    #[command(flatten)]
+    pub select: SelectArgs,
     /// Look for the task in this list (exact name or ID), which also lets
     /// TASK be an exact title
     #[arg(long, value_name = "NAME|ID")]
@@ -423,6 +508,10 @@ pub struct EditArgs {
     /// Show what would change without changing anything
     #[arg(long)]
     pub dry_run: bool,
+    /// Change several tasks without asking. Off a terminal, changing more
+    /// than one needs it
+    #[arg(long)]
+    pub yes: bool,
     #[command(flatten)]
     pub idempotency: IdempotencyArgs,
 }

@@ -16,11 +16,27 @@ pub struct ParseContext {
     /// Now, in the user's zone: dates and times read as local wall-clock
     /// values there, the way the daemon writes them (D-027).
     pub now: DateTime<FixedOffset>,
+    /// Which way a weekday, or a day and month with no year, points.
+    pub lean: Lean,
+}
+
+/// Which way a phrase that names no week or year points: ahead for a due
+/// date or reminder (`fri` is the next Friday), back for "since when"
+/// (`fri` is the last one).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum Lean {
+    #[default]
+    Ahead,
+    /// The latest such day on or before today: today counts.
+    Back,
 }
 
 impl ParseContext {
     pub fn new(now: DateTime<FixedOffset>) -> Self {
-        Self { now }
+        Self {
+            now,
+            lean: Lean::Ahead,
+        }
     }
 
     fn today(&self) -> NaiveDate {
@@ -95,6 +111,26 @@ pub fn read_due(input: &str, ctx: &ParseContext) -> Result<Reading<NaiveDate>, N
         }),
         Reading::Set { .. } => Err(NotUnderstood(
             "a due date has no time; put the time in the reminder".into(),
+        )),
+    }
+}
+
+/// A day in the past, for "since" and "until": `yesterday`, `mon` (the
+/// latest Monday, today included), `last week` (its Monday), `12 sep`
+/// (the latest 12 September), `3 days ago`, `2026-09-01`. A phrase with a
+/// time is refused, and so is nothing at all.
+pub fn read_past_date(input: &str, ctx: &ParseContext) -> Result<NaiveDate, NotUnderstood> {
+    let back = ParseContext {
+        lean: Lean::Back,
+        ..*ctx
+    };
+    match whole_string::read(input, &back)? {
+        Some(DueSpec::Date(date)) => Ok(date),
+        Some(DueSpec::DateTime(_)) => {
+            Err(NotUnderstood("a day is wanted here, without a time".into()))
+        }
+        None => Err(NotUnderstood(
+            "a day is wanted here, such as yesterday, mon or 2026-09-01".into(),
         )),
     }
 }

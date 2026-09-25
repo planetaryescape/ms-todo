@@ -31,6 +31,8 @@ const COMMANDS: &[&str] = &[
     "tasks edit",
     "tasks delete",
     "search",
+    "done",
+    "reschedule",
     "outbox list",
     "outbox retry",
     "outbox discard",
@@ -140,8 +142,14 @@ async fn real_output_has_every_field_its_schema_requires() {
     let mut env = Env::new();
     let graph = FakeGraph::start(&mut env, vec![list("L-tasks", "Tasks", "defaultList")]).await;
     graph.edit(|data| {
-        data.tasks
-            .insert("L-tasks".into(), vec![task("T1", "Buy milk", "W/\"e1\"")]);
+        let mut paid = task("T3", "Pay rent", "W/\"e3\"");
+        paid["status"] = json!("completed");
+        paid["completedDateTime"] =
+            json!({ "dateTime": "2026-09-24T00:00:00.0000000", "timeZone": "UTC" });
+        data.tasks.insert(
+            "L-tasks".into(),
+            vec![task("T1", "Buy milk", "W/\"e1\""), paid],
+        );
     });
     Mock::given(method("POST"))
         .and(path("/v1.0/me/todo/lists/L-tasks/tasks"))
@@ -155,6 +163,11 @@ async fn real_output_has_every_field_its_schema_requires() {
         ("tasks list", &["tasks", "list"]),
         ("tasks list", &["tasks", "list", "--search", "milk"]),
         ("search", &["search", "milk"]),
+        ("done", &["done", "--since", "2026-09-01"]),
+        (
+            "reschedule",
+            &["reschedule", "--overdue", "--to", "tomorrow", "--dry-run"],
+        ),
         ("tasks add", &["tasks", "add", "Eggs"]),
         ("tasks add", &["tasks", "add", "Eggs", "--dry-run"]),
         ("outbox list", &["outbox", "list"]),

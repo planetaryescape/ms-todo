@@ -107,6 +107,33 @@ pub fn draw(frame: &mut Frame, area: Rect, app: &App) {
                 ));
             }
             spans.extend(hint_spans(Context::Folder));
+            spans.push(Span::styled(
+                " Enter on empty: no folder ",
+                Style::default().fg(DIM),
+            ));
+            Line::from(spans)
+        }
+        // One due date for several tasks: what's typed, then what it
+        // resolves to or why it can't be sent.
+        Mode::SettingDue {
+            what, input, error, ..
+        } => {
+            let mut spans = vec![Span::styled(
+                format!(" Due date for {what}: "),
+                Style::default().fg(ACCENT),
+            )];
+            spans.extend(typed(input));
+            let under = match (error.clone(), app.date_preview()) {
+                (Some(error), _) | (None, Some(Err(error))) => {
+                    Span::styled(format!("  {error} "), Style::default().fg(ERROR))
+                }
+                (None, Some(Ok(preview))) => {
+                    Span::styled(format!("  {preview} "), Style::default().fg(DIM))
+                }
+                (None, None) => Span::raw(""),
+            };
+            spans.push(under);
+            spans.extend(hint_spans(Context::Prompt));
             Line::from(spans)
         }
         Mode::ChoosingImportance { .. } => {

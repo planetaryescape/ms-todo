@@ -33,4 +33,4 @@ expression: shown
 "│                      ││                                                  ││Notes      none                 │"
 "╰──────────────────────╯╰──────────────────────────────────────────────────╯╰────────────────────────────────╯"
 " ● daemon  ·  synced 12s ago  ·  all changes sent                                                             "
-" Move Home to folder: Ar█  Areas  Enter Move  Tab Complete  Esc Cancel                                        "
+" Move Home to folder: Ar█  Areas  Enter Move  Tab Complete  Esc Cancel  Enter on empty: no folder             "

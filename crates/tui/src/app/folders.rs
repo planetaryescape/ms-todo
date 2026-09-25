@@ -385,6 +385,7 @@ pub(crate) mod tests {
                 list_ids: vec!["home".into()],
                 rolled: Vec::new(),
                 undoes: None,
+                refused: Vec::new(),
             })),
         });
         assert_eq!(
@@ -402,6 +403,37 @@ pub(crate) mod tests {
         assert_eq!(
             app.banner.as_ref().map(|b| b.text.as_str()),
             Some("Moved Home to Projects")
+        );
+    }
+
+    #[test]
+    fn ctrl_u_then_enter_takes_the_list_out_of_its_folder() {
+        use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+        let mut app = foldered();
+        act(&mut app, Action::MoveToFolder);
+        app.update(Msg::Key(KeyEvent::new(
+            KeyCode::Char('u'),
+            KeyModifiers::CONTROL,
+        )));
+        assert_eq!(
+            app.mode,
+            Mode::MovingList {
+                list_id: "home".into(),
+                input: LineEditor::single(""),
+            }
+        );
+        let effects = act(&mut app, Action::Submit);
+        assert_eq!(
+            effects[0].request,
+            Request::ChangeLists {
+                change: ListChange::MoveList {
+                    lists: vec!["home".into()],
+                    folder: None,
+                },
+                dry_run: false,
+                op_id: None,
+                idempotency_key: None,
+            }
         );
     }
 

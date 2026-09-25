@@ -54,9 +54,9 @@ pub fn output_schema(command: &str) -> Option<Value> {
         "lists list" => collection(list_entity()),
         "tasks list" => collection(task_entity()),
         "search" => collection(search_result()),
-        "tasks add" | "tasks complete" | "tasks reopen" | "tasks edit" | "tasks delete" => {
-            json!({ "oneOf": [applied(), plan()] })
-        }
+        "done" => collection(done_result()),
+        "tasks add" | "tasks complete" | "tasks reopen" | "tasks edit" | "tasks delete"
+        | "reschedule" => json!({ "oneOf": [applied(), plan()] }),
         "undo" => json!({ "oneOf": [applied(), list_applied()] }),
         "lists move" | "lists order" | "folders rename" | "folders delete" | "folders order" => {
             json!({ "oneOf": [list_applied(), list_plan()] })
@@ -305,6 +305,25 @@ fn search_result() -> Value {
     schema
 }
 
+fn done_result() -> Value {
+    let mut schema = task_entity();
+    schema["properties"]["list"] =
+        json!({ "type": "string", "description": "The name of the task's list" });
+    schema["properties"]["completed_on"] = json!({
+        "type": ["string", "null"],
+        "format": "date",
+        "description": "The local day it was completed. Microsoft To Do keeps the day, not the time. Null while the completion hasn't reached Microsoft To Do"
+    });
+    schema["required"]
+        .as_array_mut()
+        .expect("task_entity lists required keys")
+        .extend([json!("list"), json!("completed_on")]);
+    schema["description"] = json!(
+        "A completed task, newest completion first: the task as `tasks list` gives it, with `list` and `completed_on`"
+    );
+    schema
+}
+
 fn collection(item: Value) -> Value {
     versioned(
         json!({
@@ -347,6 +366,18 @@ fn applied() -> Value {
                     json!({ "id": { "type": "string" }, "next_due": { "type": "string", "format": "date" } }),
                     &["id", "next_due"],
                 )
+            },
+            "refused": {
+                "type": "array",
+                "description": "For an undo of a change to several tasks: those left alone because a field it set has changed since",
+                "items": object(
+                    json!({
+                        "id": { "type": "string" },
+                        "title": { "type": "string" },
+                        "reason": { "type": "string" }
+                    }),
+                    &["id", "title", "reason"],
+                )
             }
         }),
         &["op_id", "action", "items", "list_ids"],
@@ -366,8 +397,9 @@ fn list_applied() -> Value {
         "description": "Each list changed, as ms-todo has it now: sync_state pending until the write reaches Microsoft To Do. Empty when nothing needed to change"
     });
     properties["list_ids"]["description"] = json!("Each item's own ID, in order");
-    if let Some(rolled) = properties.as_object_mut() {
-        rolled.remove("rolled");
+    if let Some(properties) = properties.as_object_mut() {
+        properties.remove("rolled");
+        properties.remove("refused");
     }
     schema
 }

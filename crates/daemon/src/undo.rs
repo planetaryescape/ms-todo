@@ -24,11 +24,14 @@
 //! field it set still holds the value it set, as the cache has it now. If a
 //! later change or a sync from another device moved one, putting the old
 //! value back would overwrite that, so the undo is refused (`conflict`,
-//! exit 5) and nothing is queued.
+//! exit 5) and nothing is queued. For a change to several tasks (a bulk
+//! reschedule, rung 5d) the rule is per task: the tasks that moved are
+//! left alone and listed in the answer's `refused`, and the rest are
+//! undone; only when every one moved is the undo refused.
 
 use chrono::{DateTime, Duration};
 use ms_todo_core::ErrorKind;
-use ms_todo_protocol::{Candidate, ErrorPayload, ResponseData, TaskAction};
+use ms_todo_protocol::{Candidate, ErrorPayload, Refused, ResponseData, TaskAction};
 use ms_todo_store::{
     Entity, FOLDER_FIELD, ListExtensionOp, ListRow, LocalChange, NewOp, OpKind, OpState, OutboxRow,
     TaskRow,
@@ -39,6 +42,7 @@ use crate::handlers::{State, error_payload, store_error};
 use crate::list_writes::queue_lists;
 use crate::outbox::fields_not_holding;
 use crate::outbox::op_id_for;
+use crate::task_fields::as_written;
 use crate::task_writes::{delete_op, new_task_raw, our_extension, queue, update_op};
 
 /// The fields a re-created task gets back: everything a POST can set.
@@ -96,6 +100,7 @@ pub(crate) async fn undo(
         return undo_lists(state, &target, &ops, &op_id).await;
     }
     let mut inverse: Vec<NewOp> = Vec::new();
+    let mut refused: Vec<Refused> = Vec::new();
     let id = |queued: usize| op_id_for(&op_id, queued);
     for op in &ops {
         if rejected(op)? {
@@ -124,17 +129,22 @@ pub(crate) async fn undo(
                     .get("dueDateTime")
                     .cloned()
                     .unwrap_or(Value::Null);
-                let body = json!({ "dueDateTime": due });
+                let body = json!({ "dueDateTime": as_written("dueDateTime", due) });
                 inverse.push(update_op(id(inverse.len()), &row, &body, TaskAction::Edit));
             }
             OpKind::Update => {
                 let moved = fields_not_holding(op.body(), &row.raw);
                 if !moved.is_empty() {
-                    return Err(conflict(format!(
-                        "{:?} has changed since ({}); undo would overwrite that",
-                        row.title,
+                    let reason = format!(
+                        "has changed since ({}); undo would overwrite that",
                         moved.join(", ")
-                    )));
+                    );
+                    refused.push(Refused {
+                        id: row.local_id.clone(),
+                        title: row.title.clone(),
+                        reason,
+                    });
+                    continue;
                 }
                 let (body, action) = inverse_update(op)?;
                 inverse.push(update_op(id(inverse.len()), &row, &body, action));
@@ -148,9 +158,26 @@ pub(crate) async fn undo(
         }
     }
     if inverse.is_empty() {
-        return Err(nothing_to_undo(&target));
+        return Err(match refused.as_slice() {
+            [] => nothing_to_undo(&target),
+            [task] => conflict(format!("{:?} {}", task.title, task.reason)),
+            many => {
+                let titles: Vec<String> = many
+                    .iter()
+                    .map(|task| format!("{:?}", task.title))
+                    .collect();
+                conflict(format!(
+                    "every task {target} changed has changed since ({}); undo would overwrite that",
+                    titles.join(", ")
+                ))
+            }
+        });
     }
-    queue(state, &op_id, Some(&target), inverse, TaskAction::Undo).await
+    let mut answer = queue(state, &op_id, Some(&target), inverse, TaskAction::Undo).await?;
+    if let ResponseData::Applied(applied) = &mut answer {
+        applied.refused = refused;
+    }
+    Ok(answer)
 }
 
 /// Undo a folder change: each list's extension fields it wrote go back to
@@ -270,7 +297,7 @@ fn inverse_update(op: &OutboxRow) -> Result<(Value, TaskAction), ErrorPayload> {
 }
 
 /// Each field `op` sent, with its value before `op` (null where it had
-/// none, which removes it).
+/// none, which removes it), a date written as its local day.
 fn inverse_fields(op: &OutboxRow) -> Result<Map<String, Value>, ErrorPayload> {
     let before = before(op)?;
     Ok(op
@@ -279,7 +306,10 @@ fn inverse_fields(op: &OutboxRow) -> Result<Map<String, Value>, ErrorPayload> {
         .map(|fields| {
             fields
                 .keys()
-                .map(|key| (key.clone(), before.get(key).cloned().unwrap_or(Value::Null)))
+                .map(|key| {
+                    let value = before.get(key).cloned().unwrap_or(Value::Null);
+                    (key.clone(), as_written(key, value))
+                })
                 .collect()
         })
         .unwrap_or_default())
@@ -293,7 +323,7 @@ fn recreate(op_id: String, row: &TaskRow, op: &OutboxRow) -> Result<NewOp, Error
         .iter()
         .filter_map(|&key| {
             let value = before.get(key).filter(|value| !value.is_null())?;
-            Some((key.to_owned(), value.clone()))
+            Some((key.to_owned(), as_written(key, value.clone())))
         })
         .collect();
     body.insert(

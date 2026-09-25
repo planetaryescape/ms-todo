@@ -6,30 +6,10 @@ expression: pretty
   "input": {
     "additionalProperties": false,
     "properties": {
-      "body": {
-        "description": "New notes, as plain text. They replace the old ones",
-        "type": "string",
-        "x-cli": "--body"
-      },
-      "clear_due": {
-        "description": "Remove the due date",
-        "type": "boolean",
-        "x-cli": "--clear-due"
-      },
-      "clear_reminder": {
-        "description": "Turn the reminder off",
-        "type": "boolean",
-        "x-cli": "--clear-reminder"
-      },
       "dry_run": {
-        "description": "Show what would change without changing anything",
+        "description": "Show which tasks would move without changing anything",
         "type": "boolean",
         "x-cli": "--dry-run"
-      },
-      "due": {
-        "description": "New due date, in the forms --due takes on `tasks add`; empty or `-` removes it, as --clear-due does",
-        "type": "string",
-        "x-cli": "--due"
       },
       "due_before": {
         "description": "Every open task due before this day: fri, next mon, +1w, 2026-10-02",
@@ -46,13 +26,8 @@ expression: pretty
         "type": "string",
         "x-cli": "--idempotency-key"
       },
-      "importance": {
-        "description": "New importance: 1 or p1 (high), 2, 3, p2 or p3 (normal), 4 or p4 (low), or high, normal or low",
-        "type": "string",
-        "x-cli": "--importance"
-      },
       "list": {
-        "description": "Look for the task in this list (exact name or ID), which also lets TASK be an exact title",
+        "description": "Only tasks in this list (exact name or ID), which also lets TASK be an exact title",
         "type": "string",
         "x-cli": "--list"
       },
@@ -61,31 +36,28 @@ expression: pretty
         "type": "boolean",
         "x-cli": "--overdue"
       },
-      "reminder": {
-        "description": "Remind me at this local time, in the forms --reminder takes on `tasks add`; empty or `-` turns it off",
-        "type": "string",
-        "x-cli": "--reminder"
-      },
-      "task": {
-        "description": "The task's ID from `tasks list`, or its exact title when --list is given. Several change together; `-` reads IDs from stdin, one per line",
+      "tasks": {
+        "description": "Task IDs from `tasks list`, or exact titles when --list is given. `-` reads IDs from stdin, one per line",
         "items": {
           "type": "string"
         },
         "type": "array",
         "x-cli": "<TASK>"
       },
-      "title": {
-        "description": "New title, taken literally",
+      "to": {
+        "description": "The new due date: today, tomorrow, fri, next mon, +3d, 12 oct, 2026-10-02",
         "type": "string",
-        "x-cli": "--title"
+        "x-cli": "--to"
       },
       "yes": {
-        "description": "Change several tasks without asking. Off a terminal, changing more than one needs it",
+        "description": "Move several tasks without asking. Off a terminal, moving more than one needs it",
         "type": "boolean",
         "x-cli": "--yes"
       }
     },
-    "required": [],
+    "required": [
+      "to"
+    ],
     "type": "object"
   },
   "output": {

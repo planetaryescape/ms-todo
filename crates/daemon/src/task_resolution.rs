@@ -5,12 +5,14 @@
 //! (docs/blueprint/07-cli.md#global-flags).
 
 use ms_todo_core::ErrorKind;
-use ms_todo_protocol::{Candidate, ErrorPayload};
-use ms_todo_store::{LISTS_SCOPE, ListRow, TaskRow, tasks_scope};
+use ms_todo_protocol::{Candidate, ErrorPayload, TaskSelect};
+use ms_todo_store::{LISTS_SCOPE, ListRow, TaskRow, View, tasks_scope};
 
 use crate::freshness::{all_ready, ensure_ready};
 use crate::handlers::{State, error_payload, store_error};
 use crate::list_resolution::{ListRef, resolve_list};
+use crate::list_scope::ready_scope;
+use crate::task_fields::{graph_due_date, parse_day};
 
 /// A task a command changes, as cached, with its list.
 #[derive(Clone, Debug)]
@@ -52,6 +54,30 @@ pub(crate) async fn resolve_tasks(
     let mut seen = std::collections::HashSet::new();
     targets.retain(|target| seen.insert(target.row.local_id.clone()));
     Ok(targets)
+}
+
+/// The open tasks `select` matches, in `list`, in `select`'s folder, or
+/// in every list: those due before its day, soonest due first. Found when
+/// the change runs, so a dry run and the real run pick by the same rule.
+pub(crate) async fn select_tasks(
+    state: &State,
+    select: &TaskSelect,
+    list: Option<&str>,
+) -> Result<Vec<Target>, ErrorPayload> {
+    let before = parse_day(&select.due_before)?;
+    let scope = ready_scope(state, list, select.folder.as_deref()).await?;
+    let open_with_due = state
+        .store
+        .tasks_in_view(View::Planned)
+        .await
+        .map_err(store_error)?;
+    Ok(open_with_due
+        .into_iter()
+        .filter_map(|row| {
+            let list = scope.lists.get(&row.list_local_id)?.clone();
+            (graph_due_date(&row.raw)? < before).then_some(Target { row, list })
+        })
+        .collect())
 }
 
 async fn resolve_in_list(

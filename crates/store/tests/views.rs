@@ -75,7 +75,15 @@ async fn filled() -> (tempfile::TempDir, Store, String, String) {
                 ),
             ],
         ),
-        ("L2", &work, vec![task("T6", json!({}))]),
+        (
+            "L2",
+            &work,
+            vec![
+                task("T6", json!({})),
+                // Completed here, not yet answered by Graph: no date.
+                task("T7", json!({ "status": "completed" })),
+            ],
+        ),
     ] {
         store
             .apply_tasks(TasksPass {
@@ -111,8 +119,8 @@ async fn each_view_holds_its_tasks_in_its_order() {
     // A completed task with a due date isn't planned.
     assert_eq!(titles(&store, View::Planned).await, ["T3", "T2"]);
     assert_eq!(titles(&store, View::All).await, ["T1", "T2", "T3", "T6"]);
-    // Most recently completed first.
-    assert_eq!(titles(&store, View::Completed).await, ["T5", "T4"]);
+    // Most recently completed first; one with no date yet is newest.
+    assert_eq!(titles(&store, View::Completed).await, ["T7", "T5", "T4"]);
 }
 
 #[tokio::test]
@@ -126,7 +134,7 @@ async fn counts_cover_every_view_and_each_lists_open_tasks() {
             counts.all,
             counts.completed
         ),
-        (2, 2, 4, 2)
+        (2, 2, 4, 3)
     );
     assert_eq!(counts.open_by_list.get(&home), Some(&3));
     assert_eq!(counts.open_by_list.get(&work), Some(&1));

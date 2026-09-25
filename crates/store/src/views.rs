@@ -40,8 +40,10 @@ impl View {
             }
             Self::Planned => "tasks.due_date, tasks.created_at, tasks.rowid",
             Self::All => "tasks.created_at, tasks.rowid",
+            // A completion Graph hasn't answered yet has no date: it's
+            // the newest, as the TUI's list order has it.
             Self::Completed => {
-                "tasks.completed_at_utc IS NULL, tasks.completed_at_utc DESC, tasks.rowid DESC"
+                "tasks.completed_at_utc IS NOT NULL, tasks.completed_at_utc DESC, tasks.rowid DESC"
             }
         }
     }

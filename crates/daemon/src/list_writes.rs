@@ -118,6 +118,7 @@ pub(crate) async fn queue_lists(
         list_ids: ids,
         rolled: Vec::new(),
         undoes: undoes.map(str::to_owned),
+        refused: Vec::new(),
     }))
 }
 

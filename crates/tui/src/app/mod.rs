@@ -15,6 +15,7 @@
 //! the sync marker) up to date.
 
 pub mod diagnostics;
+mod due_batch;
 pub mod edit;
 pub(crate) mod folders;
 pub mod line_editor;
@@ -96,6 +97,15 @@ pub enum Mode {
     MovingList {
         list_id: String,
         input: LineEditor,
+    },
+    /// Typing one due date for the tasks `ids`: `what` names them, as
+    /// `"Call Sam"`, `3 tasks` or `2 overdue tasks`.
+    SettingDue {
+        ids: Vec<String>,
+        what: String,
+        input: LineEditor,
+        /// Why the text can't be sent, shown after it.
+        error: Option<String>,
     },
     /// Undoing a recurring completion: which completed copy to delete.
     Picker {
@@ -309,7 +319,10 @@ impl App {
                 field: Field::Notes,
                 ..
             } => Context::Notes,
-            Mode::Adding { .. } | Mode::Filtering { .. } | Mode::Editing { .. } => Context::Prompt,
+            Mode::Adding { .. }
+            | Mode::Filtering { .. }
+            | Mode::Editing { .. }
+            | Mode::SettingDue { .. } => Context::Prompt,
             Mode::ChoosingField { .. } => Context::Fields,
             Mode::MovingList { .. } => Context::Folder,
             Mode::ChoosingImportance { .. } => Context::Importance,
@@ -451,6 +464,7 @@ impl App {
             }
             (Mode::Diagnostics, Action::Refresh) => self.refresh_diagnostics(),
             (Mode::Editing { .. }, Action::Submit) => self.submit_edit(),
+            (Mode::SettingDue { .. }, Action::Submit) => self.submit_set_due(),
             (Mode::ChoosingField { .. }, Action::EditField(_) | Action::CycleImportance)
             | (Mode::ChoosingImportance { .. }, Action::SetImportance(_)) => {
                 self.edit_action(action)
@@ -526,7 +540,22 @@ impl App {
                 }
                 Vec::new()
             }
-            Action::ToggleComplete | Action::Delete if self.still_loading() => Vec::new(),
+            Action::ToggleComplete
+            | Action::Delete
+            | Action::SetDue
+            | Action::RescheduleOverdue
+                if self.still_loading() =>
+            {
+                Vec::new()
+            }
+            Action::SetDue => {
+                self.start_set_due();
+                Vec::new()
+            }
+            Action::RescheduleOverdue => {
+                self.start_reschedule_overdue();
+                Vec::new()
+            }
             Action::ToggleComplete => self.toggle_complete(),
             Action::Delete => {
                 let targets = self.targets();
@@ -660,7 +689,7 @@ impl App {
             Mode::Adding { input } | Mode::Filtering { input } | Mode::MovingList { input, .. } => {
                 edit(input)
             }
-            Mode::Editing { input, error, .. } => {
+            Mode::Editing { input, error, .. } | Mode::SettingDue { input, error, .. } => {
                 let changed = edit(input);
                 if changed {
                     *error = None;
@@ -875,14 +904,34 @@ impl App {
             }
             (Tag::Write(write), Ok(ResponseData::Applied(applied))) => {
                 self.apply_write(write, &applied.items);
+                if write == Write::Edit && applied.items.len() > 1 {
+                    let count = applied.items.len();
+                    self.show(
+                        Level::Info,
+                        &format!("Changed {count} tasks; u puts them all back"),
+                    );
+                }
                 Vec::new()
             }
             (Tag::Folders, Ok(ResponseData::Applied(applied))) => {
                 self.apply_list_write(&applied.items);
                 Vec::new()
             }
-            (Tag::Undo, Ok(ResponseData::Applied(_))) => {
-                self.show(Level::Info, "Undone");
+            (Tag::Undo, Ok(ResponseData::Applied(applied))) => {
+                let text = match applied.refused.as_slice() {
+                    [] => "Undone".to_owned(),
+                    refused => {
+                        let titles: Vec<String> = refused
+                            .iter()
+                            .map(|task| format!("\"{}\"", task.title))
+                            .collect();
+                        format!(
+                            "Undone, except {}: changed since, so left alone",
+                            titles.join(", ")
+                        )
+                    }
+                };
+                self.show(Level::Info, &text);
                 self.reseed()
             }
             (Tag::Undo, Err(error)) => {
@@ -1052,6 +1101,7 @@ fn change(write: Write, ids: Vec<String>, change: TaskChange) -> Effect {
         request: Request::ChangeTasks {
             tasks: ids,
             list: None,
+            select: None,
             change,
             dry_run: false,
             op_id: None,

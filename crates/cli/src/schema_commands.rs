@@ -32,6 +32,8 @@ const COMMANDS: &[&str] = &[
     "tasks edit",
     "tasks delete",
     "search",
+    "done",
+    "reschedule",
     "outbox list",
     "outbox retry",
     "outbox discard",

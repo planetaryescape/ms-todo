@@ -157,6 +157,9 @@ pub fn print_applied(format: OutputFormat, applied: &Applied) -> Result<(), CliE
             if let Some(undone) = &applied.undoes {
                 writeln!(stdout, "Undoing {undone}:")?;
             }
+            if applied.items.is_empty() {
+                writeln!(stdout, "Nothing needed changing.")?;
+            }
             for task in &applied.items {
                 let id = text(task, "id");
                 let state = match text(task, "sync_state") {
@@ -181,6 +184,13 @@ pub fn print_applied(format: OutputFormat, applied: &Applied) -> Result<(), CliE
                         rolled.next_due
                     )?;
                 }
+            }
+            for task in &applied.refused {
+                writeln!(
+                    stdout,
+                    "Left alone {:?}  {}: {}",
+                    task.title, task.id, task.reason
+                )?;
             }
             Ok(())
         }

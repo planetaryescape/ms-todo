@@ -77,6 +77,47 @@ fn planned_is_grouped_by_how_soon() {
 }
 
 #[test]
+fn completed_is_grouped_by_day() {
+    let mut app = seeded();
+    let on = |day: &str| {
+        json!({ "status": "completed",
+                "completedDateTime": { "dateTime": format!("{day}T00:00:00.0000000"), "timeZone": "UTC" } })
+    };
+    let tasks = vec![
+        task(
+            "c0",
+            "Just now",
+            json!({ "status": "completed", "sync_state": "pending" }),
+        ),
+        task("c1", "Ship blueprint", on("2026-09-24")),
+        task("c2", "Call Sam", on("2026-09-23")),
+        task("c3", "Pay rent", on("2026-09-21")),
+    ];
+    let effects = app.update(Msg::Event(ms_todo_protocol::Event::ResyncNeeded));
+    app.update(Msg::Response {
+        tag: effects[0].tag,
+        result: Ok(ms_todo_protocol::ResponseData::Seed(seed(
+            Scope::Completed,
+            tasks,
+        ))),
+    });
+    app.task_index = 2;
+    insta::assert_snapshot!(render(&app));
+}
+
+#[test]
+fn one_due_date_for_several_tasks_shows_the_day_it_reads() {
+    let mut app = seeded();
+    app.mode = Mode::SettingDue {
+        ids: vec!["t1".into(), "t2".into()],
+        what: "2 tasks".into(),
+        input: crate::app::line_editor::LineEditor::single("next mon"),
+        error: None,
+    };
+    insta::assert_snapshot!(render(&app));
+}
+
+#[test]
 fn a_rejection_banner_and_the_failed_row() {
     let mut app = seeded();
     app.task_index = 2;

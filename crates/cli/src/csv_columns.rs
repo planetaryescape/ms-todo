@@ -27,6 +27,18 @@ pub const TASK_COLUMNS: &[&str] = &[
 /// A search result: enough to recognise the task and where it matched.
 pub const SEARCH_COLUMNS: &[&str] = &["id", "title", "list", "status", "due", "snippet"];
 
+/// A task `done` gives: when, where and what, for a standup or a sheet.
+/// `completed_on` is the local day; Microsoft To Do keeps no time.
+pub const DONE_COLUMNS: &[&str] = &[
+    "id",
+    "title",
+    "list",
+    "completed_on",
+    "due",
+    "importance",
+    "sync_state",
+];
+
 pub const LIST_COLUMNS: &[&str] = &[
     "id",
     "name",
@@ -69,6 +81,18 @@ pub fn search_row(task: &Entity) -> Vec<String> {
         text(task, "status").to_owned(),
         local_due(task),
         text(task, "snippet").to_owned(),
+    ]
+}
+
+pub fn done_row(task: &Entity) -> Vec<String> {
+    vec![
+        text(task, "id").to_owned(),
+        text(task, "title").to_owned(),
+        text(task, "list").to_owned(),
+        text(task, "completed_on").to_owned(),
+        local_due(task),
+        text(task, "importance").to_owned(),
+        text(task, "sync_state").to_owned(),
     ]
 }
 

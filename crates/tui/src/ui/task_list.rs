@@ -7,7 +7,7 @@ use ratatui::text::{Line, Span};
 use ratatui::widgets::{Cell, Paragraph, Row, Table, TableState};
 
 use super::{ACCENT, AMBER, DIM, ERROR, focused, pane, selection};
-use crate::app::scope::planned_groups;
+use crate::app::scope::{completed_groups, planned_groups};
 use crate::app::{App, Connection, Pane, SyncMarker, Task};
 use crate::glyphs::Glyphs;
 
@@ -39,25 +39,38 @@ pub fn draw<'a>(frame: &mut Frame, area: Rect, app: &'a App) {
     let glyphs = &app.glyphs;
     let today = app.clock.today();
     let row = |task: &'a Task| task_row(task, app.selection.contains(&task.id), glyphs, today);
-    // Planned is grouped; a header row goes before each group.
-    let (rows, selected) = if app.shown == Some(Scope::Planned) && app.filter.is_none() {
-        let mut rows = Vec::new();
-        let mut selected = 0;
-        for (group, members) in planned_groups(&app.tasks, today) {
-            rows.push(
-                Row::new(vec![Cell::from(""), Cell::from(group.name())])
-                    .style(Style::default().fg(ACCENT).add_modifier(Modifier::BOLD)),
-            );
-            for index in members {
-                if index == app.task_index {
-                    selected = rows.len();
+    // Planned is grouped by how soon, Completed by day; a header row goes
+    // before each group.
+    let groups: Option<Vec<(String, Vec<usize>)>> = match &app.shown {
+        _ if app.filter.is_some() => None,
+        Some(Scope::Planned) => Some(
+            planned_groups(&app.tasks, today)
+                .into_iter()
+                .map(|(group, members)| (group.name().to_owned(), members))
+                .collect(),
+        ),
+        Some(Scope::Completed) => Some(completed_groups(&app.tasks, today)),
+        _ => None,
+    };
+    let (rows, selected) = match groups {
+        Some(groups) => {
+            let mut rows = Vec::new();
+            let mut selected = 0;
+            for (heading, members) in groups {
+                rows.push(
+                    Row::new(vec![Cell::from(""), Cell::from(heading)])
+                        .style(Style::default().fg(ACCENT).add_modifier(Modifier::BOLD)),
+                );
+                for index in members {
+                    if index == app.task_index {
+                        selected = rows.len();
+                    }
+                    rows.push(row(&app.tasks[index]));
                 }
-                rows.push(row(&app.tasks[index]));
             }
+            (rows, selected)
         }
-        (rows, selected)
-    } else {
-        (app.tasks.iter().map(row).collect(), app.task_index)
+        None => (app.tasks.iter().map(row).collect(), app.task_index),
     };
     let status_width = u16::try_from(glyphs.open.chars().count()).unwrap_or(1);
     let table = Table::new(

@@ -1,0 +1,174 @@
+---
+source: tests/schema_cli.rs
+expression: pretty
+---
+{
+  "input": {
+    "additionalProperties": false,
+    "properties": {
+      "folder": {
+        "description": "Only the lists in this folder",
+        "type": "string",
+        "x-cli": "--folder"
+      },
+      "limit": {
+        "description": "At most this many, newest first",
+        "type": "string",
+        "x-cli": "--limit"
+      },
+      "list": {
+        "description": "Only this list (exact name or ID) [default: every list]",
+        "type": "string",
+        "x-cli": "--list"
+      },
+      "since": {
+        "description": "From this day: yesterday, mon (the latest Monday, today included), last week (its Monday), 12 sep, 3 days ago, 2026-09-01 [default: 7 days ago]",
+        "type": "string",
+        "x-cli": "--since"
+      },
+      "until": {
+        "description": "Up to and including this day, in the same forms [default: today]",
+        "type": "string",
+        "x-cli": "--until"
+      }
+    },
+    "required": [],
+    "type": "object"
+  },
+  "output": {
+    "properties": {
+      "items": {
+        "items": {
+          "description": "A completed task, newest completion first: the task as `tasks list` gives it, with `list` and `completed_on`",
+          "properties": {
+            "body": {
+              "type": "object"
+            },
+            "categories": {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            "completed_on": {
+              "description": "The local day it was completed. Microsoft To Do keeps the day, not the time. Null while the completion hasn't reached Microsoft To Do",
+              "format": "date",
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "createdDateTime": {
+              "type": "string"
+            },
+            "dueDateTime": {
+              "description": "Graph's dateTimeTimeZone; a date only",
+              "type": "object"
+            },
+            "extensions": {
+              "description": "ms-todo's own open extension (com.planetaryescape.mstodo), when it has one and it has been fetched",
+              "items": {
+                "type": "object"
+              },
+              "type": "array"
+            },
+            "graph_id": {
+              "description": "Microsoft Graph's ID, for `raw` and debugging; commands take it too",
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "id": {
+              "description": "ms-todo's local ID; stable, and what commands take",
+              "type": "string"
+            },
+            "importance": {
+              "enum": [
+                "low",
+                "normal",
+                "high"
+              ]
+            },
+            "isReminderOn": {
+              "type": "boolean"
+            },
+            "lastModifiedDateTime": {
+              "type": "string"
+            },
+            "list": {
+              "description": "The name of the task's list",
+              "type": "string"
+            },
+            "list_id": {
+              "description": "The local ID of the task's list",
+              "type": "string"
+            },
+            "recurrence": {
+              "type": "object"
+            },
+            "reminderDateTime": {
+              "type": "object"
+            },
+            "status": {
+              "description": "notStarted or completed, among Graph's values",
+              "type": "string"
+            },
+            "sync_state": {
+              "description": "From its outbox writes: synced; pending (queued or being sent); unknown (a write may or may not have reached Microsoft To Do; never retry it, see `outbox list`); failed (a write was rejected and rolled back; see `outbox list`)",
+              "enum": [
+                "synced",
+                "pending",
+                "unknown",
+                "failed"
+              ]
+            },
+            "title": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "id",
+            "graph_id",
+            "sync_state",
+            "list_id",
+            "title",
+            "list",
+            "completed_on"
+          ],
+          "type": "object"
+        },
+        "type": "array"
+      },
+      "schema_version": {
+        "const": 2
+      },
+      "sync": {
+        "properties": {
+          "generation": {
+            "description": "Goes up by one per finished sync of the scope",
+            "type": "integer"
+          },
+          "state": {
+            "description": "initial until this scope's first sync finishes: an empty `items` then doesn't mean empty",
+            "enum": [
+              "initial",
+              "ready"
+            ]
+          }
+        },
+        "required": [
+          "state",
+          "generation"
+        ],
+        "type": "object"
+      }
+    },
+    "required": [
+      "schema_version",
+      "sync",
+      "items"
+    ],
+    "type": "object"
+  }
+}

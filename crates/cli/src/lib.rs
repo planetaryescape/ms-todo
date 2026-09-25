@@ -9,12 +9,14 @@
 
 mod args;
 mod auth_commands;
+mod bulk_commands;
 mod confirm;
 mod csv_columns;
 mod daemon_client;
 mod daemon_commands;
 mod data_commands;
 mod doctor_commands;
+mod done_command;
 mod error;
 mod folder_commands;
 mod outbox_commands;
@@ -176,6 +178,8 @@ async fn dispatch(command: Command, paths: &Paths, format: OutputFormat) -> Resu
             let (items, sync) = data_commands::search(paths, args).await?;
             print_collection(format, &items, sync, &data_commands::SEARCH_TABLE)
         }
+        Command::Done(args) => done_command::done(paths, args, format).await,
+        Command::Reschedule(args) => task_commands::reschedule(paths, args, format).await,
         Command::Sync { wait } => print_success(format, &sync_commands::sync(paths, wait).await?),
         Command::Doctor => print_success(format, &doctor_commands::doctor(paths).await?),
         Command::Schema { command } => print_raw(format, &schema_commands::schema(&command)?),

@@ -3,9 +3,9 @@ use ms_todo_protocol::{
     Anchor, Applied, Candidate, Clearable, Codec, Counts, DaemonStatus, DoctorReport,
     EntityChanged, ErrorPayload, Event, Folder, Importance, ListChange, Message, NewTask, OpError,
     OutboxDepth, OutboxOp, OutboxState, PROTOCOL_VERSION, Payload, Plan, PlannedList, PlannedTask,
-    RawWriteMethod, Request, Response, ResponseData, Rolled, Scope, ScopeError, ScopeStatus,
-    SearchStatus, Seed, SyncActivity, SyncInfo, SyncMode, SyncProgress, SyncReport, SyncState,
-    TaskAction, TaskChange, TaskEdit, WriteRejected,
+    RawWriteMethod, Refused, Request, Response, ResponseData, Rolled, Scope, ScopeError,
+    ScopeStatus, SearchStatus, Seed, SyncActivity, SyncInfo, SyncMode, SyncProgress, SyncReport,
+    SyncState, TaskAction, TaskChange, TaskEdit, TaskSelect, WriteRejected,
 };
 use serde_json::json;
 use tokio_util::codec::{Decoder, Encoder};
@@ -188,6 +188,7 @@ fn every_request_and_response_round_trips() {
         Payload::Request(Request::ChangeTasks {
             tasks: vec!["T1".into(), "T2".into()],
             list: Some("Groceries".into()),
+            select: None,
             change: TaskChange::Edit(TaskEdit {
                 title: Some("New".into()),
                 due: Some(Clearable::Clear),
@@ -201,10 +202,33 @@ fn every_request_and_response_round_trips() {
         Payload::Request(Request::ChangeTasks {
             tasks: vec!["T1".into()],
             list: None,
+            select: None,
             change: TaskChange::Complete,
             dry_run: false,
             op_id: None,
             idempotency_key: None,
+        }),
+        Payload::Request(Request::ChangeTasks {
+            tasks: Vec::new(),
+            list: None,
+            select: Some(TaskSelect {
+                due_before: "2026-09-25".into(),
+                folder: Some("Areas".into()),
+            }),
+            change: TaskChange::Edit(TaskEdit {
+                due: Some(Clearable::Set("2026-09-26".into())),
+                ..TaskEdit::default()
+            }),
+            dry_run: true,
+            op_id: None,
+            idempotency_key: None,
+        }),
+        Payload::Request(Request::CompletedTasks {
+            since: "2026-09-21".into(),
+            until: Some("2026-09-24".into()),
+            list: None,
+            folder: Some("Areas".into()),
+            limit: Some(20),
         }),
         Payload::Response(Response::Ok {
             data: ResponseData::Plan(Plan {
@@ -275,6 +299,11 @@ fn every_request_and_response_round_trips() {
                     next_due: "2026-09-27".into(),
                 }],
                 undoes: None,
+                refused: vec![Refused {
+                    id: "T2".into(),
+                    title: "Call Sam".into(),
+                    reason: "has changed since (dueDateTime)".into(),
+                }],
             }),
         }),
         Payload::Response(Response::Error {

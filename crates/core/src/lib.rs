@@ -8,7 +8,8 @@ mod error;
 mod paths;
 
 pub use dates::{
-    DATE_FORMAT, REMINDER_FORMAT, local_date_time, local_due_date, parse_graph_date_time,
+    DATE_FORMAT, REMINDER_FORMAT, completion_heading, day_heading, local_date_time, local_due_date,
+    parse_graph_date_time,
 };
 pub use display::{CONTROL_PLACEHOLDER, display_safe, one_line_safe};
 pub use error::{ErrorKind, message_with_causes};

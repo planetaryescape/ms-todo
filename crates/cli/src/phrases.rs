@@ -6,7 +6,9 @@
 
 use chrono::Local;
 use ms_todo_core::{DATE_FORMAT, REMINDER_FORMAT};
-use ms_todo_nlp::{NotUnderstood, ParseContext, Reading, read_due, read_importance, read_reminder};
+use ms_todo_nlp::{
+    NotUnderstood, ParseContext, Reading, read_due, read_importance, read_past_date, read_reminder,
+};
 use ms_todo_protocol::{Clearable, Importance};
 
 fn now() -> ParseContext {
@@ -19,6 +21,31 @@ pub fn due(value: &str) -> Result<Clearable<String>, NotUnderstood> {
         Reading::Clear => Clearable::Clear,
         Reading::Set { value, .. } => Clearable::Set(value.format(DATE_FORMAT).to_string()),
     })
+}
+
+/// A day that must be given: `--to` and `--due-before`, read ahead as
+/// `--due` is.
+pub fn day(value: &str) -> Result<String, NotUnderstood> {
+    match due(value)? {
+        Clearable::Set(day) => Ok(day),
+        Clearable::Clear => Err(NotUnderstood(
+            "a day is wanted here, such as today, fri or 2026-10-02".into(),
+        )),
+    }
+}
+
+/// `--since` and `--until`: a day read looking back, so `mon` is the
+/// latest Monday and `12 sep` the latest 12 September.
+pub fn past_day(value: &str) -> Result<String, NotUnderstood> {
+    read_past_date(value, &now()).map(|day| day.format(DATE_FORMAT).to_string())
+}
+
+/// The local day `days` from today (negative: before), as `YYYY-MM-DD`:
+/// `--overdue` is due before today, and `done` starts 7 days ago.
+pub fn days_from_today(days: i64) -> String {
+    (Local::now().date_naive() + chrono::Duration::days(days))
+        .format(DATE_FORMAT)
+        .to_string()
 }
 
 /// `--reminder`: a date and time, or a time alone, or empty or `-` to

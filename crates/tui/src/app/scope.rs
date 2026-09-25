@@ -219,6 +219,24 @@ pub fn planned_groups(tasks: &[Task], today: NaiveDate) -> Vec<(DueGroup, Vec<us
     groups
 }
 
+/// The Completed view's groups, newest day first: each day's heading
+/// ("Today", "Yesterday", "Mon 21 Sep") with its tasks, as indexes into
+/// `tasks`, which the daemon sorts newest first. A completion Graph hasn't
+/// answered yet has no day, and the daemon puts it first.
+pub fn completed_groups(tasks: &[Task], today: NaiveDate) -> Vec<(String, Vec<usize>)> {
+    let mut groups: Vec<(Option<NaiveDate>, Vec<usize>)> = Vec::new();
+    for (index, task) in tasks.iter().enumerate() {
+        match groups.last_mut() {
+            Some((day, members)) if *day == task.completed_on => members.push(index),
+            _ => groups.push((task.completed_on, vec![index])),
+        }
+    }
+    groups
+        .into_iter()
+        .map(|(day, members)| (ms_todo_core::completion_heading(day, today), members))
+        .collect()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -237,5 +255,38 @@ mod tests {
         assert_eq!(group("2026-09-25"), DueGroup::Tomorrow);
         assert_eq!(group("2026-09-27"), DueGroup::ThisWeek, "Sunday");
         assert_eq!(group("2026-09-28"), DueGroup::Later, "next Monday");
+    }
+
+    fn completed(id: &str, day: Option<&str>) -> Task {
+        let mut entity = serde_json::json!({ "id": id, "status": "completed" });
+        if let Some(day) = day {
+            entity["completedDateTime"] = serde_json::json!({ "dateTime": format!("{day}T00:00:00.0000000"), "timeZone": "UTC" });
+        }
+        Task::from_entity(entity.as_object().expect("object")).expect("task")
+    }
+
+    #[test]
+    fn completed_tasks_group_by_the_day_graph_kept() {
+        let tasks = [
+            completed("new", None),
+            completed("a", Some("2026-09-24")),
+            completed("b", Some("2026-09-24")),
+            completed("c", Some("2026-09-23")),
+            completed("d", Some("2026-09-21")),
+        ];
+        let groups = completed_groups(&tasks, date("2026-09-24"));
+        let shown: Vec<(&str, &[usize])> = groups
+            .iter()
+            .map(|(heading, members)| (heading.as_str(), members.as_slice()))
+            .collect();
+        assert_eq!(
+            shown,
+            [
+                ("Not synced yet", &[0][..]),
+                ("Today", &[1, 2][..]),
+                ("Yesterday", &[3][..]),
+                ("Mon 21 Sep", &[4][..]),
+            ]
+        );
     }
 }

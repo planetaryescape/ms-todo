@@ -21,7 +21,7 @@ use crate::list_writes::change_lists;
 use crate::outbox::Outbox;
 use crate::reads::{list_lists, list_tasks, search_tasks};
 use crate::sync::{PassOutcome, Syncer};
-use crate::task_writes::{add_task, change_tasks};
+use crate::task_writes::{Targets, add_task, change_tasks};
 use crate::undo::undo;
 
 pub(crate) struct State {
@@ -57,6 +57,16 @@ pub(crate) async fn handle(state: &State, request: Request) -> Response {
             status,
             limit,
         } => search_tasks(state, &query, list.as_deref(), status, limit).await,
+        Request::CompletedTasks {
+            since,
+            until,
+            list,
+            folder,
+            limit,
+        } => {
+            let (until, list, folder) = (until.as_deref(), list.as_deref(), folder.as_deref());
+            crate::completed::completed_tasks(state, &since, until, list, folder, limit).await
+        }
         Request::Sync { wait: false } => {
             state.syncer.request();
             sync_report(state, false, &PassOutcome::default()).await
@@ -127,6 +137,7 @@ async fn mutate(state: &State, request: Request) -> Result<ResponseData, ErrorPa
         Request::ChangeTasks {
             tasks,
             list,
+            select,
             change,
             dry_run,
             op_id,
@@ -134,14 +145,12 @@ async fn mutate(state: &State, request: Request) -> Result<ResponseData, ErrorPa
         } => {
             let op_id = op_id.unwrap_or_else(new_op_id);
             let key = idempotency_key.filter(|_| !dry_run);
-            let operation = change_tasks(
-                state,
-                &tasks,
-                list.as_deref(),
-                change,
-                dry_run,
-                op_id.clone(),
-            );
+            let targets = Targets {
+                names: &tasks,
+                list: list.as_deref(),
+                select: select.as_ref(),
+            };
+            let operation = change_tasks(state, targets, change, dry_run, op_id.clone());
             run_once(state, key.as_deref(), &fingerprint, &op_id, operation).await
         }
         Request::ChangeLists {

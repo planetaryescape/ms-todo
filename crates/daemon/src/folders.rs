@@ -264,6 +264,15 @@ fn place<T: Copy>(
     rest
 }
 
+/// The lists in the folder `folder`, in order.
+pub(crate) fn lists_in<'a>(
+    lists: &'a [ListRow],
+    folder: &str,
+) -> Result<Vec<&'a ListRow>, ErrorPayload> {
+    let groups = groups(lists);
+    Ok(find_or_fail(&groups, folder)?.lists.clone())
+}
+
 fn find_or_fail<'g, 'a>(
     groups: &'g [Group<'a>],
     wanted: &str,

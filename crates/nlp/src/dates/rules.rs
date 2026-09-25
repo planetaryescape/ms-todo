@@ -11,8 +11,8 @@ use std::sync::LazyLock;
 use chrono::{Datelike, Days, Months, NaiveDate, NaiveDateTime, NaiveTime, Weekday};
 use regex::{Captures, Regex};
 
-use super::ParseContext;
 use super::words::{MONTHS, RELATIVE_DAYS, WEEKDAYS, alternation, lookup, number};
+use super::{Lean, ParseContext};
 
 /// What one rule reads.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -48,7 +48,8 @@ pub(super) static DATE_RULES: LazyLock<Vec<Rule>> = LazyLock::new(|| {
         rule(&format!("next ({weekday})"), next_weekday),
         rule(&format!("({weekday})"), bare_weekday),
         rule(
-            "next week|next month|end of week|eow|end of month|eom",
+            "next week|next month|end of week|eow|end of month|eom|\
+             last week|this week|last month|this month",
             period,
         ),
         rule(&format!("in ({count}) ({unit})"), ahead),
@@ -119,10 +120,16 @@ fn days_until(from: Weekday, target: Weekday) -> u64 {
 }
 
 /// The next one, never today: typed on a Thursday, `thursday` is next
-/// week's (Q6's placeholder, as Todoist does).
+/// week's (Q6's placeholder, as Todoist does). Looking back, the latest
+/// one, today included.
 fn bare_weekday(captures: &Captures, ctx: &ParseContext) -> Option<Value> {
     let today = ctx.today();
-    let ahead = match days_until(today.weekday(), weekday(captures)?) {
+    let target = weekday(captures)?;
+    if ctx.lean == Lean::Back {
+        let back = u64::from(today.weekday().days_since(target));
+        return today.checked_sub_days(Days::new(back)).map(Value::Date);
+    }
+    let ahead = match days_until(today.weekday(), target) {
         0 => 7,
         days => days,
     };
@@ -160,12 +167,20 @@ fn first_of_next_month(today: NaiveDate) -> Option<NaiveDate> {
 
 /// `next week` is its Monday; `end of week` the Friday on or after today;
 /// `next month` its 1st (S8 graded it as the same day next month, as a
-/// guess it flagged; the brief for this build chose the 1st).
+/// guess it flagged; the brief for this build chose the 1st). `this week`
+/// and `last week` are their Mondays, and `this month` and `last month`
+/// their 1sts, for "since" (rung 5d).
 fn period(captures: &Captures, ctx: &ParseContext) -> Option<Value> {
     let today = ctx.today();
+    let this_monday =
+        today.checked_sub_days(Days::new(u64::from(today.weekday().num_days_from_monday())))?;
     let date = match text(captures, 0) {
         "next week" => next_monday(today)?,
         "next month" => first_of_next_month(today)?,
+        "this week" => this_monday,
+        "last week" => this_monday.checked_sub_days(Days::new(7))?,
+        "this month" => today.with_day(1)?,
+        "last month" => today.with_day(1)?.checked_sub_months(Months::new(1))?,
         "end of week" | "eow" => {
             today.checked_add_days(Days::new(days_until(today.weekday(), Weekday::Fri)))?
         }
@@ -216,13 +231,18 @@ fn add_days(date: NaiveDate, days: i64) -> Option<NaiveDate> {
 
 /// A day and month in `year`, or with none given, the next one from
 /// today: a day and month already past this year mean next year's.
+/// Looking back, the latest one: one still to come this year means last
+/// year's.
 fn day_of_year(day: u32, month: u32, year: Option<i32>, ctx: &ParseContext) -> Option<Value> {
     let today = ctx.today();
-    let date = match year {
-        Some(year) => NaiveDate::from_ymd_opt(year, month, day)?,
-        None => NaiveDate::from_ymd_opt(today.year(), month, day)
+    let date = match (year, ctx.lean) {
+        (Some(year), _) => NaiveDate::from_ymd_opt(year, month, day)?,
+        (None, Lean::Ahead) => NaiveDate::from_ymd_opt(today.year(), month, day)
             .filter(|date| *date >= today)
             .or_else(|| NaiveDate::from_ymd_opt(today.year() + 1, month, day))?,
+        (None, Lean::Back) => NaiveDate::from_ymd_opt(today.year(), month, day)
+            .filter(|date| *date <= today)
+            .or_else(|| NaiveDate::from_ymd_opt(today.year() - 1, month, day))?,
     };
     Some(Value::Date(date))
 }
