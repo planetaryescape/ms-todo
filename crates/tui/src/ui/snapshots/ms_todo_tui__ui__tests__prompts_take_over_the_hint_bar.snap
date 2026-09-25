@@ -2,5 +2,5 @@
 source: crates/tui/src/ui/tests.rs
 expression: "format!(\"{}\\n{}\", last(&adding), last(&confirming))"
 ---
-" Add to Home: Buy milk█                                                                                       "
+" / milk█                                                                                                      "
 " Delete "Call Sam"?  y Delete  n Keep                                                                         "

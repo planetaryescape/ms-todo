@@ -21,6 +21,11 @@ pub(crate) enum Field {
     Due(Option<NaiveDate>),
     Reminder(Option<NaiveDateTime>),
     Body(String),
+    Start(NaiveDate),
+    /// Graph's `patternedRecurrence`, checked by [`recurrence`]; the zone
+    /// is added when it's written.
+    Recurrence(Value),
+    Categories(Vec<String>),
 }
 
 impl Field {
@@ -58,6 +63,19 @@ impl Field {
                     json!({ "content": text, "contentType": "text" }),
                 );
             }
+            Self::Start(date) => {
+                body.insert("startDateTime".into(), midnight(*date, zone));
+            }
+            Self::Recurrence(recurrence) => {
+                // Always the due date's zone: without it Graph moved the
+                // due date a day on (S12).
+                let mut recurrence = recurrence.clone();
+                recurrence["range"]["recurrenceTimeZone"] = json!(zone);
+                body.insert("recurrence".into(), recurrence);
+            }
+            Self::Categories(categories) => {
+                body.insert("categories".into(), json!(categories));
+            }
         }
     }
 }
@@ -73,8 +91,39 @@ pub(crate) fn graph_body(fields: &[Field], zone: &str) -> Value {
 
 pub(crate) fn new_task_fields(task: &NewTask) -> Result<Vec<Field>, ErrorPayload> {
     let mut fields = vec![Field::Title(title(&task.title)?)];
-    if let Some(due) = &task.due {
-        fields.push(Field::Due(Some(parse_due(due)?)));
+    let due = task.due.as_deref().map(parse_due).transpose()?;
+    let recurrence = task.recurrence.as_ref().map(recurrence).transpose()?;
+    // A recurring task's first due date is its recurrence's start: with
+    // no due date, Graph would make one at midnight UTC (S12).
+    let due = match (due, &recurrence) {
+        (Some(due), Some((_, start))) if due != *start => {
+            return Err(invalid(format!(
+                "the recurrence starts on {start} but the due date is {due}; they must be the \
+                 same day"
+            )));
+        }
+        (None, Some((_, start))) => Some(*start),
+        (due, _) => due,
+    };
+    if let Some(due) = due {
+        fields.push(Field::Due(Some(due)));
+    }
+    if let Some(start) = &task.start {
+        fields.push(Field::Start(parse_day(start)?));
+    }
+    if let Some((recurrence, _)) = recurrence {
+        fields.push(Field::Recurrence(recurrence));
+    }
+    let categories: Vec<String> = task
+        .categories
+        .iter()
+        .map(|category| category.trim().to_owned())
+        .collect();
+    if categories.iter().any(String::is_empty) {
+        return Err(invalid("a category's name can't be empty".into()));
+    }
+    if !categories.is_empty() {
+        fields.push(Field::Categories(categories));
     }
     if let Some(reminder) = &task.reminder {
         fields.push(Field::Reminder(Some(parse_reminder(reminder)?)));
@@ -257,6 +306,27 @@ fn parse_reminder(value: &str) -> Result<NaiveDateTime, ErrorPayload> {
     })
 }
 
+/// A `patternedRecurrence` as the client sent it, and its start date:
+/// an object with a `pattern` that has a `type`, and a `range` that has a
+/// `startDate`. Graph checks the rest, and a rejection comes back as
+/// `WriteRejected`.
+fn recurrence(value: &Value) -> Result<(Value, NaiveDate), ErrorPayload> {
+    let has_type = value
+        .get("pattern")
+        .and_then(|pattern| pattern.get("type"))
+        .is_some_and(Value::is_string);
+    let start = value
+        .get("range")
+        .and_then(|range| range.get("startDate"))
+        .and_then(Value::as_str);
+    match (has_type, start) {
+        (true, Some(start)) => Ok((value.clone(), parse_day(start)?)),
+        _ => Err(invalid(
+            "a recurrence needs a pattern with a type and a range with a startDate".into(),
+        )),
+    }
+}
+
 fn invalid(message: String) -> ErrorPayload {
     error_payload(ErrorKind::InvalidInput, message)
 }
@@ -315,6 +385,47 @@ mod tests {
         assert_eq!(as_written("dueDateTime", midnight.clone()), midnight);
         assert_eq!(as_written("dueDateTime", Value::Null), Value::Null);
         assert_eq!(as_written("reminderDateTime", read.clone()), read);
+    }
+
+    #[test]
+    fn a_recurrence_gets_the_zone_and_its_start_is_the_due_date() {
+        let task = NewTask {
+            title: "Pay rent".into(),
+            start: Some("2026-09-30".into()),
+            recurrence: Some(json!({
+                "pattern": { "type": "absoluteMonthly", "interval": 1, "dayOfMonth": 1 },
+                "range": { "type": "noEnd", "startDate": "2026-10-01" }
+            })),
+            categories: vec!["Bills".into()],
+            ..NewTask::default()
+        };
+        let body = graph_body(&new_task_fields(&task).expect("fields"), "Europe/London");
+        assert_eq!(
+            body["dueDateTime"],
+            json!({ "dateTime": "2026-10-01T00:00:00", "timeZone": "Europe/London" })
+        );
+        assert_eq!(
+            body["startDateTime"],
+            json!({ "dateTime": "2026-09-30T00:00:00", "timeZone": "Europe/London" })
+        );
+        assert_eq!(
+            body["recurrence"]["range"]["recurrenceTimeZone"],
+            "Europe/London"
+        );
+        assert_eq!(body["recurrence"]["pattern"]["dayOfMonth"], 1);
+        assert_eq!(body["categories"], json!(["Bills"]));
+
+        let clash = NewTask {
+            due: Some("2026-10-02".into()),
+            ..task.clone()
+        };
+        let error = new_task_fields(&clash).expect_err("different days");
+        assert!(error.message.contains("same day"), "{}", error.message);
+        let shapeless = NewTask {
+            recurrence: Some(json!({ "pattern": {} })),
+            ..task
+        };
+        assert!(new_task_fields(&shapeless).is_err());
     }
 
     #[test]

@@ -169,17 +169,17 @@ fn help_lists_every_key() {
 #[test]
 fn prompts_take_over_the_hint_bar() {
     let mut app = seeded();
-    app.mode = Mode::Adding {
-        input: crate::app::line_editor::LineEditor::single("Buy milk"),
+    app.mode = Mode::Filtering {
+        input: crate::app::line_editor::LineEditor::single("milk"),
     };
-    let adding = render(&app);
+    let filtering = render(&app);
     app.mode = Mode::ConfirmDelete {
         ids: vec!["t2".into()],
         what: "\"Call Sam\"".into(),
     };
     let confirming = render(&app);
     let last = |frame: &str| frame.lines().last().unwrap_or_default().to_owned();
-    insta::assert_snapshot!(format!("{}\n{}", last(&adding), last(&confirming)));
+    insta::assert_snapshot!(format!("{}\n{}", last(&filtering), last(&confirming)));
 }
 
 #[test]
@@ -579,4 +579,85 @@ fn urls_in_notes_are_drawn_as_links() {
         link.add_modifier,
         "\"see\" isn't a link"
     );
+}
+
+/// Quick add's modal with `text` typed, read as it's typed.
+fn adding(mut app: App, text: &str) -> App {
+    app.update(Msg::Action(crate::action::Action::Add));
+    for ch in text.chars() {
+        app.update(Msg::Char(ch));
+    }
+    app
+}
+
+const QUICK_ADD: &str = "Pay rent every 1st #Tasks p1 9am @bills +myday";
+
+#[test]
+fn the_add_modal_highlights_what_it_read_and_previews_the_task() {
+    let app = adding(seeded(), QUICK_ADD);
+    let mut terminal = Terminal::new(TestBackend::new(110, 16)).expect("terminal");
+    terminal
+        .draw(|frame| super::draw(frame, &app))
+        .expect("draw");
+    let screen = terminal.backend().to_string();
+    // The status line and the hint bar are still there, under the modal.
+    assert!(screen.lines().last().unwrap_or_default().contains("Enter"));
+    insta::assert_snapshot!(screen);
+    // Each part in its kind's style: find the row with the text on it.
+    let buffer = terminal.backend().buffer();
+    let row = (0..16)
+        .find(|y| {
+            (0..110)
+                .map(|x| buffer[(x, *y)].symbol())
+                .collect::<String>()
+                .contains("> Pay rent")
+        })
+        .expect("the text's row");
+    let line: String = (0..110).map(|x| buffer[(x, row)].symbol()).collect();
+    let style_of = |needle: &str| {
+        let at = line.find(needle).expect(needle);
+        let x = u16::try_from(line[..at].chars().count()).expect("x");
+        buffer[(x, row)].fg
+    };
+    let theme = &app.theme;
+    assert_eq!(Some(style_of("every 1st")), theme.nlp_recurrence.fg);
+    assert_eq!(Some(style_of("#Tasks")), theme.nlp_list.fg);
+    assert_eq!(Some(style_of("p1")), theme.nlp_priority.fg);
+    assert_eq!(Some(style_of("9am")), theme.nlp_date.fg);
+    assert_eq!(Some(style_of("@bills")), theme.nlp_label.fg);
+}
+
+#[test]
+fn the_add_modal_in_catppuccin_mocha() {
+    let app = adding(
+        themed("catppuccin-mocha", crate::theme::Capability::Truecolor),
+        QUICK_ADD,
+    );
+    insta::assert_snapshot!(render_styled(&app));
+}
+
+#[test]
+fn the_add_modal_in_the_terminal_theme() {
+    let app = adding(
+        themed("terminal", crate::theme::Capability::Ansi256),
+        QUICK_ADD,
+    );
+    insta::assert_snapshot!(render_styled(&app));
+}
+
+#[test]
+fn the_add_modal_on_a_narrow_terminal() {
+    let app = adding(seeded(), QUICK_ADD);
+    let mut terminal = Terminal::new(TestBackend::new(48, 20)).expect("terminal");
+    terminal
+        .draw(|frame| super::draw(frame, &app))
+        .expect("draw");
+    insta::assert_snapshot!(terminal.backend().to_string());
+}
+
+#[test]
+fn the_add_modal_taking_the_text_literally() {
+    let mut app = adding(seeded(), "Email Friday report tomorrow");
+    app.update(Msg::Action(crate::action::Action::ToggleParse));
+    insta::assert_snapshot!(render(&app));
 }

@@ -1,12 +1,13 @@
 //! Dates and times as people type them: `tomorrow`, `fri 17:30`,
-//! `in three days`, `12 oct`. Rung 6's quick add will find these inside a
-//! title (span mode); this build has whole-string mode only, where the
-//! whole input must be a date phrase, for the date fields and the
-//! `--due` and `--reminder` flags.
+//! `in three days`, `12 oct`. Whole-string mode, where the whole input
+//! must be a date phrase, reads the date fields and the `--due` and
+//! `--reminder` flags; span mode finds the same phrases inside a quick-add
+//! title (rung 6a).
 
 mod rules;
+pub(crate) mod span;
 mod whole_string;
-mod words;
+pub(crate) mod words;
 
 use chrono::{DateTime, Datelike, FixedOffset, NaiveDate, NaiveDateTime, NaiveTime};
 
@@ -39,12 +40,25 @@ impl ParseContext {
         }
     }
 
-    fn today(&self) -> NaiveDate {
+    pub(crate) fn today(&self) -> NaiveDate {
         self.now.date_naive()
     }
 
-    fn local_now(&self) -> NaiveDateTime {
+    pub(crate) fn local_now(&self) -> NaiveDateTime {
         self.now.naive_local()
+    }
+
+    /// A time alone is the next one: today's, or tomorrow's once it has
+    /// passed. Exactly now has passed too: a reminder for now would never
+    /// ring.
+    pub(crate) fn next_at(&self, time: NaiveTime) -> Option<NaiveDateTime> {
+        let today = self.today();
+        let date = if time > self.local_now().time() {
+            today
+        } else {
+            today.succ_opt()?
+        };
+        Some(date.and_time(time))
     }
 }
 
@@ -137,7 +151,7 @@ pub fn read_past_date(input: &str, ctx: &ParseContext) -> Result<NaiveDate, NotU
 
 /// The time a reminder given only a day rings at. 09:00 matches
 /// Microsoft To Do's own "Tomorrow" reminder.
-const DEFAULT_REMINDER_TIME: NaiveTime = match NaiveTime::from_hms_opt(9, 0, 0) {
+pub(crate) const DEFAULT_REMINDER_TIME: NaiveTime = match NaiveTime::from_hms_opt(9, 0, 0) {
     Some(time) => time,
     None => panic!("09:00 is a valid time"),
 };
@@ -168,7 +182,7 @@ pub fn read_reminder(
 
 /// `Fri 2 Oct`, with the year when it isn't this one, the time when
 /// there is one, and a note when it's already past.
-fn preview(spec: DueSpec, ctx: &ParseContext) -> String {
+pub(crate) fn preview(spec: DueSpec, ctx: &ParseContext) -> String {
     let date = spec.date();
     let mut shown = if date.year() == ctx.today().year() {
         date.format("%a %-d %b").to_string()

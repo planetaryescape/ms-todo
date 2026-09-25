@@ -85,6 +85,14 @@ palette! {
     cursor,
     /// The title bar's background.
     header_bar,
+    /// Quick add's highlights, one per kind of part it recognised: dates
+    /// and times (due, start, reminder), `#List`, `@label`, `p1`–`p4`,
+    /// and `every …`. Quiet: plain colour, no bold.
+    nlp_date,
+    nlp_list,
+    nlp_label,
+    nlp_priority,
+    nlp_recurrence,
 }
 
 /// A built-in theme.
@@ -217,6 +225,13 @@ pub struct Theme {
     /// The cursor's glyph past the end of the text.
     pub cursor_glyph: Style,
     pub header_bar: Style,
+    pub nlp_date: Style,
+    pub nlp_list: Style,
+    pub nlp_label: Style,
+    pub nlp_priority: Style,
+    pub nlp_recurrence: Style,
+    /// What's behind a modal that covers the screen's middle: dimmed.
+    pub backdrop: Style,
 }
 
 impl Default for Theme {
@@ -281,6 +296,12 @@ impl Theme {
             cursor: cursor.add_modifier(Modifier::REVERSED),
             cursor_glyph: cursor,
             header_bar: bg(palette.header_bar),
+            nlp_date: fg(palette.nlp_date),
+            nlp_list: fg(palette.nlp_list),
+            nlp_label: fg(palette.nlp_label),
+            nlp_priority: fg(palette.nlp_priority),
+            nlp_recurrence: fg(palette.nlp_recurrence),
+            backdrop: Style::default().add_modifier(Modifier::DIM),
         }
     }
 
@@ -321,6 +342,13 @@ impl Theme {
             cursor: reversed,
             cursor_glyph: plain,
             header_bar: plain,
+            // No colour: every recognised part is underlined alike.
+            nlp_date: plain.add_modifier(Modifier::UNDERLINED),
+            nlp_list: plain.add_modifier(Modifier::UNDERLINED),
+            nlp_label: plain.add_modifier(Modifier::UNDERLINED),
+            nlp_priority: plain.add_modifier(Modifier::UNDERLINED),
+            nlp_recurrence: plain.add_modifier(Modifier::UNDERLINED),
+            backdrop: dim,
         }
     }
 }

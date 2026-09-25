@@ -63,6 +63,7 @@ pub fn output_schema(command: &str) -> Option<Value> {
         }
         "folders list" => collection(folder()),
         "tasks links" => collection(link()),
+        "tasks parse" => parsed_task(),
         "tasks open" => versioned(
             json!({
                 "url": { "type": "string", "description": "The URL handed to the system's opener" },
@@ -116,6 +117,58 @@ pub fn output_schema(command: &str) -> Option<Value> {
         ),
         _ => return None,
     })
+}
+
+/// `tasks parse`: the task the text reads as, written nowhere.
+fn parsed_task() -> Value {
+    let span = object(
+        json!({
+            "start": { "type": "integer", "description": "Byte offset into the input" },
+            "end": { "type": "integer" },
+            "kind": { "enum": ["list", "label", "priority", "recurrence", "reminder", "start", "date", "my_day", "syntax"] },
+            "text": { "type": "string" }
+        }),
+        &["start", "end", "kind", "text"],
+    );
+    versioned(
+        json!({
+            "input": { "type": "string" },
+            "title": { "type": "string", "description": "What's left once the recognised parts are taken out" },
+            "list": {
+                "type": ["object", "null"],
+                "description": "The list #List names; null is the default, Tasks",
+                "properties": { "id": { "type": "string" }, "name": { "type": "string" } }
+            },
+            "due": nullable("string", "YYYY-MM-DD"),
+            "start": nullable("string", "YYYY-MM-DD"),
+            "reminder": nullable("string", "YYYY-MM-DDTHH:MM, local time"),
+            "recurrence": {
+                "type": ["object", "null"],
+                "description": "Graph's patternedRecurrence, less range.recurrenceTimeZone (the daemon adds it), with a description"
+            },
+            "importance": { "enum": ["low", "normal", "high", null] },
+            "priority": { "type": ["integer", "null"], "description": "The p1–p4 typed" },
+            "categories": { "type": "array", "items": { "type": "string" } },
+            "my_day": { "type": "boolean", "description": "+myday or * was typed; not applied until rung 7" },
+            "spans": { "type": "array", "items": span },
+            "warnings": { "type": "array", "items": { "type": "string" } }
+        }),
+        &[
+            "input",
+            "title",
+            "list",
+            "due",
+            "start",
+            "reminder",
+            "recurrence",
+            "importance",
+            "priority",
+            "categories",
+            "my_day",
+            "spans",
+            "warnings",
+        ],
+    )
 }
 
 /// What every command prints on stderr when it fails, in `json` or `jsonl`.

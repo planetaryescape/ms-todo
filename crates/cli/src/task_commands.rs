@@ -19,21 +19,29 @@ use crate::confirm::{can_prompt, confirm};
 use crate::error::CliError;
 use crate::output::OutputFormat;
 use crate::task_output::{describe_plan, print_applied, print_plan};
-use crate::{daemon_client, data_commands, phrases};
+use crate::{daemon_client, data_commands, phrases, quick_add};
 
 /// Read from stdin in place of a task argument.
 const STDIN_MARKER: &str = "-";
 
+/// `tasks add`: the text read for its fields (`quick_add`), or with
+/// `--no-parse` taken as the title.
 pub async fn add(paths: &Paths, args: AddArgs, format: OutputFormat) -> Result<(), CliError> {
-    let request = Request::AddTask {
-        task: NewTask {
-            title: args.text,
-            list: args.list,
-            due: phrases::set_only(args.due),
-            reminder: phrases::set_only(args.reminder),
+    let task = if args.no_parse {
+        NewTask {
+            title: args.text.clone(),
+            list: args.list.clone(),
+            due: phrases::set_only(args.due.clone()),
+            reminder: phrases::set_only(args.reminder.clone()),
             importance: args.importance,
-            body: args.body,
-        },
+            body: args.body.clone(),
+            ..NewTask::default()
+        }
+    } else {
+        quick_add::new_task(paths, &args, format).await?
+    };
+    let request = Request::AddTask {
+        task,
         dry_run: args.dry_run,
         op_id: op_id_unless(args.dry_run),
         idempotency_key: args.idempotency.idempotency_key,

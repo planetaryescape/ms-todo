@@ -157,7 +157,10 @@ fn sent_op_id(request: &Request) -> Option<&str> {
 #[test]
 fn a_sent_mutation_whose_answer_never_comes_is_outcome_unknown_with_its_op_id() {
     for (after, args) in [
-        (AfterRequest::Hang, &["tasks", "add", "Buy milk"][..]),
+        (
+            AfterRequest::Hang,
+            &["tasks", "add", "Buy milk", "--no-parse"][..],
+        ),
         (AfterRequest::HangUp, &["tasks", "complete", "T1"][..]),
         (
             AfterRequest::Hang,

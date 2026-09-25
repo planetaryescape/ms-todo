@@ -1,0 +1,108 @@
+---
+source: crates/nlp/src/quick_add/tests.rs
+expression: "rendered.join(\"\\n\")"
+---
+every day
+  every day
+  due Some(2026-09-24) reminder None
+  {"pattern":{"interval":1,"type":"daily"},"range":{"startDate":"2026-09-24","type":"noEnd"}}
+daily
+  every day
+  due Some(2026-09-24) reminder None
+  {"pattern":{"interval":1,"type":"daily"},"range":{"startDate":"2026-09-24","type":"noEnd"}}
+every 3 days
+  every 3 days
+  due Some(2026-09-24) reminder None
+  {"pattern":{"interval":3,"type":"daily"},"range":{"startDate":"2026-09-24","type":"noEnd"}}
+every other day
+  every other day
+  due Some(2026-09-24) reminder None
+  {"pattern":{"interval":2,"type":"daily"},"range":{"startDate":"2026-09-24","type":"noEnd"}}
+every weekday
+  every weekday
+  due Some(2026-09-24) reminder None
+  {"pattern":{"daysOfWeek":["monday","tuesday","wednesday","thursday","friday"],"firstDayOfWeek":"monday","interval":1,"type":"weekly"},"range":{"startDate":"2026-09-24","type":"noEnd"}}
+every weekend
+  every weekend
+  due Some(2026-09-26) reminder None
+  {"pattern":{"daysOfWeek":["saturday","sunday"],"firstDayOfWeek":"monday","interval":1,"type":"weekly"},"range":{"startDate":"2026-09-26","type":"noEnd"}}
+every mon, wed
+  every Mon, Wed
+  due Some(2026-09-28) reminder None
+  {"pattern":{"daysOfWeek":["monday","wednesday"],"firstDayOfWeek":"monday","interval":1,"type":"weekly"},"range":{"startDate":"2026-09-28","type":"noEnd"}}
+every tue and thu
+  every Tue, Thu
+  due Some(2026-09-24) reminder None
+  {"pattern":{"daysOfWeek":["tuesday","thursday"],"firstDayOfWeek":"monday","interval":1,"type":"weekly"},"range":{"startDate":"2026-09-24","type":"noEnd"}}
+every week
+  every Thu
+  due Some(2026-09-24) reminder None
+  {"pattern":{"daysOfWeek":["thursday"],"firstDayOfWeek":"monday","interval":1,"type":"weekly"},"range":{"startDate":"2026-09-24","type":"noEnd"}}
+every other week
+  every other week on Thu
+  due Some(2026-09-24) reminder None
+  {"pattern":{"daysOfWeek":["thursday"],"firstDayOfWeek":"monday","interval":2,"type":"weekly"},"range":{"startDate":"2026-09-24","type":"noEnd"}}
+every 2 weeks on fri
+  every other week on Fri
+  due Some(2026-09-25) reminder None
+  {"pattern":{"daysOfWeek":["friday"],"firstDayOfWeek":"monday","interval":2,"type":"weekly"},"range":{"startDate":"2026-09-25","type":"noEnd"}}
+every month
+  every month on the 24th
+  due Some(2026-09-24) reminder None
+  {"pattern":{"dayOfMonth":24,"interval":1,"type":"absoluteMonthly"},"range":{"startDate":"2026-09-24","type":"noEnd"}}
+every month on the 1st
+  every month on the 1st
+  due Some(2026-10-01) reminder None
+  {"pattern":{"dayOfMonth":1,"interval":1,"type":"absoluteMonthly"},"range":{"startDate":"2026-10-01","type":"noEnd"}}
+every 1st
+  every month on the 1st
+  due Some(2026-10-01) reminder None
+  {"pattern":{"dayOfMonth":1,"interval":1,"type":"absoluteMonthly"},"range":{"startDate":"2026-10-01","type":"noEnd"}}
+every 31st
+  every month on the 31st
+  due Some(2026-10-31) reminder None
+  {"pattern":{"dayOfMonth":31,"interval":1,"type":"absoluteMonthly"},"range":{"startDate":"2026-10-31","type":"noEnd"}}
+every 15th of the month
+  every month on the 15th
+  due Some(2026-10-15) reminder None
+  {"pattern":{"dayOfMonth":15,"interval":1,"type":"absoluteMonthly"},"range":{"startDate":"2026-10-15","type":"noEnd"}}
+every last friday
+  every last Fri
+  due Some(2026-09-25) reminder None
+  {"pattern":{"daysOfWeek":["friday"],"index":"last","interval":1,"type":"relativeMonthly"},"range":{"startDate":"2026-09-25","type":"noEnd"}}
+every first monday of the month
+  every first Mon
+  due Some(2026-10-05) reminder None
+  {"pattern":{"daysOfWeek":["monday"],"index":"first","interval":1,"type":"relativeMonthly"},"range":{"startDate":"2026-10-05","type":"noEnd"}}
+every 2 months on the last fri
+  every other month on the last Fri
+  due Some(2026-09-25) reminder None
+  {"pattern":{"daysOfWeek":["friday"],"index":"last","interval":2,"type":"relativeMonthly"},"range":{"startDate":"2026-09-25","type":"noEnd"}}
+every year
+  every year on 24 Sep
+  due Some(2026-09-24) reminder None
+  {"pattern":{"dayOfMonth":24,"interval":1,"month":9,"type":"absoluteYearly"},"range":{"startDate":"2026-09-24","type":"noEnd"}}
+every 29 feb
+  every year on 29 Feb
+  due Some(2028-02-29) reminder None
+  {"pattern":{"dayOfMonth":29,"interval":1,"month":2,"type":"absoluteYearly"},"range":{"startDate":"2028-02-29","type":"noEnd"}}
+every oct 12
+  every year on 12 Oct
+  due Some(2026-10-12) reminder None
+  {"pattern":{"dayOfMonth":12,"interval":1,"month":10,"type":"absoluteYearly"},"range":{"startDate":"2026-10-12","type":"noEnd"}}
+every day until 30 sep
+  every day until 30 Sep 2026
+  due Some(2026-09-24) reminder None
+  {"pattern":{"interval":1,"type":"daily"},"range":{"endDate":"2026-09-30","startDate":"2026-09-24","type":"endDate"}}
+every week for 4 times
+  every Thu, 4 times
+  due Some(2026-09-24) reminder None
+  {"pattern":{"daysOfWeek":["thursday"],"firstDayOfWeek":"monday","interval":1,"type":"weekly"},"range":{"numberOfOccurrences":4,"startDate":"2026-09-24","type":"numbered"}}
+every mon 9am
+  every Mon
+  due Some(2026-09-28) reminder Some(2026-09-28T09:00:00)
+  {"pattern":{"daysOfWeek":["monday"],"firstDayOfWeek":"monday","interval":1,"type":"weekly"},"range":{"startDate":"2026-09-28","type":"noEnd"}}
+every day at 7:30 until 1 oct
+  every day until 1 Oct 2026
+  due Some(2026-09-25) reminder Some(2026-09-25T07:30:00)
+  {"pattern":{"interval":1,"type":"daily"},"range":{"endDate":"2026-10-01","startDate":"2026-09-25","type":"endDate"}}

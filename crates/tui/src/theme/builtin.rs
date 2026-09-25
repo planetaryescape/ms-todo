@@ -95,6 +95,12 @@ const TERMINAL: Palette = Palette {
     link: Color::Blue,
     cursor: Color::Reset,
     header_bar: Color::Reset,
+    // Quick add's highlights, from the palette's own colours.
+    nlp_date: Color::Cyan,
+    nlp_list: Color::Magenta,
+    nlp_label: Color::Blue,
+    nlp_priority: Color::Yellow,
+    nlp_recurrence: Color::Green,
 };
 
 // Catppuccin, https://github.com/catppuccin/palette/blob/main/palette.json,
@@ -128,6 +134,12 @@ const CATPPUCCIN_MOCHA: Palette = Palette {
     link: hex(0x74c7ec),         // sapphire
     cursor: hex(0xf5e0dc),       // rosewater
     header_bar: hex(0x181825),   // mantle
+    // Quick add's highlights, from the palette's own colours.
+    nlp_date: hex(0xfab387),
+    nlp_list: hex(0xb4befe),
+    nlp_label: hex(0x74c7ec),
+    nlp_priority: hex(0xf9e2af),
+    nlp_recurrence: hex(0xcba6f7),
 };
 
 // The same roles from Catppuccin Latte, the light flavour (source above).
@@ -157,6 +169,12 @@ const CATPPUCCIN_LATTE: Palette = Palette {
     link: hex(0x209fb5),         // sapphire
     cursor: hex(0xdc8a78),       // rosewater
     header_bar: hex(0xe6e9ef),   // mantle
+    // Quick add's highlights, from the palette's own colours.
+    nlp_date: hex(0xfe640b),
+    nlp_list: hex(0x7287fd),
+    nlp_label: hex(0x209fb5),
+    nlp_priority: hex(0xdf8e1d),
+    nlp_recurrence: hex(0x8839ef),
 };
 
 // Gruvbox, https://github.com/morhetz/gruvbox (the palette in its README
@@ -187,6 +205,12 @@ const GRUVBOX_DARK: Palette = Palette {
     link: hex(0x83a598),         // bright_blue
     cursor: hex(0xebdbb2),       // light1
     header_bar: hex(0x1d2021),   // dark0_hard
+    // Quick add's highlights, from the palette's own colours.
+    nlp_date: hex(0xfe8019),
+    nlp_list: hex(0x8ec07c),
+    nlp_label: hex(0x83a598),
+    nlp_priority: hex(0xfabd2f),
+    nlp_recurrence: hex(0xd3869b),
 };
 
 // Gruvbox's light mode (source above): its faded accents, which keep
@@ -217,6 +241,12 @@ const GRUVBOX_LIGHT: Palette = Palette {
     link: hex(0x076678),         // faded_blue
     cursor: hex(0x3c3836),       // dark1
     header_bar: hex(0xf9f5d7),   // light0_hard
+    // Quick add's highlights, from the palette's own colours.
+    nlp_date: hex(0xaf3a03),
+    nlp_list: hex(0x427b58),
+    nlp_label: hex(0x076678),
+    nlp_priority: hex(0xb57614),
+    nlp_recurrence: hex(0x8f3f71),
 };
 
 // Tokyo Night's "night" style,
@@ -247,6 +277,12 @@ const TOKYO_NIGHT: Palette = Palette {
     link: hex(0x7dcfff),         // cyan
     cursor: hex(0xc0caf5),       // fg
     header_bar: hex(0x16161e),   // bg_dark
+    // Quick add's highlights, from the palette's own colours.
+    nlp_date: hex(0xff9e64),
+    nlp_list: hex(0xbb9af7),
+    nlp_label: hex(0x7dcfff),
+    nlp_priority: hex(0xe0af68),
+    nlp_recurrence: hex(0x9ece6a),
 };
 
 // Nord, https://www.nordtheme.com/docs/colors-and-palettes. Nord3 is too
@@ -279,6 +315,12 @@ const NORD: Palette = Palette {
     link: hex(0x81a1c1),         // nord9
     cursor: hex(0xd8dee9),       // nord4
     header_bar: hex(0x3b4252),   // nord1
+    // Quick add's highlights, from the palette's own colours.
+    nlp_date: hex(0xd08770),
+    nlp_list: hex(0x88c0d0),
+    nlp_label: hex(0x81a1c1),
+    nlp_priority: hex(0xebcb8b),
+    nlp_recurrence: hex(0xb48ead),
 };
 
 // Atom's One Dark: the syntax theme's palette,
@@ -312,6 +354,12 @@ const ONE_DARK: Palette = Palette {
     link: hex(0x56b6c2),         // hue-1, cyan
     cursor: hex(0x528bff),       // syntax-accent, the cursor
     header_bar: hex(0x21252b),   // level-3-color, the tool panels
+    // Quick add's highlights, from the palette's own colours.
+    nlp_date: hex(0xd19a66),
+    nlp_list: hex(0x61afef),
+    nlp_label: hex(0x56b6c2),
+    nlp_priority: hex(0xe5c07b),
+    nlp_recurrence: hex(0xc678dd),
 };
 
 // Kanagawa's "wave" theme,
@@ -344,6 +392,12 @@ const KANAGAWA: Palette = Palette {
     link: hex(0x7fb4ca),         // springBlue
     cursor: hex(0xdcd7ba),       // fujiWhite
     header_bar: hex(0x16161d),   // sumiInk0, ui.bg_m3
+    // Quick add's highlights, from the palette's own colours.
+    nlp_date: hex(0xffa066),
+    nlp_list: hex(0x957fb8),
+    nlp_label: hex(0x7fb4ca),
+    nlp_priority: hex(0xe6c384),
+    nlp_recurrence: hex(0x98bb6c),
 };
 
 // Night Owl,
@@ -375,6 +429,12 @@ const NIGHT_OWL: Palette = Palette {
     link: hex(0x80cbc4),         // notificationLink.foreground
     cursor: hex(0x80a4c2),       // editorCursor.foreground
     header_bar: hex(0x01111d),   // tab.inactiveBackground
+    // Quick add's highlights, from the palette's own colours.
+    nlp_date: hex(0xf78c6c),
+    nlp_list: hex(0xc792ea),
+    nlp_label: hex(0x80cbc4),
+    nlp_priority: hex(0xffeb95),
+    nlp_recurrence: hex(0xc5e478),
 };
 
 // Cobalt2, https://github.com/wesbos/cobalt2-vscode/blob/master/theme/cobalt2.json.
@@ -406,6 +466,12 @@ const COBALT2: Palette = Palette {
     link: hex(0x0088ff),         // textLink.foreground
     cursor: hex(0xffc600),       // editorCursor.foreground
     header_bar: hex(0x15232d),   // titleBar.activeBackground
+    // Quick add's highlights, from the palette's own colours.
+    nlp_date: hex(0xff9d00),
+    nlp_list: hex(0x9effff),
+    nlp_label: hex(0xfb94ff),
+    nlp_priority: hex(0xffc600),
+    nlp_recurrence: hex(0xa5ff90),
 };
 
 // No official palette exists for this one: every text colour meets
@@ -438,4 +504,10 @@ const HIGH_CONTRAST: Palette = Palette {
     link: hex(0x80c0ff),
     cursor: hex(0xffffff),
     header_bar: hex(0x000000),
+    // Quick add's highlights, from the palette's own colours.
+    nlp_date: hex(0xffb86c),
+    nlp_list: hex(0x00ffff),
+    nlp_label: hex(0x80c0ff),
+    nlp_priority: hex(0xffff00),
+    nlp_recurrence: hex(0xff80ff),
 };

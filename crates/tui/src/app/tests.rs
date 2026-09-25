@@ -229,14 +229,17 @@ fn moving_in_the_sidebar_seeds_the_new_scope_and_drops_stale_answers() {
 }
 
 #[test]
-fn add_takes_the_text_literally_into_the_current_list() {
+fn add_with_parsing_off_takes_the_text_literally_into_the_current_list() {
     let mut app = seeded();
-    assert!(act(&mut app, Action::Add).is_empty());
-    assert_eq!(app.context(), Context::Prompt);
+    // The first `a` asks for the categories `@label` knows, once.
+    let asked = act(&mut app, Action::Add);
+    assert_eq!(asked[0].tag, Tag::Categories);
+    assert_eq!(app.context(), Context::Adding);
     for ch in "Buy milk tomorrow #Home".chars() {
         app.update(Msg::Char(ch));
     }
     app.update(Msg::Action(Action::Backspace));
+    act(&mut app, Action::ToggleParse);
     let effects = act(&mut app, Action::Submit);
     assert_eq!(app.mode, Mode::Normal);
     let Request::AddTask { task, dry_run, .. } = &effects[0].request else {
@@ -293,7 +296,7 @@ fn adding_from_a_view_gives_the_task_what_puts_it_in_the_view() {
     let Request::AddTask { task, .. } = &effects[0].request else {
         unreachable!("{effects:?}");
     };
-    assert_eq!(task.importance, Some(Importance::High));
+    assert_eq!(task.importance, Some(ms_todo_protocol::Importance::High));
 }
 
 #[test]

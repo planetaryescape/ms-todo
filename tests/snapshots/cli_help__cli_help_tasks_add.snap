@@ -2,22 +2,54 @@
 source: tests/cli_help.rs
 expression: help_output(args)
 ---
-Add a task. The text is its title, exactly as given
+Add a task, read from text the way you'd say it
+
+`Pay rent every 1st #Finances p1 9am` is "Pay rent" in Finances, importance high, every month on the 1st, due the next 1st with a reminder at 09:00. --no-parse takes the text as the title, exactly as given; flags always win over what the text says. `tasks parse` shows the reading without adding anything
 
 Usage: ms-todo tasks add [OPTIONS] <TEXT>
 
 Arguments:
-  <TEXT>  The task's title, taken literally
+  <TEXT>
+          The task, as you'd say it. Read out of it: #List or #"Two words" (its name or a prefix only it has), @category, p1–p4, every … (a recurrence), !time-or-date (a reminder), start <date>, and a date and time (the due date; a time also sets a reminder then). "Quoted text" and \# \@ \! stay as typed. What's left is the title
 
 Options:
-      --format <FORMAT>        Output format: jsonl is one object per line, ids one ID per line, csv has a header row [default: table in a terminal, json when piped] [possible values: table, json, jsonl, ids, csv]
-      --list <NAME|ID>         The list's exact name or its ID [default: the "Tasks" list]
-      --due <WHEN>             Due date: 2026-10-02, today, tomorrow, fri, next mon, in 3 days, +2w, 12 oct, 12/10 (day first), end of month. Due dates have no time; put a time in --reminder
-      --instance <NAME>        Use a separate copy of ms-todo's data (also MS_TODO_INSTANCE). Builds run from Cargo's target/ directory default to "dev"; "default" is the installed copy
-      --reminder <WHEN>        Remind me at this local time: 17:30 (the next one), tomorrow 9am, fri 5:30pm, 2026-10-02 09:30. A day alone, such as tomorrow or in 2 days, is 09:00 on it
-      --importance <LEVEL>     How important it is: 1 or p1 (high), 2, 3, p2 or p3 (normal), 4 or p4 (low), or high, normal or low
-      --body <TEXT>            Notes, as plain text
-      --dry-run                Show what would be sent without changing anything
-      --idempotency-key <KEY>  Run this change at most once: repeating the command with the same key returns the first result for 24 hours, and the same key with a different change exits 2
-  -h, --help                   Print help
-  -V, --version                Print version
+      --format <FORMAT>
+          Output format: jsonl is one object per line, ids one ID per line, csv has a header row [default: table in a terminal, json when piped]
+
+          [possible values: table, json, jsonl, ids, csv]
+
+      --no-parse
+          Take the text as the title, exactly as given: for text you didn't type yourself, such as an agent's, with flags for the fields
+
+      --create-categories
+          Create an @category that isn't one of your Outlook categories yet. Without it the task still gets the name, which Outlook shows without a colour
+
+      --instance <NAME>
+          Use a separate copy of ms-todo's data (also MS_TODO_INSTANCE). Builds run from Cargo's target/ directory default to "dev"; "default" is the installed copy
+
+      --list <NAME|ID>
+          The list's exact name or its ID, over any #List in the text [default: the "Tasks" list]
+
+      --due <WHEN>
+          Due date, over any in the text: 2026-10-02, today, tomorrow, fri, next mon, in 3 days, +2w, 12 oct, 12/10 (day first), end of month. Due dates have no time; put a time in --reminder
+
+      --reminder <WHEN>
+          Remind me at this local time, over any in the text: 17:30 (the next one), tomorrow 9am, fri 5:30pm, 2026-10-02 09:30. A day alone, such as tomorrow or in 2 days, is 09:00 on it
+
+      --importance <LEVEL>
+          How important it is, over any p1–p4 in the text: 1 or p1 (high), 2, 3, p2 or p3 (normal), 4 or p4 (low), or high, normal or low
+
+      --body <TEXT>
+          Notes, as plain text
+
+      --dry-run
+          Show what would be sent without changing anything
+
+      --idempotency-key <KEY>
+          Run this change at most once: repeating the command with the same key returns the first result for 24 hours, and the same key with a different change exits 2
+
+  -h, --help
+          Print help (see a summary with '-h')
+
+  -V, --version
+          Print version

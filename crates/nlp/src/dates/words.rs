@@ -4,7 +4,7 @@
 
 use chrono::Weekday;
 
-pub(super) const WEEKDAYS: &[(&str, Weekday)] = &[
+pub(crate) const WEEKDAYS: &[(&str, Weekday)] = &[
     ("monday", Weekday::Mon),
     ("mon", Weekday::Mon),
     ("tuesday", Weekday::Tue),
@@ -25,7 +25,7 @@ pub(super) const WEEKDAYS: &[(&str, Weekday)] = &[
     ("sun", Weekday::Sun),
 ];
 
-pub(super) const MONTHS: &[(&str, u32)] = &[
+pub(crate) const MONTHS: &[(&str, u32)] = &[
     ("january", 1),
     ("jan", 1),
     ("february", 2),
@@ -56,7 +56,7 @@ pub(super) const MONTHS: &[(&str, u32)] = &[
 /// docs/blueprint/12-open-questions.md). `tom` is tomorrow; Q9's rule
 /// that only lowercase `tom` counts, so "Ask Tom" stays a title, is for
 /// rung 6's scanner inside titles, not a field that holds a date alone.
-pub(super) const RELATIVE_DAYS: &[(&str, i64)] = &[
+pub(crate) const RELATIVE_DAYS: &[(&str, i64)] = &[
     ("day after tomorrow", 2),
     ("day before yesterday", -2),
     ("today", 0),
@@ -69,7 +69,7 @@ pub(super) const RELATIVE_DAYS: &[(&str, i64)] = &[
 ];
 
 /// Counts spelled out, one to twenty, and "a" as in "in a week".
-pub(super) const NUMBERS: &[(&str, u32)] = &[
+pub(crate) const NUMBERS: &[(&str, u32)] = &[
     ("a", 1),
     ("an", 1),
     ("one", 1),
@@ -96,13 +96,13 @@ pub(super) const NUMBERS: &[(&str, u32)] = &[
 
 /// The words of `table` as a regex alternation, longest first, so the
 /// leftmost-first match takes `tomorrow` over `tom`.
-pub(super) fn alternation<T>(table: &[(&str, T)]) -> String {
+pub(crate) fn alternation<T>(table: &[(&str, T)]) -> String {
     let mut words: Vec<&str> = table.iter().map(|(word, _)| *word).collect();
     words.sort_by_key(|word| std::cmp::Reverse(word.len()));
     words.join("|")
 }
 
-pub(super) fn lookup<T: Copy>(table: &[(&str, T)], word: &str) -> Option<T> {
+pub(crate) fn lookup<T: Copy>(table: &[(&str, T)], word: &str) -> Option<T> {
     table
         .iter()
         .find(|(known, _)| *known == word)
@@ -110,6 +110,6 @@ pub(super) fn lookup<T: Copy>(table: &[(&str, T)], word: &str) -> Option<T> {
 }
 
 /// A count as digits or spelled out.
-pub(super) fn number(text: &str) -> Option<u32> {
+pub(crate) fn number(text: &str) -> Option<u32> {
     text.parse().ok().or_else(|| lookup(NUMBERS, text))
 }

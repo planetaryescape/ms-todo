@@ -13,6 +13,17 @@ pub enum Importance {
     High,
 }
 
+impl Importance {
+    /// Graph's name for it.
+    pub fn name(self) -> &'static str {
+        match self {
+            Self::Low => "low",
+            Self::Normal => "normal",
+            Self::High => "high",
+        }
+    }
+}
+
 /// `1`–`4`, `p1`–`p4`, or `high`, `normal` or `low`, in any case.
 pub fn read_importance(input: &str) -> Result<Importance, NotUnderstood> {
     let typed = input.trim().to_lowercase();

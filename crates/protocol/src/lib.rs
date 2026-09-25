@@ -27,8 +27,10 @@ use serde_json::{Map, Value};
 /// change without its selection as a change to no task. 8: `GetTasks`,
 /// for `tasks links` and `tasks open`. 9: moving tasks between lists
 /// (`TaskChange::Move`, rung 5e), so a client restarts an older daemon
-/// rather than have a move refused as unknown.
-pub const PROTOCOL_VERSION: u32 = 9;
+/// rather than have a move refused as unknown. 10: `NewTask.start`,
+/// `recurrence` and `categories` (quick add, rung 6a), so an older daemon
+/// never drops a recurrence it doesn't know and creates a one-off task.
+pub const PROTOCOL_VERSION: u32 = 10;
 
 /// The socket buffer both ends ask for: room for a large list's `Seed` in
 /// one write. macOS gives a Unix socket 8 KiB, so a 350 KiB seed crossed
@@ -633,7 +635,7 @@ pub enum Importance {
 
 /// A task to create. The title is taken literally; dates are validated by
 /// the daemon.
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct NewTask {
     pub title: String,
     /// A list name or ID; `None` is the "Tasks" list (D-022).
@@ -650,6 +652,18 @@ pub struct NewTask {
     /// Plain-text notes.
     #[serde(default)]
     pub body: Option<String>,
+    /// `YYYY-MM-DD`. Graph sets the due date to it too when there's none
+    /// (S11).
+    #[serde(default)]
+    pub start: Option<String>,
+    /// Graph's `patternedRecurrence`, less `range.recurrenceTimeZone`,
+    /// which the daemon sets to the zone it writes the due date in (S12).
+    /// `range.startDate` is the first due date.
+    #[serde(default)]
+    pub recurrence: Option<Value>,
+    /// Outlook category names, as the task carries them.
+    #[serde(default)]
+    pub categories: Vec<String>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]

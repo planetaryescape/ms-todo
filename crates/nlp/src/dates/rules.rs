@@ -1,8 +1,9 @@
 //! The rule table: one regex per phrase shape, and what it resolves to
 //! (docs/blueprint/06-natural-language.md, D-026). The patterns hold no
 //! anchors: whole-string mode anchors them to the start of what's left,
-//! and rung 6's scanner will run the same patterns inside a title to find
-//! spans, adding its masking passes and guards (`Friday's`) around them.
+//! and span mode (`span.rs`) runs the same patterns at each word of a
+//! title, with quick add's masking passes and guards (`Friday's`) around
+//! them.
 //!
 //! Patterns see lowercased text with single spaces.
 
@@ -12,7 +13,7 @@ use chrono::{Datelike, Days, Months, NaiveDate, NaiveDateTime, NaiveTime, Weekda
 use regex::{Captures, Regex};
 
 use super::words::{MONTHS, RELATIVE_DAYS, WEEKDAYS, alternation, lookup, number};
-use super::{Lean, ParseContext};
+use super::{Lean, NotUnderstood, ParseContext};
 
 /// What one rule reads.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -76,6 +77,38 @@ pub(super) static TIME_RULES: LazyLock<Vec<Rule>> = LazyLock::new(|| {
         rule("noon|midday|midnight", named_time),
     ]
 });
+
+/// The longest match of any rule at the start of `text`, and where it
+/// ends. A match that isn't a real date or time, such as `31/02`, is an
+/// error when nothing else matches.
+pub(super) fn longest(
+    rules: &[Rule],
+    text: &str,
+    ctx: &ParseContext,
+) -> Result<Option<(Value, usize)>, NotUnderstood> {
+    let mut best: Option<(usize, Value)> = None;
+    let mut unreal = None;
+    for rule in rules {
+        let Some(captures) = rule.regex.captures(text) else {
+            continue;
+        };
+        let end = captures.get(0).map_or(0, |found| found.end());
+        match (rule.resolve)(&captures, ctx) {
+            Some(value) if best.is_none_or(|(longest, _)| end > longest) => {
+                best = Some((end, value));
+            }
+            Some(_) => {}
+            None => unreal = Some(&text[..end]),
+        }
+    }
+    match (best, unreal) {
+        (Some((end, value)), _) => Ok(Some((value, end))),
+        (None, Some(unreal)) => Err(NotUnderstood(format!(
+            "\"{unreal}\" isn't a real date or time"
+        ))),
+        (None, None) => Ok(None),
+    }
+}
 
 fn rule(pattern: &str, resolve: fn(&Captures, &ParseContext) -> Option<Value>) -> Rule {
     // The patterns are constants, so a bad one fails every test.

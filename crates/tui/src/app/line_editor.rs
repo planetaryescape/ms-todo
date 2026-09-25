@@ -24,6 +24,15 @@ impl LineEditor {
         Self::new(&text.replace(['\r', '\n'], " "), false)
     }
 
+    /// One line, with the cursor at `column` (in characters): after a
+    /// completion in the middle of the text.
+    pub fn single_at(text: &str, column: usize) -> Self {
+        let mut editor = Self::single(text);
+        let column = u16::try_from(column).unwrap_or(u16::MAX);
+        editor.area.move_cursor(CursorMove::Jump(0, column));
+        editor
+    }
+
     /// Several lines, with the cursor after the last.
     pub fn multi(text: &str) -> Self {
         Self::new(text, true)

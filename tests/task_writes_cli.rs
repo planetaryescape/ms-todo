@@ -68,6 +68,7 @@ async fn add_posts_the_literal_title_with_its_op_id_in_our_extension() {
         "tasks",
         "add",
         "Buy milk #Home !9am tomorrow",
+        "--no-parse",
         "--due",
         "2026-09-26",
         "--reminder",
@@ -98,7 +99,7 @@ async fn add_posts_the_literal_title_with_its_op_id_in_our_extension() {
     assert_eq!(
         body,
         json!({
-            // Taken literally: no parsing in rung 2.
+            // Taken literally, as --no-parse asks.
             "title": "Buy milk #Home !9am tomorrow",
             "dueDateTime": { "dateTime": "2026-09-26T00:00:00", "timeZone": "Europe/London" },
             "isReminderOn": true,

@@ -11,7 +11,7 @@ use ms_todo_nlp::{
 };
 use ms_todo_protocol::{Clearable, Importance};
 
-fn now() -> ParseContext {
+pub(crate) fn now() -> ParseContext {
     ParseContext::new(Local::now().fixed_offset())
 }
 
@@ -59,11 +59,16 @@ pub fn reminder(value: &str) -> Result<Clearable<String>, NotUnderstood> {
 
 /// `--importance`: `1`–`4`, `p1`–`p4`, or `high`, `normal` or `low`.
 pub fn importance(value: &str) -> Result<Importance, NotUnderstood> {
-    Ok(match read_importance(value)? {
+    read_importance(value).map(protocol_importance)
+}
+
+/// A level as `ms-todo-nlp` reads it, as the protocol carries it.
+pub(crate) fn protocol_importance(level: ms_todo_nlp::Importance) -> Importance {
+    match level {
         ms_todo_nlp::Importance::High => Importance::High,
         ms_todo_nlp::Importance::Normal => Importance::Normal,
         ms_todo_nlp::Importance::Low => Importance::Low,
-    })
+    }
 }
 
 /// A set value, or nothing when the flag cleared it: a new task has

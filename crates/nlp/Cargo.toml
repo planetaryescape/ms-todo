@@ -4,14 +4,16 @@ version.workspace = true
 edition.workspace = true
 license.workspace = true
 publish = false
-description = "ms-todo's phrase reader: dates and times as people type them. Pure, no I/O."
+description = "ms-todo's phrase reader: dates, times and quick add as people type them. Pure, no I/O."
 
 [dependencies]
 chrono = { workspace = true }
 regex = { workspace = true }
+serde_json = { workspace = true }
 thiserror = { workspace = true }
 
 [dev-dependencies]
+insta = { workspace = true }
 proptest = { workspace = true }
 
 [lints]

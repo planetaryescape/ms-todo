@@ -8,7 +8,8 @@ Usage: ms-todo tasks [OPTIONS] <COMMAND>
 
 Commands:
   list      Every task in a list, completed ones included
-  add       Add a task. The text is its title, exactly as given
+  add       Add a task, read from text the way you'd say it
+  parse     Show how `tasks add` would read the text, without adding anything
   complete  Mark tasks completed. A recurring task moves on to its next due date
   reopen    Mark completed tasks as not started again
   edit      Change a task's title, due date, importance, reminder or notes; or the due date, importance or reminder of several tasks at once

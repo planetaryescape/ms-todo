@@ -1,0 +1,24 @@
+---
+source: crates/tui/src/ui/tests.rs
+expression: terminal.backend().to_string()
+---
+" ms-todo 9.9.9 · Home                  ● synced "
+"╭ Lists ───────────────╮╭ Home ──────╮╭ Detail ╮"
+"│★ Important          1││  t 1 ★↻    ││Title   │"
+"│╭ Add task → Tasks ──────────────────────────╮│"
+"││ > Pay rent every 1st #Tasks p1 9am @bills  ││"
+"││ +myday█                                    ││"
+"││ → Tasks · p1 · due Thu 1 Oct · every month ││"
+"││ on the 1st · remind 09:00 · @bills         ││"
+"││ +myday: My Day arrives in rung 7, so the   ││"
+"││ task isn't added to it                     ││"
+"││                                            ││"
+"││ Enter add · Tab complete · Ctrl-r literal  ││"
+"││ Esc cancel                                 ││"
+"│╰────────────────────────────────────────────╯│"
+"│                      ││            ││  none  │"
+"│                      ││            ││Importan│"
+"│                      ││            ││ce high │"
+"╰──────────────────────╯╰────────────╯╰────────╯"
+" ● daemon  ·  synced 12s ago  ·  all changes sen"
+" Enter Add  Tab Complete  Ctrl-r Literal  Esc Ca"

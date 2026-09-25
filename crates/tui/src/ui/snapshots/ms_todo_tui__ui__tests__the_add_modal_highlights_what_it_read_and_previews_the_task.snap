@@ -1,0 +1,20 @@
+---
+source: crates/tui/src/ui/tests.rs
+expression: screen
+---
+" ms-todo 9.9.9 · Home                                                                                ● synced "
+"╭ Lists ───────────────╮╭ Home ────────────────────────────────────────────╮╭ Detail ────────────────────────╮"
+"│★ Important          ╭ Add task → Tasks ──────────────────────────────────────────────╮Pay rent             │"
+"│▦ Planned            │ > Pay rent every 1st #Tasks p1 9am @bills +myday█              │                     │"
+"│∞ All                │ → Tasks · p1 · due Thu 1 Oct · every month on the 1st · remind │open                 │"
+"│✓ Completed          │ 09:00 · @bills                                                 │Home                 │"
+"│≡ Tasks              │ +myday: My Day arrives in rung 7, so the task isn't added to   │Thu 1 Oct 2026       │"
+"│≡ Home               │ it                                                             │none                 │"
+"│                     │                                                                │high                 │"
+"│                     │ Enter add · Tab complete · Ctrl-r literal · Esc cancel         │monthly on day 1     │"
+"│                     ╰────────────────────────────────────────────────────────────────╯synced               │"
+"│                      ││                                                  ││                                │"
+"│                      ││                                                  ││Notes      none                 │"
+"╰──────────────────────╯╰──────────────────────────────────────────────────╯╰────────────────────────────────╯"
+" ● daemon  ·  synced 12s ago  ·  all changes sent                                                             "
+" Enter Add  Tab Complete  Ctrl-r Literal  Esc Cancel                                                          "

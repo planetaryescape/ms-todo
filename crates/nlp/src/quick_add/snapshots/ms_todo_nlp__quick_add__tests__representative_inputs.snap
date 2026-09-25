@@ -1,0 +1,299 @@
+---
+source: crates/nlp/src/quick_add/tests.rs
+expression: "rendered.join(\"\\n\")"
+---
+Pay rent every 1st #Finances p1 9am
+  title: "Pay rent"
+  list: Finances
+  due: 2026-10-01
+  reminder: 2026-10-01 09:00
+  recurrence: every month on the 1st {"pattern":{"dayOfMonth":1,"interval":1,"type":"absoluteMonthly"},"range":{"startDate":"2026-10-01","type":"noEnd"}}
+  importance: p1 high
+  spans: recurrence:"every 1st" list:"#Finances" priority:"p1" date:"9am"
+  preview: p1 · due Thu 1 Oct · every month on the 1st · remind 09:00
+
+Call mum in 2 days
+  title: "Call mum"
+  due: 2026-09-26
+  spans: date:"in 2 days"
+  preview: due Sat 26 Sep
+
+Pay rent every 1st #Home p1 !9am
+  title: "Pay rent"
+  list: Home
+  due: 2026-10-01
+  reminder: 2026-10-01 09:00
+  recurrence: every month on the 1st {"pattern":{"dayOfMonth":1,"interval":1,"type":"absoluteMonthly"},"range":{"startDate":"2026-10-01","type":"noEnd"}}
+  importance: p1 high
+  spans: recurrence:"every 1st" list:"#Home" priority:"p1" reminder:"!9am"
+  preview: p1 · due Thu 1 Oct · every month on the 1st · remind 09:00
+
+Buy milk #Home @errands p2
+  title: "Buy milk"
+  list: Home
+  importance: p2 normal
+  categories: ["Errands"]
+  spans: list:"#Home" label:"@errands" priority:"p2"
+  preview: p2 · @Errands
+
+Stand-up every weekday 9:30
+  title: "Stand-up"
+  due: 2026-09-25
+  reminder: 2026-09-25 09:30
+  recurrence: every weekday {"pattern":{"daysOfWeek":["monday","tuesday","wednesday","thursday","friday"],"firstDayOfWeek":"monday","interval":1,"type":"weekly"},"range":{"startDate":"2026-09-25","type":"noEnd"}}
+  spans: recurrence:"every weekday 9:30"
+  preview: due Fri 25 Sep · every weekday · remind 09:30
+
+Call dentist !tomorrow 8:30
+  title: "Call dentist"
+  reminder: 2026-09-25 08:30
+  spans: reminder:"!tomorrow 8:30"
+  preview: remind Fri 25 Sep 08:30
+
+Water plants every mon, wed
+  title: "Water plants"
+  due: 2026-09-28
+  recurrence: every Mon, Wed {"pattern":{"daysOfWeek":["monday","wednesday"],"firstDayOfWeek":"monday","interval":1,"type":"weekly"},"range":{"startDate":"2026-09-28","type":"noEnd"}}
+  spans: recurrence:"every mon, wed"
+  preview: due Mon 28 Sep · every Mon, Wed
+
+Gym every other week
+  title: "Gym"
+  due: 2026-09-24
+  recurrence: every other week on Thu {"pattern":{"daysOfWeek":["thursday"],"firstDayOfWeek":"monday","interval":2,"type":"weekly"},"range":{"startDate":"2026-09-24","type":"noEnd"}}
+  spans: recurrence:"every other week"
+  preview: due Thu 24 Sep · every other week on Thu
+
+#Work Prep deck tomorrow p1
+  title: "Prep deck"
+  list: Work
+  due: 2026-09-25
+  importance: p1 high
+  spans: list:"#Work" date:"tomorrow" priority:"p1"
+  preview: p1 · due Fri 25 Sep
+
+Pay rent every month on the 1st
+  title: "Pay rent"
+  due: 2026-10-01
+  recurrence: every month on the 1st {"pattern":{"dayOfMonth":1,"interval":1,"type":"absoluteMonthly"},"range":{"startDate":"2026-10-01","type":"noEnd"}}
+  spans: recurrence:"every month on the 1st"
+  preview: due Thu 1 Oct · every month on the 1st
+
+Call @mum p1 friday
+  title: "Call"
+  due: 2026-09-25
+  importance: p1 high
+  categories: ["mum"]
+  spans: label:"@mum" priority:"p1" date:"friday"
+  warning: @mum isn't one of your categories yet
+  preview: p1 · due Fri 25 Sep · @mum
+
+Budget review every last friday
+  title: "Budget review"
+  due: 2026-09-25
+  recurrence: every last Fri {"pattern":{"daysOfWeek":["friday"],"index":"last","interval":1,"type":"relativeMonthly"},"range":{"startDate":"2026-09-25","type":"noEnd"}}
+  spans: recurrence:"every last friday"
+  preview: due Fri 25 Sep · every last Fri
+
+Tax return #"Admin stuff" 31 jan
+  title: "Tax return"
+  list: Admin stuff
+  due: 2027-01-31
+  spans: list:"#\"Admin stuff\"" date:"31 jan"
+  preview: due Sun 31 Jan 2027
+
+Email Friday's report
+  title: "Email Friday's report"
+  spans: 
+  preview: 
+
+Ask Tom about invoice
+  title: "Ask Tom about invoice"
+  spans: 
+  preview: 
+
+Call mum tom
+  title: "Call mum"
+  due: 2026-09-25
+  spans: date:"tom"
+  preview: due Fri 25 Sep
+
+Sat nav update
+  title: "Sat nav update"
+  spans: 
+  preview: 
+
+Plan party next sat
+  title: "Plan party"
+  due: 2026-10-03
+  spans: date:"next sat"
+  preview: due Sat 3 Oct
+
+Call May about the lease
+  title: "Call May about the lease"
+  spans: 
+  preview: 
+
+Renew passport may 12
+  title: "Renew passport"
+  due: 2027-05-12
+  spans: date:"may 12"
+  preview: due Wed 12 May 2027
+
+Mark Wednesday Addams costume
+  title: "Mark Wednesday Addams costume"
+  spans: 
+  preview: 
+
+Fix the 9am standup bot
+  title: "Fix the 9am standup bot"
+  spans: 
+  preview: 
+
+Read "Next Friday" by tomorrow
+  title: "Read Next Friday by"
+  due: 2026-09-25
+  spans: syntax:"\"" syntax:"\"" date:"tomorrow"
+  preview: due Fri 25 Sep
+
+Tweet about \#rust and \@ferris
+  title: "Tweet about #rust and @ferris"
+  spans: syntax:"\\" syntax:"\\"
+  preview: 
+
+Plan trip start monday
+  title: "Plan trip"
+  due: 2026-09-28
+  start: 2026-09-28
+  spans: start:"start monday"
+  warning: a start date also sets the due date when there's none, so it's due Mon 28 Sep
+  preview: due Mon 28 Sep · start Mon 28 Sep
+
+Plan trip start mon due fri
+  title: "Plan trip due"
+  due: 2026-09-25
+  start: 2026-09-28
+  spans: start:"start mon" date:"fri"
+  preview: due Fri 25 Sep · start Mon 28 Sep
+
+Plan trip start monday fri
+  title: "Plan trip"
+  due: 2026-09-25
+  start: 2026-09-28
+  spans: start:"start monday" date:"fri"
+  preview: due Fri 25 Sep · start Mon 28 Sep
+
+Pay invoice #Ho p3
+  title: "Pay invoice #Ho"
+  importance: p3 normal
+  spans: priority:"p3"
+  warning: #Ho: could be Home or Hobbies, so it stays in the title
+  preview: p3
+
+Pay invoice #Nope
+  title: "Pay invoice #Nope"
+  spans: 
+  warning: #Nope: no list has that name, so it stays in the title
+  preview: 
+
+Pick up parcel +myday
+  title: "Pick up parcel"
+  my_day: true
+  spans: my_day:"+myday"
+  warning: +myday: My Day arrives in rung 7, so the task isn't added to it
+  preview: 
+
+Pick up parcel * p4
+  title: "Pick up parcel"
+  importance: p4 low
+  my_day: true
+  spans: my_day:"*" priority:"p4"
+  warning: *: My Day arrives in rung 7, so the task isn't added to it
+  preview: p4
+
+Take vitamins daily 8am
+  title: "Take vitamins"
+  due: 2026-09-25
+  reminder: 2026-09-25 08:00
+  recurrence: every day {"pattern":{"interval":1,"type":"daily"},"range":{"startDate":"2026-09-25","type":"noEnd"}}
+  spans: recurrence:"daily 8am"
+  preview: due Fri 25 Sep · every day · remind 08:00
+
+Daily standup notes
+  title: "Daily standup notes"
+  spans: 
+  preview: 
+
+Back up laptop every 2 weeks on sun until 31 dec
+  title: "Back up laptop"
+  due: 2026-09-27
+  recurrence: every other week on Sun until 31 Dec 2026 {"pattern":{"daysOfWeek":["sunday"],"firstDayOfWeek":"monday","interval":2,"type":"weekly"},"range":{"endDate":"2026-12-31","startDate":"2026-09-27","type":"endDate"}}
+  spans: recurrence:"every 2 weeks on sun until 31 dec"
+  preview: due Sun 27 Sep · every other week on Sun until 31 Dec 2026
+
+Water ferns every 3 days for 10 times
+  title: "Water ferns"
+  due: 2026-09-24
+  recurrence: every 3 days, 10 times {"pattern":{"interval":3,"type":"daily"},"range":{"numberOfOccurrences":10,"startDate":"2026-09-24","type":"numbered"}}
+  spans: recurrence:"every 3 days for 10 times"
+  preview: due Thu 24 Sep · every 3 days, 10 times
+
+Anniversary every 12 oct
+  title: "Anniversary"
+  due: 2026-10-12
+  recurrence: every year on 12 Oct {"pattern":{"dayOfMonth":12,"interval":1,"month":10,"type":"absoluteYearly"},"range":{"startDate":"2026-10-12","type":"noEnd"}}
+  spans: recurrence:"every 12 oct"
+  preview: due Mon 12 Oct · every year on 12 Oct
+
+Review goals every year
+  title: "Review goals"
+  due: 2026-09-24
+  recurrence: every year on 24 Sep {"pattern":{"dayOfMonth":24,"interval":1,"month":9,"type":"absoluteYearly"},"range":{"startDate":"2026-09-24","type":"noEnd"}}
+  spans: recurrence:"every year"
+  preview: due Thu 24 Sep · every year on 24 Sep
+
+Clean gutters every 3 months
+  title: "Clean gutters"
+  due: 2026-09-24
+  recurrence: every 3 months on the 24th {"pattern":{"dayOfMonth":24,"interval":3,"type":"absoluteMonthly"},"range":{"startDate":"2026-09-24","type":"noEnd"}}
+  spans: recurrence:"every 3 months"
+  preview: due Thu 24 Sep · every 3 months on the 24th
+
+Dentist fri 3pm !fri 9am
+  title: "Dentist"
+  due: 2026-09-25
+  reminder: 2026-09-25 09:00
+  spans: date:"fri 3pm" reminder:"!fri 9am"
+  warning: the ! reminder wins over the time with the date, which is dropped
+  preview: due Fri 25 Sep · remind 09:00
+
+Dentist 9am blah tomorrow and fri
+  title: "Dentist blah and fri"
+  due: 2026-09-25
+  reminder: 2026-09-25 09:00
+  spans: date:"9am" date:"tomorrow"
+  warning: "fri" reads as a date too, but only the first counts, so it stays in the title
+  preview: due Fri 25 Sep · remind 09:00
+
+Book tickets on 12 oct, then pack
+  title: "Book tickets, then pack"
+  due: 2026-10-12
+  spans: date:"on 12 oct"
+  preview: due Mon 12 Oct
+
+!
+  title: "!"
+  spans: 
+  preview: 
+
+every
+  title: "every"
+  spans: 
+  preview: 
+
+p1 #Home
+  title: ""
+  list: Home
+  importance: p1 high
+  spans: priority:"p1" list:"#Home"
+  preview: p1

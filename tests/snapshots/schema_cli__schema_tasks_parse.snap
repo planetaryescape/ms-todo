@@ -1,0 +1,162 @@
+---
+source: tests/schema_cli.rs
+expression: pretty
+---
+{
+  "input": {
+    "additionalProperties": false,
+    "properties": {
+      "text": {
+        "description": "The text, as you'd give it to `tasks add`",
+        "type": "string",
+        "x-cli": "<TEXT>"
+      }
+    },
+    "required": [
+      "text"
+    ],
+    "type": "object"
+  },
+  "output": {
+    "properties": {
+      "categories": {
+        "items": {
+          "type": "string"
+        },
+        "type": "array"
+      },
+      "due": {
+        "description": "YYYY-MM-DD",
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "importance": {
+        "enum": [
+          "low",
+          "normal",
+          "high",
+          null
+        ]
+      },
+      "input": {
+        "type": "string"
+      },
+      "list": {
+        "description": "The list #List names; null is the default, Tasks",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          }
+        },
+        "type": [
+          "object",
+          "null"
+        ]
+      },
+      "my_day": {
+        "description": "+myday or * was typed; not applied until rung 7",
+        "type": "boolean"
+      },
+      "priority": {
+        "description": "The p1–p4 typed",
+        "type": [
+          "integer",
+          "null"
+        ]
+      },
+      "recurrence": {
+        "description": "Graph's patternedRecurrence, less range.recurrenceTimeZone (the daemon adds it), with a description",
+        "type": [
+          "object",
+          "null"
+        ]
+      },
+      "reminder": {
+        "description": "YYYY-MM-DDTHH:MM, local time",
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "schema_version": {
+        "const": 2
+      },
+      "spans": {
+        "items": {
+          "properties": {
+            "end": {
+              "type": "integer"
+            },
+            "kind": {
+              "enum": [
+                "list",
+                "label",
+                "priority",
+                "recurrence",
+                "reminder",
+                "start",
+                "date",
+                "my_day",
+                "syntax"
+              ]
+            },
+            "start": {
+              "description": "Byte offset into the input",
+              "type": "integer"
+            },
+            "text": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "start",
+            "end",
+            "kind",
+            "text"
+          ],
+          "type": "object"
+        },
+        "type": "array"
+      },
+      "start": {
+        "description": "YYYY-MM-DD",
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "title": {
+        "description": "What's left once the recognised parts are taken out",
+        "type": "string"
+      },
+      "warnings": {
+        "items": {
+          "type": "string"
+        },
+        "type": "array"
+      }
+    },
+    "required": [
+      "schema_version",
+      "input",
+      "title",
+      "list",
+      "due",
+      "start",
+      "reminder",
+      "recurrence",
+      "importance",
+      "priority",
+      "categories",
+      "my_day",
+      "spans",
+      "warnings"
+    ],
+    "type": "object"
+  }
+}

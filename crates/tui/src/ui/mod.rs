@@ -7,6 +7,7 @@
 //! Drawing: pure functions of the [`App`]. Nothing here changes state or
 //! does I/O, so a frame is the same for the same state.
 
+mod add_modal;
 mod detail;
 mod diagnostics;
 mod hint_bar;
@@ -61,6 +62,7 @@ pub fn draw(frame: &mut Frame, app: &App) {
     hint_bar::draw(frame, hints, app);
     match &app.mode {
         Mode::Help => modals::help(frame, app),
+        Mode::Adding { input, parsed, .. } => add_modal::draw(frame, app, input, parsed.as_ref()),
         Mode::Picker {
             candidates, index, ..
         } => modals::picker(frame, app, candidates, *index),

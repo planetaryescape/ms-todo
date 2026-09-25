@@ -13,7 +13,8 @@ pub enum Action {
     Open,
     /// "Move list to folder…": ask for a folder for the current list.
     MoveToFolder,
-    /// Tab in the folder prompt: take the first suggestion.
+    /// Tab in the folder prompt: take the first suggestion; in quick add,
+    /// finish a `#List` or `@label`.
     Complete,
     /// `h`: the pane to the left.
     FocusLeft,
@@ -21,8 +22,10 @@ pub enum Action {
     FocusRight,
     /// Tab: the next pane, round to the first.
     FocusNext,
-    /// Add a task to the current list; the text is taken literally.
+    /// Quick add: a task typed the way it's said, read as it's typed.
     Add,
+    /// `Ctrl-r` in quick add: take the text literally, or read it again.
+    ToggleParse,
     /// Complete an open task, or reopen a completed one.
     ToggleComplete,
     /// Delete, after an inline confirmation.

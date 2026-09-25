@@ -23,9 +23,12 @@ pub enum Context {
     Tasks,
     /// The detail pane, where j and k move between the fields.
     Detail,
-    /// Typing a new task, a filter or a field's new value on one line.
-    /// Other keys go to the line editor ([`EDITOR_KEYS`]).
+    /// Typing a filter or a field's new value on one line. Other keys go
+    /// to the line editor ([`EDITOR_KEYS`]).
     Prompt,
+    /// Quick add's modal: a new task, read as it's typed. Other keys go to
+    /// the line editor.
+    Adding,
     /// Typing notes, where Enter is a new line.
     Notes,
     /// Typing the folder to move a list into, with suggestions.
@@ -81,7 +84,13 @@ const LISTS: &[Context] = &[
     Context::Diagnostics,
 ];
 const PALETTE: &[Context] = &[Context::Palette];
-const PROMPTS: &[Context] = &[Context::Prompt, Context::Notes, Context::Folder];
+const PROMPTS: &[Context] = &[
+    Context::Prompt,
+    Context::Adding,
+    Context::Notes,
+    Context::Folder,
+];
+const ADDING: &[Context] = &[Context::Adding];
 const NOTES: &[Context] = &[Context::Notes];
 const FIELDS: &[Context] = &[Context::Fields];
 const FOLDER: &[Context] = &[Context::Folder];
@@ -150,6 +159,9 @@ pub const BINDINGS: &[Binding] = &[
     bind(TASKS, "o", Action::OpenLink, "Open link", true),
     bind(TASKS, "y", Action::CopyLink, "Copy link", true),
     bind(&[Context::Prompt], "Enter", Action::Submit, "Done", true),
+    bind(ADDING, "Enter", Action::Submit, "Add", true),
+    bind(ADDING, "Tab", Action::Complete, "Complete", true),
+    bind(ADDING, "Ctrl-r", Action::ToggleParse, "Literal", true),
     bind(NOTES, "Ctrl-s", Action::Submit, "Save", true),
     bind(NOTES, "Alt-Enter", Action::Submit, "Save", false),
     bind(NOTES, "Enter", Action::Newline, "New line", true),

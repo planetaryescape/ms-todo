@@ -3,9 +3,7 @@
 //! a time, optionally followed by a date. `on` may lead a date and `at` a
 //! time.
 
-use chrono::Days;
-
-use super::rules::{DATE_RULES, Rule, TIME_RULES, Value};
+use super::rules::{self, DATE_RULES, Rule, TIME_RULES, Value};
 use super::{DueSpec, NotUnderstood, ParseContext};
 
 /// `None` for empty or `-`, which clear the field.
@@ -38,17 +36,8 @@ pub(super) fn read(input: &str, ctx: &ParseContext) -> Result<Option<DueSpec>, N
     let timed = strip_word(&text, "at");
     if let Some((Value::Time(time), rest)) = longest(&TIME_RULES, timed, ctx)? {
         if rest.is_empty() {
-            // A time alone is the next one: today's, or tomorrow's once
-            // it has passed.
-            let today = ctx.today();
-            let date = if time > ctx.local_now().time() {
-                today
-            } else {
-                today
-                    .checked_add_days(Days::new(1))
-                    .ok_or_else(|| not_understood(&text))?
-            };
-            return Ok(Some(DueSpec::DateTime(date.and_time(time))));
+            let at = ctx.next_at(time).ok_or_else(|| not_understood(&text))?;
+            return Ok(Some(DueSpec::DateTime(at)));
         }
         let rest = strip_word(rest, "on");
         return match whole(&DATE_RULES, rest, ctx)? {
@@ -60,35 +49,13 @@ pub(super) fn read(input: &str, ctx: &ParseContext) -> Result<Option<DueSpec>, N
 }
 
 /// The longest match of any rule at the start of `text`, and what's left
-/// after it, trimmed. A match that isn't a real date or time, such as
-/// `31/02`, is an error when nothing else matches.
+/// after it, trimmed.
 fn longest<'t>(
     rules: &[Rule],
     text: &'t str,
     ctx: &ParseContext,
 ) -> Result<Option<(Value, &'t str)>, NotUnderstood> {
-    let mut best: Option<(usize, Value)> = None;
-    let mut unreal = None;
-    for rule in rules {
-        let Some(captures) = rule.regex.captures(text) else {
-            continue;
-        };
-        let end = captures.get(0).map_or(0, |found| found.end());
-        match (rule.resolve)(&captures, ctx) {
-            Some(value) if best.is_none_or(|(longest, _)| end > longest) => {
-                best = Some((end, value));
-            }
-            Some(_) => {}
-            None => unreal = Some(&text[..end]),
-        }
-    }
-    match (best, unreal) {
-        (Some((end, value)), _) => Ok(Some((value, text[end..].trim_start()))),
-        (None, Some(unreal)) => Err(NotUnderstood(format!(
-            "\"{unreal}\" isn't a real date or time"
-        ))),
-        (None, None) => Ok(None),
-    }
+    Ok(rules::longest(rules, text, ctx)?.map(|(value, end)| (value, text[end..].trim_start())))
 }
 
 /// A rule that matches all of `text`.

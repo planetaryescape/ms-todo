@@ -27,6 +27,7 @@ const COMMANDS: &[&str] = &[
     "folders order",
     "tasks list",
     "tasks add",
+    "tasks parse",
     "tasks complete",
     "tasks reopen",
     "tasks edit",

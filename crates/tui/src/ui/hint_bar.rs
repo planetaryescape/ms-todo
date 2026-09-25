@@ -1,7 +1,8 @@
 // Adapted from mxr crates/tui/src/ui/hint_bar.rs @ dfb23d10138b1cfc24f8ea7450d3426e5e4da37a:
 // contextual hints from the keybinding registry. Changes: a prompt or the
 // delete confirmation takes the bar over, since that's where the typing
-// is; the sync state is in the title bar instead.
+// is (quick add types in its modal instead); the sync state is in the
+// title bar instead.
 
 use ratatui::Frame;
 use ratatui::layout::Rect;
@@ -30,17 +31,6 @@ pub fn draw(frame: &mut Frame, area: Rect, app: &App) {
     let typed = |input: &LineEditor| line_input::single(input, Style::default(), glyphs, theme);
     let key = |keys: &str| Span::styled(keys.to_owned(), theme.key);
     let left = match &app.mode {
-        Mode::Adding { input } => {
-            let list = match &app.shown {
-                Some(ms_todo_protocol::Scope::List { id }) => {
-                    app.list_name(id).unwrap_or("Tasks").to_owned()
-                }
-                shown => format!("Tasks, from {}", app.scope_name(shown.as_ref())),
-            };
-            let mut spans = vec![Span::styled(format!(" Add to {list}: "), theme.accent)];
-            spans.extend(typed(input));
-            Line::from(spans)
-        }
         Mode::Filtering { input } => {
             let mut spans = vec![Span::styled(" / ", theme.accent)];
             spans.extend(typed(input));

@@ -22,6 +22,7 @@ pub mod line_editor;
 mod links;
 pub mod move_tasks;
 pub mod palette;
+pub mod quick_add;
 pub mod scope;
 mod selection;
 pub mod task;
@@ -32,8 +33,8 @@ use std::collections::{HashMap, HashSet};
 use chrono::{DateTime, FixedOffset, Local, NaiveDate};
 use crossterm::event::KeyEvent;
 use ms_todo_protocol::{
-    Candidate, Counts, ErrorPayload, Event, Importance, NewTask, OutboxDepth, Request,
-    ResponseData, Scope, Seed, SyncActivity, SyncState, TaskChange,
+    Candidate, Counts, ErrorPayload, Event, OutboxDepth, Request, ResponseData, Scope, Seed,
+    SyncActivity, SyncState, TaskChange,
 };
 
 use crate::action::Action;
@@ -59,9 +60,11 @@ pub enum Pane {
 #[derive(Clone, Debug, PartialEq)]
 pub enum Mode {
     Normal,
-    /// Typing a new task's title.
+    /// `a`: typing a new task. `parsed` is the reading of `input`, redone
+    /// on every key; `None` when `Ctrl-r` takes the text literally.
     Adding {
         input: LineEditor,
+        parsed: Option<ms_todo_nlp::ParsedTask>,
     },
     /// Typing a filter; the list follows each key.
     Filtering {
@@ -198,6 +201,8 @@ pub enum Tag {
     Undo,
     Sync,
     Diagnostics(Part),
+    /// The user's Outlook categories, for `@label` (quick add).
+    Categories,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
@@ -316,6 +321,8 @@ pub struct App {
     /// The last key switched scope and painted the new one from `cache`:
     /// its frame is the view switch (the runner's measurement).
     pub painted_from_cache: bool,
+    /// The categories quick add's `@label` knows.
+    pub categories: quick_add::Categories,
 }
 
 impl App {
@@ -354,6 +361,7 @@ impl App {
             seeds: Seeds::default(),
             cache: HashMap::new(),
             painted_from_cache: false,
+            categories: quick_add::Categories::default(),
         }
     }
 
@@ -364,10 +372,10 @@ impl App {
                 field: Field::Notes,
                 ..
             } => Context::Notes,
-            Mode::Adding { .. }
-            | Mode::Filtering { .. }
-            | Mode::Editing { .. }
-            | Mode::SettingDue { .. } => Context::Prompt,
+            Mode::Adding { .. } => Context::Adding,
+            Mode::Filtering { .. } | Mode::Editing { .. } | Mode::SettingDue { .. } => {
+                Context::Prompt
+            }
             Mode::ChoosingField { .. } => Context::Fields,
             Mode::MovingList { .. } => Context::Folder,
             Mode::ChoosingImportance { .. } => Context::Importance,
@@ -472,6 +480,7 @@ impl App {
             Msg::Event(event) => self.event(event),
             Msg::Tick(clock) => {
                 self.clock = clock;
+                self.reread_quick_add();
                 if let Some(banner) = &mut self.banner {
                     banner.ticks_left = banner.ticks_left.saturating_sub(1);
                     if banner.ticks_left == 0 {
@@ -547,6 +556,14 @@ impl App {
                 self.edit_action(action)
             }
             (Mode::Adding { .. }, Action::Submit) => self.submit_add(),
+            (Mode::Adding { .. }, Action::Complete) => {
+                self.complete_quick_add();
+                Vec::new()
+            }
+            (Mode::Adding { .. }, Action::ToggleParse) => {
+                self.toggle_parse();
+                Vec::new()
+            }
             (Mode::MovingList { .. }, Action::Submit) => self.submit_move(),
             (Mode::MovingList { .. }, Action::Complete) => {
                 self.complete_folder();
@@ -606,16 +623,14 @@ impl App {
             Action::Add if self.still_loading() => Vec::new(),
             Action::Add => {
                 if self.lists_ready {
-                    self.mode = Mode::Adding {
-                        input: LineEditor::single(""),
-                    };
+                    self.start_add()
                 } else {
                     self.show(
                         Level::Info,
                         "Still syncing your lists; try again in a moment",
                     );
+                    Vec::new()
                 }
-                Vec::new()
             }
             Action::ToggleComplete
             | Action::Delete
@@ -772,9 +787,14 @@ impl App {
     /// back to its best match.
     fn edit_with(&mut self, edit: impl FnOnce(&mut LineEditor) -> bool) -> Vec<Effect> {
         let changed = match &mut self.mode {
-            Mode::Adding { input } | Mode::Filtering { input } | Mode::MovingList { input, .. } => {
-                edit(input)
+            Mode::Adding { input, .. } => {
+                let changed = edit(input);
+                if changed {
+                    self.reread_quick_add();
+                }
+                return Vec::new();
             }
+            Mode::Filtering { input } | Mode::MovingList { input, .. } => edit(input),
             Mode::Editing { input, error, .. } | Mode::SettingDue { input, error, .. } => {
                 let changed = edit(input);
                 if changed {
@@ -839,50 +859,6 @@ impl App {
         self.filter = text;
         self.filter_error = None;
         vec![self.seed_now()]
-    }
-
-    fn submit_add(&mut self) -> Vec<Effect> {
-        let Mode::Adding { input } = std::mem::replace(&mut self.mode, Mode::Normal) else {
-            return Vec::new();
-        };
-        let text = input.text();
-        let title = text.trim();
-        if title.is_empty() || self.still_loading() {
-            return Vec::new();
-        }
-        // A list gets the task; a view adds it to the default list with
-        // what puts it in the view, as To Do does.
-        let (list, importance, due) = match &self.shown {
-            Some(Scope::List { id }) => (Some(id.clone()), None, None),
-            Some(Scope::Important) => (None, Some(Importance::High), None),
-            Some(Scope::Planned) => (
-                None,
-                None,
-                Some(
-                    self.clock
-                        .today()
-                        .format(ms_todo_core::DATE_FORMAT)
-                        .to_string(),
-                ),
-            ),
-            _ => (None, None, None),
-        };
-        vec![Effect {
-            tag: Tag::Write(Write::Add),
-            request: Request::AddTask {
-                task: NewTask {
-                    title: title.to_owned(),
-                    list,
-                    due,
-                    reminder: None,
-                    importance,
-                    body: None,
-                },
-                dry_run: false,
-                op_id: None,
-                idempotency_key: None,
-            },
-        }]
     }
 
     fn pick_copy(&mut self) -> Vec<Effect> {
@@ -986,6 +962,11 @@ impl App {
             (Tag::Prefetch, _) => Vec::new(),
             (Tag::Diagnostics(part), result) => {
                 self.diagnosed(part, result);
+                Vec::new()
+            }
+            // Without them, no label is called unknown; nothing to say.
+            (Tag::Categories, result) => {
+                self.categories_answered(result);
                 Vec::new()
             }
             (Tag::Write(write), Ok(ResponseData::Applied(applied))) => {

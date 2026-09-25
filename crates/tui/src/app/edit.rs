@@ -348,7 +348,7 @@ impl App {
     }
 }
 
-fn protocol_importance(level: ms_todo_nlp::Importance) -> Importance {
+pub(super) fn protocol_importance(level: ms_todo_nlp::Importance) -> Importance {
     match level {
         ms_todo_nlp::Importance::High => Importance::High,
         ms_todo_nlp::Importance::Normal => Importance::Normal,

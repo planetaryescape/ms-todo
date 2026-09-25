@@ -1905,8 +1905,10 @@ name = "ms-todo-nlp"
 version = "0.1.17"
 dependencies = [
  "chrono",
+ "insta",
  "proptest",
  "regex",
+ "serde_json",
  "thiserror 2.0.21",
 ]
 

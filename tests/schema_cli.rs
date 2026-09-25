@@ -26,6 +26,7 @@ const COMMANDS: &[&str] = &[
     "folders order",
     "tasks list",
     "tasks add",
+    "tasks parse",
     "tasks complete",
     "tasks reopen",
     "tasks edit",
@@ -173,6 +174,10 @@ async fn real_output_has_every_field_its_schema_requires() {
         ),
         ("tasks add", &["tasks", "add", "Eggs"]),
         ("tasks add", &["tasks", "add", "Eggs", "--dry-run"]),
+        (
+            "tasks parse",
+            &["tasks", "parse", "Eggs every mon #Tasks p1 9am"],
+        ),
         ("outbox list", &["outbox", "list"]),
         ("undo", &["undo"]),
         (

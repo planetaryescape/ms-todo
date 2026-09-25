@@ -135,8 +135,8 @@ fn write_to_terminal(sequence: &str) -> std::io::Result<()> {
 
 /// Once the first list is painted: move through the tasks, across to the
 /// sidebar and through the views and back; open the title's editor, move
-/// and type in it and cancel; filter and cancel; then quit. Nothing is
-/// written. Spaced so each view's seed lands before the next key.
+/// and type in it and cancel; filter and cancel; type a task into quick
+/// add, read on every key, and cancel; then quit. Nothing is written. Spaced so each view's seed lands before the next key.
 async fn bench_script(first_paint: oneshot::Receiver<()>, keys: mpsc::UnboundedSender<TermEvent>) {
     if first_paint.await.is_err() {
         return;
@@ -164,6 +164,8 @@ async fn bench_script(first_paint: oneshot::Receiver<()>, keys: mpsc::UnboundedS
     ]);
     script.extend(typed("/a"));
     script.extend([key(KeyCode::Backspace, none), key(KeyCode::Esc, none)]);
+    script.extend(typed("aPay rent every 1st #Ta p1 9am @bills"));
+    script.extend([key(KeyCode::Esc, none)]);
     script.extend(typed("q"));
     for event in script {
         tokio::time::sleep(Duration::from_millis(40)).await;

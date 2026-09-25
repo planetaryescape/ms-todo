@@ -180,6 +180,12 @@ fn every_request_and_response_round_trips() {
                 reminder: None,
                 importance: Some(Importance::High),
                 body: None,
+                start: Some("2026-09-25".into()),
+                recurrence: Some(json!({
+                    "pattern": { "type": "daily", "interval": 1 },
+                    "range": { "type": "noEnd", "startDate": "2026-09-26" }
+                })),
+                categories: vec!["Errands".into()],
             },
             dry_run: true,
             op_id: None,

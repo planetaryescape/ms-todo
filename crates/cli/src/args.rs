@@ -277,8 +277,16 @@ pub enum TasksCommand {
         #[arg(long, value_name = "QUERY")]
         search: Option<String>,
     },
-    /// Add a task. The text is its title, exactly as given
+    /// Add a task, read from text the way you'd say it
+    ///
+    /// `Pay rent every 1st #Finances p1 9am` is "Pay rent" in Finances,
+    /// importance high, every month on the 1st, due the next 1st with a
+    /// reminder at 09:00. --no-parse takes the text as the title, exactly
+    /// as given; flags always win over what the text says. `tasks parse`
+    /// shows the reading without adding anything
     Add(AddArgs),
+    /// Show how `tasks add` would read the text, without adding anything
+    Parse(ParseArgs),
     /// Mark tasks completed. A recurring task moves on to its next due date
     Complete(TargetArgs),
     /// Mark completed tasks as not started again
@@ -435,23 +443,37 @@ pub struct IdempotencyArgs {
 
 #[derive(Debug, Args)]
 pub struct AddArgs {
-    /// The task's title, taken literally
+    /// The task, as you'd say it. Read out of it: #List or #"Two words"
+    /// (its name or a prefix only it has), @category, p1–p4, every …
+    /// (a recurrence), !time-or-date (a reminder), start <date>, and a
+    /// date and time (the due date; a time also sets a reminder then).
+    /// "Quoted text" and \# \@ \! stay as typed. What's left is the title
     pub text: String,
-    /// The list's exact name or its ID [default: the "Tasks" list]
+    /// Take the text as the title, exactly as given: for text you didn't
+    /// type yourself, such as an agent's, with flags for the fields
+    #[arg(long)]
+    pub no_parse: bool,
+    /// Create an @category that isn't one of your Outlook categories yet.
+    /// Without it the task still gets the name, which Outlook shows
+    /// without a colour
+    #[arg(long, conflicts_with = "no_parse")]
+    pub create_categories: bool,
+    /// The list's exact name or its ID, over any #List in the text
+    /// [default: the "Tasks" list]
     #[arg(long, value_name = "NAME|ID")]
     pub list: Option<String>,
-    /// Due date: 2026-10-02, today, tomorrow, fri, next mon, in 3 days,
-    /// +2w, 12 oct, 12/10 (day first), end of month. Due dates have no
-    /// time; put a time in --reminder
+    /// Due date, over any in the text: 2026-10-02, today, tomorrow, fri,
+    /// next mon, in 3 days, +2w, 12 oct, 12/10 (day first), end of month.
+    /// Due dates have no time; put a time in --reminder
     #[arg(long, value_name = "WHEN", value_parser = phrases::due, allow_hyphen_values = true)]
     pub due: Option<Clearable<String>>,
-    /// Remind me at this local time: 17:30 (the next one), tomorrow 9am,
-    /// fri 5:30pm, 2026-10-02 09:30. A day alone, such as tomorrow or in
-    /// 2 days, is 09:00 on it
+    /// Remind me at this local time, over any in the text: 17:30 (the
+    /// next one), tomorrow 9am, fri 5:30pm, 2026-10-02 09:30. A day alone,
+    /// such as tomorrow or in 2 days, is 09:00 on it
     #[arg(long, value_name = "WHEN", value_parser = phrases::reminder, allow_hyphen_values = true)]
     pub reminder: Option<Clearable<String>>,
-    /// How important it is: 1 or p1 (high), 2, 3, p2 or p3 (normal), 4
-    /// or p4 (low), or high, normal or low
+    /// How important it is, over any p1–p4 in the text: 1 or p1 (high),
+    /// 2, 3, p2 or p3 (normal), 4 or p4 (low), or high, normal or low
     #[arg(long, value_name = "LEVEL", value_parser = phrases::importance)]
     pub importance: Option<Importance>,
     /// Notes, as plain text
@@ -462,6 +484,12 @@ pub struct AddArgs {
     pub dry_run: bool,
     #[command(flatten)]
     pub idempotency: IdempotencyArgs,
+}
+
+#[derive(Debug, Args)]
+pub struct ParseArgs {
+    /// The text, as you'd give it to `tasks add`
+    pub text: String,
 }
 
 #[derive(Debug, Args)]

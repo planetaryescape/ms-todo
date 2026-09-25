@@ -173,11 +173,7 @@ mod tests {
         let add = |title: &str, op_id: &str, key: &str| Request::AddTask {
             task: NewTask {
                 title: title.into(),
-                list: None,
-                due: None,
-                reminder: None,
-                importance: None,
-                body: None,
+                ..NewTask::default()
             },
             dry_run: false,
             op_id: Some(op_id.into()),
