@@ -114,6 +114,17 @@ async fn categories_are_listed_made_recoloured_and_deleted_and_each_undone() {
     let refused = env.failure(&["undo", op], 5);
     assert!(message(&refused).contains("recoloured since"), "{refused}");
     assert!(graph.category("Gym").is_some());
+    // A delete confirmed after a preview names the previewed ID: a
+    // category made again since (a new ID) is not found, and survives.
+    let old = env.json(&["categories", "delete", "Gym", "--dry-run"])["changes"]["target"]["id"]
+        .as_str()
+        .expect("the previewed ID")
+        .to_owned();
+    env.json(&["categories", "delete", "Gym", "--yes"]);
+    env.json(&["categories", "create", "Gym"]);
+    let gone = env.failure(&["categories", "delete", &old, "--yes"], 3);
+    assert_eq!(gone["error"]["kind"], "not_found");
+    assert!(graph.category("Gym").is_some(), "the new one is left alone");
     let missing = env.failure(&["categories", "recolor", "Nope", "--color", "none"], 3);
     assert_eq!(missing["error"]["kind"], "not_found");
 }

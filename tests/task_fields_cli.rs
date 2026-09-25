@@ -240,6 +240,27 @@ async fn edit_sets_and_clears_start_recurrence_and_categories_and_undo_puts_them
         midnight(start),
         "due on its first Monday"
     );
+    // Graph gives a task with a start date a due date (S11).
+    let error = env.failure(
+        &[
+            "tasks",
+            "edit",
+            "Pay rent",
+            "--list",
+            "Tasks",
+            "--start",
+            "tomorrow",
+            "--clear-due",
+        ],
+        2,
+    );
+    assert!(
+        error["error"]["message"]
+            .as_str()
+            .unwrap_or_default()
+            .contains("clearing the due date"),
+        "{error}"
+    );
     // A repeating task keeps no start date of its own (D-058).
     let error = env.failure(
         &[

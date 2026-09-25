@@ -81,11 +81,11 @@ pub(crate) async fn change(
         ListChange::DeleteList { list } => {
             let list = find(lists, list)?;
             refuse_built_in(list, "deleted")?;
-            let (busy, tasks) = tokio::try_join!(
-                state.store.list_has_unresolved_task_ops(&list.local_id),
-                state.store.list_task_count(&list.local_id),
-            )
-            .map_err(store_error)?;
+            let busy = state
+                .store
+                .list_has_unresolved_task_ops(&list.local_id)
+                .await
+                .map_err(store_error)?;
             if busy {
                 return Err(error_payload(
                     ErrorKind::InvalidInput,
@@ -96,12 +96,13 @@ pub(crate) async fn change(
                     ),
                 ));
             }
+            let tasks = confirmed_tasks(state, list).await?;
             let changes = json!({ "deleted": true, "tasks": tasks, "undoable": tasks == 0 });
             let ops = vec![lifecycle(
                 op_id_for(&op_id, 0),
                 list,
                 TaskAction::DeleteList,
-                ListWrite::Delete,
+                ListWrite::Delete { tasks },
             )];
             (TaskAction::DeleteList, planned(list, changes), ops)
         }
@@ -188,6 +189,37 @@ fn refuse_built_in(list: &ListRow, verb: &str) -> Result<(), ErrorPayload> {
         )),
         None => Ok(()),
     }
+}
+
+/// How many tasks deleting `list` deletes. The cache is trusted only once
+/// the list's tasks have synced; before that (the first sync still
+/// running) Graph is asked, so a list is never called empty, and its
+/// delete undoable, on a guess.
+async fn confirmed_tasks(state: &State, list: &ListRow) -> Result<u64, ErrorPayload> {
+    let cached = state
+        .store
+        .list_task_count(&list.local_id)
+        .await
+        .map_err(store_error)?;
+    let cached = u64::try_from(cached).unwrap_or(0);
+    // A list Graph doesn't have yet holds only what's cached.
+    let Some(graph_id) = &list.graph_id else {
+        return Ok(cached);
+    };
+    let scope = state
+        .store
+        .scope(&ms_todo_store::tasks_scope(graph_id))
+        .await
+        .map_err(store_error)?;
+    if scope.is_some_and(|scope| scope.is_ready()) {
+        return Ok(cached);
+    }
+    let on_graph = state
+        .graph
+        .list_tasks(graph_id)
+        .await
+        .map_err(crate::handlers::graph_error)?;
+    Ok(cached.max(u64::try_from(on_graph.len()).unwrap_or(u64::MAX)))
 }
 
 /// A create, rename or delete of `list`, as `action`.

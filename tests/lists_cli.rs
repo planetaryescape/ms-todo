@@ -234,3 +234,50 @@ async fn a_list_with_writes_waiting_isnt_deleted_under_them() {
     env.settled();
     assert!(graph.list_named("Later").is_none());
 }
+
+#[tokio::test]
+async fn a_list_deleted_before_its_tasks_have_synced_counts_what_graph_holds() {
+    let mut env = Env::new();
+    let graph = FakeGraph::start(
+        &mut env,
+        vec![
+            list("L-tasks", "Tasks", "defaultList"),
+            list("L-groc", "Groceries", "none"),
+        ],
+    )
+    .await;
+    graph.edit(|data| {
+        data.tasks.insert("L-tasks".into(), Vec::new());
+        data.tasks
+            .insert("L-groc".into(), vec![task("T-milk", "Milk", "W/\"m\"")]);
+        // The first sync reads the lists at once, their tasks slowly.
+        data.tasks_delay = Some(std::time::Duration::from_secs(3));
+    });
+    graph.accept_catalog().await;
+    env.json(&["sync"]);
+    let listed = env.json(&["lists", "list"]);
+    assert_eq!(listed["items"].as_array().map(Vec::len), Some(2));
+    assert!(
+        env.json(&["tasks", "list", "--list", "Groceries"])["items"]
+            .as_array()
+            .is_some_and(Vec::is_empty),
+        "the cache has none of its tasks yet"
+    );
+
+    let plan = env.json(&["lists", "delete", "Groceries", "--dry-run"]);
+    assert_eq!(
+        plan["lists"][0]["changes"],
+        json!({ "deleted": true, "tasks": 1, "undoable": false }),
+        "Graph was asked, not the empty cache"
+    );
+    env.json(&["lists", "delete", "Groceries", "--yes"]);
+    env.settled();
+    let refused = env.failure(&["undo"], 7);
+    assert!(
+        refused["error"]["message"]
+            .as_str()
+            .unwrap_or_default()
+            .contains("can't be undone"),
+        "{refused}"
+    );
+}

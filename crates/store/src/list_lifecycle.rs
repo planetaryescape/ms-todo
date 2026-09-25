@@ -54,7 +54,11 @@ pub enum ListWrite {
     Rename {
         name: String,
     },
-    Delete,
+    /// A delete; `tasks` is how many tasks Graph holds in the list, as
+    /// confirmed when it was planned (the cache may not have them all).
+    Delete {
+        tasks: u64,
+    },
 }
 
 impl ListWrite {
@@ -62,7 +66,7 @@ impl ListWrite {
         match self {
             Self::Create { .. } | Self::Recreate => OpKind::ListCreate,
             Self::Rename { .. } => OpKind::ListUpdate,
-            Self::Delete => OpKind::ListDelete,
+            Self::Delete { .. } => OpKind::ListDelete,
         }
     }
 }
@@ -300,7 +304,7 @@ async fn apply_write(
             .await?;
             Ok((json!({ "body": { "displayName": name } }), Some(before)))
         }
-        ListWrite::Delete => {
+        ListWrite::Delete { tasks: confirmed } => {
             let tasks: Vec<String> = sqlx::query_scalar(
                 "SELECT local_id FROM tasks WHERE list_local_id = ? AND deleted_at IS NULL \
                  ORDER BY rowid",
@@ -310,7 +314,7 @@ async fn apply_write(
             .await?;
             let before = snapshot(tx, local_id, tasks).await?;
             tombstone(tx, local_id, rev).await?;
-            Ok((json!({ "body": {} }), Some(before)))
+            Ok((json!({ "body": {}, "tasks": confirmed }), Some(before)))
         }
     }
 }

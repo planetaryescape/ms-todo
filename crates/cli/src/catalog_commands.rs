@@ -115,6 +115,7 @@ pub async fn categories(
                 write,
                 format,
                 request,
+                pinned_category,
                 "Delete the category? Tasks keep its name as a label; `ms-todo undo` makes it again.",
             )
             .await
@@ -199,7 +200,8 @@ pub async fn extensions(
                 yes,
                 write,
                 format,
-                request,
+                &request,
+                |_: &Plan, key| request(false, key),
                 "Delete the extension? `ms-todo undo` writes it back.",
             )
             .await
@@ -265,6 +267,7 @@ async fn destructive(
     write: CatalogWriteArgs,
     format: OutputFormat,
     request: impl Fn(bool, Option<String>) -> Request,
+    confirmed: impl Fn(&Plan, Option<String>) -> Request,
     question: &str,
 ) -> Result<(), CliError> {
     let key = write.idempotency.idempotency_key;
@@ -288,7 +291,19 @@ async fn destructive(
         eprintln!("Nothing was deleted.");
         return Ok(());
     }
-    send(paths, request(false, key), format).await
+    // What the preview showed, not the name looked up again.
+    send(paths, confirmed(&plan, key), format).await
+}
+
+/// A category delete of the category a preview resolved, by its ID: one
+/// renamed, deleted or made again since is then not found, and nothing
+/// else is deleted in its place.
+fn pinned_category(plan: &Plan, key: Option<String>) -> Request {
+    let category = plan.changes["target"]["id"]
+        .as_str()
+        .unwrap_or_default()
+        .to_owned();
+    category_request(CategoryChange::Delete { category }, false, key)
 }
 
 async fn send(paths: &Paths, request: Request, format: OutputFormat) -> Result<(), CliError> {
@@ -319,7 +334,11 @@ fn describe(plan: &Plan) -> Vec<String> {
         .as_str()
         .or_else(|| target["extensionName"].as_str())
         .unwrap_or_default();
-    let mut lines = vec![format!("Would {} {name:?}", verb(plan.action))];
+    let id = match target["id"].as_str() {
+        Some(id) if target.get("displayName").is_some() => format!(" ({id})"),
+        _ => String::new(),
+    };
+    let mut lines = vec![format!("Would {} {name:?}{id}", verb(plan.action))];
     let body = &plan.changes["body"];
     if !body.is_null() {
         lines.push(format!("Sending: {body}"));
@@ -426,5 +445,43 @@ pub(crate) fn print_applied(format: OutputFormat, applied: &Applied) -> Result<(
             }
             Ok(())
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use serde_json::json;
+
+    use super::*;
+
+    #[test]
+    fn a_confirmed_category_delete_names_the_previewed_id() {
+        let plan = Plan {
+            action: TaskAction::CategoryDelete,
+            list: None,
+            targets: Vec::new(),
+            lists: Vec::new(),
+            changes: json!({
+                "target": { "id": "c-1", "displayName": "Errands", "color": "preset3" },
+                "body": null
+            }),
+        };
+        assert_eq!(
+            describe(&plan)[0],
+            "Would delete the category \"Errands\" (c-1)"
+        );
+        let request = pinned_category(&plan, Some("k".into()));
+        assert!(
+            matches!(
+                &request,
+                Request::ChangeCategory {
+                    change: CategoryChange::Delete { category },
+                    dry_run: false,
+                    op_id: Some(_),
+                    idempotency_key: Some(key),
+                } if category == "c-1" && key == "k"
+            ),
+            "{request:?}"
+        );
     }
 }

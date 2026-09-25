@@ -86,7 +86,7 @@ pub(crate) async fn undo_lists(
                     id,
                     &list,
                     TaskAction::DeleteList,
-                    ListWrite::Delete,
+                    ListWrite::Delete { tasks: 0 },
                 ));
             }
             OpKind::ListUpdate => {
@@ -113,11 +113,17 @@ pub(crate) async fn undo_lists(
                         ),
                     ));
                 }
-                let tasks = op
+                // The tasks cached then, or those Graph was found to hold.
+                let cached = op
                     .rollback
                     .as_ref()
                     .and_then(|before| before["tasks"].as_array())
                     .map_or(0, Vec::len);
+                let confirmed = op.payload["tasks"]
+                    .as_u64()
+                    .and_then(|tasks| usize::try_from(tasks).ok())
+                    .unwrap_or(0);
+                let tasks = cached.max(confirmed);
                 if tasks > 0 {
                     return Err(error_payload(
                         ErrorKind::Unsupported,

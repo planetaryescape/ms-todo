@@ -160,6 +160,13 @@ pub(crate) fn edit_fields(edit: &TaskEdit) -> Result<Vec<Field>, ErrorPayload> {
     if let Some(body) = &edit.body {
         fields.push(Field::Body(body.clone()));
     }
+    if let (Some(Clearable::Set(_)), Some(Clearable::Clear)) = (&edit.start, &edit.due) {
+        return Err(invalid(
+            "a start date can't go with clearing the due date: Microsoft To Do gives a task \
+             with a start date a due date (S11). Set the start alone, or clear both"
+                .into(),
+        ));
+    }
     match &edit.start {
         Some(Clearable::Set(start)) => fields.push(Field::Start(Some(parse_day(start)?))),
         Some(Clearable::Clear) => fields.push(Field::Start(None)),
@@ -505,6 +512,27 @@ mod tests {
             ..task
         };
         assert!(new_task_fields(&shapeless).is_err());
+    }
+
+    #[test]
+    fn a_start_date_with_the_due_date_cleared_is_refused() {
+        let edit = TaskEdit {
+            start: Some(Clearable::Set("2026-10-01".into())),
+            due: Some(Clearable::Clear),
+            ..TaskEdit::default()
+        };
+        let error = edit_fields(&edit).expect_err("refused");
+        assert!(
+            error.message.contains("clearing the due date"),
+            "{}",
+            error.message
+        );
+        let both = TaskEdit {
+            start: Some(Clearable::Clear),
+            due: Some(Clearable::Clear),
+            ..TaskEdit::default()
+        };
+        assert!(edit_fields(&both).is_ok());
     }
 
     #[test]
