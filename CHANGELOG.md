@@ -1,5 +1,22 @@
 # Changelog
 
+## [0.1.27](https://github.com/planetaryescape/ms-todo/compare/v0.1.26...v0.1.27) (2026-09-25)
+
+
+### Features
+
+* the rest of the To Do API (rung 8e) ([51a4f27](https://github.com/planetaryescape/ms-todo/commit/51a4f271ffd99b385d6e207dfd11521699b452fa))
+
+
+### Bug Fixes
+
+* list delete counts real tasks, start with clear-due is refused, category delete targets what was previewed ([cd75543](https://github.com/planetaryescape/ms-todo/commit/cd755439096fcc77ceef13b1f449060e78dfea35))
+
+
+### Documentation
+
+* rung 8e in the README, usage, blueprint, D-058, issue 005 and the skill ([c9df98f](https://github.com/planetaryescape/ms-todo/commit/c9df98fcae3a3675a412cbe74c4d4652c7536c31))
+
 ## [0.1.26](https://github.com/planetaryescape/ms-todo/compare/v0.1.25...v0.1.26) (2026-09-25)
 
 

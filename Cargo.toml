@@ -65,7 +65,7 @@ members = [
 ]
 
 [workspace.package]
-version = "0.1.26"
+version = "0.1.27"
 edition = "2024"
 # sqlx 0.9 needs 1.94.
 rust-version = "1.94"
