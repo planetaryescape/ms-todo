@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.29](https://github.com/planetaryescape/ms-todo/compare/v0.1.28...v0.1.29) (2026-09-25)
+
+
+### Features
+
+* improve TUI navigation and position clarity ([c8bf411](https://github.com/planetaryescape/ms-todo/commit/c8bf411ea221ab51e4fde86a38c8d13fb799c582))
+
 ## [0.1.28](https://github.com/planetaryescape/ms-todo/compare/v0.1.27...v0.1.28) (2026-09-25)
 
 
