@@ -6,6 +6,7 @@
 //! `schema_version`; `raw` is exempt and prints Graph's body as it came.
 
 use std::io::{IsTerminal, Write};
+use std::sync::LazyLock;
 
 use ms_todo_core::{ErrorKind, display_safe};
 use ms_todo_protocol::{Entity, SyncInfo, SyncState};
@@ -124,6 +125,10 @@ pub struct Table {
     pub row: fn(&Entity) -> Vec<String>,
     pub csv_headings: &'static [&'static str],
     pub csv_row: fn(&Entity) -> Vec<String>,
+    /// The column whose `**`-marked matches are bold in a terminal. It's
+    /// applied after the cell is made safe, which would otherwise turn the
+    /// bold escape itself into U+FFFD.
+    pub bold_matches: Option<usize>,
 }
 
 #[derive(Serialize)]
@@ -182,7 +187,12 @@ pub fn print_collection(
         OutputFormat::Table => {
             let rows: Vec<Vec<String>> = items.iter().map(table.row).collect();
             let headings: Vec<String> = table.headings.iter().map(|&h| h.to_owned()).collect();
-            write_table(&mut stdout, &headings, &rows)?;
+            write_table(
+                &mut stdout,
+                &headings,
+                &rows,
+                table.bold_matches.filter(|_| *BOLD),
+            )?;
             Ok(())
         }
     }
@@ -250,11 +260,13 @@ fn ids_not_supported() -> CliError {
 
 // Columns padded to the widest cell; the last column isn't padded, so long
 // titles don't leave trailing spaces. Cells hold Graph's text, which goes
-// straight to a terminal, so control characters are replaced first.
+// straight to a terminal, so control characters are replaced first, and
+// only then are `bold_matches`' marks made bold.
 fn write_table(
     out: &mut impl Write,
     headings: &[String],
     rows: &[Vec<String>],
+    bold_matches: Option<usize>,
 ) -> std::io::Result<()> {
     let rows: Vec<Vec<String>> = rows
         .iter()
@@ -273,20 +285,49 @@ fn write_table(
                 .unwrap_or(0)
         })
         .collect();
-    for line in std::iter::once(headings).chain(rows.iter().map(Vec::as_slice)) {
+    for (index, line) in std::iter::once(headings)
+        .chain(rows.iter().map(Vec::as_slice))
+        .enumerate()
+    {
         let mut text = String::new();
         for (column, cell) in line.iter().enumerate() {
-            if column + 1 == line.len() {
-                text.push_str(cell);
+            // Row 0 is the headings.
+            if index > 0 && bold_matches == Some(column) {
+                text.push_str(&emphasise(cell));
             } else {
-                let pad = widths[column].saturating_sub(cell.chars().count());
                 text.push_str(cell);
+            }
+            if column + 1 < line.len() {
+                let pad = widths[column].saturating_sub(cell.chars().count());
                 text.push_str(&" ".repeat(pad + 2));
             }
         }
         writeln!(out, "{}", text.trim_end())?;
     }
     Ok(())
+}
+
+/// Whether a table may use bold: a terminal that allows it
+/// (https://no-color.org). Decided once, not per row.
+static BOLD: LazyLock<bool> = LazyLock::new(|| {
+    std::io::stdout().is_terminal()
+        && std::env::var_os("NO_COLOR").is_none_or(|value| value.is_empty())
+});
+
+/// A search snippet's `**`-marked matches (`ResponseData::SearchResults`)
+/// in bold. Where bold isn't allowed the marks stay, as in JSON.
+fn emphasise(snippet: &str) -> String {
+    snippet
+        .split("**")
+        .enumerate()
+        .map(|(index, part)| {
+            if index % 2 == 1 {
+                format!("\x1b[1m{part}\x1b[22m")
+            } else {
+                part.to_owned()
+            }
+        })
+        .collect()
 }
 
 #[derive(Serialize)]
@@ -376,10 +417,25 @@ mod tests {
             vec!["Tasks".to_owned(), "a".to_owned()],
             vec!["Groceries".to_owned(), "bb".to_owned()],
         ];
-        write_table(&mut out, &headings, &rows).expect("write");
+        write_table(&mut out, &headings, &rows, None).expect("write");
         assert_eq!(
             String::from_utf8(out).expect("utf8"),
             "NAME       ID\nTasks      a\nGroceries  bb\n"
+        );
+    }
+
+    #[test]
+    fn bold_matches_survive_the_control_character_guard() {
+        let mut out = Vec::new();
+        let headings = vec!["TITLE".to_owned(), "MATCH".to_owned()];
+        let rows = vec![vec![
+            "Pay rent".to_owned(),
+            "Pay **rent**\u{1b}]52;c;aGk=".to_owned(),
+        ]];
+        write_table(&mut out, &headings, &rows, Some(1)).expect("write");
+        assert_eq!(
+            String::from_utf8(out).expect("utf8"),
+            "TITLE     MATCH\nPay rent  Pay \u{1b}[1mrent\u{1b}[22m\u{fffd}]52;c;aGk=\n"
         );
     }
 }

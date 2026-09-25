@@ -22,6 +22,7 @@ pub const FOLDERS_TABLE: Table = Table {
     row: |folder| cells(folder, &["name", "list_count", "open_count"]),
     csv_headings: &["name", "list_count", "open_count", "lists"],
     csv_row: |folder| cells(folder, &["name", "list_count", "open_count", "lists"]),
+    bold_matches: None,
 };
 
 fn cells(folder: &Map<String, Value>, keys: &[&str]) -> Vec<String> {

@@ -29,6 +29,7 @@ pub const DONE_TABLE: Table = Table {
     },
     csv_headings: csv_columns::DONE_COLUMNS,
     csv_row: csv_columns::done_row,
+    bold_matches: None,
 };
 
 pub async fn done(paths: &Paths, args: DoneArgs, format: OutputFormat) -> Result<(), CliError> {

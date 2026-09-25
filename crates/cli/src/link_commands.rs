@@ -33,6 +33,7 @@ pub const LINKS_TABLE: Table = Table {
             .map(|column| text(link, column).to_owned())
             .collect()
     },
+    bold_matches: None,
 };
 
 pub async fn links(paths: &Paths, args: LinkArgs, format: OutputFormat) -> Result<(), CliError> {
