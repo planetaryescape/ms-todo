@@ -9,7 +9,7 @@ use ms_todo_core::ErrorKind;
 use ms_todo_protocol::{
     Applied, ErrorPayload, Folder, ListChange, Plan, PlannedList, ResponseData, TaskAction,
 };
-use ms_todo_store::{LISTS_SCOPE, ListExtensionOp, ListRow};
+use ms_todo_store::{LISTS_SCOPE, ListExtensionOp, ListOp, ListRow};
 use serde_json::Value;
 
 use crate::entities::list_entity;
@@ -59,6 +59,14 @@ pub(crate) async fn change_lists(
 ) -> Result<ResponseData, ErrorPayload> {
     ensure_ready(state, LISTS_SCOPE).await?;
     let lists = state.store.lists().await.map_err(store_error)?;
+    if matches!(
+        change,
+        ListChange::CreateList { .. }
+            | ListChange::RenameList { .. }
+            | ListChange::DeleteList { .. }
+    ) {
+        return crate::list_lifecycle::change(state, &lists, &change, dry_run, op_id).await;
+    }
     let (action, planned) = plan(&lists, &change)?;
     if dry_run {
         return Ok(ResponseData::Plan(Plan {
@@ -79,11 +87,13 @@ pub(crate) async fn change_lists(
     let ops = planned
         .into_iter()
         .enumerate()
-        .map(|(index, (list, fields))| ListExtensionOp {
-            op_id: op_id_for(&op_id, index),
-            list_local_id: list.local_id.clone(),
-            action: action_name(action).to_owned(),
-            fields,
+        .map(|(index, (list, fields))| {
+            ListOp::Extension(ListExtensionOp {
+                op_id: op_id_for(&op_id, index),
+                list_local_id: list.local_id.clone(),
+                action: action_name(action).to_owned(),
+                fields,
+            })
         })
         .collect();
     queue_lists(state, &op_id, None, ops, action).await
@@ -95,7 +105,7 @@ pub(crate) async fn queue_lists(
     state: &State,
     command_id: &str,
     undoes: Option<&str>,
-    ops: Vec<ListExtensionOp>,
+    ops: Vec<ListOp>,
     action: TaskAction,
 ) -> Result<ResponseData, ErrorPayload> {
     let rows = if ops.is_empty() {
@@ -103,12 +113,19 @@ pub(crate) async fn queue_lists(
     } else {
         let rows = state
             .store
-            .enqueue_list_extension(command_id, undoes, ops)
+            .enqueue_lists(command_id, undoes, ops)
             .await
             .map_err(store_error)?;
         state.outbox.wake();
         rows
     };
+    // A list with two operations (a create and its folder) is answered
+    // once, as it is after both.
+    let mut rows = rows;
+    let mut seen = std::collections::HashSet::new();
+    rows.reverse();
+    rows.retain(|row| seen.insert(row.local_id.clone()));
+    rows.reverse();
     let ids: Vec<String> = rows.iter().map(|row| row.local_id.clone()).collect();
     state.events.changed(ids.clone(), Vec::new());
     Ok(ResponseData::Applied(Applied {
@@ -169,7 +186,10 @@ fn plan<'a>(
                 folders::order_folder(lists, folder, next_to, before)?,
             )
         }
-        ListChange::Unknown => {
+        ListChange::CreateList { .. }
+        | ListChange::RenameList { .. }
+        | ListChange::DeleteList { .. }
+        | ListChange::Unknown => {
             return Err(error_payload(
                 ErrorKind::Unsupported,
                 "this daemon doesn't know that change; restart it with `ms-todo daemon stop`"
@@ -180,7 +200,7 @@ fn plan<'a>(
 }
 
 /// The list `wanted` names or identifies, as `--list` resolves it.
-fn find<'a>(lists: &'a [ListRow], wanted: &str) -> Result<&'a ListRow, ErrorPayload> {
+pub(crate) fn find<'a>(lists: &'a [ListRow], wanted: &str) -> Result<&'a ListRow, ErrorPayload> {
     let found = resolve_list(lists, Some(wanted))?;
     lists
         .iter()

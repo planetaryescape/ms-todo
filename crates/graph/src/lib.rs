@@ -9,6 +9,7 @@ mod api_error;
 mod attachments;
 pub mod auth;
 mod batch;
+mod catalog;
 mod children;
 mod client;
 mod error;

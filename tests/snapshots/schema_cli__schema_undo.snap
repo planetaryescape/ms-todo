@@ -230,6 +230,9 @@ expression: pretty
               "rename_folder",
               "delete_folder",
               "order_folder",
+              "create_list",
+              "rename_list",
+              "delete_list",
               "undo"
             ]
           },
@@ -321,6 +324,85 @@ expression: pretty
           "action",
           "items",
           "list_ids"
+        ],
+        "type": "object"
+      },
+      {
+        "properties": {
+          "action": {
+            "enum": [
+              "category_create",
+              "category_recolor",
+              "category_delete",
+              "extension_set",
+              "extension_delete"
+            ]
+          },
+          "items": {
+            "description": "The category or extension as it is now; for a delete, as it was",
+            "items": {
+              "oneOf": [
+                {
+                  "properties": {
+                    "color": {
+                      "description": "preset0 to preset24, or none",
+                      "type": "string"
+                    },
+                    "displayName": {
+                      "description": "Unique ignoring case; Graph can't rename one",
+                      "type": "string"
+                    },
+                    "id": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "displayName",
+                    "color"
+                  ],
+                  "type": "object"
+                },
+                {
+                  "description": "An open extension: its name, Graph's id and annotations, and its own fields beside them",
+                  "properties": {
+                    "extensionName": {
+                      "type": "string"
+                    },
+                    "id": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "extensionName"
+                  ],
+                  "type": "object"
+                }
+              ]
+            },
+            "type": "array"
+          },
+          "list_ids": {
+            "maxItems": 0,
+            "type": "array"
+          },
+          "op_id": {
+            "description": "What `undo` knows the change by",
+            "type": "string"
+          },
+          "schema_version": {
+            "const": 2
+          },
+          "undoes": {
+            "description": "For an undo: the op_id it undoes",
+            "type": "string"
+          }
+        },
+        "required": [
+          "schema_version",
+          "op_id",
+          "action",
+          "items"
         ],
         "type": "object"
       }

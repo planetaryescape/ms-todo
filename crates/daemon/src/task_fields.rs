@@ -21,10 +21,10 @@ pub(crate) enum Field {
     Due(Option<NaiveDate>),
     Reminder(Option<NaiveDateTime>),
     Body(String),
-    Start(NaiveDate),
+    Start(Option<NaiveDate>),
     /// Graph's `patternedRecurrence`, checked by [`recurrence`]; the zone
-    /// is added when it's written.
-    Recurrence(Value),
+    /// is added when it's written. `None` stops it repeating.
+    Recurrence(Option<Value>),
     Categories(Vec<String>),
 }
 
@@ -64,14 +64,17 @@ impl Field {
                 );
             }
             Self::Start(date) => {
-                body.insert("startDateTime".into(), midnight(*date, zone));
+                let value = date.map_or(Value::Null, |date| midnight(date, zone));
+                body.insert("startDateTime".into(), value);
             }
             Self::Recurrence(recurrence) => {
                 // Always the due date's zone: without it Graph moved the
                 // due date a day on (S12).
-                let mut recurrence = recurrence.clone();
-                recurrence["range"]["recurrenceTimeZone"] = json!(zone);
-                body.insert("recurrence".into(), recurrence);
+                let value = recurrence.clone().map_or(Value::Null, |mut recurrence| {
+                    recurrence["range"]["recurrenceTimeZone"] = json!(zone);
+                    recurrence
+                });
+                body.insert("recurrence".into(), value);
             }
             Self::Categories(categories) => {
                 body.insert("categories".into(), json!(categories));
@@ -109,19 +112,18 @@ pub(crate) fn new_task_fields(task: &NewTask) -> Result<Vec<Field>, ErrorPayload
         fields.push(Field::Due(Some(due)));
     }
     if let Some(start) = &task.start {
-        fields.push(Field::Start(parse_day(start)?));
+        let start = parse_day(start)?;
+        if let (Some((_, first)), Some(due)) = (&recurrence, due)
+            && start != due
+        {
+            return Err(start_not_first(start, *first));
+        }
+        fields.push(Field::Start(Some(start)));
     }
     if let Some((recurrence, _)) = recurrence {
-        fields.push(Field::Recurrence(recurrence));
+        fields.push(Field::Recurrence(Some(recurrence)));
     }
-    let categories: Vec<String> = task
-        .categories
-        .iter()
-        .map(|category| category.trim().to_owned())
-        .collect();
-    if categories.iter().any(String::is_empty) {
-        return Err(invalid("a category's name can't be empty".into()));
-    }
+    let categories = categories(&task.categories)?;
     if !categories.is_empty() {
         fields.push(Field::Categories(categories));
     }
@@ -158,16 +160,83 @@ pub(crate) fn edit_fields(edit: &TaskEdit) -> Result<Vec<Field>, ErrorPayload> {
     if let Some(body) = &edit.body {
         fields.push(Field::Body(body.clone()));
     }
+    match &edit.start {
+        Some(Clearable::Set(start)) => fields.push(Field::Start(Some(parse_day(start)?))),
+        Some(Clearable::Clear) => fields.push(Field::Start(None)),
+        None => {}
+    }
+    match &edit.recurrence {
+        Some(Clearable::Set(value)) => {
+            let (recurrence, start) = recurrence(value)?;
+            if let Some(Clearable::Set(given)) = &edit.start
+                && parse_day(given)? != start
+            {
+                return Err(start_not_first(parse_day(given)?, start));
+            }
+            // Its first occurrence is the due date (S12), as on a create.
+            match &edit.due {
+                Some(Clearable::Set(due)) if parse_due(due)? != start => {
+                    return Err(invalid(format!(
+                        "the recurrence starts on {start} but the due date is {due}; they \
+                         must be the same day"
+                    )));
+                }
+                Some(Clearable::Clear) => {
+                    return Err(invalid(
+                        "a recurrence needs a due date to start on, so the due date can't be \
+                         cleared with it"
+                            .into(),
+                    ));
+                }
+                Some(Clearable::Set(_)) => {}
+                None => fields.push(Field::Due(Some(start))),
+            }
+            fields.push(Field::Recurrence(Some(recurrence)));
+        }
+        Some(Clearable::Clear) => fields.push(Field::Recurrence(None)),
+        None => {}
+    }
+    if let Some(names) = &edit.categories {
+        fields.push(Field::Categories(categories(names)?));
+    }
     // An assignee lives in our extension, not in these fields.
     if fields.is_empty() && edit.assignee.is_none() {
         return Err(invalid(
             "nothing to change; pass at least one of --title, --due, --clear-due, \
-             --importance, --reminder, --clear-reminder, --body, --assignee or \
+             --importance, --reminder, --clear-reminder, --body, --start, --clear-start, \
+             --recur, --clear-recur, --category, --clear-categories, --assignee or \
              --clear-assignee"
                 .into(),
         ));
     }
     Ok(fields)
+}
+
+/// Microsoft To Do counts a repeating task from its start date, and
+/// moves the due date by the same distance (D-058): a start date on one
+/// must be its first due date.
+fn start_not_first(start: NaiveDate, first: NaiveDate) -> ErrorPayload {
+    invalid(format!(
+        "a repeating task's start date is the day it's first due ({first}), not {start}: \
+         Microsoft To Do counts the recurrence from the start date. Leave the start date out, \
+         or make it {first}"
+    ))
+}
+
+/// Category names as a task carries them: trimmed, none empty, each once
+/// (ignoring case, the first spelling kept).
+fn categories(names: &[String]) -> Result<Vec<String>, ErrorPayload> {
+    let mut kept: Vec<String> = Vec::new();
+    for name in names {
+        let name = name.trim();
+        if name.is_empty() {
+            return Err(invalid("a category's name can't be empty".into()));
+        }
+        if !kept.iter().any(|seen| seen.eq_ignore_ascii_case(name)) {
+            kept.push(name.to_owned());
+        }
+    }
+    Ok(kept)
 }
 
 /// The zone due dates and reminders are written in: `TZ` when it names a
@@ -393,7 +462,7 @@ mod tests {
     fn a_recurrence_gets_the_zone_and_its_start_is_the_due_date() {
         let task = NewTask {
             title: "Pay rent".into(),
-            start: Some("2026-09-30".into()),
+            start: Some("2026-10-01".into()),
             recurrence: Some(json!({
                 "pattern": { "type": "absoluteMonthly", "interval": 1, "dayOfMonth": 1 },
                 "range": { "type": "noEnd", "startDate": "2026-10-01" }
@@ -408,8 +477,16 @@ mod tests {
         );
         assert_eq!(
             body["startDateTime"],
-            json!({ "dateTime": "2026-09-30T00:00:00", "timeZone": "Europe/London" })
+            json!({ "dateTime": "2026-10-01T00:00:00", "timeZone": "Europe/London" })
         );
+        // Graph counts a recurrence from the start date (D-058): an
+        // earlier one would move the due date.
+        let early = NewTask {
+            start: Some("2026-09-30".into()),
+            ..task.clone()
+        };
+        let error = new_task_fields(&early).expect_err("start before the first time");
+        assert!(error.message.contains("first due"), "{}", error.message);
         assert_eq!(
             body["recurrence"]["range"]["recurrenceTimeZone"],
             "Europe/London"

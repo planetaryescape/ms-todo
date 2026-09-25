@@ -12,11 +12,15 @@
 //!   Clients check it through `Status` before anything else, and restart
 //!   the daemon when it differs.
 
+mod catalog;
 mod codec;
+mod task_filter;
 
+pub use catalog::{CategoryChange, ExtensionChange, ExtensionOwner, OwnerKind};
 pub use codec::{Codec, FrameTooLarge, MAX_FRAME_BYTES};
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
+pub use task_filter::{DueFilter, StatusFilter, TaskFilter, TaskSort};
 
 /// Bumped on any change an older peer can't read. 5: `Seed` and
 /// `Subscribe`, which the TUI needs from its first request, and the events
@@ -45,7 +49,12 @@ use serde_json::{Map, Value};
 /// 8d): `NewTask.assignee`, `TaskEdit.assignee`, `ListTasks.assignee`,
 /// `Scope::Assigned` and `Counts.assigned`, so an older daemon never
 /// drops an assignee it doesn't know and makes the change without it.
-pub const PROTOCOL_VERSION: u32 = 15;
+/// 16: the rest of the API (rung 8e): `TaskEdit.start`, `recurrence` and
+/// `categories`, `ListTasks.filter`, `ListChange::CreateList`,
+/// `RenameList` and `DeleteList`, and the category and extension
+/// requests, so an older daemon never drops a field or a filter it
+/// doesn't know and answers as if it were asked for less.
+pub const PROTOCOL_VERSION: u32 = 16;
 
 /// The socket buffer both ends ask for: room for a large list's `Seed` in
 /// one write. macOS gives a Unix socket 8 KiB, so a 350 KiB seed crossed
@@ -121,6 +130,11 @@ pub enum Request {
         /// has them, each with `list`, its list's name.
         #[serde(default)]
         assignee: Option<String>,
+        /// Only the tasks it matches, in its order. One that narrows,
+        /// with no `list`, looks in every list, each task with `list`, its
+        /// list's name.
+        #[serde(default, skip_serializing_if = "TaskFilter::is_empty")]
+        filter: TaskFilter,
     },
     /// Tasks whose title or notes match `query`, best match first, from the
     /// cache. `query` is FTS5's syntax: words (all must match), `"phrases"`,
@@ -307,6 +321,38 @@ pub enum Request {
         #[serde(default)]
         force: bool,
     },
+    /// The user's Outlook categories, from Graph, answered `Categories`.
+    ListCategories,
+    /// Create, recolour or delete a category, straight to Graph. With
+    /// `dry_run`, answers `Plan`; else `Applied` with the category.
+    ChangeCategory {
+        change: CategoryChange,
+        #[serde(default)]
+        dry_run: bool,
+        /// Chosen by the client before sending (see `AddTask`).
+        #[serde(default)]
+        op_id: Option<String>,
+        #[serde(default)]
+        idempotency_key: Option<String>,
+    },
+    /// A list's or task's open extensions, answered `Extensions`. Graph
+    /// lists neither's (S2; a list's is a 404 too), so it's ms-todo's own,
+    /// as cached.
+    ListExtensions { owner: ExtensionOwner },
+    /// One open extension by name, answered `Extensions` with it alone.
+    GetExtension { owner: ExtensionOwner, name: String },
+    /// Set or delete an open extension, straight to Graph. With
+    /// `dry_run`, answers `Plan`; else `Applied`.
+    ChangeExtension {
+        owner: ExtensionOwner,
+        change: ExtensionChange,
+        #[serde(default)]
+        dry_run: bool,
+        #[serde(default)]
+        op_id: Option<String>,
+        #[serde(default)]
+        idempotency_key: Option<String>,
+    },
     /// A valid access token, for `auth bearer --reveal-secret`.
     Bearer,
     /// Stop the daemon. It answers `Ack`, then exits.
@@ -403,6 +449,14 @@ pub enum ResponseData {
         /// The task's local ID.
         task_id: String,
         files: Vec<DownloadedFile>,
+    },
+    /// Outlook categories as Graph has them (`id`, `displayName`,
+    /// `color`), or open extensions (each with `extensionName`).
+    Categories {
+        items: Vec<Entity>,
+    },
+    Extensions {
+        items: Vec<Entity>,
     },
     Ack,
     #[serde(other)]
@@ -999,6 +1053,17 @@ pub struct TaskEdit {
     pub assignee: Option<Clearable<String>>,
     #[serde(default)]
     pub keep_status: bool,
+    /// `YYYY-MM-DD`. Microsoft To Do sets the due date to it too when the
+    /// task has none (S11).
+    #[serde(default)]
+    pub start: Option<Clearable<String>>,
+    /// Graph's `patternedRecurrence` as `NewTask.recurrence` has it; its
+    /// `range.startDate` becomes the due date.
+    #[serde(default)]
+    pub recurrence: Option<Clearable<Value>>,
+    /// The task's categories, replacing those it has; empty clears them.
+    #[serde(default)]
+    pub categories: Option<Vec<String>>,
 }
 
 /// A field an edit either sets or clears.
@@ -1046,6 +1111,14 @@ pub enum TaskAction {
     LinkDelete,
     AttachmentAdd,
     AttachmentDelete,
+    CreateList,
+    RenameList,
+    DeleteList,
+    CategoryCreate,
+    CategoryRecolor,
+    CategoryDelete,
+    ExtensionSet,
+    ExtensionDelete,
     #[serde(other)]
     Unknown,
 }
@@ -1082,6 +1155,17 @@ pub enum ListChange {
     DeleteFolder { folder: String },
     /// Put the folder `folder` next to the folder in `anchor`.
     OrderFolder { folder: String, anchor: Anchor },
+    /// A new list called `name`, in the folder `folder` when given.
+    CreateList {
+        name: String,
+        #[serde(default)]
+        folder: Option<String>,
+    },
+    /// Rename `list`. The default list and Flagged Emails can't be.
+    RenameList { list: String, name: String },
+    /// Delete `list` and every task in it. The default list and Flagged
+    /// Emails can't be.
+    DeleteList { list: String },
     #[serde(other)]
     Unknown,
 }

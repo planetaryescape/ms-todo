@@ -188,6 +188,10 @@ fn task_row<'a>(
             theme.accent,
         ));
     }
+    // Its categories, as quick add's `@label` types them (rung 8e).
+    for category in &task.categories {
+        title.push(Span::styled(format!("  @{category}"), theme.text_muted));
+    }
     // It has files, as the To Do app's paperclip says.
     if task.has_attachments {
         title.push(Span::styled(

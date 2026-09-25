@@ -68,9 +68,9 @@ impl App {
             .min(entries.len().saturating_sub(1));
     }
 
-    /// The list "Move list to folder…" acts on: the one under the sidebar's
-    /// cursor, else the one shown.
-    fn list_to_move(&self) -> Option<String> {
+    /// The list "Move list to folder…" (and a rename or delete) acts on:
+    /// the one under the sidebar's cursor, else the one shown.
+    pub(super) fn list_to_move(&self) -> Option<String> {
         match self.entries().get(self.sidebar_index) {
             Some(Entry::List { id, .. }) => Some(id.clone()),
             _ => match &self.shown {

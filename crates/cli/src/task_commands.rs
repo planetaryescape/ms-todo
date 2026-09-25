@@ -19,27 +19,17 @@ use crate::confirm::{can_prompt, confirm};
 use crate::error::CliError;
 use crate::output::OutputFormat;
 use crate::task_output::{describe_plan, print_applied, print_plan};
-use crate::{daemon_client, data_commands, phrases, quick_add, suggest_commands};
+use crate::{daemon_client, data_commands, phrases, quick_add, suggest_commands, task_flags};
 
 /// Read from stdin in place of a task argument.
 const STDIN_MARKER: &str = "-";
 
 /// `tasks add`: the text read for its fields (`quick_add`), or with
 /// `--no-parse` taken as the title.
-pub async fn add(paths: &Paths, args: AddArgs, format: OutputFormat) -> Result<(), CliError> {
+pub async fn add(paths: &Paths, mut args: AddArgs, format: OutputFormat) -> Result<(), CliError> {
+    args.body = task_flags::body(args.body.take(), args.body_file.as_deref())?;
     let task = if args.no_parse {
-        NewTask {
-            title: args.text.clone(),
-            list: args.list.clone(),
-            due: phrases::set_only(args.due.clone()),
-            reminder: phrases::set_only(args.reminder.clone()),
-            importance: args.importance,
-            body: args.body.clone(),
-            my_day: args.my_day,
-            assignee: args.assignee.clone(),
-            keep_status: args.keep_status,
-            ..NewTask::default()
-        }
+        literal_task(&args, format)?
     } else {
         quick_add::new_task(paths, &args, format).await?
     };
@@ -72,22 +62,93 @@ pub async fn add(paths: &Paths, args: AddArgs, format: OutputFormat) -> Result<(
                 .and_then(|task| task.get("id")?.as_str()),
             _ => None,
         };
-        eprintln!("note: {}", suggest_commands::add_note(&list, added));
+        crate::terminal::note(&suggest_commands::add_note(&list, added));
     }
     Ok(())
+}
+
+/// `tasks add --no-parse`: the text as the title, and the flags as the
+/// fields.
+fn literal_task(args: &AddArgs, format: OutputFormat) -> Result<NewTask, CliError> {
+    let mut due = phrases::set_only(args.due.clone());
+    let recurrence = match &args.recur {
+        Some(recur) => {
+            let recurrence =
+                task_flags::recurrence(recur, due.as_deref().and_then(task_flags::day))?;
+            due = Some(
+                recurrence
+                    .start
+                    .format(ms_todo_core::DATE_FORMAT)
+                    .to_string(),
+            );
+            Some(recurrence.to_graph())
+        }
+        None => None,
+    };
+    if args.recur.is_some() && matches!(args.due, Some(Clearable::Clear)) {
+        return Err(CliError::message(
+            ErrorKind::InvalidInput,
+            "--recur needs a due date to start on, so it can't go with --due -".into(),
+        ));
+    }
+    if let (Some(start), None) = (&args.start, &due) {
+        // What Microsoft To Do does anyway (S11), made visible.
+        due = Some(start.clone());
+        crate::terminal::note_unless_json(
+            format,
+            &format!("a start date also sets the due date when there's none, so it's due {start}"),
+        );
+    }
+    Ok(NewTask {
+        title: args.text.clone(),
+        list: args.list.clone(),
+        due,
+        reminder: phrases::set_only(args.reminder.clone()),
+        importance: args.importance,
+        body: args.body.clone(),
+        start: args.start.clone(),
+        recurrence,
+        categories: args.categories.clone(),
+        my_day: args.my_day,
+        assignee: args.assignee.clone(),
+        keep_status: args.keep_status,
+    })
 }
 
 /// `tasks edit`: one task, several named, or those `--overdue` or
 /// `--due-before` picks.
 pub async fn edit(paths: &Paths, args: EditArgs, format: OutputFormat) -> Result<(), CliError> {
+    let mut due = clearable(args.due, args.clear_due);
+    let recurrence =
+        task_flags::edit_recurrence(args.recur.as_deref(), args.clear_recur, due.as_ref())?;
+    // Its first time is the due date: `--due`, moved on to a day the
+    // recurrence falls on.
+    if let Some(Clearable::Set(recurrence)) = &recurrence
+        && let Some(first) = recurrence["range"]["startDate"].as_str()
+    {
+        if let Some(Clearable::Set(given)) = &due
+            && given != first
+        {
+            crate::terminal::note_unless_json(
+                format,
+                &format!("it's first due {first}, the first day on or after {given} it falls on"),
+            );
+        }
+        if due.is_some() {
+            due = Some(Clearable::Set(first.to_owned()));
+        }
+    }
     let edit = TaskEdit {
         title: args.title,
-        due: clearable(args.due, args.clear_due),
+        due,
         importance: args.importance,
         reminder: clearable(args.reminder, args.clear_reminder),
-        body: args.body,
+        body: task_flags::body(args.body, args.body_file.as_deref())?,
         assignee: clearable(args.assignee.map(Clearable::Set), args.clear_assignee),
         keep_status: args.keep_status,
+        start: clearable(args.start, args.clear_start),
+        recurrence,
+        categories: task_flags::edit_categories(args.categories, args.clear_categories),
     };
     let (tasks, from_stdin) = expand_stdin(args.task)?;
     let bulk = Bulk {

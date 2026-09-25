@@ -1,0 +1,23 @@
+---
+source: tests/cli_help.rs
+expression: help_output(args)
+---
+Open extensions on a list or task: data other apps (or you) keep there. ms-todo's own, com.planetaryescape.mstodo, can be read but not written here
+
+Usage: ms-todo extensions [OPTIONS] <COMMAND>
+
+Commands:
+  list    ms-todo's own extension on a list or task. Microsoft To Do can't list the others; `get` reads any by name
+  get     One open extension, by name
+  set     Make an open extension hold exactly this JSON object, creating it if it's missing
+  delete  Delete an open extension. Asks first in a terminal; anywhere else it needs --yes
+  help    Print this message or the help of the given subcommand(s)
+
+Options:
+      --format <FORMAT>  Output format: jsonl is one object per line, ids one ID per line, csv has a header row [default: table in a terminal, json when piped] [possible values: table, json, jsonl, ids, csv]
+      --instance <NAME>  Use a separate copy of ms-todo's data (also MS_TODO_INSTANCE). Builds run from Cargo's target/ directory default to "dev"; "default" is the installed copy
+      --fresh            Before reading, sync and wait, so the answer is as fresh as Microsoft To Do's (a read is otherwise answered from the cache)
+      --quiet            Print nothing on stderr but errors: no notes and no progress
+      --no-color         No colour or bold in tables (also NO_COLOR)
+  -h, --help             Print help
+  -V, --version          Print version

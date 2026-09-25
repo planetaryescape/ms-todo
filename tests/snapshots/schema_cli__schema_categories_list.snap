@@ -1,0 +1,48 @@
+---
+source: tests/schema_cli.rs
+expression: pretty
+---
+{
+  "input": {
+    "additionalProperties": false,
+    "properties": {},
+    "required": [],
+    "type": "object"
+  },
+  "output": {
+    "properties": {
+      "items": {
+        "items": {
+          "properties": {
+            "color": {
+              "description": "preset0 to preset24, or none",
+              "type": "string"
+            },
+            "displayName": {
+              "description": "Unique ignoring case; Graph can't rename one",
+              "type": "string"
+            },
+            "id": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "id",
+            "displayName",
+            "color"
+          ],
+          "type": "object"
+        },
+        "type": "array"
+      },
+      "schema_version": {
+        "const": 2
+      }
+    },
+    "required": [
+      "schema_version",
+      "items"
+    ],
+    "type": "object"
+  }
+}

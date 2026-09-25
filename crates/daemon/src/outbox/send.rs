@@ -47,6 +47,10 @@ pub(super) enum Attempt {
     },
     /// A folder write: our extension on the list as Graph now holds it.
     ExtensionWritten(Map<String, Value>),
+    /// A list created or renamed: the list as Graph now has it.
+    ListWritten(Entity),
+    /// A list deleted.
+    ListDeleted,
     /// Nothing sent: a precondition didn't hold. Graph's task (and our
     /// extension, when read) is recorded, and the operation is done with
     /// a note saying why, so undo and later operations know it changed
@@ -153,6 +157,24 @@ pub(super) async fn send_ready(state: &State) -> bool {
                 }
                 Ok(Attempt::Deleted | Attempt::Sent) => {
                     if let Err(error) = state.store.mark_done(&op.op_id).await {
+                        log_store(&error);
+                    }
+                }
+                Ok(Attempt::ListWritten(list)) => {
+                    if let Err(error) = state.store.record_list_written(&op.op_id, &list).await {
+                        log_store(&error);
+                        let error = error_payload(
+                            ErrorKind::OutcomeUnknown,
+                            format!(
+                                "Graph took the change, but the cache couldn't record it: {}",
+                                message_with_causes(&error)
+                            ),
+                        );
+                        mark_unknown(state, &op, &error, None).await;
+                    }
+                }
+                Ok(Attempt::ListDeleted) => {
+                    if let Err(error) = state.store.record_list_deleted(&op.op_id).await {
                         log_store(&error);
                     }
                 }
@@ -309,6 +331,12 @@ async fn confirm_list(state: &State, list_graph_id: &str, ops: &[OutboxRow]) {
 }
 
 async fn attempt(state: &State, op: &OutboxRow) -> Result<Attempt, Failure> {
+    if matches!(
+        op.op,
+        OpKind::ListCreate | OpKind::ListUpdate | OpKind::ListDelete
+    ) {
+        return super::list_write::send(state, op).await;
+    }
     let list = state
         .store
         .list_state(&op.list_local_id)

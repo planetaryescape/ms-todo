@@ -10,10 +10,9 @@
 use serde_json::{Map, Value};
 use sqlx::SqliteConnection;
 
-use crate::lists::list_in;
-use crate::outbox::{OpKind, OpState, Queued, Restore, finish, insert_op, later_ops, op_in};
+use crate::outbox::{OpKind, OpState, Restore, finish, later_ops, op_in};
 use crate::pool::next_local_rev;
-use crate::{Entity, ListRow, Store, StoreError, now};
+use crate::{ListRow, Store, StoreError};
 
 /// A change to one list's extension, to queue.
 #[derive(Clone, Debug)]
@@ -48,51 +47,8 @@ impl Store {
         undoes: Option<&str>,
         ops: Vec<ListExtensionOp>,
     ) -> Result<Vec<ListRow>, StoreError> {
-        let mut tx = self.writer().begin().await?;
-        let rev = next_local_rev(&mut tx).await?;
-        let now = now();
-        let mut seq: i64 = sqlx::query_scalar("SELECT COALESCE(MAX(seq), 0) FROM outbox")
-            .fetch_one(&mut *tx)
-            .await?;
-        let mut rows = Vec::with_capacity(ops.len());
-        for op in ops {
-            seq += 1;
-            let list = list_in(&mut tx, &op.list_local_id).await?.ok_or_else(|| {
-                StoreError::Invalid(format!("list {} isn't cached", op.list_local_id))
-            })?;
-            let before: Entity = list
-                .extension
-                .as_ref()
-                .and_then(Value::as_object)
-                .cloned()
-                .unwrap_or_default();
-            let mut merged = before.clone();
-            merge_extension(&mut merged, &op.fields);
-            write_extension(&mut tx, &op.list_local_id, &merged, rev).await?;
-            let payload = serde_json::json!({ "body": Value::Object(op.fields) });
-            insert_op(
-                &mut tx,
-                &Queued {
-                    op_id: &op.op_id,
-                    seq,
-                    command_id,
-                    undoes,
-                    created_at: now,
-                    entity_local_id: &op.list_local_id,
-                    list_local_id: &op.list_local_id,
-                    op: OpKind::Extension,
-                    action: &op.action,
-                    payload: &payload,
-                    rollback: Some(&before),
-                },
-            )
-            .await?;
-            rows.push(list_in(&mut tx, &op.list_local_id).await?.ok_or_else(|| {
-                StoreError::Corrupt(format!("list {} vanished", op.list_local_id))
-            })?);
-        }
-        tx.commit().await?;
-        Ok(rows)
+        let ops = ops.into_iter().map(crate::ListOp::Extension).collect();
+        self.enqueue_lists(command_id, undoes, ops).await
     }
 
     /// Graph now holds `extension` for the list of operation `op_id`: cache
@@ -135,7 +91,7 @@ pub(crate) async fn restore_list_extension(
 
 /// Make `extension` the list's cached extension (none when it's empty),
 /// written by the daemon at `rev`.
-async fn write_extension(
+pub(crate) async fn write_extension(
     tx: &mut SqliteConnection,
     local_id: &str,
     extension: &Map<String, Value>,

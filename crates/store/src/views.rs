@@ -113,6 +113,18 @@ impl Store {
         records.into_iter().map(TaskRow::try_from).collect()
     }
 
+    /// Every live task in every live list, oldest first: what `tasks
+    /// list` filters when it looks in every list.
+    pub async fn every_task(&self) -> Result<Vec<TaskRow>, StoreError> {
+        let records: Vec<TaskRecord> = sqlx::query_as(AssertSqlSafe(format!(
+            "SELECT {} {LIVE} ORDER BY tasks.created_at, tasks.rowid",
+            task_record_columns()
+        )))
+        .fetch_all(self.reader())
+        .await?;
+        records.into_iter().map(TaskRow::try_from).collect()
+    }
+
     /// Every view's count and each list's open tasks, in one read.
     pub async fn task_counts(&self) -> Result<TaskCounts, StoreError> {
         let sum = |view: View| format!("COALESCE(SUM({}), 0)", view.condition());

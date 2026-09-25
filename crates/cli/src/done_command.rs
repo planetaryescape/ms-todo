@@ -49,7 +49,7 @@ pub async fn done(paths: &Paths, args: DoneArgs, format: OutputFormat) -> Result
     if format != OutputFormat::Table {
         return print_collection(format, &items, sync, &DONE_TABLE);
     }
-    if sync.state == SyncState::Initial {
+    if sync.state == SyncState::Initial && !crate::terminal::quiet() {
         eprintln!(
             "ms-todo is still syncing for the first time, so this may be incomplete; \
              `ms-todo sync --wait` waits for it"

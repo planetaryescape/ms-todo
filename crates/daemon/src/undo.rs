@@ -37,15 +37,11 @@ use std::collections::HashSet;
 use chrono::{DateTime, Duration};
 use ms_todo_core::ErrorKind;
 use ms_todo_protocol::{Candidate, ErrorPayload, Refused, ResponseData, TaskAction};
-use ms_todo_store::{
-    Entity, FOLDER_FIELD, ListExtensionOp, ListRow, LocalChange, NewOp, OpKind, OpState, OutboxRow,
-    TaskRow,
-};
+use ms_todo_store::{Entity, LocalChange, NewOp, OpKind, OpState, OutboxRow, TaskRow};
 use serde_json::{Map, Value, json};
 
 use crate::assignment::PART_OF;
 use crate::handlers::{State, error_payload, store_error};
-use crate::list_writes::queue_lists;
 use crate::outbox::move_job;
 use crate::outbox::{fields_not_holding, op_id_for};
 use crate::task_fields::{as_written, creatable_fields};
@@ -89,8 +85,11 @@ pub(crate) async fn undo(
             format!("{target} was undone already, by {by}; `ms-todo undo {by}` redoes it"),
         ));
     }
-    if ops.iter().all(|op| op.op == OpKind::Extension) {
-        return undo_lists(state, &target, &ops, &op_id).await;
+    if ops.iter().all(|op| op.op.is_list()) {
+        return crate::list_undo::undo_lists(state, &target, &ops, &op_id).await;
+    }
+    if ops.iter().all(|op| op.op == OpKind::Remote) {
+        return crate::catalog::undo(state, &target, &ops, &op_id).await;
     }
     let mut inverse: Vec<NewOp> = Vec::new();
     let mut refused: Vec<Refused> = Vec::new();
@@ -205,7 +204,11 @@ pub(crate) async fn undo(
                     reason,
                 }),
             },
-            OpKind::Extension => {
+            OpKind::Extension
+            | OpKind::ListCreate
+            | OpKind::ListUpdate
+            | OpKind::ListDelete
+            | OpKind::Remote => {
                 return Err(error_payload(
                     ErrorKind::Internal,
                     format!("{target} changes both tasks and lists, which no command does"),
@@ -250,82 +253,6 @@ fn child_inverse(
     } else {
         crate::child_undo::inverse(op, raw)
     }
-}
-
-/// Undo a folder change: each list's extension fields it wrote go back to
-/// what they were before it.
-async fn undo_lists(
-    state: &State,
-    target: &str,
-    ops: &[OutboxRow],
-    op_id: &str,
-) -> Result<ResponseData, ErrorPayload> {
-    let mut inverse: Vec<ListExtensionOp> = Vec::new();
-    for op in ops {
-        if rejected(op)? {
-            continue;
-        }
-        let Some(list) = state
-            .store
-            .list(&op.entity_local_id)
-            .await
-            .map_err(store_error)?
-        else {
-            return Err(error_payload(
-                ErrorKind::NotFound,
-                format!(
-                    "list {} was deleted since {target}, so it can't be undone",
-                    op.entity_local_id
-                ),
-            ));
-        };
-        check_list_unchanged(op, &list)?;
-        inverse.push(ListExtensionOp {
-            op_id: op_id_for(op_id, inverse.len()),
-            list_local_id: op.entity_local_id.clone(),
-            action: op.action.clone(),
-            fields: inverse_fields(op)?,
-        });
-    }
-    if inverse.is_empty() {
-        return Err(nothing_to_undo(target));
-    }
-    queue_lists(state, op_id, Some(target), inverse, TaskAction::Undo).await
-}
-
-/// Refuse to undo `op` if a field it set on `list`'s extension doesn't
-/// hold the value it set any more (a null having removed it).
-fn check_list_unchanged(op: &OutboxRow, list: &ListRow) -> Result<(), ErrorPayload> {
-    let Some(fields) = op.body().as_object() else {
-        return Ok(());
-    };
-    let current = |key: &str| {
-        list.extension
-            .as_ref()
-            .and_then(|extension| extension.get(key))
-            .cloned()
-            .unwrap_or(Value::Null)
-    };
-    let moved: Vec<&String> = fields
-        .iter()
-        .filter(|(key, set)| current(key) != **set)
-        .map(|(key, _)| key)
-        .collect();
-    if moved.is_empty() {
-        return Ok(());
-    }
-    let since = if moved.iter().any(|key| key.as_str() == FOLDER_FIELD) {
-        match list.folder() {
-            Some(folder) => format!("has moved to {folder:?}"),
-            None => "has moved out of its folder".to_owned(),
-        }
-    } else {
-        "was reordered".to_owned()
-    };
-    Err(conflict(format!(
-        "{:?} {since} since; undo would overwrite that",
-        list.display_name
-    )))
 }
 
 /// The fields `op` set on its task's extension that don't hold the value
@@ -380,13 +307,13 @@ fn moved_since(op: &OutboxRow, row: &TaskRow) -> Option<String> {
     })
 }
 
-fn conflict(message: String) -> ErrorPayload {
+pub(crate) fn conflict(message: String) -> ErrorPayload {
     error_payload(ErrorKind::Conflict, message)
 }
 
 /// Whether `op` is skipped because Graph rejected it, so it changed
 /// nothing. One whose outcome is `unknown` can't be undone yet.
-fn rejected(op: &OutboxRow) -> Result<bool, ErrorPayload> {
+pub(crate) fn rejected(op: &OutboxRow) -> Result<bool, ErrorPayload> {
     match op.state {
         OpState::Failed => Ok(true),
         OpState::Unknown => Err(error_payload(
@@ -401,7 +328,7 @@ fn rejected(op: &OutboxRow) -> Result<bool, ErrorPayload> {
     }
 }
 
-fn nothing_to_undo(target: &str) -> ErrorPayload {
+pub(crate) fn nothing_to_undo(target: &str) -> ErrorPayload {
     error_payload(
         ErrorKind::InvalidInput,
         format!("nothing to undo: Microsoft To Do rejected {target}, so it changed nothing"),
@@ -422,7 +349,7 @@ fn inverse_update(op: &OutboxRow) -> Result<(Value, TaskAction), ErrorPayload> {
 
 /// Each field `op` sent, with its value before `op` (null where it had
 /// none, which removes it), a date written as its local day.
-fn inverse_fields(op: &OutboxRow) -> Result<Map<String, Value>, ErrorPayload> {
+pub(crate) fn inverse_fields(op: &OutboxRow) -> Result<Map<String, Value>, ErrorPayload> {
     let before = before(op)?;
     Ok(op
         .body()

@@ -18,6 +18,10 @@ const COMMANDS: &[&str] = &[
     "auth logout",
     "auth bearer",
     "lists list",
+    "lists show",
+    "lists create",
+    "lists rename",
+    "lists delete",
     "lists move",
     "lists order",
     "folders list",
@@ -25,6 +29,7 @@ const COMMANDS: &[&str] = &[
     "folders delete",
     "folders order",
     "tasks list",
+    "tasks show",
     "tasks add",
     "tasks parse",
     "tasks suggest-list",
@@ -55,6 +60,14 @@ const COMMANDS: &[&str] = &[
     "myday remove",
     "myday suggest",
     "myday rollover",
+    "categories list",
+    "categories create",
+    "categories recolor",
+    "categories delete",
+    "extensions list",
+    "extensions get",
+    "extensions set",
+    "extensions delete",
     "search",
     "done",
     "reschedule",
@@ -69,6 +82,8 @@ const COMMANDS: &[&str] = &[
     "daemon start",
     "daemon stop",
     "daemon status",
+    "daemon restart",
+    "daemon logs",
 ];
 
 fn schema(args: &[&str]) -> Value {
@@ -181,12 +196,27 @@ async fn real_output_has_every_field_its_schema_requires() {
         .respond_with(ResponseTemplate::new(201).set_body_json(task("T2", "Eggs", "W/\"n\"")))
         .mount(&graph.server)
         .await;
+    graph.accept_catalog().await;
 
     let cases: &[(&str, &[&str])] = &[
         ("sync", &["sync", "--wait"]),
         ("lists list", &["lists", "list"]),
         ("tasks list", &["tasks", "list"]),
         ("tasks list", &["tasks", "list", "--search", "milk"]),
+        ("tasks list", &["tasks", "list", "--due", "none"]),
+        (
+            "tasks show",
+            &["tasks", "show", "Buy milk", "--list", "Tasks"],
+        ),
+        ("lists show", &["lists", "show", "Tasks"]),
+        ("lists create", &["lists", "create", "Garden", "--dry-run"]),
+        ("categories list", &["categories", "list"]),
+        (
+            "categories create",
+            &["categories", "create", "Errands", "--dry-run"],
+        ),
+        ("categories create", &["categories", "create", "Errands"]),
+        ("daemon logs", &["daemon", "logs"]),
         ("search", &["search", "milk"]),
         ("done", &["done", "--since", "2026-09-01"]),
         (

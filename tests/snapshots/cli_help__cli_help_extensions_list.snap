@@ -1,0 +1,21 @@
+---
+source: tests/cli_help.rs
+expression: help_output(args)
+---
+ms-todo's own extension on a list or task. Microsoft To Do can't list the others; `get` reads any by name
+
+Usage: ms-todo extensions list [OPTIONS] <KIND> <ID>
+
+Arguments:
+  <KIND>  [possible values: list, task]
+  <ID>    The list's exact name or ID; the task's ID, or its exact title with --list
+
+Options:
+      --format <FORMAT>  Output format: jsonl is one object per line, ids one ID per line, csv has a header row [default: table in a terminal, json when piped] [possible values: table, json, jsonl, ids, csv]
+      --list <NAME|ID>   For a task: look for it in this list (exact name or ID)
+      --instance <NAME>  Use a separate copy of ms-todo's data (also MS_TODO_INSTANCE). Builds run from Cargo's target/ directory default to "dev"; "default" is the installed copy
+      --fresh            Before reading, sync and wait, so the answer is as fresh as Microsoft To Do's (a read is otherwise answered from the cache)
+      --quiet            Print nothing on stderr but errors: no notes and no progress
+      --no-color         No colour or bold in tables (also NO_COLOR)
+  -h, --help             Print help
+  -V, --version          Print version

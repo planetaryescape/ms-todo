@@ -52,7 +52,32 @@ pub fn output_schema(command: &str) -> Option<Value> {
             &["access_token", "expires_at"],
         ),
         "lists list" => collection(list_entity()),
-        "tasks list" | "myday list" => collection(task_entity()),
+        "lists show" => shown_list(),
+        "tasks show" => {
+            let mut schema = task_entity();
+            schema["properties"]["schema_version"] = json!({ "const": SCHEMA_VERSION });
+            schema
+        }
+        "tasks list" => collection(every_list_task()),
+        "myday list" => collection(task_entity()),
+        "lists create" | "lists rename" | "lists delete" => {
+            json!({ "oneOf": [list_applied(), list_plan()] })
+        }
+        "categories list" => live_collection(category()),
+        "extensions list" | "extensions get" => live_collection(extension()),
+        "categories create" | "categories recolor" | "categories delete" | "extensions set"
+        | "extensions delete" => json!({ "oneOf": [catalog_applied(), catalog_plan()] }),
+        "daemon restart" => {
+            let (properties, required) = daemon_state();
+            versioned(properties, required)
+        }
+        "daemon logs" => versioned(
+            json!({
+                "path": { "type": "string", "description": "The daemon's log file" },
+                "lines": { "type": "array", "items": { "type": "string" } }
+            }),
+            &["path", "lines"],
+        ),
         "waiting" => collection(waiting_result()),
         "myday suggest" => collection(suggestion()),
         "myday add" | "myday remove" | "myday rollover" => json!({ "oneOf": [applied(), plan()] }),
@@ -60,7 +85,7 @@ pub fn output_schema(command: &str) -> Option<Value> {
         "done" => collection(done_result()),
         "tasks add" | "tasks complete" | "tasks reopen" | "tasks edit" | "tasks move"
         | "tasks delete" | "reschedule" => json!({ "oneOf": [applied(), plan()] }),
-        "undo" => json!({ "oneOf": [applied(), list_applied()] }),
+        "undo" => json!({ "oneOf": [applied(), list_applied(), catalog_applied()] }),
         "lists move" | "lists order" | "folders rename" | "folders delete" | "folders order" => {
             json!({ "oneOf": [list_applied(), list_plan()] })
         }
@@ -529,12 +554,102 @@ fn applied() -> Value {
     )
 }
 
+/// A task from `tasks list`: with a filter and no `--list`, from every
+/// list, each with `list`.
+fn every_list_task() -> Value {
+    let mut schema = task_entity();
+    schema["properties"]["list"] = json!({
+        "type": "string",
+        "description": "The name of the task's list: only with --assignee, or a filter (--status, --due, --importance, --category) and no --list"
+    });
+    schema
+}
+
+/// `lists show`: the list, with how many tasks it holds.
+fn shown_list() -> Value {
+    let mut schema = list_entity();
+    let properties = &mut schema["properties"];
+    properties["schema_version"] = json!({ "const": SCHEMA_VERSION });
+    properties["open_count"] = json!({ "type": "integer" });
+    properties["completed_count"] = json!({ "type": "integer" });
+    schema
+}
+
+/// A collection read from Graph as it is now: no `sync`.
+fn live_collection(item: Value) -> Value {
+    versioned(
+        json!({ "items": { "type": "array", "items": item } }),
+        &["items"],
+    )
+}
+
+fn category() -> Value {
+    object(
+        json!({
+            "id": { "type": "string" },
+            "displayName": { "type": "string", "description": "Unique ignoring case; Graph can't rename one" },
+            "color": { "type": "string", "description": "preset0 to preset24, or none" }
+        }),
+        &["id", "displayName", "color"],
+    )
+}
+
+fn extension() -> Value {
+    let mut schema = object(
+        json!({
+            "extensionName": { "type": "string" },
+            "id": { "type": "string" }
+        }),
+        &["extensionName"],
+    );
+    schema["description"] = json!(
+        "An open extension: its name, Graph's id and annotations, and its own fields beside them"
+    );
+    schema
+}
+
+/// What a category or extension write did.
+fn catalog_applied() -> Value {
+    versioned(
+        json!({
+            "op_id": { "type": "string", "description": "What `undo` knows the change by" },
+            "action": { "enum": ["category_create", "category_recolor", "category_delete", "extension_set", "extension_delete"] },
+            "items": {
+                "type": "array",
+                "description": "The category or extension as it is now; for a delete, as it was",
+                "items": { "oneOf": [category(), extension()] }
+            },
+            "undoes": { "type": "string", "description": "For an undo: the op_id it undoes" },
+            "list_ids": { "type": "array", "maxItems": 0 }
+        }),
+        &["op_id", "action", "items"],
+    )
+}
+
+/// What a category or extension write would do.
+fn catalog_plan() -> Value {
+    versioned(
+        json!({
+            "dry_run": { "const": true },
+            "action": { "enum": ["category_create", "category_recolor", "category_delete", "extension_set", "extension_delete"] },
+            "changes": object(
+                json!({
+                    "target": { "type": "object", "description": "The category or extension as it is now (a create's: its name)" },
+                    "body": { "description": "What's sent; null for a delete" }
+                }),
+                &["target", "body"],
+            )
+        }),
+        &["dry_run", "action", "changes"],
+    )
+}
+
 /// What a folder change did: the lists it changed, as they are now.
 fn list_applied() -> Value {
     let mut schema = applied();
     let properties = &mut schema["properties"];
     properties["action"] = json!({
-        "enum": ["move_list", "order_list", "rename_folder", "delete_folder", "order_folder", "undo"]
+        "enum": ["move_list", "order_list", "rename_folder", "delete_folder", "order_folder", "create_list", "rename_list", "delete_list", "undo"]
     });
     properties["items"] = json!({
         "type": "array",
@@ -554,7 +669,7 @@ fn list_plan() -> Value {
     versioned(
         json!({
             "dry_run": { "const": true },
-            "action": { "enum": ["move_list", "order_list", "rename_folder", "delete_folder", "order_folder"] },
+            "action": { "enum": ["move_list", "order_list", "rename_folder", "delete_folder", "order_folder", "create_list", "rename_list", "delete_list"] },
             "lists": {
                 "type": "array",
                 "description": "Each list that would change; absent when none would",
@@ -564,7 +679,7 @@ fn list_plan() -> Value {
                         "name": { "type": "string" },
                         "changes": {
                             "type": "object",
-                            "description": "The fields of ms-todo's extension it gets: folder, order, folderOrder; null removes one"
+                            "description": "A folder change: the fields of ms-todo's extension it gets (folder, order, folderOrder; null removes one). A create: displayName and folder. A rename: displayName. A delete: deleted, tasks (how many go with it) and undoable"
                         }
                     }),
                     &["id", "name", "changes"],

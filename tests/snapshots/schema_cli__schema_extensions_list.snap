@@ -1,0 +1,63 @@
+---
+source: tests/schema_cli.rs
+expression: pretty
+---
+{
+  "input": {
+    "additionalProperties": false,
+    "properties": {
+      "id": {
+        "description": "The list's exact name or ID; the task's ID, or its exact title with --list",
+        "type": "string",
+        "x-cli": "<ID>"
+      },
+      "kind": {
+        "enum": [
+          "list",
+          "task"
+        ],
+        "x-cli": "<KIND>"
+      },
+      "list": {
+        "description": "For a task: look for it in this list (exact name or ID)",
+        "type": "string",
+        "x-cli": "--list"
+      }
+    },
+    "required": [
+      "kind",
+      "id"
+    ],
+    "type": "object"
+  },
+  "output": {
+    "properties": {
+      "items": {
+        "items": {
+          "description": "An open extension: its name, Graph's id and annotations, and its own fields beside them",
+          "properties": {
+            "extensionName": {
+              "type": "string"
+            },
+            "id": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "extensionName"
+          ],
+          "type": "object"
+        },
+        "type": "array"
+      },
+      "schema_version": {
+        "const": 2
+      }
+    },
+    "required": [
+      "schema_version",
+      "items"
+    ],
+    "type": "object"
+  }
+}

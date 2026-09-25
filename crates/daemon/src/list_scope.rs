@@ -6,9 +6,11 @@ use std::collections::HashMap;
 
 use ms_todo_core::ErrorKind;
 use ms_todo_protocol::{ErrorPayload, SyncInfo};
-use ms_todo_store::{LISTS_SCOPE, ListRow, tasks_scope};
+use ms_todo_store::{LISTS_SCOPE, ListRow};
 
-use crate::freshness::{all_lists_state, all_ready, ensure_ready, read_state};
+use crate::freshness::{
+    all_lists_state, all_ready, ensure_list_ready, ensure_ready, list_read_state,
+};
 use crate::handlers::{State, error_payload, store_error};
 use crate::list_resolution::{ListRef, resolve_list};
 
@@ -60,7 +62,7 @@ impl ListScope {
         lists_sync: SyncInfo,
     ) -> Result<SyncInfo, ErrorPayload> {
         match &self.one {
-            Some(list) => read_state(state, &tasks_scope(&list.graph_id)).await,
+            Some(list) => list_read_state(state, list).await,
             None => all_lists_state(state, lists_sync).await,
         }
     }
@@ -80,7 +82,7 @@ pub(crate) async fn ready_scope(
     let lists = state.store.lists().await.map_err(store_error)?;
     let scope = ListScope::of(&lists, list, folder)?;
     if let Some(one) = &scope.one {
-        ensure_ready(state, &tasks_scope(&one.graph_id)).await?;
+        ensure_list_ready(state, one).await?;
     }
     Ok(scope)
 }

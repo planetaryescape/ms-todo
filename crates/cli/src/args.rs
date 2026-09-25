@@ -29,6 +29,19 @@ pub struct GlobalArgs {
     /// installed copy
     #[arg(long, global = true, value_name = "NAME")]
     pub instance: Option<String>,
+
+    /// Before reading, sync and wait, so the answer is as fresh as Microsoft
+    /// To Do's (a read is otherwise answered from the cache)
+    #[arg(long, global = true)]
+    pub fresh: bool,
+
+    /// Print nothing on stderr but errors: no notes and no progress
+    #[arg(long, global = true)]
+    pub quiet: bool,
+
+    /// No colour or bold in tables (also NO_COLOR)
+    #[arg(long, global = true)]
+    pub no_color: bool,
 }
 
 #[derive(Debug, Subcommand)]
@@ -75,6 +88,15 @@ pub enum Command {
     /// daemon reads and writes them
     #[command(subcommand)]
     Attachments(AttachmentsCommand),
+    /// Your Outlook categories: list, create, recolour and delete them.
+    /// Microsoft To Do can't rename one; the iPhone app shows none
+    #[command(subcommand)]
+    Categories(crate::catalog_args::CategoriesCommand),
+    /// Open extensions on a list or task: data other apps (or you) keep
+    /// there. ms-todo's own, com.planetaryescape.mstodo, can be read but
+    /// not written here
+    #[command(subcommand)]
+    Extensions(crate::catalog_args::ExtensionsCommand),
     /// Find tasks by the words in their title or notes, in every list, best
     /// match first
     Search(SearchArgs),
@@ -408,6 +430,16 @@ pub enum AuthCommand {
 pub enum ListsCommand {
     /// Every task list, folder by folder, then those in no folder
     List,
+    /// One list, with its open and completed task counts
+    Show(crate::list_args::ShowListArgs),
+    /// Make a new list, in a folder if --folder says so
+    Create(crate::list_args::CreateListArgs),
+    /// Rename a list. The default list (Tasks) and Flagged Emails can't be
+    Rename(crate::list_args::RenameListArgs),
+    /// Delete a list and every task in it. Asks first in a terminal;
+    /// anywhere else it needs --yes. Only an empty list's delete can be
+    /// undone
+    Delete(crate::list_args::DeleteListArgs),
     /// Put lists in a folder (made if it's new), or take them out of theirs
     Move(MoveListsArgs),
     /// Put a list just before or after another list in its folder
@@ -518,24 +550,11 @@ pub struct OrderFolderArgs {
 
 #[derive(Debug, Subcommand)]
 pub enum TasksCommand {
-    /// Every task in a list, completed ones included
-    List {
-        /// The list's exact name or its ID [default: the "Tasks" list]
-        #[arg(long, value_name = "NAME|ID", conflicts_with = "my_day")]
-        list: Option<String>,
-        /// Today's My Day instead of a list, as `myday list` gives it
-        #[arg(long, conflicts_with_all = ["search", "assignee"])]
-        my_day: bool,
-        /// Only tasks whose title or notes match, best match first; the
-        /// syntax is `search`'s
-        #[arg(long, value_name = "QUERY")]
-        search: Option<String>,
-        /// Only tasks assigned to this person (a case-insensitive exact
-        /// match), or to anyone with `*`. Without --list, the open tasks
-        /// of every list, grouped by person
-        #[arg(long, value_name = "PERSON")]
-        assignee: Option<String>,
-    },
+    /// Every task in a list, completed ones included; or with a filter
+    /// and no --list, the tasks in every list that match it
+    List(crate::list_args::TaskListArgs),
+    /// One task, every field
+    Show(LinkArgs),
     /// Add a task, read from text the way you'd say it
     ///
     /// `Pay rent every 1st #Finances p1 9am` is "Pay rent" in Finances,
@@ -558,9 +577,9 @@ pub enum TasksCommand {
     Complete(TargetArgs),
     /// Mark completed tasks as not started again
     Reopen(TargetArgs),
-    /// Change a task's title, due date, importance, reminder, notes or
-    /// assignee; or the due date, importance, reminder or assignee of
-    /// several tasks at once
+    /// Change a task's title, dates, importance, reminder, notes,
+    /// recurrence, categories or assignee; or the dates, importance,
+    /// reminder, recurrence, categories or assignee of several at once
     Edit(EditArgs),
     /// Move tasks to another list, keeping everything they hold: steps,
     /// link, attachments and ms-todo's own fields. Each is copied, the copy
@@ -745,8 +764,28 @@ pub struct AddArgs {
     #[arg(long, value_name = "LEVEL", value_parser = phrases::importance)]
     pub importance: Option<Importance>,
     /// Notes, as plain text
-    #[arg(long, value_name = "TEXT")]
+    #[arg(long, value_name = "TEXT", conflicts_with = "body_file")]
     pub body: Option<String>,
+    /// Notes from a file, as plain text; `-` reads stdin
+    #[arg(long, value_name = "FILE")]
+    pub body_file: Option<std::path::PathBuf>,
+    /// Start date, over any `start <date>` in the text, in the forms --due
+    /// takes. With no due date, Microsoft To Do makes it the due date too
+    #[arg(long, value_name = "WHEN", value_parser = phrases::day, allow_hyphen_values = true)]
+    pub start: Option<String>,
+    /// A category (an Outlook category's name); several give several.
+    /// Over any @category in the text
+    #[arg(long = "category", value_name = "NAME")]
+    pub categories: Vec<String>,
+    /// Repeat it, over any `every …` in the text: every mon, every 2 weeks
+    /// on tue, thu, every month on the 1st, weekday, daily. It's first due
+    /// on --due, or the next day it falls on
+    #[arg(long, value_name = "EVERY")]
+    pub recur: Option<String>,
+    /// Refuse (exit 2) text the parser warns about, such as an unknown
+    /// #List, instead of adding the task with a note
+    #[arg(long, conflicts_with = "no_parse")]
+    pub strict: bool,
     /// Put it in today's My Day, as +myday or * in the text does. With no
     /// due date, it's due today too
     #[arg(long)]
@@ -871,8 +910,43 @@ pub struct EditArgs {
     #[arg(long)]
     pub clear_reminder: bool,
     /// New notes, as plain text. They replace the old ones
-    #[arg(long, value_name = "TEXT")]
+    #[arg(long, value_name = "TEXT", conflicts_with = "body_file")]
     pub body: Option<String>,
+    /// New notes from a file, as plain text; `-` reads stdin
+    #[arg(long, value_name = "FILE")]
+    pub body_file: Option<std::path::PathBuf>,
+    /// New start date, in the forms --due takes; empty or `-` removes it.
+    /// The task's due date is sent with it, or with none, the start date
+    /// becomes the due date too, as Microsoft To Do makes it
+    #[arg(
+        long,
+        value_name = "WHEN",
+        value_parser = phrases::due,
+        allow_hyphen_values = true,
+        conflicts_with = "clear_start"
+    )]
+    pub start: Option<Clearable<String>>,
+    /// Remove the start date
+    #[arg(long)]
+    pub clear_start: bool,
+    /// Make it repeat: every mon, every 2 weeks on tue, thu, every month on
+    /// the 1st, weekday, daily. The due date becomes its first time: --due,
+    /// or the next day it falls on from today
+    #[arg(long, value_name = "EVERY", conflicts_with = "clear_recur")]
+    pub recur: Option<String>,
+    /// Stop it repeating. Its due date stays
+    #[arg(long)]
+    pub clear_recur: bool,
+    /// Its categories, replacing those it has; several give several
+    #[arg(
+        long = "category",
+        value_name = "NAME",
+        conflicts_with = "clear_categories"
+    )]
+    pub categories: Vec<String>,
+    /// Remove every category
+    #[arg(long)]
+    pub clear_categories: bool,
     /// Who it waits on: a name or an email, only ms-todo sees it and
     /// nobody is told. An open task becomes "waiting on others" too,
     /// which the To Do app shows
@@ -932,6 +1006,14 @@ pub enum DaemonCommand {
     Stop,
     /// Show whether the daemon is running, its PID, version and socket
     Status,
+    /// Stop the daemon if it's running, then start it again
+    Restart,
+    /// Print the daemon's log
+    Logs {
+        /// Keep printing what's added to it, until interrupted
+        #[arg(long)]
+        follow: bool,
+    },
     /// Run the daemon in the foreground (what `launch` starts)
     #[command(hide = true)]
     Run,

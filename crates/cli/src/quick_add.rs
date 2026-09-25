@@ -120,7 +120,26 @@ pub async fn new_task(
         known,
         text_due,
     } = read(paths, &args.text, due).await?;
+    if args.strict && !parsed.warnings.is_empty() {
+        return Err(CliError::message(
+            ErrorKind::InvalidInput,
+            format!(
+                "--strict: {}; fix the text, or pass --no-parse",
+                parsed.warnings.join("; ")
+            ),
+        ));
+    }
     let (task, notes) = merge(&parsed, text_due, args)?;
+    // `--category` names weren't in the text, so they weren't checked yet.
+    let known = match known {
+        None if args.create_categories && !args.categories.is_empty() => {
+            data_commands::raw_get(paths, CATEGORIES.into())
+                .await
+                .ok()
+                .map(|body| category_names(&body))
+        }
+        known => known,
+    };
     if args.create_categories && !args.dry_run {
         let missing = known.iter().flat_map(|known| {
             task.categories.iter().filter(|name| {
@@ -135,10 +154,8 @@ pub async fn new_task(
     }
     // JSON's stdout and stderr are the output contract; `tasks parse`
     // gives the warnings there.
-    if !matches!(format, OutputFormat::Json | OutputFormat::Jsonl) {
-        for note in parsed.warnings.iter().chain(&notes) {
-            eprintln!("note: {note}");
-        }
+    for note in parsed.warnings.iter().chain(&notes) {
+        crate::terminal::note_unless_json(format, note);
     }
     Ok(task)
 }
@@ -178,7 +195,48 @@ fn merge(
         args.importance.is_some(),
         parsed.importance.is_some(),
     );
+    overrode("--start", args.start.is_some(), parsed.start.is_some());
+    overrode(
+        "--category",
+        !args.categories.is_empty(),
+        !parsed.categories.is_empty(),
+    );
+    overrode("--recur", args.recur.is_some(), parsed.recurrence.is_some());
     let clear_due = matches!(args.due, Some(Clearable::Clear));
+    if clear_due && args.recur.is_some() {
+        return Err(CliError::message(
+            ErrorKind::InvalidInput,
+            "--recur needs a due date to start on, so it can't go with --due -".into(),
+        ));
+    }
+    let start = args
+        .start
+        .clone()
+        .or_else(|| parsed.start.map(|day| day.format(DATE_FORMAT).to_string()));
+    let mut due = parsed
+        .due
+        .filter(|_| !clear_due)
+        .map(|due| due.format(DATE_FORMAT).to_string());
+    // `--recur` starts on the due date the text or `--due` set, else on
+    // the next day it falls on, which becomes the due date.
+    let recurrence = match &args.recur {
+        Some(recur) => {
+            let recurrence = crate::task_flags::recurrence(
+                recur,
+                due.as_deref().and_then(crate::task_flags::day),
+            )?;
+            due = Some(recurrence.start.format(DATE_FORMAT).to_string());
+            Some(recurrence.to_graph())
+        }
+        None => parsed.recurrence.as_ref().map(Recurrence::to_graph),
+    };
+    if let (Some(start), None, Some(_)) = (&start, &due, &args.start) {
+        // What Microsoft To Do does anyway (S11), made visible.
+        due = Some(start.clone());
+        notes.push(format!(
+            "a start date also sets the due date when there's none, so it's due {start}"
+        ));
+    }
     if clear_due && (parsed.recurrence.is_some() || parsed.start.is_some()) {
         // Refused rather than dropping what the text asked for: a
         // recurrence starts on its due date, and a start date makes
@@ -205,10 +263,7 @@ fn merge(
         // `--due` was read into the parse, so the reminder and a
         // recurrence's start already follow it.
         // `--due -` and `--reminder -` clear what the text set (D-018).
-        due: parsed
-            .due
-            .filter(|_| !clear_due)
-            .map(|due| due.format(DATE_FORMAT).to_string()),
+        due,
         reminder: match &args.reminder {
             Some(Clearable::Set(at)) => Some(at.clone()),
             Some(Clearable::Clear) => None,
@@ -220,9 +275,13 @@ fn merge(
             .importance
             .or(parsed.importance.map(phrases::protocol_importance)),
         body: args.body.clone(),
-        start: parsed.start.map(|day| day.format(DATE_FORMAT).to_string()),
-        recurrence: parsed.recurrence.as_ref().map(Recurrence::to_graph),
-        categories: parsed.categories.clone(),
+        start,
+        recurrence,
+        categories: if args.categories.is_empty() {
+            parsed.categories.clone()
+        } else {
+            args.categories.clone()
+        },
         my_day: parsed.my_day || args.my_day,
         assignee: args.assignee.clone(),
         keep_status: args.keep_status,

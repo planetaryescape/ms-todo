@@ -15,6 +15,9 @@ Options:
       --after <LIST>           Put it just after this list, in the same folder
       --instance <NAME>        Use a separate copy of ms-todo's data (also MS_TODO_INSTANCE). Builds run from Cargo's target/ directory default to "dev"; "default" is the installed copy
       --dry-run                Show what would change without changing anything
+      --fresh                  Before reading, sync and wait, so the answer is as fresh as Microsoft To Do's (a read is otherwise answered from the cache)
       --idempotency-key <KEY>  Run this change at most once: repeating the command with the same key returns the first result for 24 hours, and the same key with a different change exits 2
+      --quiet                  Print nothing on stderr but errors: no notes and no progress
+      --no-color               No colour or bold in tables (also NO_COLOR)
   -h, --help                   Print help
   -V, --version                Print version

@@ -55,9 +55,24 @@ impl App {
             keys: String::new(),
             command: Command::Themes,
         };
+        // Palette-only: rare enough to need no key of their own (rung 8e).
+        let lists = [
+            ("New list\u{2026}", Action::NewList),
+            ("Rename list\u{2026}", Action::RenameList),
+            ("Delete list\u{2026}", Action::DeleteList),
+        ]
+        .into_iter()
+        .map(|(label, action)| Item {
+            label: label.to_owned(),
+            keys: String::new(),
+            command: Command::Run(action),
+        });
         let query = query.trim().to_lowercase();
         rank(
-            actions.chain(std::iter::once(themes)).chain(places),
+            actions
+                .chain(std::iter::once(themes))
+                .chain(lists)
+                .chain(places),
             |item| score(item, &query),
         )
     }

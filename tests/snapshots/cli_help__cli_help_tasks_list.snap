@@ -2,16 +2,74 @@
 source: tests/cli_help.rs
 expression: help_output(args)
 ---
-Every task in a list, completed ones included
+Every task in a list, completed ones included; or with a filter and no --list, the tasks in every list that match it
 
 Usage: ms-todo tasks list [OPTIONS]
 
 Options:
-      --format <FORMAT>    Output format: jsonl is one object per line, ids one ID per line, csv has a header row [default: table in a terminal, json when piped] [possible values: table, json, jsonl, ids, csv]
-      --list <NAME|ID>     The list's exact name or its ID [default: the "Tasks" list]
-      --instance <NAME>    Use a separate copy of ms-todo's data (also MS_TODO_INSTANCE). Builds run from Cargo's target/ directory default to "dev"; "default" is the installed copy
-      --my-day             Today's My Day instead of a list, as `myday list` gives it
-      --search <QUERY>     Only tasks whose title or notes match, best match first; the syntax is `search`'s
-      --assignee <PERSON>  Only tasks assigned to this person (a case-insensitive exact match), or to anyone with `*`. Without --list, the open tasks of every list, grouped by person
-  -h, --help               Print help
-  -V, --version            Print version
+      --format <FORMAT>
+          Output format: jsonl is one object per line, ids one ID per line, csv has a header row [default: table in a terminal, json when piped]
+
+          [possible values: table, json, jsonl, ids, csv]
+
+      --list <NAME|ID>
+          The list's exact name or its ID [default: the "Tasks" list, or with --status, --due, --importance or --category, every list]
+
+      --instance <NAME>
+          Use a separate copy of ms-todo's data (also MS_TODO_INSTANCE). Builds run from Cargo's target/ directory default to "dev"; "default" is the installed copy
+
+      --my-day
+          Today's My Day instead of a list, as `myday list` gives it
+
+      --fresh
+          Before reading, sync and wait, so the answer is as fresh as Microsoft To Do's (a read is otherwise answered from the cache)
+
+      --search <QUERY>
+          Only tasks whose title or notes match, best match first; the syntax is `search`'s
+
+      --assignee <PERSON>
+          Only tasks assigned to this person (a case-insensitive exact match), or to anyone with `*`. Without --list, the open tasks of every list, grouped by person
+
+      --quiet
+          Print nothing on stderr but errors: no notes and no progress
+
+      --no-color
+          No colour or bold in tables (also NO_COLOR)
+
+      --status <STATUS>
+          Only tasks with this status
+
+          Possible values:
+          - open:        Not completed
+          - completed
+          - all:         Open and completed
+          - not-started
+          - in-progress
+          - waiting:     Waiting on others
+          - deferred
+
+      --completed
+          Only completed tasks, as --status completed
+
+      --due <WHEN>
+          Only tasks due: today, overdue (open and due before today), none, any, "before fri", "after 12 oct", or on a day (tomorrow, 2026-10-02)
+
+      --importance <LEVEL>
+          Only tasks of this importance: high, normal or low (or 1–4, p1–p4)
+
+      --category <NAME>
+          Only tasks with this category (ignoring case)
+
+      --sort <SORT>
+          Order by: due (soonest first, none last), importance (high first), created or modified (newest first), title [default: the list's order; every list's is by due date]
+
+          [possible values: due, importance, created, modified, title]
+
+      --limit <N>
+          At most this many, after sorting
+
+  -h, --help
+          Print help (see a summary with '-h')
+
+  -V, --version
+          Print version

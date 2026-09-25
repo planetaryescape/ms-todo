@@ -208,7 +208,9 @@ pub async fn connect(paths: &Paths) -> Result<(DaemonClient, DaemonStatus), CliE
     match probe(paths).await {
         Probe::Ready(client, status) => return Ok((*client, status)),
         Probe::Incompatible(why) => {
-            eprintln!("Restarting the ms-todo daemon: {why}.");
+            if !crate::terminal::quiet() {
+                eprintln!("Restarting the ms-todo daemon: {why}.");
+            }
             stop(paths).await?;
         }
         Probe::Unreachable => {}

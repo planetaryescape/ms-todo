@@ -10,9 +10,9 @@
 //! finished yesterday.
 
 use std::net::TcpListener;
-use std::sync::{Arc, Mutex, PoisonError};
 
 use chrono::{Datelike, Days, Local, NaiveDate, TimeZone, Utc};
+use ms_todo_fake_graph::catalog::category;
 use ms_todo_fake_graph::{FakeGraph, list};
 use serde::Deserialize;
 use serde_json::{Value, json};
@@ -106,7 +106,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .respond_with(ResponseTemplate::new(200).set_body_json(seed.me.clone()))
         .mount(&server)
         .await;
-    mount_categories(&server, &seed.categories).await;
     // Anything the double doesn't answer is logged, so a recording that
     // needs a new endpoint says which.
     Mock::given(wiremock::matchers::any())
@@ -133,7 +132,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     graph.accept_task_patches().await;
     graph.accept_moves().await;
     graph.accept_children().await;
+    graph.accept_catalog().await;
     graph.edit(|data| {
+        data.categories = seed
+            .categories
+            .iter()
+            .enumerate()
+            .map(|(index, name)| category(&format!("C-{}", index + 1), name, "preset0"))
+            .collect();
         for (list, tasks, extension) in lists {
             let id = list["id"].as_str().unwrap_or_default().to_owned();
             if let Some(extension) = extension {
@@ -146,46 +152,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("demo-fake-graph: listening on {base}");
     std::future::pending::<()>().await;
     Ok(())
-}
-
-/// `GET /me/outlook/masterCategories`, and a POST that adds one, as
-/// `tasks add --create-categories` sends.
-async fn mount_categories(server: &MockServer, names: &[String]) {
-    let categories: Vec<Value> = names
-        .iter()
-        .enumerate()
-        .map(|(index, name)| {
-            json!({ "id": format!("C-{}", index + 1), "displayName": name, "color": "preset0" })
-        })
-        .collect();
-    let shared = Arc::new(Mutex::new(categories));
-    let listed = Arc::clone(&shared);
-    Mock::given(method("GET"))
-        .and(path("/v1.0/me/outlook/masterCategories"))
-        .respond_with(move |_: &Request| {
-            let categories = listed
-                .lock()
-                .unwrap_or_else(PoisonError::into_inner)
-                .clone();
-            ResponseTemplate::new(200).set_body_json(json!({ "value": categories }))
-        })
-        .mount(server)
-        .await;
-    Mock::given(method("POST"))
-        .and(path("/v1.0/me/outlook/masterCategories"))
-        .respond_with(move |request: &Request| {
-            let sent: Value = serde_json::from_slice(&request.body).unwrap_or_default();
-            let mut categories = shared.lock().unwrap_or_else(PoisonError::into_inner);
-            let created = json!({
-                "id": format!("C-{}", categories.len() + 1),
-                "displayName": sent["displayName"],
-                "color": sent.get("color").cloned().unwrap_or(json!("preset0")),
-            });
-            categories.push(created.clone());
-            ResponseTemplate::new(201).set_body_json(created)
-        })
-        .mount(server)
-        .await;
 }
 
 type SeededList = (Value, Vec<Value>, Option<Value>);

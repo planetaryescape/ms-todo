@@ -1,0 +1,41 @@
+---
+source: tests/schema_cli.rs
+expression: pretty
+---
+{
+  "input": {
+    "additionalProperties": false,
+    "properties": {
+      "follow": {
+        "description": "Keep printing what's added to it, until interrupted",
+        "type": "boolean",
+        "x-cli": "--follow"
+      }
+    },
+    "required": [],
+    "type": "object"
+  },
+  "output": {
+    "properties": {
+      "lines": {
+        "items": {
+          "type": "string"
+        },
+        "type": "array"
+      },
+      "path": {
+        "description": "The daemon's log file",
+        "type": "string"
+      },
+      "schema_version": {
+        "const": 2
+      }
+    },
+    "required": [
+      "schema_version",
+      "path",
+      "lines"
+    ],
+    "type": "object"
+  }
+}

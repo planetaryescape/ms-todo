@@ -14,5 +14,8 @@ Options:
       --list <NAME|ID>   Look for the task in this list (exact name or ID), which also lets TASK be an exact title
       --index <N>        Which link, from 1, as `tasks links` numbers them
       --instance <NAME>  Use a separate copy of ms-todo's data (also MS_TODO_INSTANCE). Builds run from Cargo's target/ directory default to "dev"; "default" is the installed copy
+      --fresh            Before reading, sync and wait, so the answer is as fresh as Microsoft To Do's (a read is otherwise answered from the cache)
+      --quiet            Print nothing on stderr but errors: no notes and no progress
+      --no-color         No colour or bold in tables (also NO_COLOR)
   -h, --help             Print help
   -V, --version          Print version

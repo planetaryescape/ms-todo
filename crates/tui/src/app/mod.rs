@@ -24,6 +24,7 @@ pub(crate) mod folders;
 pub mod line_editor;
 mod links;
 pub mod list_hint;
+mod list_writes;
 pub mod move_tasks;
 pub(crate) mod my_day;
 pub mod palette;
@@ -135,6 +136,17 @@ pub enum Mode {
         list_id: String,
         input: LineEditor,
     },
+    /// Typing a new list's name, or with `list_id`, a list's new name.
+    NamingList {
+        list_id: Option<String>,
+        input: LineEditor,
+    },
+    /// The inline "Delete …? y/n" for the list `list_id`.
+    ConfirmDeleteList {
+        list_id: String,
+        /// What's deleted, as the question names it.
+        what: String,
+    },
     /// Typing one due date for the tasks `ids`: `what` names them, as
     /// `"Call Sam"`, `3 tasks` or `2 overdue tasks`.
     SettingDue {
@@ -238,6 +250,8 @@ pub enum Tag {
     Write(Write),
     /// A change to lists' folders.
     Folders,
+    /// A list made, renamed or deleted (rung 8e).
+    Lists,
     Undo,
     Sync,
     Diagnostics(Part),
@@ -459,11 +473,14 @@ impl App {
             | Mode::EditingChild { .. }
             | Mode::Attaching { .. }
             | Mode::SettingDue { .. }
-            | Mode::Assigning { .. } => Context::Prompt,
+            | Mode::Assigning { .. }
+            | Mode::NamingList { .. } => Context::Prompt,
             Mode::ChoosingField { .. } => Context::Fields,
             Mode::MovingList { .. } => Context::Folder,
             Mode::ChoosingImportance { .. } => Context::Importance,
-            Mode::ConfirmDelete { .. } | Mode::ConfirmDeleteChild { .. } => Context::Confirm,
+            Mode::ConfirmDelete { .. }
+            | Mode::ConfirmDeleteChild { .. }
+            | Mode::ConfirmDeleteList { .. } => Context::Confirm,
             Mode::Picker { .. } => Context::Picker,
             Mode::Palette { .. } => Context::Palette,
             Mode::MovingTasks { .. } => Context::MoveTo,
@@ -681,6 +698,8 @@ impl App {
             (Mode::ConfirmDeleteChild { .. }, Action::Confirm) => self.confirm_child_delete(),
             (Mode::SettingDue { .. }, Action::Submit) => self.submit_set_due(),
             (Mode::Assigning { .. }, Action::Submit) => self.submit_assign(),
+            (Mode::NamingList { .. }, Action::Submit) => self.submit_list_name(),
+            (Mode::ConfirmDeleteList { .. }, Action::Confirm) => self.confirm_delete_list(),
             (Mode::ChoosingField { .. }, Action::EditField(_) | Action::CycleImportance)
             | (Mode::ChoosingImportance { .. }, Action::SetImportance(_)) => {
                 self.edit_action(action)
@@ -844,6 +863,18 @@ impl App {
                 self.start_move();
                 Vec::new()
             }
+            Action::NewList => {
+                self.start_new_list();
+                Vec::new()
+            }
+            Action::RenameList => {
+                self.start_rename_list();
+                Vec::new()
+            }
+            Action::DeleteList => {
+                self.start_delete_list();
+                Vec::new()
+            }
             Action::Diagnostics => self.open_diagnostics(),
             Action::Undo => vec![Effect {
                 tag: Tag::Undo,
@@ -946,6 +977,7 @@ impl App {
             }
             Mode::Filtering { input }
             | Mode::MovingList { input, .. }
+            | Mode::NamingList { input, .. }
             | Mode::Assigning { input, .. } => edit(input),
             Mode::Editing { input, error, .. }
             | Mode::EditingChild { input, error, .. }
@@ -1155,6 +1187,7 @@ impl App {
                 self.apply_list_write(&applied.items);
                 Vec::new()
             }
+            (Tag::Lists, Ok(ResponseData::Applied(applied))) => self.list_changed(&applied),
             (Tag::Undo, Ok(ResponseData::Applied(applied))) => {
                 let text = match applied.refused.as_slice() {
                     [] => "Undone".to_owned(),

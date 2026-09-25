@@ -1,0 +1,23 @@
+---
+source: tests/cli_help.rs
+expression: help_output(args)
+---
+Your Outlook categories: list, create, recolour and delete them. Microsoft To Do can't rename one; the iPhone app shows none
+
+Usage: ms-todo categories [OPTIONS] <COMMAND>
+
+Commands:
+  list     Every category, with its colour
+  create   Make a category. Names are unique ignoring case
+  recolor  Change a category's colour
+  delete   Delete a category. Tasks keep its name as a label, shown without a colour. Asks first in a terminal; anywhere else it needs --yes
+  help     Print this message or the help of the given subcommand(s)
+
+Options:
+      --format <FORMAT>  Output format: jsonl is one object per line, ids one ID per line, csv has a header row [default: table in a terminal, json when piped] [possible values: table, json, jsonl, ids, csv]
+      --instance <NAME>  Use a separate copy of ms-todo's data (also MS_TODO_INSTANCE). Builds run from Cargo's target/ directory default to "dev"; "default" is the installed copy
+      --fresh            Before reading, sync and wait, so the answer is as fresh as Microsoft To Do's (a read is otherwise answered from the cache)
+      --quiet            Print nothing on stderr but errors: no notes and no progress
+      --no-color         No colour or bold in tables (also NO_COLOR)
+  -h, --help             Print help
+  -V, --version          Print version

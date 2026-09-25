@@ -87,6 +87,17 @@ pub fn draw(frame: &mut Frame, area: Rect, app: &App) {
             spans.push(Span::styled(" Enter on empty: no folder ", theme.text_dim));
             Line::from(spans)
         }
+        // A list's name: a new one, or a rename.
+        Mode::NamingList { list_id, input } => {
+            let label = match list_id.as_deref().and_then(|id| app.list_name(id)) {
+                Some(name) => format!(" Rename {name} to: "),
+                None => " New list: ".to_owned(),
+            };
+            let mut spans = vec![Span::styled(label, theme.accent)];
+            spans.extend(typed(input));
+            spans.extend(hint_spans(Context::Prompt));
+            Line::from(spans)
+        }
         // One due date for several tasks: what's typed, then what it
         // resolves to or why it can't be sent.
         Mode::SettingDue {
@@ -135,7 +146,9 @@ pub fn draw(frame: &mut Frame, area: Rect, app: &App) {
             spans.push(Span::styled("Move ", theme.text_dim));
             Line::from(spans)
         }
-        Mode::ConfirmDelete { what, .. } | Mode::ConfirmDeleteChild { what, .. } => {
+        Mode::ConfirmDelete { what, .. }
+        | Mode::ConfirmDeleteChild { what, .. }
+        | Mode::ConfirmDeleteList { what, .. } => {
             let mut spans = vec![Span::styled(
                 format!(" Delete {what}? "),
                 theme.banner_error,

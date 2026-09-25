@@ -19,6 +19,10 @@ const COMMANDS: &[&str] = &[
     "auth logout",
     "auth bearer",
     "lists list",
+    "lists show",
+    "lists create",
+    "lists rename",
+    "lists delete",
     "lists move",
     "lists order",
     "folders list",
@@ -26,6 +30,7 @@ const COMMANDS: &[&str] = &[
     "folders delete",
     "folders order",
     "tasks list",
+    "tasks show",
     "tasks add",
     "tasks parse",
     "tasks suggest-list",
@@ -56,6 +61,14 @@ const COMMANDS: &[&str] = &[
     "myday remove",
     "myday suggest",
     "myday rollover",
+    "categories list",
+    "categories create",
+    "categories recolor",
+    "categories delete",
+    "extensions list",
+    "extensions get",
+    "extensions set",
+    "extensions delete",
     "search",
     "done",
     "reschedule",
@@ -70,6 +83,8 @@ const COMMANDS: &[&str] = &[
     "daemon start",
     "daemon stop",
     "daemon status",
+    "daemon restart",
+    "daemon logs",
 ];
 
 pub fn schema(words: &[String]) -> Result<Value, CliError> {
@@ -140,9 +155,10 @@ fn input_schema(command: &clap::Command) -> Value {
                 } else {
                     json!({ "enum": values })
                 };
-                let many = arg
-                    .get_num_args()
-                    .is_some_and(|range| range.max_values() > 1);
+                let many = matches!(arg.get_action(), ArgAction::Append)
+                    || arg
+                        .get_num_args()
+                        .is_some_and(|range| range.max_values() > 1);
                 if many {
                     json!({ "type": "array", "items": item })
                 } else {

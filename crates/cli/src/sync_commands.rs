@@ -26,7 +26,7 @@ impl Render for SyncReport {
 }
 
 pub async fn sync(paths: &Paths, wait: bool) -> Result<SyncReport, CliError> {
-    let show = std::io::stderr().is_terminal();
+    let show = std::io::stderr().is_terminal() && !crate::terminal::quiet();
     let mut shown = false;
     let answer = daemon_client::ask_with_events(paths, Request::Sync { wait }, |event| {
         if let Event::SyncProgress(progress) = event

@@ -16,5 +16,8 @@ Options:
       --instance <NAME>  Use a separate copy of ms-todo's data (also MS_TODO_INSTANCE). Builds run from Cargo's target/ directory default to "dev"; "default" is the installed copy
       --out <DIR>        The directory to save into [default: the current directory]
       --force            Replace a file of the same name instead of numbering the new one
+      --fresh            Before reading, sync and wait, so the answer is as fresh as Microsoft To Do's (a read is otherwise answered from the cache)
+      --quiet            Print nothing on stderr but errors: no notes and no progress
+      --no-color         No colour or bold in tables (also NO_COLOR)
   -h, --help             Print help
   -V, --version          Print version

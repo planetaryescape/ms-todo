@@ -15,6 +15,7 @@
 
 mod assignment;
 mod attachments;
+mod catalog;
 mod child_undo;
 mod completed;
 mod doctor;
@@ -24,8 +25,10 @@ mod folders;
 mod freshness;
 mod handlers;
 mod idempotency;
+mod list_lifecycle;
 mod list_resolution;
 mod list_scope;
+mod list_undo;
 mod list_writes;
 mod my_day;
 mod outbox;
@@ -35,7 +38,9 @@ mod server;
 mod suggest;
 mod sync;
 mod task_children;
+mod task_dates;
 mod task_fields;
+mod task_filter;
 mod task_resolution;
 mod task_writes;
 mod undo;

@@ -17,7 +17,12 @@ use crate::handlers::State;
 /// since later operations may have changed them).
 pub(super) fn undo_local(op: &OutboxRow, current: Option<&Entity>) -> Restore {
     match (op.op, current, &op.rollback) {
-        (OpKind::Create, ..) => Restore::Tombstone,
+        (OpKind::Create | OpKind::ListCreate, ..) => Restore::Tombstone,
+        // A list's rollback is the list (and for a delete, its tasks)
+        // before.
+        (OpKind::ListUpdate | OpKind::ListDelete, _, Some(before)) => {
+            Restore::Replace(before.clone())
+        }
         (
             OpKind::Update | OpKind::Extension | OpKind::TaskExtension,
             Some(current),
@@ -98,6 +103,13 @@ pub(super) async fn current_of(
     state: &State,
     op: &OutboxRow,
 ) -> Result<Option<Entity>, StoreError> {
+    if op.op.is_list() && op.op != OpKind::Extension {
+        return Ok(state
+            .store
+            .list_any(&op.entity_local_id)
+            .await?
+            .map(|(list, _)| list.raw));
+    }
     if op.op == OpKind::Extension {
         return Ok(state.store.list(&op.entity_local_id).await?.map(|list| {
             list.extension
@@ -131,7 +143,7 @@ pub(crate) fn announce(state: &State, op: &OutboxRow) {
 /// Tell subscribers that the task, or for a folder write (`kind`
 /// `Extension`) the list, `local_id` changed.
 pub(crate) fn announce_entity(state: &State, kind: OpKind, local_id: String) {
-    if kind == OpKind::Extension {
+    if kind.is_list() {
         state.events.changed(vec![local_id], Vec::new());
     } else {
         state.events.tasks_changed(vec![local_id]);
@@ -142,7 +154,7 @@ pub(crate) fn announce_entity(state: &State, kind: OpKind, local_id: String) {
 /// pass read what it changed whole: its task's list, or for a folder
 /// write every list, since the lists are one scope.
 pub(super) async fn reconcile(state: &State, op: &OutboxRow) {
-    if op.op != OpKind::Extension {
+    if !op.op.is_list() {
         return reconcile_list(state, &op.list_local_id).await;
     }
     if let Err(error) = state.store.reset_scope(LISTS_SCOPE).await {

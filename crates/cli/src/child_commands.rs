@@ -325,7 +325,7 @@ fn warn_unopenable(url: &str, format: OutputFormat) {
     if storable(url.trim()).is_ok()
         && let Err(why) = openable(url.trim())
     {
-        eprintln!("note: kept, but ms-todo won't open it: {why}");
+        crate::terminal::note(&format!("kept, but ms-todo won't open it: {why}"));
     }
 }
 

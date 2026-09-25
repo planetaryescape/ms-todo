@@ -3,6 +3,7 @@
 //! exercise the same behaviour the spikes observed.
 
 pub mod attachments;
+pub mod catalog;
 pub mod children;
 pub mod graph;
 pub mod moves;

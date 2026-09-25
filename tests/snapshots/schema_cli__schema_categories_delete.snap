@@ -1,0 +1,160 @@
+---
+source: tests/schema_cli.rs
+expression: pretty
+---
+{
+  "input": {
+    "additionalProperties": false,
+    "properties": {
+      "category": {
+        "description": "Its name (ignoring case) or ID",
+        "type": "string",
+        "x-cli": "<CATEGORY>"
+      },
+      "dry_run": {
+        "description": "Show what would change without changing anything",
+        "type": "boolean",
+        "x-cli": "--dry-run"
+      },
+      "idempotency_key": {
+        "description": "Run this change at most once: repeating the command with the same key returns the first result for 24 hours, and the same key with a different change exits 2",
+        "type": "string",
+        "x-cli": "--idempotency-key"
+      },
+      "yes": {
+        "description": "Delete without asking",
+        "type": "boolean",
+        "x-cli": "--yes"
+      }
+    },
+    "required": [
+      "category"
+    ],
+    "type": "object"
+  },
+  "output": {
+    "oneOf": [
+      {
+        "properties": {
+          "action": {
+            "enum": [
+              "category_create",
+              "category_recolor",
+              "category_delete",
+              "extension_set",
+              "extension_delete"
+            ]
+          },
+          "items": {
+            "description": "The category or extension as it is now; for a delete, as it was",
+            "items": {
+              "oneOf": [
+                {
+                  "properties": {
+                    "color": {
+                      "description": "preset0 to preset24, or none",
+                      "type": "string"
+                    },
+                    "displayName": {
+                      "description": "Unique ignoring case; Graph can't rename one",
+                      "type": "string"
+                    },
+                    "id": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "displayName",
+                    "color"
+                  ],
+                  "type": "object"
+                },
+                {
+                  "description": "An open extension: its name, Graph's id and annotations, and its own fields beside them",
+                  "properties": {
+                    "extensionName": {
+                      "type": "string"
+                    },
+                    "id": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "extensionName"
+                  ],
+                  "type": "object"
+                }
+              ]
+            },
+            "type": "array"
+          },
+          "list_ids": {
+            "maxItems": 0,
+            "type": "array"
+          },
+          "op_id": {
+            "description": "What `undo` knows the change by",
+            "type": "string"
+          },
+          "schema_version": {
+            "const": 2
+          },
+          "undoes": {
+            "description": "For an undo: the op_id it undoes",
+            "type": "string"
+          }
+        },
+        "required": [
+          "schema_version",
+          "op_id",
+          "action",
+          "items"
+        ],
+        "type": "object"
+      },
+      {
+        "properties": {
+          "action": {
+            "enum": [
+              "category_create",
+              "category_recolor",
+              "category_delete",
+              "extension_set",
+              "extension_delete"
+            ]
+          },
+          "changes": {
+            "properties": {
+              "body": {
+                "description": "What's sent; null for a delete"
+              },
+              "target": {
+                "description": "The category or extension as it is now (a create's: its name)",
+                "type": "object"
+              }
+            },
+            "required": [
+              "target",
+              "body"
+            ],
+            "type": "object"
+          },
+          "dry_run": {
+            "const": true
+          },
+          "schema_version": {
+            "const": 2
+          }
+        },
+        "required": [
+          "schema_version",
+          "dry_run",
+          "action",
+          "changes"
+        ],
+        "type": "object"
+      }
+    ]
+  }
+}

@@ -240,7 +240,11 @@ pub(crate) async fn download(
         let name = item["name"].as_str().unwrap_or("attachment").to_owned();
         let bytes = state
             .graph
-            .download_attachment(&target.list.graph_id, &task_graph_id, &id)
+            .download_attachment(
+                target.list.graph_id.as_deref().unwrap_or_default(),
+                &task_graph_id,
+                &id,
+            )
             .await
             .map_err(graph_error)?;
         let count = bytes.len() as u64;
@@ -283,7 +287,11 @@ async fn attachments_of(
     }
     let listed = state
         .graph
-        .list_attachments(&target.list.graph_id, task_graph_id)
+        .list_attachments(
+            // A task Graph has is in a list Graph has.
+            target.list.graph_id.as_deref().unwrap_or_default(),
+            task_graph_id,
+        )
         .await
         .map_err(graph_error)?;
     Ok(listed.into_iter().map(Value::Object).collect())

@@ -93,4 +93,11 @@ pub enum Action {
     Attach,
     /// `W`: who the selection, or the task under the cursor, waits on.
     Assign,
+    /// "New list…" in the palette.
+    NewList,
+    /// "Rename list…": the list under the sidebar's cursor, or the one
+    /// shown.
+    RenameList,
+    /// "Delete list…", after an inline confirmation.
+    DeleteList,
 }

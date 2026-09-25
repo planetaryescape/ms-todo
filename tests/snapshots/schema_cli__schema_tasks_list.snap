@@ -11,8 +11,33 @@ expression: pretty
         "type": "string",
         "x-cli": "--assignee"
       },
+      "category": {
+        "description": "Only tasks with this category (ignoring case)",
+        "type": "string",
+        "x-cli": "--category"
+      },
+      "completed": {
+        "description": "Only completed tasks, as --status completed",
+        "type": "boolean",
+        "x-cli": "--completed"
+      },
+      "due": {
+        "description": "Only tasks due: today, overdue (open and due before today), none, any, \"before fri\", \"after 12 oct\", or on a day (tomorrow, 2026-10-02)",
+        "type": "string",
+        "x-cli": "--due"
+      },
+      "importance": {
+        "description": "Only tasks of this importance: high, normal or low (or 1–4, p1–p4)",
+        "type": "string",
+        "x-cli": "--importance"
+      },
+      "limit": {
+        "description": "At most this many, after sorting",
+        "type": "string",
+        "x-cli": "--limit"
+      },
       "list": {
-        "description": "The list's exact name or its ID [default: the \"Tasks\" list]",
+        "description": "The list's exact name or its ID [default: the \"Tasks\" list, or with --status, --due, --importance or --category, every list]",
         "type": "string",
         "x-cli": "--list"
       },
@@ -25,6 +50,30 @@ expression: pretty
         "description": "Only tasks whose title or notes match, best match first; the syntax is `search`'s",
         "type": "string",
         "x-cli": "--search"
+      },
+      "sort": {
+        "description": "Order by: due (soonest first, none last), importance (high first), created or modified (newest first), title [default: the list's order; every list's is by due date]",
+        "enum": [
+          "due",
+          "importance",
+          "created",
+          "modified",
+          "title"
+        ],
+        "x-cli": "--sort"
+      },
+      "status": {
+        "description": "Only tasks with this status",
+        "enum": [
+          "open",
+          "completed",
+          "all",
+          "not-started",
+          "in-progress",
+          "waiting",
+          "deferred"
+        ],
+        "x-cli": "--status"
       }
     },
     "required": [],
@@ -88,6 +137,10 @@ expression: pretty
               "type": "boolean"
             },
             "lastModifiedDateTime": {
+              "type": "string"
+            },
+            "list": {
+              "description": "The name of the task's list: only with --assignee, or a filter (--status, --due, --importance, --category) and no --list",
               "type": "string"
             },
             "list_id": {

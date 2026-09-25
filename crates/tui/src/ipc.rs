@@ -174,7 +174,7 @@ fn result(response: Response) -> Result<ResponseData, ErrorPayload> {
 /// been made, so it says to check rather than to retry.
 fn lost(tag: Tag, why: &str) -> Msg {
     let message = match tag {
-        Tag::Write(_) | Tag::Folders | Tag::Undo => {
+        Tag::Write(_) | Tag::Folders | Tag::Lists | Tag::Undo => {
             format!("{why}; the change may or may not have been made, so check before trying again")
         }
         Tag::Seed(_)

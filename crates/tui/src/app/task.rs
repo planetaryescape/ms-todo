@@ -265,7 +265,7 @@ impl Task {
 
 /// Graph's `patternedRecurrence` in a few words: "daily", "every 2 weeks
 /// on Mon, Thu", "monthly on day 1".
-fn describe_recurrence(recurrence: &Value) -> Option<String> {
+pub fn describe_recurrence(recurrence: &Value) -> Option<String> {
     let pattern = recurrence.get("pattern")?;
     let kind = pattern.get("type")?.as_str()?;
     let interval = pattern.get("interval").and_then(Value::as_u64).unwrap_or(1);

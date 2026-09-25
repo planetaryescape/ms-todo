@@ -114,6 +114,8 @@ pub(crate) async fn discard(state: &State, op_id: &str) -> Result<ResponseData, 
         (_, OpKind::Move) => move_job::discard(state, &op).await?,
         (OpState::Pending, _) => (undo_local(&op, current.as_ref()), false),
         (OpState::Unknown, OpKind::Create) => (Restore::Tombstone, false),
+        // Graph may have made the list: the lists are read whole next.
+        (OpState::Unknown, OpKind::ListCreate) => (Restore::Tombstone, true),
         // Graph may have the step or link: it arrives by the read, with
         // Graph's ID, and ms-todo's copy goes now.
         (OpState::Unknown, OpKind::Child) => (undo_local(&op, current.as_ref()), true),
@@ -173,6 +175,19 @@ async fn redo_local(state: &State, op: &OutboxRow) -> Result<Restore, ErrorPaylo
         }
         // `retry` asks `move_job` before it gets here.
         OpKind::Move => Restore::Nothing,
+        OpKind::ListCreate | OpKind::ListUpdate | OpKind::ListDelete => {
+            return Err(error_payload(
+                ErrorKind::InvalidInput,
+                format!(
+                    "Microsoft To Do refused operation {} ({}); run the `lists` command again \
+                     rather than retrying it, or discard it",
+                    op.op_id, op.action
+                ),
+            ));
+        }
+        OpKind::Remote => {
+            return Err(already_done(op));
+        }
     })
 }
 

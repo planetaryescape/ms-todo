@@ -127,3 +127,98 @@ pub async fn stop(paths: &Paths) -> Result<DaemonStopped, CliError> {
 pub async fn status(paths: &Paths) -> DaemonState {
     DaemonState::new(paths, daemon_client::inspect(paths).await)
 }
+
+/// `daemon restart`: stop it if it runs, then start it and wait until
+/// it's ready.
+pub async fn restart(paths: &Paths) -> Result<DaemonState, CliError> {
+    daemon_client::stop(paths).await?;
+    start(paths).await
+}
+
+/// `daemon logs [--follow]`: the daemon's log file as it is, then with
+/// `--follow` each line added to it until interrupted. JSON is `{ path,
+/// lines }`; JSON lines, or following, one `{ line }` per line.
+pub async fn logs(
+    paths: &Paths,
+    follow: bool,
+    format: crate::output::OutputFormat,
+) -> Result<(), CliError> {
+    use std::io::Write;
+
+    use crate::output::{OutputFormat, SCHEMA_VERSION, Versioned, print_json};
+
+    let path = paths.daemon_log_file();
+    let text = match std::fs::read(&path) {
+        Ok(bytes) => String::from_utf8_lossy(&bytes).into_owned(),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => String::new(),
+        Err(error) => return Err(error.into()),
+    };
+    let lines: Vec<&str> = text.lines().collect();
+    let print_lines = |lines: &[&str]| -> Result<(), CliError> {
+        let mut stdout = std::io::stdout().lock();
+        for line in lines {
+            if format == OutputFormat::Jsonl || (follow && format == OutputFormat::Json) {
+                writeln!(stdout, "{}", serde_json::json!({ "line": line }))?;
+            } else {
+                writeln!(stdout, "{line}")?;
+            }
+        }
+        stdout.flush()?;
+        Ok(())
+    };
+    if format == OutputFormat::Json && !follow {
+        #[derive(Serialize)]
+        struct Logs<'a> {
+            path: String,
+            lines: &'a [&'a str],
+        }
+        return print_json(
+            format,
+            &Versioned {
+                schema_version: SCHEMA_VERSION,
+                inner: &Logs {
+                    path: path.display().to_string(),
+                    lines: &lines,
+                },
+            },
+        );
+    }
+    print_lines(&lines)?;
+    if !follow {
+        return Ok(());
+    }
+    // Polled rather than watched: a log grows a line at a time, and this
+    // runs until interrupted.
+    let mut offset = u64::try_from(text.len()).unwrap_or(u64::MAX);
+    let mut partial = String::new();
+    loop {
+        tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+        let Ok(length) = std::fs::metadata(&path).map(|file| file.len()) else {
+            continue;
+        };
+        if length < offset {
+            // Started again from nothing: read it from the top.
+            offset = 0;
+            partial.clear();
+        }
+        if length == offset {
+            continue;
+        }
+        // Only what was added since the last read.
+        let mut added = Vec::new();
+        let read = std::fs::File::open(&path).and_then(|mut file| {
+            use std::io::{Read, Seek, SeekFrom};
+            file.seek(SeekFrom::Start(offset))?;
+            file.read_to_end(&mut added)
+        });
+        if read.is_err() {
+            continue;
+        }
+        offset += u64::try_from(added.len()).unwrap_or(0);
+        partial.push_str(&String::from_utf8_lossy(&added));
+        if let Some(end) = partial.rfind('\n') {
+            let complete: String = partial.drain(..=end).collect();
+            print_lines(&complete.lines().collect::<Vec<_>>())?;
+        }
+    }
+}

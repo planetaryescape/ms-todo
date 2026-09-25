@@ -16,20 +16,48 @@ expression: pretty
         "type": "string",
         "x-cli": "--body"
       },
+      "body_file": {
+        "description": "New notes from a file, as plain text; `-` reads stdin",
+        "type": "string",
+        "x-cli": "--body-file"
+      },
+      "categories": {
+        "description": "Its categories, replacing those it has; several give several",
+        "items": {
+          "type": "string"
+        },
+        "type": "array",
+        "x-cli": "--category"
+      },
       "clear_assignee": {
         "description": "Remove the assignee. A task ms-todo made \"waiting on others\" is \"not started\" again, unless its status has changed since",
         "type": "boolean",
         "x-cli": "--clear-assignee"
+      },
+      "clear_categories": {
+        "description": "Remove every category",
+        "type": "boolean",
+        "x-cli": "--clear-categories"
       },
       "clear_due": {
         "description": "Remove the due date",
         "type": "boolean",
         "x-cli": "--clear-due"
       },
+      "clear_recur": {
+        "description": "Stop it repeating. Its due date stays",
+        "type": "boolean",
+        "x-cli": "--clear-recur"
+      },
       "clear_reminder": {
         "description": "Turn the reminder off",
         "type": "boolean",
         "x-cli": "--clear-reminder"
+      },
+      "clear_start": {
+        "description": "Remove the start date",
+        "type": "boolean",
+        "x-cli": "--clear-start"
       },
       "dry_run": {
         "description": "Show what would change without changing anything",
@@ -76,10 +104,20 @@ expression: pretty
         "type": "boolean",
         "x-cli": "--overdue"
       },
+      "recur": {
+        "description": "Make it repeat: every mon, every 2 weeks on tue, thu, every month on the 1st, weekday, daily. The due date becomes its first time: --due, or the next day it falls on from today",
+        "type": "string",
+        "x-cli": "--recur"
+      },
       "reminder": {
         "description": "Remind me at this local time, in the forms --reminder takes on `tasks add`; empty or `-` turns it off",
         "type": "string",
         "x-cli": "--reminder"
+      },
+      "start": {
+        "description": "New start date, in the forms --due takes; empty or `-` removes it. The task's due date is sent with it, or with none, the start date becomes the due date too, as Microsoft To Do makes it",
+        "type": "string",
+        "x-cli": "--start"
       },
       "task": {
         "description": "The task's ID from `tasks list`, or its exact title when --list is given. Several change together; `-` reads IDs from stdin, one per line",

@@ -9,7 +9,7 @@ use ms_todo_core::{DATE_FORMAT, REMINDER_FORMAT};
 use ms_todo_nlp::{
     NotUnderstood, ParseContext, Reading, read_due, read_importance, read_past_date, read_reminder,
 };
-use ms_todo_protocol::{Clearable, Importance};
+use ms_todo_protocol::{Clearable, DueFilter, Importance};
 
 pub(crate) fn now() -> ParseContext {
     ParseContext::new(Local::now().fixed_offset())
@@ -38,6 +38,36 @@ pub fn day(value: &str) -> Result<String, NotUnderstood> {
 /// latest Monday and `12 sep` the latest 12 September.
 pub fn past_day(value: &str) -> Result<String, NotUnderstood> {
     read_past_date(value, &now()).map(|day| day.format(DATE_FORMAT).to_string())
+}
+
+/// `tasks list --due`: `today`, `overdue`, `none`, `any`, `before W`,
+/// `after W`, or a day W on its own, W read as `--due` reads it.
+pub fn due_filter(value: &str) -> Result<DueFilter, NotUnderstood> {
+    let text = value
+        .split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ")
+        .to_lowercase();
+    Ok(match text.as_str() {
+        "today" | "tod" => DueFilter::Today,
+        "overdue" => DueFilter::Overdue,
+        "none" => DueFilter::None,
+        "any" => DueFilter::Any,
+        _ => {
+            if let Some(day) = text.strip_prefix("before ") {
+                DueFilter::Before(self::day(day)?)
+            } else if let Some(day) = text.strip_prefix("after ") {
+                DueFilter::After(self::day(day)?)
+            } else {
+                DueFilter::On(self::day(&text).map_err(|_| {
+                    NotUnderstood(format!(
+                        "didn't understand \"{text}\": use today, overdue, none, any, \
+                         \"before <day>\", \"after <day>\" or a day"
+                    ))
+                })?)
+            }
+        }
+    })
 }
 
 /// The local day `days` from today (negative: before), as `YYYY-MM-DD`:

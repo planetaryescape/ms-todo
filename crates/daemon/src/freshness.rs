@@ -39,6 +39,33 @@ pub(crate) async fn read_state(state: &State, scope: &str) -> Result<SyncInfo, E
     }
 }
 
+/// The sync state a read of `list`'s tasks answers with. A list Graph
+/// doesn't have yet has nothing to sync: what's cached is all there is.
+pub(crate) async fn list_read_state(
+    state: &State,
+    list: &crate::list_resolution::ListRef,
+) -> Result<SyncInfo, ErrorPayload> {
+    match list.scope() {
+        Some(scope) => read_state(state, &scope).await,
+        None => Ok(SyncInfo {
+            state: SyncState::Ready,
+            generation: 0,
+        }),
+    }
+}
+
+/// Wait until `list`'s tasks have synced once (at once for a list Graph
+/// doesn't have yet).
+pub(crate) async fn ensure_list_ready(
+    state: &State,
+    list: &crate::list_resolution::ListRef,
+) -> Result<(), ErrorPayload> {
+    match list.scope() {
+        Some(scope) => ensure_ready(state, &scope).await,
+        None => Ok(()),
+    }
+}
+
 /// Wait until `scope` has synced once, running a sync if none is running.
 pub(crate) async fn ensure_ready(state: &State, scope: &str) -> Result<(), ErrorPayload> {
     if ready(state, scope).await?.is_some() {

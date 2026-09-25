@@ -63,12 +63,14 @@ pub(crate) async fn handle(state: &State, request: Request) -> Response {
             list,
             search,
             assignee,
+            filter,
         } => {
             list_tasks(
                 state,
                 list.as_deref(),
                 search.as_deref(),
                 assignee.as_deref(),
+                &filter,
             )
             .await
         }
@@ -113,6 +115,8 @@ pub(crate) async fn handle(state: &State, request: Request) -> Response {
         request @ (Request::AddTask { .. }
         | Request::ChangeTasks { .. }
         | Request::ChangeLists { .. }
+        | Request::ChangeCategory { .. }
+        | Request::ChangeExtension { .. }
         | Request::Undo { .. }) => mutate(state, request).await,
         Request::Seed { scope, search } => crate::seed::seed(state, scope, search.as_deref()).await,
         // The connection loop answers `Subscribe` itself, and starts the
@@ -160,6 +164,11 @@ pub(crate) async fn handle(state: &State, request: Request) -> Response {
         },
         // The connection loop answers `Shutdown` itself, before stopping.
         Request::Shutdown => Ok(ResponseData::Ack),
+        Request::ListCategories => crate::catalog::list_categories(state).await,
+        Request::ListExtensions { owner } => crate::catalog::list_extensions(state, &owner).await,
+        Request::GetExtension { owner, name } => {
+            crate::catalog::get_extension(state, &owner, &name).await
+        }
         Request::Unknown => Err(error_payload(
             ErrorKind::Unsupported,
             "this daemon doesn't know that request; restart it with `ms-todo daemon stop`".into(),
@@ -213,6 +222,30 @@ async fn mutate(state: &State, request: Request) -> Result<ResponseData, ErrorPa
             let op_id = op_id.unwrap_or_else(new_op_id);
             let key = idempotency_key.filter(|_| !dry_run);
             let operation = change_lists(state, change, dry_run, op_id.clone());
+            run_once(state, key.as_deref(), &fingerprint, &op_id, operation).await
+        }
+        Request::ChangeCategory {
+            change,
+            dry_run,
+            op_id,
+            idempotency_key,
+        } => {
+            let op_id = op_id.unwrap_or_else(new_op_id);
+            let key = idempotency_key.filter(|_| !dry_run);
+            let operation = crate::catalog::change_category(state, change, dry_run, op_id.clone());
+            run_once(state, key.as_deref(), &fingerprint, &op_id, operation).await
+        }
+        Request::ChangeExtension {
+            owner,
+            change,
+            dry_run,
+            op_id,
+            idempotency_key,
+        } => {
+            let op_id = op_id.unwrap_or_else(new_op_id);
+            let key = idempotency_key.filter(|_| !dry_run);
+            let operation =
+                crate::catalog::change_extension(state, &owner, change, dry_run, op_id.clone());
             run_once(state, key.as_deref(), &fingerprint, &op_id, operation).await
         }
         Request::Undo {

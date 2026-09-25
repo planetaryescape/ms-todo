@@ -27,11 +27,20 @@ Options:
       --instance <NAME>
           Use a separate copy of ms-todo's data (also MS_TODO_INSTANCE). Builds run from Cargo's target/ directory default to "dev"; "default" is the installed copy
 
+      --fresh
+          Before reading, sync and wait, so the answer is as fresh as Microsoft To Do's (a read is otherwise answered from the cache)
+
       --list <NAME|ID>
           The list's exact name or its ID, over any #List in the text [default: the "Tasks" list]
 
       --due <WHEN>
           Due date, over any in the text: 2026-10-02, today, tomorrow, fri, next mon, in 3 days, +2w, 12 oct, 12/10 (day first), end of month. Due dates have no time; put a time in --reminder
+
+      --quiet
+          Print nothing on stderr but errors: no notes and no progress
+
+      --no-color
+          No colour or bold in tables (also NO_COLOR)
 
       --reminder <WHEN>
           Remind me at this local time, over any in the text: 17:30 (the next one), tomorrow 9am, fri 5:30pm, 2026-10-02 09:30. A day alone, such as tomorrow or in 2 days, is 09:00 on it
@@ -41,6 +50,21 @@ Options:
 
       --body <TEXT>
           Notes, as plain text
+
+      --body-file <FILE>
+          Notes from a file, as plain text; `-` reads stdin
+
+      --start <WHEN>
+          Start date, over any `start <date>` in the text, in the forms --due takes. With no due date, Microsoft To Do makes it the due date too
+
+      --category <NAME>
+          A category (an Outlook category's name); several give several. Over any @category in the text
+
+      --recur <EVERY>
+          Repeat it, over any `every …` in the text: every mon, every 2 weeks on tue, thu, every month on the 1st, weekday, daily. It's first due on --due, or the next day it falls on
+
+      --strict
+          Refuse (exit 2) text the parser warns about, such as an unknown #List, instead of adding the task with a note
 
       --my-day
           Put it in today's My Day, as +myday or * in the text does. With no due date, it's due today too

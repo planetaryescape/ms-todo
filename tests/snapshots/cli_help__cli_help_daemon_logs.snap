@@ -1,0 +1,17 @@
+---
+source: tests/cli_help.rs
+expression: help_output(args)
+---
+Print the daemon's log
+
+Usage: ms-todo daemon logs [OPTIONS]
+
+Options:
+      --follow           Keep printing what's added to it, until interrupted
+      --format <FORMAT>  Output format: jsonl is one object per line, ids one ID per line, csv has a header row [default: table in a terminal, json when piped] [possible values: table, json, jsonl, ids, csv]
+      --instance <NAME>  Use a separate copy of ms-todo's data (also MS_TODO_INSTANCE). Builds run from Cargo's target/ directory default to "dev"; "default" is the installed copy
+      --fresh            Before reading, sync and wait, so the answer is as fresh as Microsoft To Do's (a read is otherwise answered from the cache)
+      --quiet            Print nothing on stderr but errors: no notes and no progress
+      --no-color         No colour or bold in tables (also NO_COLOR)
+  -h, --help             Print help
+  -V, --version          Print version

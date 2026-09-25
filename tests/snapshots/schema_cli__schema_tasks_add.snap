@@ -16,6 +16,19 @@ expression: pretty
         "type": "string",
         "x-cli": "--body"
       },
+      "body_file": {
+        "description": "Notes from a file, as plain text; `-` reads stdin",
+        "type": "string",
+        "x-cli": "--body-file"
+      },
+      "categories": {
+        "description": "A category (an Outlook category's name); several give several. Over any @category in the text",
+        "items": {
+          "type": "string"
+        },
+        "type": "array",
+        "x-cli": "--category"
+      },
       "create_categories": {
         "description": "Create an @category that isn't one of your Outlook categories yet. Without it the task still gets the name, which Outlook shows without a colour",
         "type": "boolean",
@@ -61,10 +74,25 @@ expression: pretty
         "type": "boolean",
         "x-cli": "--no-parse"
       },
+      "recur": {
+        "description": "Repeat it, over any `every …` in the text: every mon, every 2 weeks on tue, thu, every month on the 1st, weekday, daily. It's first due on --due, or the next day it falls on",
+        "type": "string",
+        "x-cli": "--recur"
+      },
       "reminder": {
         "description": "Remind me at this local time, over any in the text: 17:30 (the next one), tomorrow 9am, fri 5:30pm, 2026-10-02 09:30. A day alone, such as tomorrow or in 2 days, is 09:00 on it",
         "type": "string",
         "x-cli": "--reminder"
+      },
+      "start": {
+        "description": "Start date, over any `start <date>` in the text, in the forms --due takes. With no due date, Microsoft To Do makes it the due date too",
+        "type": "string",
+        "x-cli": "--start"
+      },
+      "strict": {
+        "description": "Refuse (exit 2) text the parser warns about, such as an unknown #List, instead of adding the task with a note",
+        "type": "boolean",
+        "x-cli": "--strict"
       },
       "text": {
         "description": "The task, as you'd say it. Read out of it: #List or #\"Two words\" (its name or a prefix only it has), @category, p1–p4, every … (a recurrence), !time-or-date (a reminder), start <date>, and a date and time (the due date; a time also sets a reminder then). \"Quoted text\" and \\# \\@ \\! stay as typed. What's left is the title",

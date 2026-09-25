@@ -21,6 +21,7 @@ mod attachment_write;
 mod child_write;
 mod commands;
 mod extension_write;
+mod list_write;
 pub(crate) mod move_job;
 mod rollback;
 mod send;

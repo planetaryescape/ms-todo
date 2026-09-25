@@ -6,7 +6,7 @@
 
 use ms_todo_core::ErrorKind;
 use ms_todo_protocol::{Candidate, ErrorPayload, TaskSelect};
-use ms_todo_store::{LISTS_SCOPE, ListRow, TaskRow, View, tasks_scope};
+use ms_todo_store::{LISTS_SCOPE, ListRow, TaskRow, View};
 
 use crate::freshness::{all_ready, ensure_ready};
 use crate::handlers::{State, error_payload, store_error};
@@ -85,7 +85,7 @@ async fn resolve_in_list(
     names: &[String],
     list: &ListRef,
 ) -> Result<Vec<Target>, ErrorPayload> {
-    ensure_ready(state, &tasks_scope(&list.graph_id)).await?;
+    crate::freshness::ensure_list_ready(state, list).await?;
     let tasks = state
         .store
         .tasks_in_list(&list.local_id)

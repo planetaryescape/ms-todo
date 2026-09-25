@@ -8,6 +8,7 @@ mod dates;
 mod importance;
 mod quick_add;
 mod recurrence;
+mod recurrence_phrase;
 
 pub use dates::{
     DueSpec, Lean, NotUnderstood, ParseContext, Reading, read_due, read_past_date, read_reminder,
@@ -19,3 +20,4 @@ pub use quick_add::{
     list_token,
 };
 pub use recurrence::{Pattern, Recurrence, RecurrenceEnd, WeekIndex};
+pub use recurrence_phrase::read_recurrence;

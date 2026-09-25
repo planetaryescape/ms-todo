@@ -16,6 +16,8 @@ Commands:
   steps        A task's steps: list, add, rename, check, uncheck and delete them. A step is named by its number from 1 (as `steps list` shows them), its ID, or its exact text
   links        A task's link (its linked resource): list, add, change or delete it. Microsoft To Do allows one per task; `tasks links` also lists the URLs in the notes
   attachments  A task's files: list, attach, download and delete them. An attachment is named by its number from 1 (as `attachments list` shows them), its ID, or its exact name. Files go by path: the daemon reads and writes them
+  categories   Your Outlook categories: list, create, recolour and delete them. Microsoft To Do can't rename one; the iPhone app shows none
+  extensions   Open extensions on a list or task: data other apps (or you) keep there. ms-todo's own, com.planetaryescape.mstodo, can be read but not written here
   search       Find tasks by the words in their title or notes, in every list, best match first
   done         What you completed, by day, newest first: for a standup or a weekly review. Microsoft To Do keeps the day of a completion, not its time
   reschedule   Move open tasks to a new due date: the overdue ones, those due before a day, or the ones named. One `undo` puts them all back
@@ -32,5 +34,8 @@ Commands:
 Options:
       --format <FORMAT>  Output format: jsonl is one object per line, ids one ID per line, csv has a header row [default: table in a terminal, json when piped] [possible values: table, json, jsonl, ids, csv]
       --instance <NAME>  Use a separate copy of ms-todo's data (also MS_TODO_INSTANCE). Builds run from Cargo's target/ directory default to "dev"; "default" is the installed copy
+      --fresh            Before reading, sync and wait, so the answer is as fresh as Microsoft To Do's (a read is otherwise answered from the cache)
+      --quiet            Print nothing on stderr but errors: no notes and no progress
+      --no-color         No colour or bold in tables (also NO_COLOR)
   -h, --help             Print help
   -V, --version          Print version

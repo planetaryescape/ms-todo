@@ -56,6 +56,10 @@ pub struct Data {
     pub attachments: HashMap<String, Vec<crate::attachments::Attachment>>,
     /// Upload sessions by ID.
     pub(crate) sessions: HashMap<String, crate::attachments::Session>,
+    /// Outlook categories (see `catalog`).
+    pub categories: Vec<Value>,
+    /// Open extensions other than ms-todo's (see `catalog`).
+    pub named_extensions: crate::catalog::NamedExtensions,
 }
 
 impl Data {

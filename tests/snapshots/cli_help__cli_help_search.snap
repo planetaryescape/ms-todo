@@ -32,10 +32,19 @@ Options:
 
           [default: open]
 
+      --fresh
+          Before reading, sync and wait, so the answer is as fresh as Microsoft To Do's (a read is otherwise answered from the cache)
+
       --limit <N>
           At most this many results
 
           [default: 50]
+
+      --quiet
+          Print nothing on stderr but errors: no notes and no progress
+
+      --no-color
+          No colour or bold in tables (also NO_COLOR)
 
   -h, --help
           Print help (see a summary with '-h')

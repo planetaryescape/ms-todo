@@ -43,6 +43,9 @@ expression: pretty
               "rename_folder",
               "delete_folder",
               "order_folder",
+              "create_list",
+              "rename_list",
+              "delete_list",
               "undo"
             ]
           },
@@ -145,7 +148,10 @@ expression: pretty
               "order_list",
               "rename_folder",
               "delete_folder",
-              "order_folder"
+              "order_folder",
+              "create_list",
+              "rename_list",
+              "delete_list"
             ]
           },
           "changes": {
@@ -159,7 +165,7 @@ expression: pretty
             "items": {
               "properties": {
                 "changes": {
-                  "description": "The fields of ms-todo's extension it gets: folder, order, folderOrder; null removes one",
+                  "description": "A folder change: the fields of ms-todo's extension it gets (folder, order, folderOrder; null removes one). A create: displayName and folder. A rename: displayName. A delete: deleted, tasks (how many go with it) and undoable",
                   "type": "object"
                 },
                 "id": {

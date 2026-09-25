@@ -2,7 +2,7 @@
 source: tests/cli_help.rs
 expression: help_output(args)
 ---
-Change a task's title, due date, importance, reminder, notes or assignee; or the due date, importance, reminder or assignee of several tasks at once
+Change a task's title, dates, importance, reminder, notes, recurrence, categories or assignee; or the dates, importance, reminder, recurrence, categories or assignee of several at once
 
 Usage: ms-todo tasks edit [OPTIONS] [TASK]...
 
@@ -15,7 +15,10 @@ Options:
       --due-before <WHEN>      Every open task due before this day: fri, next mon, +1w, 2026-10-02
       --instance <NAME>        Use a separate copy of ms-todo's data (also MS_TODO_INSTANCE). Builds run from Cargo's target/ directory default to "dev"; "default" is the installed copy
       --folder <FOLDER>        With --overdue or --due-before: only the lists in this folder
+      --fresh                  Before reading, sync and wait, so the answer is as fresh as Microsoft To Do's (a read is otherwise answered from the cache)
       --list <NAME|ID>         Look for the task in this list (exact name or ID), which also lets TASK be an exact title
+      --quiet                  Print nothing on stderr but errors: no notes and no progress
+      --no-color               No colour or bold in tables (also NO_COLOR)
       --title <TITLE>          New title, taken literally
       --due <WHEN>             New due date, in the forms --due takes on `tasks add`; empty or `-` removes it, as --clear-due does
       --clear-due              Remove the due date
@@ -23,6 +26,13 @@ Options:
       --reminder <WHEN>        Remind me at this local time, in the forms --reminder takes on `tasks add`; empty or `-` turns it off
       --clear-reminder         Turn the reminder off
       --body <TEXT>            New notes, as plain text. They replace the old ones
+      --body-file <FILE>       New notes from a file, as plain text; `-` reads stdin
+      --start <WHEN>           New start date, in the forms --due takes; empty or `-` removes it. The task's due date is sent with it, or with none, the start date becomes the due date too, as Microsoft To Do makes it
+      --clear-start            Remove the start date
+      --recur <EVERY>          Make it repeat: every mon, every 2 weeks on tue, thu, every month on the 1st, weekday, daily. The due date becomes its first time: --due, or the next day it falls on from today
+      --clear-recur            Stop it repeating. Its due date stays
+      --category <NAME>        Its categories, replacing those it has; several give several
+      --clear-categories       Remove every category
       --assignee <PERSON>      Who it waits on: a name or an email, only ms-todo sees it and nobody is told. An open task becomes "waiting on others" too, which the To Do app shows
       --clear-assignee         Remove the assignee. A task ms-todo made "waiting on others" is "not started" again, unless its status has changed since
       --keep-status            With --assignee or --clear-assignee: leave the status as it is

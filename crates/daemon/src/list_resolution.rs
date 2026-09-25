@@ -12,22 +12,28 @@ use crate::handlers::error_payload as error;
 /// Graph's `wellknownListName` for the built-in "Tasks" list.
 const DEFAULT_LIST: &str = "defaultList";
 
-/// A cached list that Graph knows.
+/// A cached list.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) struct ListRef {
     pub local_id: String,
-    pub graph_id: String,
+    /// `None` for a list made here that Graph doesn't have yet (rung 8e):
+    /// its create is still in the outbox.
+    pub graph_id: Option<String>,
     pub name: String,
 }
 
 impl ListRef {
-    /// `None` for a list Graph doesn't know yet.
     pub fn of(row: &ListRow) -> Option<Self> {
         Some(Self {
             local_id: row.local_id.clone(),
-            graph_id: row.graph_id.clone()?,
+            graph_id: row.graph_id.clone(),
             name: row.display_name.clone(),
         })
+    }
+
+    /// Its tasks' sync scope, once Graph has the list.
+    pub fn scope(&self) -> Option<String> {
+        self.graph_id.as_deref().map(ms_todo_store::tasks_scope)
     }
 
     pub fn candidate(&self) -> Candidate {
@@ -58,7 +64,7 @@ pub(crate) fn resolve_list(
     let refs: Vec<ListRef> = lists.iter().filter_map(ListRef::of).collect();
     if let Some(by_id) = refs
         .iter()
-        .find(|list| list.local_id == wanted || list.graph_id == wanted)
+        .find(|list| list.local_id == wanted || list.graph_id.as_deref() == Some(wanted))
     {
         return Ok(by_id.clone());
     }
@@ -119,7 +125,10 @@ mod tests {
     #[test]
     fn a_unique_exact_name_resolves() {
         assert_eq!(
-            resolve_list(&lists(), Some("Work")).expect("work").graph_id,
+            resolve_list(&lists(), Some("Work"))
+                .expect("work")
+                .graph_id
+                .expect("id"),
             "L-work"
         );
     }
@@ -127,7 +136,10 @@ mod tests {
     #[test]
     fn a_local_or_graph_id_resolves_even_when_it_is_not_a_name() {
         assert_eq!(
-            resolve_list(&lists(), Some("l-b")).expect("local").graph_id,
+            resolve_list(&lists(), Some("l-b"))
+                .expect("local")
+                .graph_id
+                .expect("id"),
             "L-b"
         );
         assert_eq!(

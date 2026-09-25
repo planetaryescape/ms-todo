@@ -282,6 +282,19 @@ pub(crate) async fn list_in(
     record.map(ListRow::try_from).transpose()
 }
 
+/// The list `local_id`, tombstoned or not, read in `connection`.
+pub(crate) async fn list_including_deleted(
+    connection: &mut SqliteConnection,
+    local_id: &str,
+) -> Result<Option<ListRow>, StoreError> {
+    let record: Option<ListRecord> =
+        sqlx::query_as(AssertSqlSafe(select_lists("WHERE local_id = ?")))
+            .bind(local_id)
+            .fetch_optional(connection)
+            .await?;
+    record.map(ListRow::try_from).transpose()
+}
+
 /// Tombstone a list and its tasks not written since `rev`, and drop its
 /// tasks scope, cursor and all: a deleted list's tasks delta keeps
 /// answering 200 with nothing (S4), so it would never say so itself.

@@ -138,7 +138,11 @@ pub async fn order_folder(
     send(paths, request, format).await
 }
 
-fn change_request(change: ListChange, dry_run: bool, idempotency_key: Option<String>) -> Request {
+pub(crate) fn change_request(
+    change: ListChange,
+    dry_run: bool,
+    idempotency_key: Option<String>,
+) -> Request {
     Request::ChangeLists {
         change,
         dry_run,

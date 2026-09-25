@@ -1,12 +1,13 @@
 use bytes::BytesMut;
 use ms_todo_protocol::{
-    Anchor, Applied, Candidate, Clearable, Codec, Counts, DaemonStatus, DoctorReport,
-    EntityChanged, ErrorPayload, Event, Folder, Importance, ListChange, ListSuggestion, Message,
-    MyDay, MyDaySeed, MyDayStatus, NewTask, OpError, OutboxDepth, OutboxOp, OutboxState,
-    PROTOCOL_VERSION, Payload, Plan, PlannedList, PlannedTask, RawWriteMethod, Refused, Request,
-    Response, ResponseData, Rolled, Scope, ScopeError, ScopeStatus, SearchStatus, Seed,
-    SuggestStatus, SyncActivity, SyncInfo, SyncMode, SyncProgress, SyncReport, SyncState,
-    TaskAction, TaskChange, TaskEdit, TaskSelect, WriteRejected,
+    Anchor, Applied, Candidate, CategoryChange, Clearable, Codec, Counts, DaemonStatus,
+    DoctorReport, DueFilter, EntityChanged, ErrorPayload, Event, ExtensionChange, ExtensionOwner,
+    Folder, Importance, ListChange, ListSuggestion, Message, MyDay, MyDaySeed, MyDayStatus,
+    NewTask, OpError, OutboxDepth, OutboxOp, OutboxState, OwnerKind, PROTOCOL_VERSION, Payload,
+    Plan, PlannedList, PlannedTask, RawWriteMethod, Refused, Request, Response, ResponseData,
+    Rolled, Scope, ScopeError, ScopeStatus, SearchStatus, Seed, StatusFilter, SuggestStatus,
+    SyncActivity, SyncInfo, SyncMode, SyncProgress, SyncReport, SyncState, TaskAction, TaskChange,
+    TaskEdit, TaskFilter, TaskSelect, TaskSort, WriteRejected,
 };
 use serde_json::json;
 use tokio_util::codec::{Decoder, Encoder};
@@ -48,11 +49,52 @@ fn every_request_and_response_round_trips() {
             list: None,
             search: None,
             assignee: None,
+            filter: TaskFilter::default(),
         }),
         Payload::Request(Request::ListTasks {
             list: Some("Groceries".into()),
             search: Some("milk".into()),
             assignee: Some("Sam".into()),
+            filter: TaskFilter {
+                status: Some(StatusFilter::Open),
+                due: Some(DueFilter::Before("2026-10-02".into())),
+                importance: Some(Importance::High),
+                category: Some("Errands".into()),
+                sort: Some(TaskSort::Due),
+                limit: Some(5),
+            },
+        }),
+        Payload::Request(Request::ListCategories),
+        Payload::Request(Request::ChangeCategory {
+            change: CategoryChange::Recolor {
+                category: "Errands".into(),
+                color: "preset3".into(),
+            },
+            dry_run: true,
+            op_id: None,
+            idempotency_key: None,
+        }),
+        Payload::Request(Request::ChangeExtension {
+            owner: ExtensionOwner {
+                kind: OwnerKind::Task,
+                id: "t1".into(),
+                list: Some("Home".into()),
+            },
+            change: ExtensionChange::Delete {
+                name: "com.example".into(),
+            },
+            dry_run: false,
+            op_id: Some("op".into()),
+            idempotency_key: None,
+        }),
+        Payload::Request(Request::ChangeLists {
+            change: ListChange::CreateList {
+                name: "Garden".into(),
+                folder: Some("Home".into()),
+            },
+            dry_run: false,
+            op_id: Some("op".into()),
+            idempotency_key: None,
         }),
         Payload::Request(Request::SearchTasks {
             query: "insur* OR \"car tax\"".into(),
@@ -635,6 +677,7 @@ fn fields_from_a_newer_peer_are_ignored_and_missing_new_fields_default() {
             list: None,
             search: None,
             assignee: None,
+            filter: TaskFilter::default(),
         })
     );
     // A search's filters default to open tasks, every list, no limit.

@@ -24,6 +24,22 @@ pub const TASK_COLUMNS: &[&str] = &[
     "sync_state",
 ];
 
+/// Tasks from every list (`tasks list` with a filter and no `--list`):
+/// the task columns, then the list's name.
+pub const EVERY_LIST_COLUMNS: &[&str] = &[
+    "id",
+    "title",
+    "status",
+    "importance",
+    "due",
+    "reminder",
+    "categories",
+    "created",
+    "modified",
+    "sync_state",
+    "list",
+];
+
 /// A search result: enough to recognise the task and where it matched.
 pub const SEARCH_COLUMNS: &[&str] = &["id", "title", "list", "status", "due", "snippet"];
 
@@ -170,7 +186,7 @@ pub fn local_due(task: &Entity) -> String {
 
 // The reminder keeps its time (S11). Graph returns it in UTC unless asked
 // for another zone, so it's written with its offset.
-fn reminder(task: &Entity) -> String {
+pub fn reminder(task: &Entity) -> String {
     if task.get("isReminderOn") != Some(&Value::Bool(true)) {
         return String::new();
     }

@@ -134,7 +134,8 @@ pub struct Table {
 #[derive(Serialize)]
 struct CollectionEnvelope<'a> {
     schema_version: u32,
-    sync: SyncInfo,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    sync: Option<SyncInfo>,
     items: &'a [Entity],
 }
 
@@ -147,7 +148,27 @@ pub fn print_collection(
     sync: SyncInfo,
     table: &Table,
 ) -> Result<(), CliError> {
-    if sync.state == SyncState::Initial && format != OutputFormat::Json {
+    print_items(format, items, Some(sync), table)
+}
+
+/// A collection read from Graph as it is now, not from the cache: it has
+/// no sync state (categories, open extensions).
+pub fn print_live_collection(
+    format: OutputFormat,
+    items: &[Entity],
+    table: &Table,
+) -> Result<(), CliError> {
+    print_items(format, items, None, table)
+}
+
+fn print_items(
+    format: OutputFormat,
+    items: &[Entity],
+    sync: Option<SyncInfo>,
+    table: &Table,
+) -> Result<(), CliError> {
+    let initial = sync.is_some_and(|sync| sync.state == SyncState::Initial);
+    if initial && format != OutputFormat::Json && !crate::terminal::quiet() {
         eprintln!(
             "ms-todo is still syncing for the first time, so this may be incomplete; \
              `ms-todo sync --wait` waits for it"
@@ -309,10 +330,8 @@ fn write_table(
 
 /// Whether a table may use bold: a terminal that allows it
 /// (https://no-color.org). Decided once, not per row.
-static BOLD: LazyLock<bool> = LazyLock::new(|| {
-    std::io::stdout().is_terminal()
-        && std::env::var_os("NO_COLOR").is_none_or(|value| value.is_empty())
-});
+static BOLD: LazyLock<bool> =
+    LazyLock::new(|| std::io::stdout().is_terminal() && crate::terminal::color_allowed());
 
 /// A search snippet's `**`-marked matches (`ResponseData::SearchResults`)
 /// in bold. Where bold isn't allowed the marks stay, as in JSON.

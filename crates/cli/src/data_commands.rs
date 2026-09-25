@@ -3,7 +3,7 @@
 //! (D-031).
 
 use ms_todo_core::{ErrorKind, Paths};
-use ms_todo_protocol::{Entity, Request, ResponseData, SearchStatus, SyncInfo};
+use ms_todo_protocol::{Entity, Request, ResponseData, SearchStatus, SyncInfo, TaskFilter};
 use serde::Serialize;
 use serde_json::Value;
 
@@ -65,6 +65,33 @@ pub const TASKS_TABLE: Table = Table {
     bold_matches: None,
 };
 
+/// Tasks from every list, as a filter with no `--list` finds them: each
+/// with its list. CSV is the task columns, then `list`.
+pub const EVERY_LIST_TABLE: Table = Table {
+    headings: &["DONE", "DUE", "IMPORTANT", "LIST", "TITLE"],
+    row: |task| {
+        let important = if text(task, "importance") == "high" {
+            "yes"
+        } else {
+            ""
+        };
+        vec![
+            done(task),
+            csv_columns::local_due(task),
+            important.to_owned(),
+            text(task, "list").to_owned(),
+            text(task, "title").to_owned(),
+        ]
+    },
+    csv_headings: csv_columns::EVERY_LIST_COLUMNS,
+    csv_row: |task| {
+        let mut row = csv_columns::task_row(task);
+        row.push(text(task, "list").to_owned());
+        row
+    },
+    bold_matches: None,
+};
+
 /// Tasks by who they wait on, as `waiting` and `tasks list --assignee`
 /// give them: each person's together, in the daemon's order.
 pub const WAITING_TABLE: Table = Table {
@@ -119,6 +146,7 @@ pub async fn tasks(
     list: Option<String>,
     search: Option<String>,
     assignee: Option<String>,
+    filter: TaskFilter,
 ) -> Result<(Vec<Entity>, SyncInfo), CliError> {
     if assignee
         .as_deref()
@@ -133,6 +161,7 @@ pub async fn tasks(
         list,
         search,
         assignee,
+        filter,
     };
     match daemon_client::ask(paths, request).await? {
         ResponseData::Tasks { items, sync } => Ok((items, sync)),

@@ -106,9 +106,9 @@ async fn list(paths: &Paths, task: LinkArgs, format: OutputFormat) -> Result<(),
         && !task.contains_key("attachments")
         && format != OutputFormat::Json
     {
-        eprintln!(
-            "note: Microsoft To Do says this task has attachments that haven't synced yet; \
-             `ms-todo sync --wait` fetches them"
+        crate::terminal::note(
+            "Microsoft To Do says this task has attachments that haven't synced yet; \
+             `ms-todo sync --wait` fetches them",
         );
     }
     print_collection(

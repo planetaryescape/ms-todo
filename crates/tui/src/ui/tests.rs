@@ -901,3 +901,38 @@ fn assign_to_asks_for_a_name_for_the_selection() {
     };
     insta::assert_snapshot!(render(&app));
 }
+
+/// A task's categories show on its row as `@label` chips (rung 8e), and
+/// the palette offers the list commands.
+#[test]
+fn categories_are_chips_on_the_row() {
+    let mut app = seeded();
+    let effects = app.update(Msg::Event(ms_todo_protocol::Event::ResyncNeeded));
+    let scope = app.wanted.clone().expect("a scope");
+    answer_seed(
+        &mut app,
+        &effects[0],
+        seed(
+            scope,
+            vec![task(
+                "c1",
+                "Buy stamps",
+                json!({ "categories": ["Errands", "Post"] }),
+            )],
+        ),
+    );
+    let screen = render(&app);
+    assert!(screen.contains("Buy stamps  @Errands  @Pos"), "{screen}");
+    let labels: Vec<String> = app
+        .palette_items("list")
+        .into_iter()
+        .map(|item| item.label)
+        .collect();
+    for wanted in [
+        "New list\u{2026}",
+        "Rename list\u{2026}",
+        "Delete list\u{2026}",
+    ] {
+        assert!(labels.iter().any(|label| label == wanted), "{labels:?}");
+    }
+}

@@ -59,6 +59,10 @@ fn cli_help_snapshots_cover_all_commands() {
         ("cli_help_auth_bearer", &["auth", "bearer", "--help"]),
         ("cli_help_lists", &["lists", "--help"]),
         ("cli_help_lists_list", &["lists", "list", "--help"]),
+        ("cli_help_lists_show", &["lists", "show", "--help"]),
+        ("cli_help_lists_create", &["lists", "create", "--help"]),
+        ("cli_help_lists_rename", &["lists", "rename", "--help"]),
+        ("cli_help_lists_delete", &["lists", "delete", "--help"]),
         ("cli_help_lists_move", &["lists", "move", "--help"]),
         ("cli_help_lists_order", &["lists", "order", "--help"]),
         ("cli_help_folders", &["folders", "--help"]),
@@ -68,6 +72,7 @@ fn cli_help_snapshots_cover_all_commands() {
         ("cli_help_folders_order", &["folders", "order", "--help"]),
         ("cli_help_tasks", &["tasks", "--help"]),
         ("cli_help_tasks_list", &["tasks", "list", "--help"]),
+        ("cli_help_tasks_show", &["tasks", "show", "--help"]),
         ("cli_help_tasks_add", &["tasks", "add", "--help"]),
         (
             "cli_help_tasks_suggest_list",
@@ -109,6 +114,34 @@ fn cli_help_snapshots_cover_all_commands() {
             "cli_help_attachments_delete",
             &["attachments", "delete", "--help"],
         ),
+        ("cli_help_categories", &["categories", "--help"]),
+        (
+            "cli_help_categories_list",
+            &["categories", "list", "--help"],
+        ),
+        (
+            "cli_help_categories_create",
+            &["categories", "create", "--help"],
+        ),
+        (
+            "cli_help_categories_recolor",
+            &["categories", "recolor", "--help"],
+        ),
+        (
+            "cli_help_categories_delete",
+            &["categories", "delete", "--help"],
+        ),
+        ("cli_help_extensions", &["extensions", "--help"]),
+        (
+            "cli_help_extensions_list",
+            &["extensions", "list", "--help"],
+        ),
+        ("cli_help_extensions_get", &["extensions", "get", "--help"]),
+        ("cli_help_extensions_set", &["extensions", "set", "--help"]),
+        (
+            "cli_help_extensions_delete",
+            &["extensions", "delete", "--help"],
+        ),
         ("cli_help_waiting", &["waiting", "--help"]),
         ("cli_help_myday", &["myday", "--help"]),
         ("cli_help_myday_list", &["myday", "list", "--help"]),
@@ -133,6 +166,8 @@ fn cli_help_snapshots_cover_all_commands() {
         ("cli_help_daemon_start", &["daemon", "start", "--help"]),
         ("cli_help_daemon_stop", &["daemon", "stop", "--help"]),
         ("cli_help_daemon_status", &["daemon", "status", "--help"]),
+        ("cli_help_daemon_restart", &["daemon", "restart", "--help"]),
+        ("cli_help_daemon_logs", &["daemon", "logs", "--help"]),
     ];
     for (name, args) in cases {
         insta::assert_snapshot!(*name, help_output(args));

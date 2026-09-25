@@ -14,6 +14,11 @@ publish = false
 name = "ms-todo"
 path = "src/main.rs"
 
+[features]
+# `tests/live_smoke.rs`: the whole surface against a real account, run by
+# hand (`cargo test --features live-smoke --test live_smoke -- --ignored`).
+live-smoke = []
+
 [dependencies]
 ms-todo-cli = { workspace = true }
 ms-todo-daemon = { workspace = true }

@@ -11,6 +11,8 @@ mod args;
 mod attachment_commands;
 mod auth_commands;
 mod bulk_commands;
+mod catalog_args;
+mod catalog_commands;
 mod child_commands;
 mod confirm;
 mod csv_columns;
@@ -22,6 +24,8 @@ mod done_command;
 mod error;
 mod folder_commands;
 mod link_commands;
+mod list_args;
+mod list_commands;
 mod my_day_commands;
 mod outbox_commands;
 mod output;
@@ -29,10 +33,13 @@ mod output_schemas;
 mod phrases;
 mod quick_add;
 mod schema_commands;
+mod show_commands;
 mod suggest_commands;
 mod sync_commands;
 mod task_commands;
+mod task_flags;
 mod task_output;
+mod terminal;
 mod time;
 mod tui_command;
 
@@ -71,6 +78,7 @@ pub fn run(daemon: DaemonEntry) -> ExitCode {
         Err(error) => error.exit(),
     };
     let format = OutputFormat::resolve(cli.global.format);
+    terminal::configure(cli.global.quiet, cli.global.no_color);
     let command = match cli.command {
         Some(command) => command,
         None if bare_opens_tui(
@@ -125,8 +133,33 @@ fn execute(
         runtime.block_on(tui_command::tui(&paths, args, started))?;
         return Ok(ExitCode::SUCCESS);
     }
-    runtime.block_on(dispatch(command, &paths, format))?;
+    runtime.block_on(async {
+        if global.fresh && reads_cache(&command) {
+            sync_commands::sync(&paths, true).await?;
+        }
+        dispatch(command, &paths, format).await
+    })?;
     Ok(ExitCode::SUCCESS)
+}
+
+/// Whether `command` answers from the daemon's cache, so `--fresh` syncs
+/// first. Writes, `sync` itself and what reads Graph directly don't.
+fn reads_cache(command: &Command) -> bool {
+    use args::{AttachmentsCommand, LinksCommand, MyDayCommand, StepsCommand};
+    match command {
+        Command::Lists(command) => matches!(command, ListsCommand::List | ListsCommand::Show(_)),
+        Command::Folders(command) => matches!(command, FoldersCommand::List),
+        Command::Tasks(command) => matches!(
+            command,
+            TasksCommand::List(_) | TasksCommand::Show(_) | TasksCommand::Links(_)
+        ),
+        Command::MyDay(command) => matches!(command, MyDayCommand::List | MyDayCommand::Suggest),
+        Command::Steps(command) => matches!(command, StepsCommand::List(_)),
+        Command::Links(command) => matches!(command, LinksCommand::List(_)),
+        Command::Attachments(command) => matches!(command, AttachmentsCommand::List(_)),
+        Command::Waiting { .. } | Command::Search(_) | Command::Done(_) => true,
+        _ => false,
+    }
 }
 
 async fn dispatch(command: Command, paths: &Paths, format: OutputFormat) -> Result<(), CliError> {
@@ -157,6 +190,16 @@ async fn dispatch(command: Command, paths: &Paths, format: OutputFormat) -> Resu
             let (items, sync) = data_commands::lists(paths).await?;
             print_collection(format, &items, sync, &data_commands::LISTS_TABLE)
         }
+        Command::Lists(ListsCommand::Show(args)) => show_commands::list(paths, args, format).await,
+        Command::Lists(ListsCommand::Create(args)) => {
+            list_commands::create(paths, args, format).await
+        }
+        Command::Lists(ListsCommand::Rename(args)) => {
+            list_commands::rename(paths, args, format).await
+        }
+        Command::Lists(ListsCommand::Delete(args)) => {
+            list_commands::delete(paths, args, format).await
+        }
         Command::Lists(ListsCommand::Move(args)) => {
             folder_commands::move_lists(paths, args, format).await
         }
@@ -176,28 +219,30 @@ async fn dispatch(command: Command, paths: &Paths, format: OutputFormat) -> Resu
         Command::Folders(FoldersCommand::Order(args)) => {
             folder_commands::order_folder(paths, args, format).await
         }
-        Command::Tasks(TasksCommand::List { my_day: true, .. }) => {
+        Command::Tasks(TasksCommand::List(args)) if args.my_day => {
             my_day_commands::list(paths, format).await
         }
         Command::MyDay(command) => my_day_commands::run(paths, command, format).await,
-        Command::Tasks(TasksCommand::List {
-            list,
-            search,
-            assignee,
-            ..
-        }) => {
-            let table = match assignee {
-                Some(_) => &data_commands::WAITING_TABLE,
-                None => &data_commands::TASKS_TABLE,
+        Command::Tasks(TasksCommand::List(args)) => {
+            let filter = args.filter();
+            let table = match (&args.assignee, &args.list) {
+                (Some(_), _) => &data_commands::WAITING_TABLE,
+                (None, None) if filter.narrows() => &data_commands::EVERY_LIST_TABLE,
+                (None, _) => &data_commands::TASKS_TABLE,
             };
-            let (items, sync) = data_commands::tasks(paths, list, search, assignee).await?;
+            let (items, sync) =
+                data_commands::tasks(paths, args.list, args.search, args.assignee, filter).await?;
             print_collection(format, &items, sync, table)
         }
+        Command::Tasks(TasksCommand::Show(args)) => show_commands::task(paths, args, format).await,
         Command::Waiting { person } => {
             let assignee = Some(person.unwrap_or_else(|| "*".to_owned()));
-            let (items, sync) = data_commands::tasks(paths, None, None, assignee).await?;
+            let (items, sync) =
+                data_commands::tasks(paths, None, None, assignee, Default::default()).await?;
             print_collection(format, &items, sync, &data_commands::WAITING_TABLE)
         }
+        Command::Categories(command) => catalog_commands::categories(paths, command, format).await,
+        Command::Extensions(command) => catalog_commands::extensions(paths, command, format).await,
         Command::Steps(command) => child_commands::steps(paths, command, format).await,
         Command::Links(command) => child_commands::links(paths, command, format).await,
         Command::Attachments(command) => attachment_commands::run(paths, command, format).await,
@@ -254,6 +299,12 @@ async fn dispatch(command: Command, paths: &Paths, format: OutputFormat) -> Resu
         }
         Command::Daemon(DaemonCommand::Status) => {
             print_success(format, &daemon_commands::status(paths).await)
+        }
+        Command::Daemon(DaemonCommand::Restart) => {
+            print_success(format, &daemon_commands::restart(paths).await?)
+        }
+        Command::Daemon(DaemonCommand::Logs { follow }) => {
+            daemon_commands::logs(paths, follow, format).await
         }
         Command::Daemon(DaemonCommand::Run | DaemonCommand::Launch) => {
             unreachable!("`daemon run|launch` return from `execute` before the runtime starts")

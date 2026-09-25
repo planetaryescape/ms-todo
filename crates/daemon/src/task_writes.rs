@@ -151,6 +151,15 @@ pub(crate) async fn change_tasks(
     } else {
         graph_body(&fields, &user_time_zone())
     };
+    // Each task's own body (its start and due dates, S11 and D-058); one
+    // task's plan shows exactly what it's sent.
+    let bodies = targets
+        .iter()
+        .map(|target| crate::task_dates::task_body(&changes, &target.row))
+        .collect::<Result<Vec<Value>, ErrorPayload>>()?;
+    if let [body] = bodies.as_slice() {
+        changes = body.clone();
+    }
     // Each task's assignment, planned from the task as it is now.
     let plans: Vec<Option<assignment::TaskPlan>> = targets
         .iter()
@@ -179,13 +188,13 @@ pub(crate) async fn change_tasks(
         }));
     }
     let mut ops = Vec::new();
-    for (target, plan) in targets.iter().zip(&plans) {
+    for ((target, plan), body) in targets.iter().zip(&plans).zip(&bodies) {
         let row = &target.row;
         let id = op_id_for(&op_id, ops.len());
         if action == TaskAction::Delete {
             ops.push(delete_op(id, row, action));
         } else if !fields.is_empty() {
-            ops.push(update_op(id, row, &changes, action));
+            ops.push(update_op(id, row, body, action));
         }
         if let Some(plan) = plan {
             let mut more = assignment::plan_ops(&op_id, ops.len(), row, plan, action);
@@ -458,6 +467,14 @@ pub(crate) fn action_name(action: TaskAction) -> &'static str {
         TaskAction::LinkDelete => "link_delete",
         TaskAction::AttachmentAdd => "attachment_add",
         TaskAction::AttachmentDelete => "attachment_delete",
+        TaskAction::CreateList => "create_list",
+        TaskAction::RenameList => "rename_list",
+        TaskAction::DeleteList => "delete_list",
+        TaskAction::CategoryCreate => "category_create",
+        TaskAction::CategoryRecolor => "category_recolor",
+        TaskAction::CategoryDelete => "category_delete",
+        TaskAction::ExtensionSet => "extension_set",
+        TaskAction::ExtensionDelete => "extension_delete",
         TaskAction::Undo | TaskAction::Unknown => "change",
     }
 }

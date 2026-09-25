@@ -11,6 +11,7 @@ mod children;
 mod graph_columns;
 mod idempotency;
 mod list_extension;
+mod list_lifecycle;
 mod lists;
 mod moves;
 mod my_day;
@@ -30,6 +31,7 @@ pub use children::{
 };
 pub use idempotency::{Claim, IDEMPOTENCY_WINDOW_SECS};
 pub use list_extension::{ListExtensionOp, merge_extension};
+pub use list_lifecycle::{ListLifecycleOp, ListOp, ListWrite};
 pub use lists::{FOLDER_FIELD, FOLDER_ORDER_FIELD, ListRow, ListsApplied, ListsPass, ORDER_FIELD};
 pub use outbox::{
     LocalChange, NewOp, OpKind, OpState, OutboxRow, Restore, SKIPPED_NOTE, UNKNOWN_LOOKUP_SECS,

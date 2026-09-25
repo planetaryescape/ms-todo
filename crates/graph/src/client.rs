@@ -211,7 +211,7 @@ impl GraphClient {
         .map(drop)
     }
 
-    fn extension_url(&self, owner: &[&str], name: Option<&str>) -> Url {
+    pub(crate) fn extension_url(&self, owner: &[&str], name: Option<&str>) -> Url {
         let mut segments = vec!["me", "todo"];
         segments.extend_from_slice(owner);
         segments.push("extensions");

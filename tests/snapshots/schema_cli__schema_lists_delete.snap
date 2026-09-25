@@ -1,0 +1,201 @@
+---
+source: tests/schema_cli.rs
+expression: pretty
+---
+{
+  "input": {
+    "additionalProperties": false,
+    "properties": {
+      "dry_run": {
+        "description": "Show what would change without changing anything",
+        "type": "boolean",
+        "x-cli": "--dry-run"
+      },
+      "idempotency_key": {
+        "description": "Run this change at most once: repeating the command with the same key returns the first result for 24 hours, and the same key with a different change exits 2",
+        "type": "string",
+        "x-cli": "--idempotency-key"
+      },
+      "list": {
+        "description": "The list's exact name or its ID",
+        "type": "string",
+        "x-cli": "<LIST>"
+      },
+      "yes": {
+        "description": "Delete without asking",
+        "type": "boolean",
+        "x-cli": "--yes"
+      }
+    },
+    "required": [
+      "list"
+    ],
+    "type": "object"
+  },
+  "output": {
+    "oneOf": [
+      {
+        "properties": {
+          "action": {
+            "enum": [
+              "move_list",
+              "order_list",
+              "rename_folder",
+              "delete_folder",
+              "order_folder",
+              "create_list",
+              "rename_list",
+              "delete_list",
+              "undo"
+            ]
+          },
+          "items": {
+            "description": "Each list changed, as ms-todo has it now: sync_state pending until the write reaches Microsoft To Do. Empty when nothing needed to change",
+            "items": {
+              "description": "A task list: every field Microsoft Graph returns, with `id` replaced",
+              "properties": {
+                "displayName": {
+                  "type": "string"
+                },
+                "extensions": {
+                  "description": "ms-todo's own open extension (com.planetaryescape.mstodo), when it has one and it has been fetched",
+                  "items": {
+                    "type": "object"
+                  },
+                  "type": "array"
+                },
+                "folder": {
+                  "description": "The folder the list is in (ms-todo's own; the To Do apps don't show it), or null",
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "graph_id": {
+                  "description": "Microsoft Graph's ID, for `raw` and debugging; commands take it too",
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "id": {
+                  "description": "ms-todo's local ID; stable, and what commands take",
+                  "type": "string"
+                },
+                "isOwner": {
+                  "type": "boolean"
+                },
+                "isShared": {
+                  "type": "boolean"
+                },
+                "sync_state": {
+                  "description": "From its outbox writes: synced; pending (queued or being sent); unknown (a write may or may not have reached Microsoft To Do; never retry it, see `outbox list`); failed (a write was rejected and rolled back; see `outbox list`)",
+                  "enum": [
+                    "synced",
+                    "pending",
+                    "unknown",
+                    "failed"
+                  ]
+                },
+                "wellknownListName": {
+                  "description": "defaultList for \"Tasks\"",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "id",
+                "graph_id",
+                "sync_state",
+                "displayName"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "list_ids": {
+            "description": "Each item's own ID, in order",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "op_id": {
+            "description": "What `undo` and `outbox list` know the change by",
+            "type": "string"
+          },
+          "schema_version": {
+            "const": 2
+          },
+          "undoes": {
+            "description": "For an undo: the op_id it undoes",
+            "type": "string"
+          }
+        },
+        "required": [
+          "schema_version",
+          "op_id",
+          "action",
+          "items",
+          "list_ids"
+        ],
+        "type": "object"
+      },
+      {
+        "properties": {
+          "action": {
+            "enum": [
+              "move_list",
+              "order_list",
+              "rename_folder",
+              "delete_folder",
+              "order_folder",
+              "create_list",
+              "rename_list",
+              "delete_list"
+            ]
+          },
+          "changes": {
+            "const": null
+          },
+          "dry_run": {
+            "const": true
+          },
+          "lists": {
+            "description": "Each list that would change; absent when none would",
+            "items": {
+              "properties": {
+                "changes": {
+                  "description": "A folder change: the fields of ms-todo's extension it gets (folder, order, folderOrder; null removes one). A create: displayName and folder. A rename: displayName. A delete: deleted, tasks (how many go with it) and undoable",
+                  "type": "object"
+                },
+                "id": {
+                  "type": "string"
+                },
+                "name": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "id",
+                "name",
+                "changes"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "schema_version": {
+            "const": 2
+          }
+        },
+        "required": [
+          "schema_version",
+          "dry_run",
+          "action",
+          "changes"
+        ],
+        "type": "object"
+      }
+    ]
+  }
+}

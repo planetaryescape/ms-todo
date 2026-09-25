@@ -40,6 +40,16 @@ pub(crate) fn fingerprint(request: &Request) -> String {
         idempotency_key,
         ..
     }
+    | Request::ChangeCategory {
+        op_id,
+        idempotency_key,
+        ..
+    }
+    | Request::ChangeExtension {
+        op_id,
+        idempotency_key,
+        ..
+    }
     | Request::Undo {
         op_id,
         idempotency_key,

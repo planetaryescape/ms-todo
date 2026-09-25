@@ -35,6 +35,8 @@ use futures_util::stream::BoxStream;
 use tokio::sync::{mpsc, oneshot};
 
 pub use app::attachments::Places;
+/// A recurrence in a few words, as the detail pane and `tasks show` put it.
+pub use app::task::describe_recurrence;
 pub use runner::RunError;
 
 pub struct Options {

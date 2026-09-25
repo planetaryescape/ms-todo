@@ -135,6 +135,10 @@ pub fn describe_plan(plan: &Plan) -> Vec<String> {
 }
 
 pub fn print_applied(format: OutputFormat, applied: &Applied) -> Result<(), CliError> {
+    if is_catalog(applied.action) {
+        // An undo of a category or extension write answers with its own.
+        return crate::catalog_commands::print_applied(format, applied);
+    }
     match format {
         OutputFormat::Json | OutputFormat::Jsonl => print_json(
             format,
@@ -262,7 +266,7 @@ fn write_children(
     Ok(())
 }
 
-fn verb(action: TaskAction) -> &'static str {
+pub(crate) fn verb(action: TaskAction) -> &'static str {
     match action {
         TaskAction::Add => "add",
         TaskAction::Complete => "complete",
@@ -289,11 +293,19 @@ fn verb(action: TaskAction) -> &'static str {
         TaskAction::LinkDelete => "delete the link of",
         TaskAction::AttachmentAdd => "attach files to",
         TaskAction::AttachmentDelete => "delete attachments of",
+        TaskAction::CreateList => "create",
+        TaskAction::RenameList => "rename",
+        TaskAction::DeleteList => "delete",
+        TaskAction::CategoryCreate => "create the category",
+        TaskAction::CategoryRecolor => "recolour the category",
+        TaskAction::CategoryDelete => "delete the category",
+        TaskAction::ExtensionSet => "set the extension",
+        TaskAction::ExtensionDelete => "delete the extension",
         TaskAction::Unknown => "change",
     }
 }
 
-fn past_tense(action: TaskAction) -> &'static str {
+pub(crate) fn past_tense(action: TaskAction) -> &'static str {
     match action {
         TaskAction::Add => "Added",
         TaskAction::Complete => "Completed",
@@ -320,8 +332,28 @@ fn past_tense(action: TaskAction) -> &'static str {
         TaskAction::LinkDelete => "Deleted the link of",
         TaskAction::AttachmentAdd => "Attaching to",
         TaskAction::AttachmentDelete => "Deleted attachments of",
+        TaskAction::CreateList => "Created",
+        TaskAction::RenameList => "Renamed",
+        TaskAction::DeleteList => "Deleted",
+        TaskAction::CategoryCreate => "Created the category",
+        TaskAction::CategoryRecolor => "Recoloured the category",
+        TaskAction::CategoryDelete => "Deleted the category",
+        TaskAction::ExtensionSet => "Set the extension",
+        TaskAction::ExtensionDelete => "Deleted the extension",
         TaskAction::Unknown => "Changed",
     }
+}
+
+/// Whether `action` writes a category or an open extension.
+fn is_catalog(action: TaskAction) -> bool {
+    matches!(
+        action,
+        TaskAction::CategoryCreate
+            | TaskAction::CategoryRecolor
+            | TaskAction::CategoryDelete
+            | TaskAction::ExtensionSet
+            | TaskAction::ExtensionDelete
+    )
 }
 
 /// Whether `action` changes lists (folders) rather than tasks.
@@ -333,6 +365,9 @@ fn changes_lists(action: TaskAction) -> bool {
             | TaskAction::RenameFolder
             | TaskAction::DeleteFolder
             | TaskAction::OrderFolder
+            | TaskAction::CreateList
+            | TaskAction::RenameList
+            | TaskAction::DeleteList
     )
 }
 

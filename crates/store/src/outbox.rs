@@ -78,6 +78,17 @@ const OP_COLUMNS: &str = "o.op_id, o.seq, o.command_id, o.created_at, o.entity_l
 const FROM_OUTBOX: &str = "FROM outbox o LEFT JOIN tasks t ON t.local_id = o.entity_local_id \
      LEFT JOIN lists l ON l.local_id = o.entity_local_id AND o.entity_kind = 'list'";
 
+/// The entity kind an operation of `kind` is on.
+fn entity_kind(kind: OpKind) -> &'static str {
+    if kind.is_list() {
+        "list"
+    } else if kind == OpKind::Remote {
+        "remote"
+    } else {
+        "task"
+    }
+}
+
 /// What an operation sends.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum OpKind {
@@ -100,6 +111,16 @@ pub enum OpKind {
     /// PATCH or DELETE under the task (`crate::children`). Its rollback is
     /// the task's JSON before.
     Child,
+    /// A list made (or made again): a POST. Its entity is the list.
+    ListCreate,
+    /// A list renamed: a PATCH of `displayName`.
+    ListUpdate,
+    /// A list deleted, with its tasks.
+    ListDelete,
+    /// A category or open-extension write, made straight to Graph and
+    /// recorded here `done`, so `undo` can reverse it (D-058). Its
+    /// rollback is the thing before, `{}` for none.
+    Remote,
 }
 
 impl OpKind {
@@ -112,7 +133,19 @@ impl OpKind {
             Self::Move => "move",
             Self::TaskExtension => "task_extension",
             Self::Child => "child",
+            Self::ListCreate => "list_create",
+            Self::ListUpdate => "list_update",
+            Self::ListDelete => "list_delete",
+            Self::Remote => "remote",
         }
+    }
+
+    /// Whether its entity is a list, not a task.
+    pub fn is_list(self) -> bool {
+        matches!(
+            self,
+            Self::Extension | Self::ListCreate | Self::ListUpdate | Self::ListDelete
+        )
     }
 
     pub(crate) fn parse(value: &str) -> Result<Self, StoreError> {
@@ -124,6 +157,10 @@ impl OpKind {
             "move" => Ok(Self::Move),
             "task_extension" => Ok(Self::TaskExtension),
             "child" => Ok(Self::Child),
+            "list_create" => Ok(Self::ListCreate),
+            "list_update" => Ok(Self::ListUpdate),
+            "list_delete" => Ok(Self::ListDelete),
+            "remote" => Ok(Self::Remote),
             other => Err(StoreError::Corrupt(format!("unknown outbox op {other:?}"))),
         }
     }
@@ -223,7 +260,7 @@ impl OutboxRow {
                 .unknown_since
                 .is_some_and(|since| since <= now - UNKNOWN_LOOKUP_SECS)
                 || self.needs_user()
-                || self.op == OpKind::Child)
+                || matches!(self.op, OpKind::Child | OpKind::ListCreate))
     }
 
     /// Done without sending anything: its send-time precondition didn't
@@ -483,6 +520,44 @@ impl Store {
         Ok(rows)
     }
 
+    /// Record a category or extension write Graph has made (D-058): one
+    /// operation, `done` already, on the thing `entity`, with `payload`
+    /// (what `undo` needs to reverse it) and `rollback`, the thing before.
+    pub async fn record_remote(
+        &self,
+        command_id: &str,
+        undoes: Option<&str>,
+        entity: &str,
+        action: &str,
+        payload: &Value,
+        rollback: &Entity,
+    ) -> Result<(), StoreError> {
+        let mut tx = self.writer().begin().await?;
+        let seq: i64 = sqlx::query_scalar("SELECT COALESCE(MAX(seq), 0) + 1 FROM outbox")
+            .fetch_one(&mut *tx)
+            .await?;
+        insert_op(
+            &mut tx,
+            &Queued {
+                op_id: command_id,
+                seq,
+                command_id,
+                undoes,
+                created_at: now(),
+                entity_local_id: entity,
+                list_local_id: "",
+                op: OpKind::Remote,
+                action,
+                payload,
+                rollback: Some(rollback),
+            },
+        )
+        .await?;
+        finish(&mut tx, command_id, OpState::Done, None).await?;
+        tx.commit().await?;
+        Ok(())
+    }
+
     /// A task by local ID, tombstoned or not, and whether it's tombstoned.
     pub async fn task_any(&self, local_id: &str) -> Result<Option<(TaskRow, bool)>, StoreError> {
         #[derive(FromRow)]
@@ -607,7 +682,7 @@ impl Store {
                 .await?;
         let flagged: i64 = sqlx::query_scalar(
             "SELECT COUNT(*) FROM outbox WHERE state = 'unknown' AND (unknown_since <= ? \
-             OR json_extract(progress_json, '$.needs_user') = 1 OR op = 'child')",
+             OR json_extract(progress_json, '$.needs_user') = 1 OR op IN ('child', 'list_create'))",
         )
         .bind(now() - UNKNOWN_LOOKUP_SECS)
         .fetch_one(self.reader())
@@ -940,7 +1015,7 @@ impl Store {
             "UPDATE outbox SET state = 'unknown', unknown_since = ?, \
              note = 'the daemon stopped while this was being sent' \
              WHERE state = 'inflight' \
-             AND (op = 'create' OR json_extract(payload_json, '$.recurring') = 1 \
+             AND (op IN ('create', 'list_create') OR json_extract(payload_json, '$.recurring') = 1 \
              OR (op = 'child' AND json_extract(payload_json, '$.verb') = 'create') \
              OR (op = 'move' AND json_extract(progress_json, '$.in_doubt') = 1))",
         )
@@ -1067,7 +1142,7 @@ pub(crate) async fn insert_op(
     tx: &mut SqliteConnection,
     op: &Queued<'_>,
 ) -> Result<(), StoreError> {
-    let depends_on: Option<String> = sqlx::query_scalar(concat!(
+    let mut depends_on: Option<String> = sqlx::query_scalar(concat!(
         "SELECT op_id FROM outbox WHERE entity_local_id = ? AND state IN ",
         unresolved!(),
         " ORDER BY seq DESC LIMIT 1"
@@ -1075,6 +1150,19 @@ pub(crate) async fn insert_op(
     .bind(op.entity_local_id)
     .fetch_optional(&mut *tx)
     .await?;
+    if depends_on.is_none() && !op.op.is_list() {
+        // A task's first write in a list not created yet waits for the
+        // list: it needs the list's Graph ID.
+        depends_on = sqlx::query_scalar(concat!(
+            "SELECT op_id FROM outbox WHERE entity_local_id = ? AND op = 'list_create' \
+             AND state IN ",
+            unresolved!(),
+            " ORDER BY seq DESC LIMIT 1"
+        ))
+        .bind(op.list_local_id)
+        .fetch_optional(&mut *tx)
+        .await?;
+    }
     sqlx::query(
         "INSERT INTO outbox (op_id, seq, command_id, created_at, entity_kind, entity_local_id, \
          list_local_id, op, action, payload_json, depends_on_op_id, undoes_command_id, \
@@ -1085,12 +1173,7 @@ pub(crate) async fn insert_op(
     .bind(op.seq)
     .bind(op.command_id)
     .bind(op.created_at)
-    // A folder write is the only operation on a list.
-    .bind(if op.op == OpKind::Extension {
-        "list"
-    } else {
-        "task"
-    })
+    .bind(entity_kind(op.op))
     .bind(op.entity_local_id)
     .bind(op.list_local_id)
     .bind(op.op.as_str())
@@ -1244,7 +1327,13 @@ async fn write_attributed(
                 }
             }
             OpKind::Child => apply_child(&mut raw, &payload),
-            OpKind::Create | OpKind::Extension | OpKind::Move => {}
+            OpKind::Create
+            | OpKind::Extension
+            | OpKind::Move
+            | OpKind::ListCreate
+            | OpKind::ListUpdate
+            | OpKind::ListDelete
+            | OpKind::Remote => {}
         }
     }
     let extension_json = if extension_changed {
@@ -1314,6 +1403,12 @@ async fn apply_restore(
     let local_id = op.entity_local_id.as_str();
     if op.op == OpKind::Extension {
         return restore_list_extension(tx, local_id, restore, rev).await;
+    }
+    if op.op.is_list() {
+        return crate::list_lifecycle::restore_list(tx, local_id, restore, rev).await;
+    }
+    if op.op == OpKind::Remote {
+        return Ok(());
     }
     if op.op == OpKind::TaskExtension {
         return match restore {
