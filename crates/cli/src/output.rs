@@ -188,13 +188,31 @@ pub fn print_collection(
     }
 }
 
-/// One ID per line.
+/// One ID per line. An ID can come from Graph (a linked resource's URL),
+/// so a control character, a newline included, is written as U+FFFD: it
+/// can't reach the terminal as an escape sequence, and the line can't be
+/// mistaken for a valid ID or URL with the character quietly removed.
 pub fn print_ids<'a>(ids: impl IntoIterator<Item = &'a str>) -> Result<(), CliError> {
     let mut stdout = std::io::stdout().lock();
     for id in ids {
-        writeln!(stdout, "{id}")?;
+        writeln!(stdout, "{}", id_safe(id))?;
     }
     Ok(())
+}
+
+fn id_safe(id: &str) -> std::borrow::Cow<'_, str> {
+    if !id.chars().any(char::is_control) {
+        return std::borrow::Cow::Borrowed(id);
+    }
+    id.chars()
+        .map(|ch| {
+            if ch.is_control() {
+                ms_todo_core::CONTROL_PLACEHOLDER
+            } else {
+                ch
+            }
+        })
+        .collect()
 }
 
 /// `raw` prints Graph's body unchanged; a table is pretty JSON too.
@@ -333,6 +351,21 @@ pub fn print_error(format: OutputFormat, error: &CliError) {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn ids_never_carry_a_control_character() {
+        let evil = "https://x.example/\x1b]52;c;aGk=\x07\nnext";
+        let safe = super::id_safe(evil);
+        assert!(!safe.chars().any(char::is_control), "{safe:?}");
+        assert_eq!(
+            safe,
+            "https://x.example/\u{fffd}]52;c;aGk=\u{fffd}\u{fffd}next"
+        );
+        assert!(matches!(
+            super::id_safe("abc-123"),
+            std::borrow::Cow::Borrowed(_)
+        ));
+    }
+
     use super::write_table;
 
     #[test]

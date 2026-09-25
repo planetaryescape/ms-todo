@@ -25,15 +25,22 @@ async fn synced_env() -> (Env, FakeGraph) {
     ]);
     let mut evil = task("T2", "Evil", "W/\"T2\"");
     evil["linkedResources"] = json!([{ "webUrl": "javascript:alert(1)", "applicationName": "x" }]);
+    let mut osc = task("T4", "Escapes", "W/\"T4\"");
+    osc["linkedResources"] = json!([
+        { "webUrl": format!("https://x.example/{OSC52}"), "displayName": format!("Name{OSC52}") }
+    ]);
     graph.edit(|data| {
         data.tasks.insert(
             "L-tasks".into(),
-            vec![linked, evil, task("T3", "Plain", "W/\"T3\"")],
+            vec![linked, evil, task("T3", "Plain", "W/\"T3\""), osc],
         );
     });
     env.synced();
     (env, graph)
 }
+
+/// Writes "hi" to the clipboard, if it ever reached a terminal.
+const OSC52: &str = "\x1b]52;c;aGk=\x07";
 
 fn run(env: &Env, args: &[&str]) -> (Option<i32>, String, String) {
     let output = env.cmd().args(args).output().expect("run");
@@ -177,4 +184,32 @@ async fn open_never_blocks_on_a_choice_or_opens_another_scheme() {
     );
     assert_eq!(code, Some(3), "{stderr}");
     assert!(stderr.contains("no links"), "{stderr}");
+}
+
+#[tokio::test]
+async fn an_escape_sequence_in_a_link_never_reaches_the_terminal() {
+    let (env, _graph) = synced_env().await;
+    let task = ["tasks", "links", "Escapes", "--list", "Tasks"];
+    for format in ["ids", "table"] {
+        let (code, stdout, stderr) = run(&env, &[&["--format", format][..], &task[..]].concat());
+        assert_eq!(code, Some(0), "{format}: {stderr}");
+        assert!(stdout.contains("x.example"), "{format}: {stdout}");
+        assert!(
+            !stdout.contains(['\x1b', '\x07']) && !stderr.contains(['\x1b', '\x07']),
+            "{format}: {stdout:?}"
+        );
+    }
+    // Refused, and the refusal quotes the URL without its escapes.
+    let (code, stdout, stderr) = run(
+        &env,
+        &[
+            "--format", "table", "tasks", "open", "Escapes", "--list", "Tasks",
+        ],
+    );
+    assert_eq!(code, Some(2), "{stderr}");
+    assert!(stderr.contains("control character"), "{stderr}");
+    assert!(
+        !stdout.contains(['\x1b', '\x07']) && !stderr.contains(['\x1b', '\x07']),
+        "{stderr:?}"
+    );
 }
