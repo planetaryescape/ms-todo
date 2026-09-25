@@ -99,14 +99,37 @@ pub(crate) fn seeded() -> App {
 }
 
 #[test]
-fn signed_out_start_does_not_seed_or_accept_task_actions() {
+fn signed_out_without_a_cache_shows_login_and_blocks_task_actions() {
     let mut app = App::new(UNICODE, clock())
         .with_sign_in_command(Some("ms-todo --instance scratch auth login".into()));
-    assert!(app.update(Msg::Connected).is_empty());
+    let effects = app.update(Msg::Connected);
+    assert!(matches!(effects[0].request, Request::Seed { .. }));
+    app.update(Msg::Response {
+        tag: effects[0].tag,
+        result: Err(ErrorPayload {
+            kind: "auth_required".into(),
+            message: "no cached tasks".into(),
+            ..ErrorPayload::default()
+        }),
+    });
+    assert!(app.sign_in_required);
+    assert!(app.banner.is_none());
     assert!(app.update(Msg::Action(Action::Add)).is_empty());
     assert_eq!(app.mode, Mode::Normal);
     assert!(app.update(Msg::Action(Action::Help)).is_empty());
     assert!(matches!(app.mode, Mode::Help { .. }));
+}
+
+#[test]
+fn signed_out_with_a_ready_cache_keeps_tasks_available() {
+    let mut app = App::new(UNICODE, clock())
+        .with_sign_in_command(Some("ms-todo --instance scratch auth login".into()));
+    let effects = app.update(Msg::Connected);
+    answer_seed(&mut app, &effects[0], seed(scope_home(), home_tasks()));
+    assert!(!app.sign_in_required);
+    assert_eq!(app.tasks.len(), 4);
+    app.update(Msg::Action(Action::Add));
+    assert!(matches!(app.mode, Mode::Adding { .. }));
 }
 
 pub(crate) fn scope_home() -> Scope {

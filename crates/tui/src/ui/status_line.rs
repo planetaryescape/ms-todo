@@ -9,7 +9,7 @@ use crate::app::{App, Connection, Level};
 /// while one shows, takes its place.
 pub fn draw(frame: &mut Frame, area: Rect, app: &App) {
     let theme = &app.theme;
-    if app.sign_in_command.is_some() && app.banner.is_none() {
+    if app.sign_in_required && app.banner.is_none() {
         frame.render_widget(
             Paragraph::new(" Sign-in needed to load your tasks").style(theme.warning),
             area,

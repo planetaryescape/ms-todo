@@ -9,9 +9,11 @@ use std::time::{Duration, Instant};
 use crossterm::event::{Event as TermEvent, KeyCode, KeyEvent, KeyModifiers};
 use futures_util::{SinkExt, StreamExt};
 use ms_todo_protocol::{
-    Applied, Codec, Counts, Entity, EntityChanged, Event, Message, OutboxDepth, Payload, Request,
-    Response, ResponseData, Scope, Seed, SyncActivity, SyncInfo, SyncState, TaskAction, TaskChange,
+    Applied, Codec, Counts, Entity, EntityChanged, ErrorPayload, Event, Message, OutboxDepth,
+    Payload, Request, Response, ResponseData, Scope, Seed, SyncActivity, SyncInfo, SyncState,
+    TaskAction, TaskChange,
 };
+use ms_todo_tui::RunError;
 use ms_todo_tui::testing::{App, Clock, UNICODE, connect, run_loop};
 use ratatui::Terminal;
 use ratatui::backend::TestBackend;
@@ -256,4 +258,68 @@ async fn a_daemon_that_does_not_know_subscribe_is_reported_as_incompatible() {
     };
     assert!(why.contains("too old or incompatible"), "{why}");
     assert!(why.contains("ms-todo daemon stop"), "{why}");
+}
+
+#[tokio::test]
+async fn benchmark_exits_with_login_guidance_when_the_first_seed_needs_auth() {
+    let dir = tempfile::Builder::new()
+        .prefix("mt")
+        .tempdir_in("/tmp")
+        .expect("tempdir");
+    let socket = dir.path().join("daemon.sock");
+    let listener = UnixListener::bind(&socket).expect("bind");
+    let daemon = tokio::spawn(async move {
+        let (stream, _) = listener.accept().await.expect("accept");
+        let mut framed = Framed::new(stream, Codec::new());
+        while let Some(Ok(message)) = framed.next().await {
+            let Payload::Request(request) = message.payload else {
+                continue;
+            };
+            let response = match request {
+                Request::Subscribe => Response::Ok {
+                    data: ResponseData::Ack,
+                },
+                Request::Seed { .. } => Response::Error {
+                    error: ErrorPayload {
+                        kind: "auth_required".into(),
+                        message: "no cached tasks".into(),
+                        ..Default::default()
+                    },
+                },
+                _ => continue,
+            };
+            framed
+                .send(Message {
+                    id: message.id,
+                    payload: Payload::Response(response),
+                })
+                .await
+                .expect("send");
+        }
+    });
+    let (link, messages) = connect(socket);
+    let input = Box::pin(futures_util::stream::pending::<std::io::Result<TermEvent>>());
+    let (painted, _) = oneshot::channel();
+    let mut terminal = Terminal::new(TestBackend::new(100, 16)).expect("terminal");
+    let command = "ms-todo --instance scratch auth login";
+    let app = App::new(UNICODE, Clock::now()).with_sign_in_command(Some(command.into()));
+    let error = tokio::time::timeout(
+        Duration::from_secs(5),
+        run_loop(
+            &mut terminal,
+            input,
+            link,
+            messages,
+            app,
+            Instant::now(),
+            Some(painted),
+            |_: &str| {},
+        ),
+    )
+    .await
+    .expect("the benchmark does not wait for a seeded list")
+    .expect_err("no cached tasks");
+    assert!(matches!(error, RunError::SignInRequired(found) if found == command));
+    assert!(terminal.backend().to_string().contains(command));
+    daemon.abort();
 }

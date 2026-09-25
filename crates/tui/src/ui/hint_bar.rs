@@ -20,7 +20,7 @@ use crate::keybindings::{Context, hints, key_for};
 pub fn draw(frame: &mut Frame, area: Rect, app: &App) {
     let glyphs = &app.glyphs;
     let theme = &app.theme;
-    if app.sign_in_command.is_some() && app.mode == Mode::Normal {
+    if app.sign_in_required && app.mode == Mode::Normal {
         let mut spans = Vec::new();
         for (action, label) in [
             (Action::Quit, "Quit"),

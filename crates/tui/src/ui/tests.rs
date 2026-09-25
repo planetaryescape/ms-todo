@@ -221,11 +221,34 @@ fn signed_out_shows_the_instance_login_command() {
     let mut app = App::new(crate::glyphs::UNICODE, clock())
         .with_sign_in_command(Some("ms-todo --instance scratch auth login".into()));
     app.version = "9.9.9";
-    app.update(Msg::Connected);
+    let effects = app.update(Msg::Connected);
+    app.update(Msg::Response {
+        tag: effects[0].tag,
+        result: Err(ms_todo_protocol::ErrorPayload {
+            kind: "auth_required".into(),
+            message: "no cached tasks".into(),
+            ..Default::default()
+        }),
+    });
     let frame = render(&app);
     assert!(frame.contains("ms-todo --instance scratch auth login"));
     assert!(!frame.contains("Nothing here"));
     insta::assert_snapshot!(frame);
+}
+
+#[test]
+fn signed_out_with_cached_tasks_shows_the_tasks() {
+    let mut app = App::new(crate::glyphs::UNICODE, clock())
+        .with_sign_in_command(Some("ms-todo --instance scratch auth login".into()));
+    let effects = app.update(Msg::Connected);
+    answer_seed(
+        &mut app,
+        &effects[0],
+        seed(Scope::List { id: "home".into() }, home_tasks()),
+    );
+    let frame = render(&app);
+    assert!(frame.contains("Pay rent"));
+    assert!(!frame.contains("Sign in to Microsoft To Do"));
 }
 
 /// Important, recurring, a reminder and due, next to tasks with only

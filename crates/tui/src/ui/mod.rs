@@ -55,7 +55,9 @@ pub fn draw(frame: &mut Frame, app: &App) {
     title_bar::draw(frame, title, app);
     // The diagnostics page covers the panes, so they aren't drawn under it.
     if app.mode != Mode::Diagnostics {
-        if let Some(command) = &app.sign_in_command {
+        if app.sign_in_required
+            && let Some(command) = &app.sign_in_command
+        {
             onboarding::draw(frame, main, app, command);
         } else {
             sidebar::draw(frame, side, app);

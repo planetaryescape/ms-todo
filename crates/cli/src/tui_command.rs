@@ -4,7 +4,7 @@
 use std::time::Instant;
 
 use ms_todo_core::{ErrorKind, Instance, Paths};
-use ms_todo_tui::{Options, TuiError};
+use ms_todo_tui::{Options, RunError, TuiError};
 
 use crate::args::TuiArgs;
 use crate::daemon_client;
@@ -31,14 +31,6 @@ pub async fn tui(paths: &Paths, args: TuiArgs, started: Instant) -> Result<(), C
         Instance::Default => "ms-todo auth login".to_owned(),
         Instance::Named(name) => format!("ms-todo --instance {name} auth login"),
     });
-    if args.bench_startup
-        && let Some(command) = &sign_in_command
-    {
-        return Err(CliError::message(
-            ErrorKind::AuthRequired,
-            format!("not signed in; run `{command}` before benchmarking"),
-        ));
-    }
     let options = Options {
         socket: paths.socket_path(),
         sign_in_command,
@@ -56,6 +48,10 @@ pub async fn tui(paths: &Paths, args: TuiArgs, started: Instant) -> Result<(), C
         }
         Ok(None) => Ok(()),
         Err(error @ TuiError::NotATerminal) => Err(CliError::new(ErrorKind::InvalidInput, &error)),
+        Err(TuiError::Run(RunError::SignInRequired(command))) => Err(CliError::message(
+            ErrorKind::AuthRequired,
+            format!("not signed in; run `{command}` before benchmarking"),
+        )),
         Err(error) => Err(CliError::new(ErrorKind::Internal, &error)),
     }
 }

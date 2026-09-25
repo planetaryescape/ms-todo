@@ -18,7 +18,7 @@ pub fn draw(frame: &mut Frame, area: Rect, app: &App) {
         ),
     ]);
     let glyphs = &app.glyphs;
-    let (dot, state, style) = if app.sign_in_command.is_some() {
+    let (dot, state, style) = if app.sign_in_required {
         (glyphs.disconnected, "sign in", theme.warning)
     } else if app.activity.in_progress {
         (glyphs.pending, "syncing", theme.accent)

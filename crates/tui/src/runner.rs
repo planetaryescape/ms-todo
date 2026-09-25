@@ -33,6 +33,8 @@ pub enum RunError {
     Draw(String),
     #[error("reading the keyboard failed: {0}")]
     Input(#[from] io::Error),
+    #[error("sign in required before benchmarking")]
+    SignInRequired(String),
 }
 
 /// Run until the user quits or `input` ends. `first_paint` hears once the
@@ -136,6 +138,12 @@ where
                     next = daemon.try_recv().ok();
                 }
                 paint(terminal, &app)?;
+                if first_paint.is_some()
+                    && app.sign_in_required
+                    && let Some(command) = &app.sign_in_command
+                {
+                    return Err(RunError::SignInRequired(command.clone()));
+                }
                 // An answer can leave something to do here too: open an
                 // attachment the daemon saved.
                 if let Some(effect) = app.local.take() {
