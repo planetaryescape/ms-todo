@@ -1,5 +1,23 @@
 # Changelog
 
+## [0.1.28](https://github.com/planetaryescape/ms-todo/compare/v0.1.27...v0.1.28) (2026-09-25)
+
+
+### Features
+
+* guide Raycast users through CLI setup ([46fd1ad](https://github.com/planetaryescape/ms-todo/commit/46fd1adbec3849672ad45b8c2164abc4b180adbc))
+
+
+### Bug Fixes
+
+* guide signed-out TUI users to login ([ab07b8b](https://github.com/planetaryescape/ms-todo/commit/ab07b8b1023c51b7d2477ad0a55d47e445e3f10c))
+* keep due dates stable across reader time zones ([1fbf9d3](https://github.com/planetaryescape/ms-todo/commit/1fbf9d38631be12082296c2df4012d7ca2df04ef))
+
+
+### Documentation
+
+* add Raycast Store changelog ([#60](https://github.com/planetaryescape/ms-todo/issues/60)) ([d3550dc](https://github.com/planetaryescape/ms-todo/commit/d3550dc3a28a3848f52b0a864f9f7e8e3fd9d51e))
+
 ## [0.1.27](https://github.com/planetaryescape/ms-todo/compare/v0.1.26...v0.1.27) (2026-09-25)
 
 
