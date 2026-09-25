@@ -441,6 +441,31 @@ fn lists_match_by_name_or_a_unique_prefix() {
 }
 
 #[test]
+fn two_lists_with_one_name_are_ambiguous_not_the_first() {
+    let mut lists = lists();
+    lists.push(ListRef {
+        id: "L-home-2".into(),
+        name: "home".into(),
+    });
+    let ctx = QuickAddContext {
+        when: now(),
+        lists: &lists,
+        categories: None,
+        due: None,
+    };
+    for typed in ["x #Home", "x #home"] {
+        let parsed = DeterministicParser.parse(typed, &ctx);
+        assert_eq!(parsed.list, None, "{typed:?}");
+        assert_eq!(parsed.title, typed);
+        assert!(
+            parsed.warnings[0].contains("2 lists are called Home"),
+            "{:?}",
+            parsed.warnings
+        );
+    }
+}
+
+#[test]
 fn labels_keep_their_known_spelling_and_warn_when_unknown() {
     let parsed = parse("x @errands @new-one @Errands");
     assert_eq!(parsed.categories, ["Errands", "new-one"]);

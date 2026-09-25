@@ -294,3 +294,77 @@ async fn create_categories_adds_a_missing_one_before_the_task() {
     let (_, body) = created(&env, &graph).await;
     assert_eq!(body["categories"], json!(["Garden"]));
 }
+
+#[tokio::test]
+async fn clearing_flags_clear_what_the_text_set() {
+    let mut env = Env::new();
+    let _graph = graph(&mut env).await;
+    let plan = env.json(&[
+        "tasks",
+        "add",
+        "Dentist tomorrow 9am",
+        "--due",
+        "-",
+        "--reminder",
+        "-",
+        "--dry-run",
+    ]);
+    let changes = &plan["changes"];
+    assert_eq!(changes["title"], "Dentist");
+    assert!(changes.get("dueDateTime").is_none(), "{changes}");
+    assert!(changes.get("reminderDateTime").is_none(), "{changes}");
+
+    // A reminder from the text survives clearing only the due date.
+    let plan = env.json(&[
+        "tasks",
+        "add",
+        "Dentist tomorrow 9am",
+        "--due",
+        "-",
+        "--dry-run",
+    ]);
+    assert!(plan["changes"].get("dueDateTime").is_none());
+    assert_eq!(plan["changes"]["isReminderOn"], true);
+}
+
+#[tokio::test]
+async fn clearing_the_due_date_of_a_recurrence_is_refused() {
+    let mut env = Env::new();
+    let graph = graph(&mut env).await;
+    for text in ["Gym every mon", "Trip start mon"] {
+        let error = env.failure(&["tasks", "add", text, "--due", "-"], 2);
+        assert_eq!(error["error"]["kind"], "invalid_input");
+        let message = error["error"]["message"].as_str().unwrap_or_default();
+        assert!(message.contains("--due -"), "{message}");
+    }
+    assert!(graph.writes().await.is_empty());
+}
+
+#[tokio::test]
+async fn a_list_name_two_lists_share_files_nowhere_it_names() {
+    let mut env = Env::new();
+    let graph = FakeGraph::start(
+        &mut env,
+        vec![
+            list("L-tasks", "Tasks", "defaultList"),
+            list("L-home-1", "Home", "none"),
+            list("L-home-2", "Home", "none"),
+        ],
+    )
+    .await;
+    graph.edit(|data| {
+        for id in ["L-tasks", "L-home-1", "L-home-2"] {
+            data.tasks.insert(id.into(), Vec::new());
+        }
+    });
+    let parsed = env.json(&["tasks", "parse", "Fix tap #Home"]);
+    assert_eq!(parsed["list"], Value::Null);
+    assert_eq!(parsed["title"], "Fix tap #Home");
+    assert!(
+        parsed["warnings"]
+            .to_string()
+            .contains("2 lists are called Home")
+    );
+    let plan = env.json(&["tasks", "add", "Fix tap #Home", "--dry-run"]);
+    assert_eq!(plan["list"]["name"], "Tasks", "the default list");
+}

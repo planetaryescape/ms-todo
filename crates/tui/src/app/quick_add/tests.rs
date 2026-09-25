@@ -195,6 +195,37 @@ fn tab_completes_a_list_or_a_label() {
 }
 
 #[test]
+fn tab_after_a_wide_space_completes_without_splitting_a_character() {
+    for space in ['\u{3000}', '\u{a0}'] {
+        let mut app = seeded();
+        act(&mut app, Action::Add);
+        categories(&mut app, &["Errands"]);
+        typed(&mut app, &format!("Buy{space}#ho"));
+        act(&mut app, Action::Complete);
+        let Mode::Adding { input, .. } = &app.mode else {
+            unreachable!();
+        };
+        assert_eq!(input.text(), format!("Buy{space}#Home "));
+        typed(&mut app, &format!("x{space}@er"));
+        act(&mut app, Action::Complete);
+        let Mode::Adding { input, .. } = &app.mode else {
+            unreachable!();
+        };
+        assert_eq!(input.text(), format!("Buy{space}#Home x{space}@Errands "));
+    }
+}
+
+proptest::proptest! {
+    #[test]
+    fn tab_never_panics(text in "[a-z#@\"\u{3000}\u{a0} é]{0,16}") {
+        let mut app = seeded();
+        act(&mut app, Action::Add);
+        typed(&mut app, &text);
+        act(&mut app, Action::Complete);
+    }
+}
+
+#[test]
 fn categories_are_asked_for_once_and_a_failure_calls_no_label_unknown() {
     let mut app = seeded();
     assert_eq!(act(&mut app, Action::Add).len(), 1);

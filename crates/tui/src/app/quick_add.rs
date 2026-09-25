@@ -142,14 +142,19 @@ impl App {
         let cursor = input.cursor().1;
         let at: usize = text.chars().take(cursor).map(char::len_utf8).sum();
         let before = &text[..at];
+        // Byte offsets on char boundaries: a space can be wider than a byte
+        // (U+3000, U+00A0).
         let start = before
-            .rfind(char::is_whitespace)
-            .map_or(0, |space| space + 1);
+            .char_indices()
+            .rfind(|(_, ch)| ch.is_whitespace())
+            .map_or(0, |(at, space)| at + space.len_utf8());
         let word = &before[start..];
-        let (sigil, typed) = match word.chars().next() {
-            Some(sigil @ ('#' | '@')) => (sigil, word[1..].trim_start_matches('"')),
+        let mut chars = word.chars();
+        let (sigil, rest) = match chars.next() {
+            Some(sigil @ ('#' | '@')) => (sigil, chars.as_str()),
             _ => return,
         };
+        let typed = rest.trim_start_matches('"');
         let names: Vec<String> = if sigil == '#' {
             self.lists.iter().map(|list| list.name.clone()).collect()
         } else {
@@ -164,7 +169,7 @@ impl App {
             return;
         };
         let whole = matching.len() == 1;
-        let completed = if shared.contains(char::is_whitespace) || word[1..].starts_with('"') {
+        let completed = if shared.contains(char::is_whitespace) || rest.starts_with('"') {
             format!("{sigil}\"{shared}{}", if whole { "\" " } else { "" })
         } else {
             format!("{sigil}{shared}{}", if whole { " " } else { "" })

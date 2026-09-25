@@ -178,6 +178,24 @@ fn merge(
         args.importance.is_some(),
         parsed.importance.is_some(),
     );
+    let clear_due = matches!(args.due, Some(Clearable::Clear));
+    if clear_due && (parsed.recurrence.is_some() || parsed.start.is_some()) {
+        // Refused rather than dropping what the text asked for: a
+        // recurrence starts on its due date, and a start date makes
+        // Microsoft To Do set one anyway (S11).
+        let what = if parsed.recurrence.is_some() {
+            "a recurrence needs a due date to start on"
+        } else {
+            "a start date sets the due date too"
+        };
+        return Err(CliError::message(
+            ErrorKind::InvalidInput,
+            format!(
+                "--due - clears the due date, but {what}; take that part out of the text, or \
+                 pass --no-parse"
+            ),
+        ));
+    }
     let task = NewTask {
         title: parsed.title.clone(),
         list: args
@@ -186,10 +204,15 @@ fn merge(
             .or_else(|| parsed.list.as_ref().map(|list| list.id.clone())),
         // `--due` was read into the parse, so the reminder and a
         // recurrence's start already follow it.
-        due: parsed.due.map(|due| due.format(DATE_FORMAT).to_string()),
+        // `--due -` and `--reminder -` clear what the text set (D-018).
+        due: parsed
+            .due
+            .filter(|_| !clear_due)
+            .map(|due| due.format(DATE_FORMAT).to_string()),
         reminder: match &args.reminder {
             Some(Clearable::Set(at)) => Some(at.clone()),
-            _ => parsed
+            Some(Clearable::Clear) => None,
+            None => parsed
                 .reminder
                 .map(|at| at.format(REMINDER_FORMAT).to_string()),
         },

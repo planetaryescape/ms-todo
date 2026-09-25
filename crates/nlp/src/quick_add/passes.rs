@@ -424,22 +424,35 @@ impl<'i> Scan<'i> {
 }
 
 /// The list `typed` names: the one whose name it is, ignoring case, else
-/// the only one whose name starts with it.
+/// the only one whose name starts with it. Several lists with that very
+/// name are ambiguous too: none is picked for the user.
 fn find_list<'l>(lists: &'l [ListRef], typed: &str) -> Result<&'l ListRef, String> {
     let typed = typed.to_lowercase();
-    if let Some(list) = lists.iter().find(|list| list.name.to_lowercase() == typed) {
-        return Ok(list);
-    }
-    let matching: Vec<&ListRef> = lists
+    let exact: Vec<&ListRef> = lists
         .iter()
-        .filter(|list| list.name.to_lowercase().starts_with(&typed))
+        .filter(|list| list.name.to_lowercase() == typed)
         .collect();
+    let matching: Vec<&ListRef> = if exact.is_empty() {
+        lists
+            .iter()
+            .filter(|list| list.name.to_lowercase().starts_with(&typed))
+            .collect()
+    } else {
+        exact
+    };
     match matching.as_slice() {
         [list] => Ok(list),
         [] => Err("no list has that name".into()),
         several => {
-            let names: Vec<&str> = several.iter().map(|list| list.name.as_str()).collect();
-            Err(format!("could be {}", names.join(" or ")))
+            let mut names: Vec<&str> = several.iter().map(|list| list.name.as_str()).collect();
+            names.dedup_by(|one, other| one.eq_ignore_ascii_case(other));
+            match names.as_slice() {
+                [name] => Err(format!(
+                    "{} lists are called {name}; --list with an ID picks one",
+                    several.len()
+                )),
+                names => Err(format!("could be {}", names.join(" or "))),
+            }
         }
     }
 }

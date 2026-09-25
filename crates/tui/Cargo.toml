@@ -31,6 +31,7 @@ url = { workspace = true }
 
 [dev-dependencies]
 insta = { workspace = true }
+proptest = { workspace = true }
 tempfile = { workspace = true }
 tokio = { workspace = true, features = ["rt-multi-thread", "test-util"] }
 
