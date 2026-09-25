@@ -1,5 +1,22 @@
 # Changelog
 
+## [0.1.24](https://github.com/planetaryescape/ms-todo/compare/v0.1.23...v0.1.24) (2026-09-25)
+
+
+### Features
+
+* attachments in the CLI, daemon and TUI (rung 8b) ([fc008e0](https://github.com/planetaryescape/ms-todo/commit/fc008e00c48927e0a00a5fa178652647c21f4015))
+
+
+### Bug Fixes
+
+* attachment deletes keep their undo copy, and downloads can't be redirected or overwrite ([3cdcff5](https://github.com/planetaryescape/ms-todo/commit/3cdcff50ebf34b28c5a8d17a63378d80e6fb77dc))
+
+
+### Documentation
+
+* rung 8b attachments in the README, usage, blueprint, S16, D-056 and the skill ([b7dafbf](https://github.com/planetaryescape/ms-todo/commit/b7dafbf52cc82a90413743164cb36dcd4d4b5a96))
+
 ## [0.1.23](https://github.com/planetaryescape/ms-todo/compare/v0.1.22...v0.1.23) (2026-09-25)
 
 
