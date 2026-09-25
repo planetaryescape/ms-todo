@@ -1,14 +1,14 @@
 use ms_todo_protocol::{DoctorReport, SyncMode, SyncState};
 use ratatui::Frame;
 use ratatui::layout::Rect;
-use ratatui::style::{Modifier, Style};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Paragraph, Wrap};
 
+use super::pane;
 use super::status_line::ago;
-use super::{ACCENT, AMBER, DIM, ERROR, pane};
 use crate::app::App;
 use crate::app::diagnostics::Diagnostics;
+use crate::theme::Theme;
 
 /// The diagnostics page, over the three panes: what `ms-todo doctor`
 /// reports, from the daemon.
@@ -21,7 +21,7 @@ pub fn draw(frame: &mut Frame, area: Rect, app: &App) {
     };
     frame.render_widget(
         Paragraph::new(lines(app, page))
-            .block(pane(title.into(), true))
+            .block(pane(&app.theme, title, true))
             .wrap(Wrap { trim: false })
             .scroll((page.scroll, 0)),
         area,
@@ -29,11 +29,12 @@ pub fn draw(frame: &mut Frame, area: Rect, app: &App) {
 }
 
 fn lines(app: &App, page: &Diagnostics) -> Vec<Line<'static>> {
-    let dim = Style::default().fg(DIM);
+    let theme = &app.theme;
+    let dim = theme.text_dim;
     let label = |name: &'static str| Span::styled(format!("{name:<12}"), dim);
     let row = |name: &'static str, value: Span<'static>| Line::from(vec![label(name), value]);
     let waiting = || Span::styled("checking…", dim);
-    let failed = |why: &str| Span::styled(why.to_owned(), Style::default().fg(ERROR));
+    let failed = |why: &str| Span::styled(why.to_owned(), theme.error);
     let now = app.clock.unix();
     let mut lines = Vec::new();
 
@@ -67,7 +68,7 @@ fn lines(app: &App, page: &Diagnostics) -> Vec<Line<'static>> {
         }
         Some(Err(why)) => {
             lines.push(row("Database", failed(why)));
-            lines.extend(problems(page));
+            lines.extend(problems(page, theme));
             return lines;
         }
         Some(Ok(report)) => report,
@@ -96,7 +97,7 @@ fn lines(app: &App, page: &Diagnostics) -> Vec<Line<'static>> {
         } else {
             Span::styled(
                 format!("{} unknown for over a day", outbox.flagged),
-                Style::default().fg(AMBER),
+                theme.warning,
             )
         },
     ));
@@ -110,11 +111,11 @@ fn lines(app: &App, page: &Diagnostics) -> Vec<Line<'static>> {
                     op.action,
                     op.title.as_deref().unwrap_or("")
                 ),
-                Style::default().fg(AMBER),
+                theme.warning,
             ),
         ]));
     }
-    lines.extend(problems(page));
+    lines.extend(problems(page, theme));
 
     lines.push(Line::default());
     lines.push(Line::styled(
@@ -122,7 +123,7 @@ fn lines(app: &App, page: &Diagnostics) -> Vec<Line<'static>> {
             " {:<24}{:<9}{:<13}{:<14}{}",
             "Scope", "State", "Mode", "Last synced", "Changed"
         ),
-        Style::default().fg(ACCENT).add_modifier(Modifier::BOLD),
+        theme.title,
     ));
     for scope in &report.scopes {
         let name = match (&scope.list_name, scope.scope.as_str()) {
@@ -151,7 +152,7 @@ fn lines(app: &App, page: &Diagnostics) -> Vec<Line<'static>> {
         if let Some(error) = &scope.last_error {
             lines.push(Line::styled(
                 format!("   failed: {} ({})", error.message, error.kind),
-                Style::default().fg(ERROR),
+                theme.error,
             ));
         }
     }
@@ -159,24 +160,24 @@ fn lines(app: &App, page: &Diagnostics) -> Vec<Line<'static>> {
 }
 
 /// "Needs attention" and its problems, or that all is well.
-fn problems(page: &Diagnostics) -> Vec<Line<'static>> {
+fn problems(page: &Diagnostics, theme: &Theme) -> Vec<Line<'static>> {
     let problems = page.problems();
     let mut lines = vec![Line::default()];
     if problems.is_empty() {
         lines.push(Line::from(vec![
-            Span::styled(format!("{:<12}", "Status"), Style::default().fg(DIM)),
-            Span::styled("all good", Style::default().fg(ACCENT)),
+            Span::styled(format!("{:<12}", "Status"), theme.text_dim),
+            Span::styled("all good", theme.accent),
         ]));
         return lines;
     }
     lines.push(Line::styled(
         "Needs attention",
-        Style::default().fg(AMBER).add_modifier(Modifier::BOLD),
+        theme.strong.patch(theme.warning),
     ));
     lines.extend(
         problems
             .into_iter()
-            .map(|problem| Line::styled(format!(" - {problem}"), Style::default().fg(AMBER))),
+            .map(|problem| Line::styled(format!(" - {problem}"), theme.warning)),
     );
     lines
 }

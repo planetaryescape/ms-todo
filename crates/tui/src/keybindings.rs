@@ -42,6 +42,8 @@ pub enum Context {
     Confirm,
     /// The recurring-completion candidate picker.
     Picker,
+    /// The theme picker, previewing each theme.
+    Themes,
     Help,
 }
 
@@ -69,6 +71,7 @@ const LISTS: &[Context] = &[
     Context::Tasks,
     Context::Detail,
     Context::Picker,
+    Context::Themes,
     Context::Diagnostics,
 ];
 const PALETTE: &[Context] = &[Context::Palette];
@@ -208,6 +211,15 @@ pub const BINDINGS: &[Binding] = &[
         true,
     ),
     bind(&[Context::Picker], "Esc", Action::Cancel, "Cancel", true),
+    bind(&[Context::Themes], "Enter", Action::Submit, "Keep", true),
+    bind(&[Context::Themes], "Esc", Action::Cancel, "Revert", true),
+    bind(
+        &[Context::Themes],
+        "Ctrl-c",
+        Action::Cancel,
+        "Revert",
+        false,
+    ),
     bind(PALETTE, "Enter", Action::Submit, "Run", true),
     bind(PALETTE, "Esc", Action::Cancel, "Close", true),
     bind(PALETTE, "Backspace", Action::Backspace, "Erase", false),

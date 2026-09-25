@@ -20,6 +20,8 @@ use crate::keybindings;
 pub enum Command {
     Run(Action),
     Go(Scope),
+    /// Open the theme picker.
+    Themes,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -48,8 +50,14 @@ impl App {
             keys: String::new(),
             command: Command::Go(scope),
         });
+        let themes = Item {
+            label: "Theme\u{2026}".into(),
+            keys: String::new(),
+            command: Command::Themes,
+        };
         let query = query.trim().to_lowercase();
         let mut ranked: Vec<((u8, usize), usize, Item)> = actions
+            .chain(std::iter::once(themes))
             .chain(places)
             .enumerate()
             .filter_map(|(order, item)| Some((score(&item, &query)?, order, item)))
@@ -95,6 +103,10 @@ impl App {
                     self.focus = Pane::Tasks;
                 }
                 self.browse(action)
+            }
+            Command::Themes => {
+                self.open_themes();
+                Vec::new()
             }
             Command::Go(scope) => {
                 self.focus = Pane::Tasks;

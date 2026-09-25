@@ -94,6 +94,12 @@ where
                         let took = at.elapsed();
                         tracing::info!(micros = took.as_micros(), "keypress rendered");
                         latency.keypress.push(took);
+                        // After the frame, so the picker closes at once and
+                        // the file's I/O isn't counted as the keypress.
+                        if std::mem::take(&mut app.save_theme) {
+                            save_theme(&mut app);
+                            paint(terminal, &app)?;
+                        }
                         if std::mem::take(&mut app.painted_from_cache) {
                             tracing::info!(micros = took.as_micros(), "view switch rendered");
                             latency.view_switch.push(took);
@@ -183,6 +189,14 @@ fn key_msg(app: &App, key: &KeyEvent) -> Option<Msg> {
             Some(Msg::Char(ch))
         }
         _ => Some(Msg::Key(*key)),
+    }
+}
+
+/// Write a theme kept in the picker to config.toml, and say how it went.
+fn save_theme(app: &mut App) {
+    if let Some(path) = app.theme_choice.config_file.clone() {
+        let name = app.theme_choice.builtin.name;
+        app.theme_saved(crate::theme::save(&path, name));
     }
 }
 

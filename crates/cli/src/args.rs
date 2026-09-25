@@ -566,6 +566,13 @@ pub struct TuiArgs {
     /// Draw with plain ASCII instead of Unicode symbols
     #[arg(long)]
     pub ascii: bool,
+    /// Draw with this theme instead of `[tui] theme` in config.toml
+    /// (see --list-themes)
+    #[arg(long, value_name = "NAME")]
+    pub theme: Option<String>,
+    /// Print the built-in themes' names, one per line, and quit
+    #[arg(long)]
+    pub list_themes: bool,
     /// Measure the start and a scripted run of keys against your cache,
     /// print the timings and quit
     #[arg(long)]

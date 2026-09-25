@@ -1,11 +1,10 @@
 use ratatui::Frame;
 use ratatui::layout::Rect;
-use ratatui::style::{Modifier, Style};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Paragraph, Wrap};
 
 use super::task_list::{due_label, sync_marker};
-use super::{ACCENT, AMBER, DIM, ERROR, focused, line_input, pane, selection};
+use super::{focused, line_input, pane, selection};
 use crate::app::edit::{Field, importance_name};
 use crate::app::line_editor::LineEditor;
 use crate::app::{App, Mode, Pane, SyncMarker, Task};
@@ -16,7 +15,8 @@ use crate::app::{App, Mode, Pane, SyncMarker, Task};
 /// what a date resolves to, the format, or why it can't be sent.
 pub fn draw(frame: &mut Frame, area: Rect, app: &App) {
     let has_focus = focused(app, Pane::Detail);
-    let block = pane(" Detail ".into(), has_focus);
+    let theme = &app.theme;
+    let block = pane(theme, " Detail ", has_focus);
     let Some(task) = app.selected() else {
         frame.render_widget(block, area);
         return;
@@ -32,16 +32,16 @@ pub fn draw(frame: &mut Frame, area: Rect, app: &App) {
     };
     let choosing_importance =
         matches!(&app.mode, Mode::ChoosingImportance { id } if *id == task.id);
-    let label = |name: &'static str| Span::styled(format!("{name:<11}"), Style::default().fg(DIM));
+    let label = |name: &'static str| Span::styled(format!("{name:<11}"), theme.text_dim);
     let field = |name: &'static str, value: String| Line::from(vec![label(name), Span::raw(value)]);
-    let none = || Span::styled("none", Style::default().fg(DIM));
+    let none = || Span::styled("none", theme.text_dim);
     // An editable field's lines: its value, reversed under the cursor, or
     // what's being typed.
     let editable = |which: Field, value: Vec<Span<'static>>| -> Vec<Line<'static>> {
         match editing {
             Some((edited, input, error)) if edited == which => {
                 let (row, column) = input.cursor();
-                let typing = Style::default().fg(ACCENT);
+                let typing = theme.accent;
                 let mut lines: Vec<Line> = input
                     .lines()
                     .iter()
@@ -53,15 +53,15 @@ pub fn draw(frame: &mut Frame, area: Rect, app: &App) {
                             label("")
                         }];
                         let cursor = (at == row).then_some(column);
-                        spans.extend(line_input::spans(line, cursor, typing, &app.glyphs));
+                        spans.extend(line_input::spans(line, cursor, typing, &app.glyphs, theme));
                         Line::from(spans)
                     })
                     .collect();
                 let under = match (error, app.date_preview()) {
-                    (Some(why), _) => Span::styled(why.to_owned(), Style::default().fg(ERROR)),
+                    (Some(why), _) => Span::styled(why.to_owned(), theme.error),
                     (None, Some(Ok(resolved))) => Span::styled(resolved, typing),
-                    (None, Some(Err(why))) => Span::styled(why, Style::default().fg(DIM)),
-                    (None, None) => Span::styled(which.format_hint(), Style::default().fg(DIM)),
+                    (None, Some(Err(why))) => Span::styled(why, theme.text_dim),
+                    (None, None) => Span::styled(which.format_hint(), theme.text_dim),
                 };
                 lines.push(Line::from(vec![label(""), under]));
                 lines
@@ -72,7 +72,7 @@ pub fn draw(frame: &mut Frame, area: Rect, app: &App) {
                 let line = Line::from(spans);
                 let picking = which == Field::Importance && choosing_importance;
                 if (has_focus && app.detail_field == which) || picking {
-                    vec![line.style(selection(true))]
+                    vec![line.style(selection(theme, true))]
                 } else {
                     vec![line]
                 }
@@ -81,10 +81,7 @@ pub fn draw(frame: &mut Frame, area: Rect, app: &App) {
     };
     let mut lines = editable(
         Field::Title,
-        vec![Span::styled(
-            task.title.clone(),
-            Style::default().add_modifier(Modifier::BOLD),
-        )],
+        vec![Span::styled(task.title.clone(), theme.strong)],
     );
     lines.push(Line::default());
     lines.push(field(
@@ -115,23 +112,23 @@ pub fn draw(frame: &mut Frame, area: Rect, app: &App) {
         lines.push(field("Categories", task.categories.join(", ")));
     }
     let (state, style) = match task.sync {
-        SyncMarker::Synced => ("synced", Style::default()),
+        SyncMarker::Synced => ("synced", theme.text),
         SyncMarker::Pending => (
             "pending: waiting to reach Microsoft To Do",
-            Style::default().fg(DIM),
+            theme.sync_pending,
         ),
         SyncMarker::Unknown => (
             "outcome unknown: resolve it with `ms-todo outbox list`",
-            Style::default().fg(AMBER),
+            theme.sync_unknown,
         ),
         SyncMarker::Failed => (
             "failed: Microsoft To Do rejected a change",
-            Style::default().fg(ERROR),
+            theme.sync_failed,
         ),
     };
     lines.push(Line::from(vec![
         label("Sync"),
-        sync_marker(task.sync, &app.glyphs),
+        sync_marker(task.sync, &app.glyphs, theme),
         Span::raw(if task.sync == SyncMarker::Synced {
             ""
         } else {
@@ -142,7 +139,7 @@ pub fn draw(frame: &mut Frame, area: Rect, app: &App) {
     if let Some(why) = app.rejections.get(&task.id) {
         lines.push(Line::from(vec![
             label(""),
-            Span::styled(why.clone(), Style::default().fg(ERROR)),
+            Span::styled(why.clone(), theme.error),
         ]));
     }
     lines.push(Line::default());
@@ -167,7 +164,7 @@ pub fn draw(frame: &mut Frame, area: Rect, app: &App) {
 /// The due date, with how soon when it's near.
 fn due(task: &Task, app: &App) -> Vec<Span<'static>> {
     let Some(due) = task.due else {
-        return vec![Span::styled("none", Style::default().fg(DIM))];
+        return vec![Span::styled("none", app.theme.text_dim)];
     };
     let mut shown = due.format("%a %-d %b %Y").to_string();
     let today = app.clock.today();

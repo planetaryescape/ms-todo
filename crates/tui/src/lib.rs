@@ -19,6 +19,7 @@ mod ipc;
 mod keybindings;
 mod latency;
 mod runner;
+pub mod theme;
 mod ui;
 
 use std::io::IsTerminal;
@@ -37,6 +38,8 @@ pub struct Options {
     pub socket: PathBuf,
     /// Plain ASCII instead of Unicode symbols.
     pub ascii: bool,
+    /// The theme, from [`theme::load`].
+    pub theme: theme::ThemeChoice,
     /// Measure the start and a scripted run of keys, then quit and print
     /// the numbers.
     pub bench_startup: bool,
@@ -74,7 +77,7 @@ pub async fn run(options: Options) -> Result<Option<String>, TuiError> {
     } else {
         glyphs::UNICODE
     };
-    let app = app::App::new(glyphs, app::Clock::now());
+    let app = app::App::new(glyphs, app::Clock::now()).with_theme(options.theme);
     // The date rules' regexes compile on first use, about 3 ms: do it
     // now, off the render path, not in the first frame of a date editor.
     let now = app.parse_context();

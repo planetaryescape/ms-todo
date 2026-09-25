@@ -2,23 +2,28 @@ use chrono::{Datelike, NaiveDate};
 use ms_todo_protocol::Scope;
 use ratatui::Frame;
 use ratatui::layout::{Alignment, Constraint, Rect};
-use ratatui::style::{Modifier, Style};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Cell, Paragraph, Row, Table, TableState};
 
-use super::{ACCENT, AMBER, DIM, ERROR, focused, pane, selection};
+use super::{focused, pane, selection};
 use crate::app::scope::{completed_groups, planned_groups};
 use crate::app::{App, Connection, Pane, SyncMarker, Task};
 use crate::glyphs::Glyphs;
+use crate::theme::Theme;
 
 pub fn draw<'a>(frame: &mut Frame, area: Rect, app: &'a App) {
     let has_focus = focused(app, Pane::Tasks);
     let name = app.view_name();
     let title = match &app.filter {
-        Some(filter) => format!(" {name} / {filter} "),
-        None => format!(" {name} "),
+        Some(filter) => Line::from(vec![
+            Span::raw(format!(" {name} / ")),
+            Span::styled(filter.clone(), app.theme.search_match),
+            Span::raw(" "),
+        ]),
+        None => Line::from(format!(" {name} ")),
     };
-    let block = pane(title, has_focus);
+    let theme = &app.theme;
+    let block = pane(theme, title, has_focus);
     if app.tasks.is_empty() || app.loading() {
         let text = empty_text(app);
         let inner = block.inner(area);
@@ -31,14 +36,15 @@ pub fn draw<'a>(frame: &mut Frame, area: Rect, app: &'a App) {
         frame.render_widget(
             Paragraph::new(text)
                 .alignment(Alignment::Center)
-                .style(Style::default().fg(DIM)),
+                .style(theme.text_dim),
             middle,
         );
         return;
     }
     let glyphs = &app.glyphs;
     let today = app.clock.today();
-    let row = |task: &'a Task| task_row(task, app.selection.contains(&task.id), glyphs, today);
+    let row =
+        |task: &'a Task| task_row(task, app.selection.contains(&task.id), glyphs, theme, today);
     // Planned is grouped by how soon, Completed by day; a header row goes
     // before each group.
     let groups: Option<Vec<(String, Vec<usize>)>> = match &app.shown {
@@ -57,10 +63,7 @@ pub fn draw<'a>(frame: &mut Frame, area: Rect, app: &'a App) {
             let mut rows = Vec::new();
             let mut selected = 0;
             for (heading, members) in groups {
-                rows.push(
-                    Row::new(vec![Cell::from(""), Cell::from(heading)])
-                        .style(Style::default().fg(ACCENT).add_modifier(Modifier::BOLD)),
-                );
+                rows.push(Row::new(vec![Cell::from(""), Cell::from(heading)]).style(theme.title));
                 for index in members {
                     if index == app.task_index {
                         selected = rows.len();
@@ -84,7 +87,7 @@ pub fn draw<'a>(frame: &mut Frame, area: Rect, app: &'a App) {
         ],
     )
     .block(block)
-    .row_highlight_style(selection(has_focus));
+    .row_highlight_style(selection(theme, has_focus));
     let mut state = TableState::default().with_selected(Some(selected));
     frame.render_stateful_widget(table, area, &mut state);
 }
@@ -106,67 +109,70 @@ fn empty_text(app: &App) -> String {
     }
 }
 
-fn task_row<'a>(task: &'a Task, selected: bool, glyphs: &Glyphs, today: NaiveDate) -> Row<'a> {
+fn task_row<'a>(
+    task: &'a Task,
+    selected: bool,
+    glyphs: &Glyphs,
+    theme: &Theme,
+    today: NaiveDate,
+) -> Row<'a> {
     let status = if task.completed {
         glyphs.done
     } else {
         glyphs.open
     };
     let title_style = if task.completed {
-        Style::default().fg(DIM).add_modifier(Modifier::CROSSED_OUT)
+        theme.completed
     } else {
-        Style::default()
+        theme.text
     };
     let due = task.due.map_or_else(
         || Span::raw(""),
         |due| {
             let style = if due < today && !task.completed {
-                Style::default().fg(ERROR)
+                theme.overdue
             } else if due == today {
-                Style::default().fg(ACCENT)
+                theme.due_today
             } else {
-                Style::default().fg(DIM)
+                theme.text_dim
             };
             Span::styled(due_label(due, today), style)
         },
     );
     let mut flags = Vec::new();
     if task.important() {
-        flags.push(Span::styled(glyphs.important, Style::default().fg(AMBER)));
+        flags.push(Span::styled(glyphs.important, theme.important));
     }
     if task.recurrence.is_some() {
-        flags.push(Span::styled(glyphs.recurring, Style::default().fg(DIM)));
+        flags.push(Span::styled(glyphs.recurring, theme.text_muted));
     }
     if task.reminder.is_some() {
-        flags.push(Span::styled(glyphs.reminder, Style::default().fg(DIM)));
+        flags.push(Span::styled(glyphs.reminder, theme.text_muted));
     }
     Row::new(vec![
         Cell::from(status),
         Cell::from(if selected {
             Line::from(vec![
-                Span::styled(
-                    format!("{} ", glyphs.selected),
-                    Style::default().fg(ACCENT).add_modifier(Modifier::BOLD),
-                ),
-                Span::styled(task.title.as_str(), title_style.fg(ACCENT)),
+                Span::styled(format!("{} ", glyphs.selected), theme.key),
+                Span::styled(task.title.as_str(), title_style.patch(theme.accent)),
             ])
         } else {
             Line::from(Span::styled(task.title.as_str(), title_style))
         }),
         Cell::from(Line::from(due).alignment(Alignment::Right)),
         Cell::from(Line::from(flags)),
-        Cell::from(sync_marker(task.sync, glyphs)),
+        Cell::from(sync_marker(task.sync, glyphs, theme)),
     ])
 }
 
 /// A task's sync marker: pending dim, unknown amber, failed red, and
 /// nothing once synced (docs/blueprint/08-tui.md).
-pub fn sync_marker(sync: SyncMarker, glyphs: &Glyphs) -> Span<'static> {
+pub fn sync_marker(sync: SyncMarker, glyphs: &Glyphs, theme: &Theme) -> Span<'static> {
     match sync {
         SyncMarker::Synced => Span::raw(""),
-        SyncMarker::Pending => Span::styled(glyphs.pending, Style::default().fg(DIM)),
-        SyncMarker::Unknown => Span::styled(glyphs.unknown, Style::default().fg(AMBER)),
-        SyncMarker::Failed => Span::styled(glyphs.failed, Style::default().fg(ERROR)),
+        SyncMarker::Pending => Span::styled(glyphs.pending, theme.sync_pending),
+        SyncMarker::Unknown => Span::styled(glyphs.unknown, theme.sync_unknown),
+        SyncMarker::Failed => Span::styled(glyphs.failed, theme.sync_failed),
     }
 }
 

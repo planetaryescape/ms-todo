@@ -12,6 +12,7 @@ description = "ms-todo's terminal UI: ratatui over the daemon protocol, seeded f
 ms-todo-core = { workspace = true }
 ms-todo-nlp = { workspace = true }
 ms-todo-protocol = { workspace = true }
+ansi_colours = { workspace = true }
 chrono = { workspace = true }
 crossterm = { workspace = true }
 futures-util = { workspace = true }
@@ -23,6 +24,7 @@ socket2 = { workspace = true }
 thiserror = { workspace = true }
 tokio = { workspace = true, features = ["net", "sync"] }
 tokio-util = { workspace = true }
+toml_edit = { workspace = true }
 tracing = { workspace = true }
 tracing-subscriber = { workspace = true }
 

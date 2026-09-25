@@ -23,6 +23,7 @@ pub mod palette;
 pub mod scope;
 mod selection;
 pub mod task;
+mod themes;
 
 use std::collections::{HashMap, HashSet};
 
@@ -36,6 +37,7 @@ use ms_todo_protocol::{
 use crate::action::Action;
 use crate::glyphs::Glyphs;
 use crate::keybindings::Context;
+use crate::theme::{Theme, ThemeChoice};
 use diagnostics::{Diagnostics, Part};
 use edit::Field;
 use line_editor::LineEditor;
@@ -114,6 +116,12 @@ pub enum Mode {
         index: usize,
     },
     Help,
+    /// The theme picker: the theme under the cursor is drawn as a
+    /// preview; `before` is put back on Esc.
+    Themes {
+        index: usize,
+        before: &'static crate::theme::Builtin,
+    },
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -225,6 +233,12 @@ struct Seeds {
 
 pub struct App {
     pub glyphs: Glyphs,
+    /// The styles every frame is drawn with, from `theme_choice`.
+    pub theme: Theme,
+    pub theme_choice: ThemeChoice,
+    /// The theme was kept in the picker: the runner writes it to
+    /// config.toml, since saving is I/O, which `update` doesn't do.
+    pub save_theme: bool,
     /// ms-todo's version, as the title bar and help show it.
     pub version: &'static str,
     pub focus: Pane,
@@ -280,6 +294,9 @@ impl App {
     pub fn new(glyphs: Glyphs, clock: Clock) -> Self {
         Self {
             glyphs,
+            theme: Theme::default(),
+            theme_choice: ThemeChoice::default(),
+            save_theme: false,
             version: env!("CARGO_PKG_VERSION"),
             focus: Pane::Tasks,
             mode: Mode::Normal,
@@ -331,6 +348,7 @@ impl App {
             Mode::Palette { .. } => Context::Palette,
             Mode::Diagnostics => Context::Diagnostics,
             Mode::Help => Context::Help,
+            Mode::Themes { .. } => Context::Themes,
             Mode::Normal => match self.focus {
                 Pane::Sidebar => Context::Sidebar,
                 Pane::Tasks => Context::Tasks,
@@ -456,6 +474,18 @@ impl App {
                 Vec::new()
             }
             (Mode::Palette { .. }, Action::Submit) => self.run_palette(),
+            (Mode::Themes { .. }, Action::MoveDown | Action::MoveUp) => {
+                self.step_theme(action == Action::MoveDown);
+                Vec::new()
+            }
+            (Mode::Themes { .. }, Action::Submit) => {
+                self.keep_theme();
+                Vec::new()
+            }
+            (Mode::Themes { .. }, Action::Cancel) => {
+                self.revert_theme();
+                Vec::new()
+            }
             (_, Action::Backspace) => self.edit_with(LineEditor::backspace),
             (Mode::Editing { .. }, Action::Newline) => self.edit_with(LineEditor::newline),
             (Mode::Diagnostics, Action::MoveDown | Action::MoveUp) => {

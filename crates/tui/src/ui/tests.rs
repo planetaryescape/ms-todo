@@ -29,28 +29,29 @@ fn sidebar_list_and_detail() {
     insta::assert_snapshot!(render(&app));
 }
 
+/// Whether the cell at `x`, `y` has the theme's selection background.
+fn selected(terminal: &Terminal<TestBackend>, app: &App, x: u16, y: u16) -> bool {
+    let background = app.theme.selection.bg.expect("a selection background");
+    terminal.backend().buffer()[(x, y)].bg == background
+}
+
 #[test]
-fn the_selected_row_is_reversed_in_the_focused_pane_only() {
+fn the_selected_row_is_highlighted_in_the_focused_pane_only() {
     let mut app = seeded();
     let mut terminal = Terminal::new(TestBackend::new(110, 16)).expect("terminal");
-    let reversed = |terminal: &Terminal<TestBackend>, x: u16, y: u16| {
-        terminal.backend().buffer()[(x, y)]
-            .modifier
-            .contains(Modifier::REVERSED)
-    };
     terminal
         .draw(|frame| super::draw(frame, &app))
         .expect("draw");
     // Under the title bar, Home is the sidebar's sixth row; "Pay rent"
     // the list's first.
-    assert!(!reversed(&terminal, 2, 7));
-    assert!(reversed(&terminal, 26, 2));
+    assert!(!selected(&terminal, &app, 2, 7));
+    assert!(selected(&terminal, &app, 26, 2));
     app.focus = Pane::Sidebar;
     terminal
         .draw(|frame| super::draw(frame, &app))
         .expect("draw");
-    assert!(reversed(&terminal, 2, 7));
-    assert!(!reversed(&terminal, 26, 2));
+    assert!(selected(&terminal, &app, 2, 7));
+    assert!(!selected(&terminal, &app, 26, 2));
 }
 
 #[test]
@@ -372,7 +373,7 @@ fn the_diagnostics_page() {
 }
 
 /// j and k in the detail pane move down and up the rows it draws: the
-/// reversed row is always the field under the cursor.
+/// highlighted row is always the field under the cursor.
 #[test]
 fn the_detail_cursor_follows_the_rows_on_screen() {
     use crate::app::edit::Field;
@@ -385,12 +386,12 @@ fn the_detail_cursor_follows_the_rows_on_screen() {
         terminal
             .draw(|frame| super::draw(frame, &app))
             .expect("draw");
-        let buffer = terminal.backend().buffer();
         // The detail pane's first column inside its border.
         let x = 77;
         let row = (0..20)
-            .find(|&y| buffer[(x, y)].modifier.contains(Modifier::REVERSED))
-            .expect("a reversed row");
+            .find(|&y| selected(&terminal, &app, x, y))
+            .expect("a highlighted row");
+        let buffer = terminal.backend().buffer();
         let label: String = (x..x + 10).map(|x| buffer[(x, row)].symbol()).collect();
         assert_eq!(label.trim(), field.name(), "{field:?}");
         rows.push(row);
@@ -465,5 +466,60 @@ fn the_sidebar_with_folders_in_ascii() {
     let mut app = crate::app::folders::tests::foldered();
     app.glyphs = ASCII;
     app.collapsed.insert("Projects".into());
+    insta::assert_snapshot!(render(&app));
+}
+
+/// The main screen with its colours, one snapshot per theme: the
+/// terminal's own palette, an RGB one, and `NO_COLOR`.
+fn render_styled(app: &App) -> String {
+    let mut terminal = Terminal::new(TestBackend::new(110, 16)).expect("terminal");
+    terminal
+        .draw(|frame| super::draw(frame, app))
+        .expect("draw");
+    format!("{:?}", terminal.backend().buffer())
+}
+
+fn themed(name: &'static str, capability: crate::theme::Capability) -> App {
+    let mut app = seeded();
+    app.task_index = 0;
+    app.with_theme(crate::theme::ThemeChoice {
+        builtin: crate::theme::builtin(name).expect("a built-in theme"),
+        capability,
+        ..Default::default()
+    })
+}
+
+#[test]
+fn the_terminal_theme() {
+    let app = themed("terminal", crate::theme::Capability::Ansi256);
+    insta::assert_snapshot!(render_styled(&app));
+}
+
+#[test]
+fn catppuccin_mocha_in_truecolor() {
+    let app = themed("catppuccin-mocha", crate::theme::Capability::Truecolor);
+    insta::assert_snapshot!(render_styled(&app));
+}
+
+#[test]
+fn no_color_is_monochrome() {
+    let app = themed("catppuccin-mocha", crate::theme::Capability::Monochrome);
+    let screen = render_styled(&app);
+    // Only the terminal's own colours: bold, dim and reverse carry it.
+    assert!(!screen.contains("Rgb") && !screen.contains("Indexed"));
+    for colour in ["Red", "Cyan", "Yellow", "DarkGray"] {
+        assert!(!screen.contains(colour), "{colour} with NO_COLOR");
+    }
+    insta::assert_snapshot!(screen);
+}
+
+#[test]
+fn the_theme_picker_lists_every_theme() {
+    let mut app = seeded();
+    app.task_index = 0;
+    app.mode = Mode::Themes {
+        index: 1,
+        before: &crate::theme::BUILTIN[0],
+    };
     insta::assert_snapshot!(render(&app));
 }

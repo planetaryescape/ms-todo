@@ -5,11 +5,11 @@
 
 use ratatui::Frame;
 use ratatui::layout::Rect;
-use ratatui::style::{Modifier, Style};
+use ratatui::style::Style;
 use ratatui::text::{Line, Span};
 use ratatui::widgets::Paragraph;
 
-use super::{ACCENT, DIM, ERROR, line_input};
+use super::line_input;
 use crate::action::Action;
 use crate::app::edit::Field;
 use crate::app::line_editor::LineEditor;
@@ -18,24 +18,17 @@ use crate::keybindings::{Context, hints, key_for};
 
 pub fn draw(frame: &mut Frame, area: Rect, app: &App) {
     let glyphs = &app.glyphs;
+    let theme = &app.theme;
     let hint_spans = |context| {
         let mut spans = Vec::new();
         for (keys, label) in hints(context) {
-            spans.push(Span::styled(
-                format!(" {keys} "),
-                Style::default().fg(ACCENT).add_modifier(Modifier::BOLD),
-            ));
-            spans.push(Span::styled(format!("{label} "), Style::default().fg(DIM)));
+            spans.push(Span::styled(format!(" {keys} "), theme.key));
+            spans.push(Span::styled(format!("{label} "), theme.text_dim));
         }
         spans
     };
-    let typed = |input: &LineEditor| line_input::single(input, Style::default(), glyphs);
-    let key = |keys: &str| {
-        Span::styled(
-            keys.to_owned(),
-            Style::default().fg(ACCENT).add_modifier(Modifier::BOLD),
-        )
-    };
+    let typed = |input: &LineEditor| line_input::single(input, Style::default(), glyphs, theme);
+    let key = |keys: &str| Span::styled(keys.to_owned(), theme.key);
     let left = match &app.mode {
         Mode::Adding { input } => {
             let list = match &app.shown {
@@ -44,38 +37,32 @@ pub fn draw(frame: &mut Frame, area: Rect, app: &App) {
                 }
                 shown => format!("Tasks, from {}", app.scope_name(shown.as_ref())),
             };
-            let mut spans = vec![Span::styled(
-                format!(" Add to {list}: "),
-                Style::default().fg(ACCENT),
-            )];
+            let mut spans = vec![Span::styled(format!(" Add to {list}: "), theme.accent)];
             spans.extend(typed(input));
             Line::from(spans)
         }
         Mode::Filtering { input } => {
-            let mut spans = vec![Span::styled(" / ", Style::default().fg(ACCENT))];
+            let mut spans = vec![Span::styled(" / ", theme.accent)];
             spans.extend(typed(input));
             if let Some(error) = &app.filter_error {
-                spans.push(Span::styled(
-                    format!("  {error}"),
-                    Style::default().fg(ERROR),
-                ));
+                spans.push(Span::styled(format!("  {error}"), theme.error));
             }
             Line::from(spans)
         }
         Mode::Editing { field, .. } => {
             let mut spans = vec![Span::styled(
                 format!(" Edit {}: ", field.name().to_lowercase()),
-                Style::default().fg(ACCENT),
+                theme.accent,
             )];
             spans.extend(hint_spans(app.context()));
             spans.push(key(&format!(" {} ", glyphs.left_right)));
-            spans.push(Span::styled("Move ", Style::default().fg(DIM)));
+            spans.push(Span::styled("Move ", theme.text_dim));
             Line::from(spans)
         }
         // The one-line field picker: each field with its key in brackets,
         // `[t]itle`, then the picker's other keys.
         Mode::ChoosingField { .. } => {
-            let mut spans = vec![Span::styled(" edit: ", Style::default().fg(ACCENT))];
+            let mut spans = vec![Span::styled(" edit: ", theme.accent)];
             for field in Field::ALL {
                 let name = field.name().to_lowercase();
                 let Some(bound) = key_for(Context::Fields, Action::EditField(field)) else {
@@ -96,21 +83,18 @@ pub fn draw(frame: &mut Frame, area: Rect, app: &App) {
             let name = app.list_name(list_id).unwrap_or("list");
             let mut spans = vec![Span::styled(
                 format!(" Move {name} to folder: "),
-                Style::default().fg(ACCENT),
+                theme.accent,
             )];
             spans.extend(typed(input));
             let suggestions = app.folder_suggestions(&input.text());
             if !suggestions.is_empty() {
                 spans.push(Span::styled(
                     format!("  {} ", suggestions.join(" \u{b7} ")),
-                    Style::default().fg(DIM),
+                    theme.text_dim,
                 ));
             }
             spans.extend(hint_spans(Context::Folder));
-            spans.push(Span::styled(
-                " Enter on empty: no folder ",
-                Style::default().fg(DIM),
-            ));
+            spans.push(Span::styled(" Enter on empty: no folder ", theme.text_dim));
             Line::from(spans)
         }
         // One due date for several tasks: what's typed, then what it
@@ -120,16 +104,14 @@ pub fn draw(frame: &mut Frame, area: Rect, app: &App) {
         } => {
             let mut spans = vec![Span::styled(
                 format!(" Due date for {what}: "),
-                Style::default().fg(ACCENT),
+                theme.accent,
             )];
             spans.extend(typed(input));
             let under = match (error.clone(), app.date_preview()) {
                 (Some(error), _) | (None, Some(Err(error))) => {
-                    Span::styled(format!("  {error} "), Style::default().fg(ERROR))
+                    Span::styled(format!("  {error} "), theme.error)
                 }
-                (None, Some(Ok(preview))) => {
-                    Span::styled(format!("  {preview} "), Style::default().fg(DIM))
-                }
+                (None, Some(Ok(preview))) => Span::styled(format!("  {preview} "), theme.text_dim),
                 (None, None) => Span::raw(""),
             };
             spans.push(under);
@@ -137,14 +119,14 @@ pub fn draw(frame: &mut Frame, area: Rect, app: &App) {
             Line::from(spans)
         }
         Mode::ChoosingImportance { .. } => {
-            let mut spans = vec![Span::styled(" importance: ", Style::default().fg(ACCENT))];
+            let mut spans = vec![Span::styled(" importance: ", theme.accent)];
             spans.extend(hint_spans(Context::Importance));
             Line::from(spans)
         }
         Mode::ConfirmDelete { what, .. } => {
             let mut spans = vec![Span::styled(
                 format!(" Delete {what}? "),
-                Style::default().fg(ERROR).add_modifier(Modifier::BOLD),
+                theme.banner_error,
             )];
             spans.extend(hint_spans(app.context()));
             Line::from(spans)

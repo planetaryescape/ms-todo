@@ -16,28 +16,32 @@ mod palette;
 mod sidebar;
 mod status_line;
 mod task_list;
+mod theme_picker;
 mod title_bar;
 
 use ratatui::Frame;
 use ratatui::layout::{Constraint, Layout, Rect};
-use ratatui::style::{Color, Modifier, Style};
+use ratatui::style::Style;
+use ratatui::text::Line;
 use ratatui::widgets::{Block, BorderType, Borders};
 
 use crate::app::{App, Mode, Pane};
-
-const ACCENT: Color = Color::Cyan;
-const DIM: Color = Color::DarkGray;
-const AMBER: Color = Color::Yellow;
-const ERROR: Color = Color::Red;
+use crate::theme::Theme;
 
 pub fn draw(frame: &mut Frame, app: &App) {
+    // The theme's background and text colour under everything; nothing
+    // for the terminal theme, whose colours are the terminal's own.
+    let area = frame.area();
+    if app.theme.base != Style::default() {
+        frame.buffer_mut().set_style(area, app.theme.base);
+    }
     let [title, main, status, hints] = Layout::vertical([
         Constraint::Length(1),
         Constraint::Min(3),
         Constraint::Length(1),
         Constraint::Length(1),
     ])
-    .areas(frame.area());
+    .areas(area);
     let [side, list, detail] = Layout::horizontal([
         Constraint::Length(24),
         Constraint::Fill(3),
@@ -60,35 +64,39 @@ pub fn draw(frame: &mut Frame, app: &App) {
         } => modals::picker(frame, app, candidates, *index),
         Mode::Palette { query, index } => palette::draw(frame, app, query, *index),
         Mode::Diagnostics => diagnostics::draw(frame, main, app),
+        Mode::Themes { index, .. } => theme_picker::draw(frame, app, *index),
         _ => {}
     }
 }
 
-/// A pane's frame, highlighted when it has the focus.
-fn pane(title: String, focused: bool) -> Block<'static> {
-    let style = if focused {
-        Style::default().fg(ACCENT)
+/// A pane's frame, highlighted when it has the focus. It carries the
+/// theme's background, so a modal drawn over `Clear` keeps it.
+fn pane(theme: &Theme, title: impl Into<Line<'static>>, focused: bool) -> Block<'static> {
+    let (border, title_style) = if focused {
+        (theme.border_focused, theme.title)
     } else {
-        Style::default().fg(DIM)
+        (theme.border, theme.title_unfocused)
     };
     Block::default()
         .borders(Borders::ALL)
         .border_type(BorderType::Rounded)
-        .border_style(style)
+        .style(theme.base)
+        .border_style(border)
         .title(title)
-        .title_style(style.add_modifier(Modifier::BOLD))
+        .title_style(title_style)
 }
 
 fn focused(app: &App, pane: Pane) -> bool {
     app.mode == Mode::Normal && app.focus == pane
 }
 
-/// The selected row's style: reversed in the focused pane, bold elsewhere.
-fn selection(focused: bool) -> Style {
+/// The selected row's style: the theme's selection in the focused pane,
+/// bold elsewhere.
+fn selection(theme: &Theme, focused: bool) -> Style {
     if focused {
-        Style::default().add_modifier(Modifier::REVERSED)
+        theme.selection
     } else {
-        Style::default().add_modifier(Modifier::BOLD)
+        theme.selection_unfocused
     }
 }
 

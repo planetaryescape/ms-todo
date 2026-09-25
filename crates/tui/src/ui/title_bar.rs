@@ -1,32 +1,29 @@
 use ratatui::Frame;
 use ratatui::layout::{Constraint, Layout, Rect};
-use ratatui::style::{Modifier, Style};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::Paragraph;
 
-use super::{ACCENT, DIM, ERROR};
 use crate::app::App;
 
 /// The top row: which app and version, and the view, on the left; the
 /// sync state on the right.
 pub fn draw(frame: &mut Frame, area: Rect, app: &App) {
+    let theme = &app.theme;
+    frame.buffer_mut().set_style(area, theme.header_bar);
     let left = Line::from(vec![
-        Span::styled(
-            " ms-todo",
-            Style::default().fg(ACCENT).add_modifier(Modifier::BOLD),
-        ),
+        Span::styled(" ms-todo", theme.title),
         Span::styled(
             format!(" {} \u{b7} {}", app.version, app.view_name()),
-            Style::default().fg(DIM),
+            theme.text_dim,
         ),
     ]);
     let glyphs = &app.glyphs;
     let (dot, state, style) = if app.activity.in_progress {
-        (glyphs.pending, "syncing", Style::default().fg(ACCENT))
+        (glyphs.pending, "syncing", theme.accent)
     } else if app.activity.last_error.is_some() {
-        (glyphs.failed, "sync failed", Style::default().fg(ERROR))
+        (glyphs.failed, "sync failed", theme.sync_failed)
     } else {
-        (glyphs.connected, "synced", Style::default().fg(DIM))
+        (glyphs.connected, "synced", theme.text_dim)
     };
     let right = format!("{dot} {state} ");
     let width = u16::try_from(right.chars().count()).unwrap_or(u16::MAX);

@@ -9,18 +9,26 @@ use ms_todo_tui::{Options, TuiError};
 use crate::args::TuiArgs;
 use crate::daemon_client;
 use crate::error::CliError;
+use crate::output::print_ids;
 
 /// Where `MS_TODO_TUI_TRACE` names a file, the TUI writes its tracing
 /// spans there: the latency measurements, among others.
 const TRACE_ENV: &str = "MS_TODO_TUI_TRACE";
 
 pub async fn tui(paths: &Paths, args: TuiArgs, started: Instant) -> Result<(), CliError> {
+    if args.list_themes {
+        return print_ids(ms_todo_tui::theme::names());
+    }
+    // Before the daemon and the terminal: a bad theme is a plain error.
+    let theme = ms_todo_tui::theme::load(&paths.config_file, args.theme.as_deref())
+        .map_err(|error| CliError::new(ErrorKind::InvalidInput, &error))?;
     // Started now, or restarted if it's another version; the TUI makes
     // its own connection.
     drop(daemon_client::connect(paths).await?);
     let options = Options {
         socket: paths.socket_path(),
         ascii: args.ascii,
+        theme,
         bench_startup: args.bench_startup,
         started,
         trace: std::env::var_os(TRACE_ENV).map(Into::into),
