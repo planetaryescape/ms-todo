@@ -6,6 +6,7 @@ mod support;
 use std::os::unix::fs::PermissionsExt;
 use std::path::Path;
 
+use nix::unistd::{Pid, getpgid, getsid};
 use serde_json::{Value, json};
 use support::fake_graph::{FakeGraph, list, task};
 use support::{ACCESS_TOKEN, Env};
@@ -71,6 +72,50 @@ fn start_status_stop_and_the_pid_is_gone() {
 
     // Stopping again is a no-op.
     assert_eq!(env.json(&["daemon", "stop"])["stopped_pid"], Value::Null);
+}
+
+/// An auto-started daemon must never stay a client's child: a client that
+/// never reaps it (the TUI) would leave a zombie that blocks `daemon stop`
+/// (D-046). Its own session also shows it left the client's.
+#[test]
+fn auto_start_detaches_the_daemon_from_its_client() {
+    let env = Env::new();
+
+    let client = env
+        .cmd()
+        .args(["--format", "json", "daemon", "start"])
+        .output()
+        .expect("run daemon start");
+    assert!(client.status.success(), "{client:?}");
+    let started: Value = serde_json::from_slice(&client.stdout).expect("json");
+    let pid = started["pid"].as_u64().expect("pid");
+    let daemon = Pid::from_raw(i32::try_from(pid).expect("pid fits i32"));
+
+    let parent = std::process::Command::new("ps")
+        .args(["-o", "ppid=", "-p", &pid.to_string()])
+        .output()
+        .expect("run ps");
+    let parent: u32 = String::from_utf8_lossy(&parent.stdout)
+        .trim()
+        .parse()
+        .expect("ppid");
+    assert_ne!(
+        parent,
+        std::process::id(),
+        "the test harness parents the daemon"
+    );
+
+    let ours = getsid(None).expect("our session");
+    let its = getsid(Some(daemon)).expect("the daemon's session");
+    assert_ne!(its, ours, "the daemon stayed in the client's session");
+    assert_ne!(
+        its, daemon,
+        "the daemon leads a session, so could take a terminal"
+    );
+    assert!(
+        getpgid(Some(daemon)).is_ok_and(|group| group != getpgid(None).expect("our group")),
+        "the daemon stayed in the client's process group"
+    );
 }
 
 #[test]

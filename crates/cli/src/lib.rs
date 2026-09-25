@@ -106,6 +106,9 @@ fn execute(
     if let Command::Daemon(DaemonCommand::Run) = command {
         return Ok(daemon(paths));
     }
+    if let Command::Daemon(DaemonCommand::Launch) = command {
+        return Ok(daemon_client::launch(&paths));
+    }
     let runtime = tokio::runtime::Builder::new_current_thread()
         .enable_all()
         .build()?;
@@ -187,8 +190,8 @@ async fn dispatch(command: Command, paths: &Paths, format: OutputFormat) -> Resu
         Command::Daemon(DaemonCommand::Status) => {
             print_success(format, &daemon_commands::status(paths).await)
         }
-        Command::Daemon(DaemonCommand::Run) => {
-            unreachable!("`daemon run` returns from `execute` before the runtime starts")
+        Command::Daemon(DaemonCommand::Run | DaemonCommand::Launch) => {
+            unreachable!("`daemon run|launch` return from `execute` before the runtime starts")
         }
         Command::Tui(_) => unreachable!("`tui` returns from `execute` before `dispatch`"),
     }

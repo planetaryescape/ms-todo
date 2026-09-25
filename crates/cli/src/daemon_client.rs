@@ -3,9 +3,12 @@
 // protocol-mismatch guidance) and crates/daemon/src/server.rs
 // (`ensure_daemon_running`, `inspect_socket_state`, `spawn_daemon_process`,
 // `detach_daemon_child`, `shutdown_daemon_for_maintenance`,
-// `wait_for_process_exit`). Changes: instance-aware paths from core; the
+// `wait_for_process_exit`, `process_is_zombie` and its unreaped-child
+// test). Changes: instance-aware paths from core; the
 // daemon's lock file, not a process scan, says whether a daemon is alive;
-// a daemon whose protocol or version differs is restarted.
+// a daemon whose protocol or version differs is restarted; the daemon is
+// started through `daemon launch` so it never stays a client's child;
+// procfs, not `ps`, says whether a process is a zombie on Linux.
 
 //! Talking to the daemon, and starting and stopping it
 //! (docs/blueprint/01-architecture.md#daemon-lifecycle). Any client that
@@ -20,9 +23,8 @@
 use std::fs::File;
 use std::io::{ErrorKind as IoErrorKind, Read, Seek, SeekFrom};
 use std::os::unix::fs::{DirBuilderExt, OpenOptionsExt};
-use std::os::unix::process::CommandExt;
 use std::path::Path;
-use std::process::{Child, Stdio};
+use std::process::{Child, ExitCode, Stdio};
 use std::time::Duration;
 
 use fs2::FileExt;
@@ -34,7 +36,7 @@ use ms_todo_protocol::{
 };
 use nix::errno::Errno;
 use nix::sys::signal::{Signal, kill};
-use nix::unistd::Pid;
+use nix::unistd::{Pid, setsid};
 use tokio::net::UnixStream;
 use tokio::time::Instant;
 use tokio_util::codec::Framed;
@@ -50,6 +52,10 @@ const STALL_TIMEOUT: Duration = Duration::from_secs(300);
 const STALL_TIMEOUT_ENV: &str = "MS_TODO_REQUEST_TIMEOUT_MS";
 const READY_TIMEOUT: Duration = Duration::from_secs(15);
 const EXIT_TIMEOUT: Duration = Duration::from_secs(10);
+/// How long `daemon launch` relays the daemon's exit: past `READY_TIMEOUT`,
+/// so it outlasts its client's wait, but bounded, so a launcher whose client
+/// died doesn't stay the daemon's parent.
+const LAUNCH_TIMEOUT: Duration = Duration::from_secs(READY_TIMEOUT.as_secs() * 2);
 const POLL_INTERVAL: Duration = Duration::from_millis(50);
 const LOG_TAIL_LINES: usize = 5;
 
@@ -349,7 +355,21 @@ fn incompatibility(status: &DaemonStatus) -> Option<String> {
 }
 
 async fn start(paths: &Paths) -> Result<(DaemonClient, DaemonStatus), CliError> {
-    let mut child = spawn(paths)?;
+    let mut launcher = spawn(paths)?;
+    let started = wait_until_ready(paths, &mut launcher).await;
+    // The launcher is the daemon's parent only while it relays an early
+    // exit. Ending it hands the daemon to launchd or init, which reap it, so
+    // this client never parents the daemon and can't leave it a zombie that
+    // blocks `daemon stop` (D-046).
+    let _ = launcher.kill();
+    let _ = launcher.wait();
+    started
+}
+
+async fn wait_until_ready(
+    paths: &Paths,
+    launcher: &mut Child,
+) -> Result<(DaemonClient, DaemonStatus), CliError> {
     let deadline = Instant::now() + READY_TIMEOUT;
     loop {
         match probe(paths).await {
@@ -362,9 +382,10 @@ async fn start(paths: &Paths) -> Result<(DaemonClient, DaemonStatus), CliError> 
             }
             Probe::Unreachable => {}
         }
-        // Exit 0 means another daemon already held the lock (a racing
-        // client started it), so keep waiting for that one.
-        if let Ok(Some(exit)) = child.try_wait()
+        // The launcher exits with the daemon's status. Exit 0 means another
+        // daemon already held the lock (a racing client started it), so
+        // keep waiting for that one.
+        if let Ok(Some(exit)) = launcher.try_wait()
             && !exit.success()
         {
             if exit.code() == Some(i32::from(EXIT_DATABASE_TOO_NEW)) {
@@ -393,21 +414,71 @@ async fn start(paths: &Paths) -> Result<(DaemonClient, DaemonStatus), CliError> 
     }
 }
 
-/// Launch `ms-todo daemon run` detached, in its own process group, so it
-/// outlives this command and the terminal's SIGHUP.
+/// Spawn `ms-todo daemon launch`, which starts the daemon detached from
+/// this client and relays its exit if it dies during startup.
 fn spawn(paths: &Paths) -> Result<Child, CliError> {
     let exe = std::env::current_exe()?;
     let log = open_log(&paths.daemon_log_file())?;
     std::process::Command::new(exe)
-        .args(["daemon", "run", "--instance", paths.instance.label()])
+        .args(["daemon", "launch", "--instance", paths.instance.label()])
         // Don't hold the caller's directory open for the daemon's lifetime.
         .current_dir("/")
         .stdin(Stdio::null())
         .stdout(Stdio::null())
         .stderr(log)
-        .process_group(0)
         .spawn()
         .map_err(|error| unavailable(format!("cannot start the daemon: {error}")))
+}
+
+/// `ms-todo daemon launch`: the middle of a double fork, without `unsafe`
+/// (the workspace forbids it, so no `pre_exec`). It leaves the client's
+/// session, so the daemon outlives the terminal's SIGHUP, then runs
+/// `ms-todo daemon run` and exits with its status if it dies during
+/// startup. The client ends this process once the daemon is ready, so the
+/// daemon's parent becomes launchd or init, never a long-lived client such
+/// as the TUI, whose unreaped zombie daemon once blocked an upgrade (D-046).
+/// A launcher whose client died gives up after [`LAUNCH_TIMEOUT`].
+pub(crate) fn launch(paths: &Paths) -> ExitCode {
+    if let Err(error) = setsid() {
+        eprintln!("ms-todo daemon launch: cannot start a new session: {error}");
+        return ExitCode::FAILURE;
+    }
+    let exe = match std::env::current_exe() {
+        Ok(exe) => exe,
+        Err(error) => {
+            eprintln!("ms-todo daemon launch: cannot find this executable: {error}");
+            return ExitCode::FAILURE;
+        }
+    };
+    // Stdio and the working directory are inherited from the client's spawn.
+    let mut daemon = match std::process::Command::new(exe)
+        .args(["daemon", "run", "--instance", paths.instance.label()])
+        .spawn()
+    {
+        Ok(daemon) => daemon,
+        Err(error) => {
+            eprintln!("ms-todo daemon launch: cannot start the daemon: {error}");
+            return ExitCode::FAILURE;
+        }
+    };
+    let deadline = std::time::Instant::now() + LAUNCH_TIMEOUT;
+    while std::time::Instant::now() < deadline {
+        match daemon.try_wait() {
+            Ok(Some(exit)) => {
+                // A daemon killed by a signal has no code; any failure will do.
+                return exit
+                    .code()
+                    .and_then(|code| u8::try_from(code).ok())
+                    .map_or(ExitCode::FAILURE, ExitCode::from);
+            }
+            Ok(None) => std::thread::sleep(POLL_INTERVAL),
+            Err(error) => {
+                eprintln!("ms-todo daemon launch: cannot watch the daemon: {error}");
+                return ExitCode::FAILURE;
+            }
+        }
+    }
+    ExitCode::SUCCESS
 }
 
 fn open_log(path: &Path) -> Result<File, CliError> {
@@ -480,7 +551,44 @@ fn pid_alive(pid: u32) -> bool {
         return false;
     };
     // EPERM means it exists but isn't ours to signal.
-    !matches!(kill(Pid::from_raw(raw), None), Err(Errno::ESRCH))
+    if matches!(kill(Pid::from_raw(raw), None), Err(Errno::ESRCH)) {
+        return false;
+    }
+    // `kill(pid, 0)` succeeds for a zombie, but a zombie has already exited:
+    // there's nothing left to wait for, and only its parent can reap it. A
+    // client from before D-046 (such as an old TUI) parents the daemon it
+    // started and never reaps it, so counting a zombie as alive would block
+    // every `daemon stop`, and so every upgrade, until that client quits.
+    !process_is_zombie(pid)
+}
+
+/// Linux has the state in procfs. The field after the command name, which
+/// is in parentheses and may itself contain `)` or spaces.
+#[cfg(target_os = "linux")]
+fn process_is_zombie(pid: u32) -> bool {
+    std::fs::read_to_string(format!("/proc/{pid}/stat"))
+        .ok()
+        .and_then(|stat| {
+            let (_, after_name) = stat.rsplit_once(')')?;
+            after_name.trim_start().chars().next()
+        })
+        == Some('Z')
+}
+
+/// macOS has no procfs, and `proc_pidinfo` needs `unsafe`, which the
+/// workspace forbids; `ps` is mxr's probe. A `ps` that can't run says
+/// "not a zombie", so the caller keeps waiting as before.
+#[cfg(not(target_os = "linux"))]
+fn process_is_zombie(pid: u32) -> bool {
+    std::process::Command::new("ps")
+        .args(["-o", "state=", "-p", &pid.to_string()])
+        .stderr(Stdio::null())
+        .output()
+        .is_ok_and(|output| {
+            String::from_utf8_lossy(&output.stdout)
+                .trim_start()
+                .starts_with('Z')
+        })
 }
 
 fn terminate(pid: u32) -> Result<(), CliError> {
@@ -552,6 +660,43 @@ mod tests {
             started_at: 0,
             signed_in: true,
         }
+    }
+
+    #[test]
+    fn a_zombie_counts_as_exited() {
+        // A child that exits and is never reaped stays a zombie, which
+        // `kill(pid, 0)` still reports: the old TUI's auto-started daemon.
+        let child = std::process::Command::new("true")
+            .spawn()
+            .expect("spawn true");
+        let pid = child.id();
+        std::mem::forget(child);
+        let deadline = std::time::Instant::now() + Duration::from_secs(5);
+        while !process_is_zombie(pid) {
+            assert!(
+                std::time::Instant::now() < deadline,
+                "pid {pid} never became a zombie"
+            );
+            std::thread::sleep(POLL_INTERVAL);
+        }
+        let raw = i32::try_from(pid).expect("pid fits i32");
+        assert!(
+            kill(Pid::from_raw(raw), None).is_ok(),
+            "the zombie must still answer kill(pid, 0), or this tests nothing"
+        );
+        assert!(!pid_alive(pid), "zombie pid {pid} counted as alive");
+    }
+
+    #[test]
+    fn a_running_process_is_alive() {
+        let mut child = std::process::Command::new("sleep")
+            .arg("30")
+            .spawn()
+            .expect("spawn sleep");
+        let alive = pid_alive(child.id());
+        let _ = child.kill();
+        let _ = child.wait();
+        assert!(alive);
     }
 
     #[test]

@@ -37,6 +37,7 @@ mxr and spotuify already handle the known costs: auto-starting the daemon, stale
 - Any client auto-starts the daemon if the socket is missing or dead. It spawns a detached process and waits on a readiness check, following mxr's pattern.
 - **Readiness is not liveness.** The daemon binds the socket before migrations and the first sync. Ready means `Status` answers with a compatible protocol version, and `Status` reports any subsystem still starting (vault: `Daemon Readiness Is Not Process Liveness`).
 - `ms-todo daemon start|stop|status|restart`. A stop only counts as done when the socket is unreachable and the daemon's own PID has exited. That's spotuify's rule, which exists because of stray daemons.
+- Auto-start fully detaches the daemon (through `ms-todo daemon launch`, so no client is ever its parent), and a zombie counts as exited (D-046).
 - Clients and the daemon exchange a protocol version when they connect. If they don't match, the client restarts the daemon (after an upgrade) or reports a clear error.
 - Optional service files for launchd and systemd, like spotuify's `install/`.
 - Dev and installed builds are kept apart with an instance name, like spotuify's `SPOTUIFY_INSTANCE`: `MS_TODO_INSTANCE`. Binaries under `target/` default to `ms-todo-dev`. This matters because agents build and run dev daemons.

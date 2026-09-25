@@ -352,9 +352,13 @@ pub enum DaemonCommand {
     Stop,
     /// Show whether the daemon is running, its PID, version and socket
     Status,
-    /// Run the daemon in the foreground (what `start` launches)
+    /// Run the daemon in the foreground (what `launch` starts)
     #[command(hide = true)]
     Run,
+    /// Start `daemon run` in a session of its own and relay an early exit
+    /// (what `start` spawns, so no client is ever the daemon's parent)
+    #[command(hide = true)]
+    Launch,
 }
 
 #[derive(Debug, Default, Args)]

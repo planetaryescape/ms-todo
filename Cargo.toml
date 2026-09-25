@@ -24,6 +24,8 @@ assert_cmd = { workspace = true }
 chrono = { workspace = true }
 futures-util = { workspace = true }
 insta = { workspace = true }
+# The daemon's session and parent, to check auto-start detaches it.
+nix = { workspace = true }
 serde_json = { workspace = true }
 # Tests reach into a daemon's database to make its writes fail.
 sqlx = { workspace = true }
@@ -88,7 +90,7 @@ fs2 = "0.4"
 html2text = "0.17"
 iana-time-zone = "0.1"
 futures-util = { version = "0.3", default-features = false, features = ["sink", "std"] }
-nix = { version = "0.30", default-features = false, features = ["signal"] }
+nix = { version = "0.30", default-features = false, features = ["process", "signal"] }
 ratatui = "0.30"
 regex = "1"
 ratatui-textarea = { version = "0.9", default-features = false, features = ["crossterm"] }
