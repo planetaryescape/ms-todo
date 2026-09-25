@@ -1,11 +1,11 @@
 ---
 name: ms-todo
-description: Read, find, add, complete, reopen, edit, reschedule, move and delete Microsoft To Do tasks from the terminal by driving the `ms-todo` CLI. Use when the user wants to capture a task, tick one off, change a due date or reminder, move overdue tasks, move tasks to another list, see what's in a list, find a task by what it says, summarise what they finished (for a standup or a weekly review), or otherwise work with their Microsoft To Do lists and tasks.
+description: Read, find, add, complete, reopen, edit, reschedule, move and delete Microsoft To Do tasks, and plan My Day, from the terminal by driving the `ms-todo` CLI. Use when the user wants to capture a task, tick one off, change a due date or reminder, move overdue tasks, move tasks to another list, plan today (My Day), see what's in a list, find a task by what it says, summarise what they finished (for a standup or a weekly review), or otherwise work with their Microsoft To Do lists and tasks.
 ---
 
 # ms-todo
 
-**Skill v7, for ms-todo rung 6b** (instant reads from a local cache kept live by delta sync; search across every list; what was completed, by day; instant writes that queue offline and are never dropped; bulk reschedules and edits; moving tasks between lists without losing anything; undo; quick add, which reads a task's text for its list, dates, recurrence and importance, and which agents turn off with `--no-parse`; and optional list suggestions for inbox tasks).
+**Skill v8, for ms-todo rung 7** (instant reads from a local cache kept live by delta sync; search across every list; what was completed, by day; instant writes that queue offline and are never dropped; bulk reschedules and edits; moving tasks between lists without losing anything; undo; quick add, which reads a task's text for its list, dates, recurrence and importance, and which agents turn off with `--no-parse`; optional list suggestions for inbox tasks; and My Day, ms-todo's plan for today, mirrored on the phone through the due date).
 
 `ms-todo tui` (`mst tui`) is a full-screen view for people at a keyboard. Don't use it: it needs a terminal, and everything it does is a command below. Always pass a subcommand: a bare `ms-todo` opens the TUI in a terminal, and elsewhere only prints help and exits 2.
 
@@ -140,6 +140,22 @@ ms-todo tasks move <ID> <ID> --to "Someday" --yes --format json           # seve
 - A move copies the task into the list with every field, its steps, its link, its attachments and ms-todo's own data, checks the copy, and only then deletes the original. The task keeps its `id`; its `graph_id` changes. The answer shows it in the new list with `sync_state: "pending"`; it's `synced` once the move is done (`ms-todo outbox list`: the operation's `action` is `move`).
 - A failure before the delete leaves the original untouched: the operation is `failed` and the task is back in its list. A step with no answer pauses the move as `unknown` and deletes nothing. **Never retry or discard a paused move yourself, and never recreate the task**: tell the user what its `note` says and let them choose `outbox retry` or `outbox discard`. A move of a task already in that list exits 2; an unknown list exits 3.
 - `ms-todo undo <op_id>` moves the tasks back the same way. A task moved or changed since is left alone and listed in `refused`; if all are, undo exits 5.
+
+## My Day: plan today
+
+```bash
+ms-todo myday list --format json                  # today's My Day: the usual collection, open tasks first
+ms-todo myday suggest --format json               # open tasks it could hold: each with "suggestion" (due_today, overdue, left_over) and "list"
+ms-todo myday add <ID> [<ID>...] --format json    # action "my_day_add"; --dry-run previews
+ms-todo myday remove <ID> [<ID>...] --format json # action "my_day_remove"
+ms-todo tasks add "Call the bank" --no-parse --my-day --format json   # a new task straight into My Day
+ms-todo myday rollover --dry-run --format json    # what the daily rollover would take out now
+```
+
+- A task is in My Day when its extension's `myDay` (`items[].extensions[0].myDay`) is today's date. **Adding a task with no due date also makes it due today** (`myDayDueSet: true`), so the phone's own My Day shows it; tell the user that when you add one. A task with a due date keeps it. Removing it, or the daily rollover, takes that due date away again unless the user changed it; a due date the user set is never touched.
+- The daemon empties the day's My Day by itself at `my_day.rollover_time` (00:00 unless config.toml says otherwise). Don't run `myday rollover` unless the user asks; it's one change, `my_day_rollover` in `outbox list`, and `undo <op_id>` reverses it.
+- Only suggest; **add only what the user picks**. Adding a task already in My Day, or removing one that isn't, changes nothing (`items: []`).
+- Tasks the user put in My Day in the To Do app aren't visible here: Graph can't read the app's My Day. Don't tell the user their My Day is empty on that basis; say ms-todo's is.
 
 ## Suggest a list for an inbox task
 

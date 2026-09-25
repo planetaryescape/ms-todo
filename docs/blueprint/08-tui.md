@@ -39,7 +39,7 @@ This is copied from `mxr/crates/tui/src/{app,ui,runner.rs}`. Avoid spotuify's 11
 │   Admin        3 │                                        │                       │
 │ ─ Tasks       5  │                                        │                       │
 └──────────────────┴────────────────────────────────────────┴───────────────────────┘
- [a] add  [x] done  [m] my day  [e] edit  [/] filter  [:] palette  [?] help     ● synced
+ [a] add  [x] done  [t] my day  [e] edit  [/] filter  [:] palette  [?] help     ● synced
 ```
 
 Use glyphs from a Nerd Font or Unicode symbol set, with an ASCII fallback option. No emoji (BK's rule).
@@ -57,6 +57,8 @@ The **My Day view** has:
 
 - A heading with the date.
 - Today's tasks, with a "Suggestions" section below them: due today, overdue, and yesterday's unfinished My Day tasks. One key adds a suggestion.
+
+As built (rung 7, D-054): My Day is the first smart view, `☼ My Day` (`o` in ASCII) with its open count. The pane and window title is `My Day · Fri 25 Sep`, the day the daemon sends in `Seed.my_day` (it turns over at `my_day.rollover_time`, not at midnight). Its tasks come under a "Today" heading, open ones first, then "Suggestions" in the daemon's order. `t` (in the registry, the hint bar after Quit, help and the palette as "My Day") puts the cursor's task or the selection in My Day, or takes them out when every one is in already; on a suggestion it adds it, and the row moves up into Today. `a` from My Day adds the new task to it, in the default list unless `#List` says otherwise. A suggestion edited in place stays a suggestion until the view is read again. The detail pane doesn't show My Day yet.
 
 **Folders** are collapsible groups in the sidebar, from the list extension. As built (rung 5c, D-047): after the smart views come the folders in order, each a heading with the open-task total of its lists and the lists indented under it, then the lists in no folder. `Enter` or `Space` on a heading collapses or expands it, remembered for the session; moving onto a heading shows nothing new. The cursor follows its row by ID, not position, across a collapse and a seed that reorders lists; a shown list hidden in a collapsed folder is stood for by its heading. `M` (and the palette's "Move list to folder…") asks for a folder for the list under the cursor or on screen, prefilled with its folder, suggesting existing folders as you type (`Tab` takes the first); `Enter` on an empty name (`Ctrl-u` clears the prefill) takes it out, and the hint bar says so ("Enter on empty: no folder", rung 5d). The answer redraws the sidebar at once; the palette's "Go to" reaches a list in a collapsed folder and opens the folder.
 

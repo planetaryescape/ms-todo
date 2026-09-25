@@ -62,7 +62,7 @@ mst tasks add "Email Friday's report" --no-parse   # the text as the title, exac
 | `start mon` | the start date. With no due date, Microsoft To Do makes it the due date too, and ms-todo says so |
 | `every day`, `daily`, `every 3 days`, `every weekday`, `every mon, wed`, `every other week`, `every 2 weeks on fri`, `every 1st`, `every month on the 15th`, `every last friday`, `every year`, `every 12 oct` | a recurrence, due first on its next day (or the date you typed). `until 31 dec`, `for 10 times` and a time (`every mon 9am`) can follow |
 | `"quoted text"`, `\#`, `\@`, `\!` | kept as typed |
-| `+myday`, `*` | recognised, but My Day arrives in rung 7, so it's only a warning for now |
+| `+myday`, `*` | today's [My Day](#my-day); with no due date of its own, the task is due today too (`--my-day` does the same) |
 
 What isn't recognised stays in the title. The date words are whole words only, so `Monitor the build`, `Sat nav update`, `Ask Tom about invoice`, `Call May about the lease`, `Email Friday's report` and `Fix the 9am standup bot` keep their titles; `tom`, `tod` and `sat` count only in lower case. Only the first date counts; others stay in the title with a warning. Flags always win over the text: `--list`, `--due`, `--reminder` and `--importance` replace what it says, and `--due -` or `--reminder -` clears it (a recurrence or a start date needs its due date, so `--due -` with one is refused). A `#List` that two lists share by name is a warning, not a guess. Anything typed but not used (an unknown `#List`, a second date) is a `note:` on stderr, and in `tasks parse`'s `warnings`. An agent's or a script's text should use `--no-parse` with flags, so a title is never read as a date.
 
@@ -136,6 +136,25 @@ ms-todo undo                                            # puts the whole batch b
 - A change that may reach more than one task shows the tasks and asks first in a terminal; anywhere else it needs `--yes` (exit 2 otherwise). `--dry-run` shows the plan. What runs after a yes is the tasks you were shown.
 - However many tasks it moves, it's one change with one `op_id`, so one `ms-todo undo` puts them all back. A task whose due date has changed again since is left alone and listed under `refused`; only when every task changed is the undo refused (exit 5).
 
+## My Day
+
+```sh
+ms-todo myday list                      # today's My Day, open tasks first (also `tasks list --my-day`)
+ms-todo myday suggest                   # open tasks due today, overdue, or left from an earlier My Day
+ms-todo myday add <TASK>... [--list L]  # `-` reads IDs from stdin; --dry-run shows the plan
+ms-todo myday remove <TASK>...
+ms-todo myday rollover --dry-run        # what the daily rollover would take out now
+ms-todo tasks add "Call the bank +myday"
+```
+
+Microsoft Graph can't read or write the To Do app's My Day, so ms-todo keeps its own: a task is in My Day when `myDay`, a local `YYYY-MM-DD` in ms-todo's own data on the task, is today. Every ms-todo you sign in to sees it after its next sync; the To Do apps don't see that field.
+
+- **The phone.** Adding a task that has no due date also makes it due today and marks it `myDayDueSet`. The To Do app then shows it in its own My Day, on devices where "Show 'Due Today' tasks in My Day" is on. ms-todo can't read that setting; `doctor` reminds you. A task that already has a due date keeps it. Tasks you put in My Day in the app don't reach ms-todo's: the API has no trace of them.
+- **Removing** a task takes it out, and takes away the due date My Day gave it if the task is open and nobody has changed that date since. A due date you set or moved stays.
+- **The rollover.** At the first minute after `my_day.rollover_time` (00:00 local unless `[my_day] rollover_time = "HH:MM"` in config.toml says otherwise), the daemon takes every task out of an earlier day's My Day, by the removing rule: an open task loses the due date My Day set, a completed one keeps its date, and a due date you set is never touched. It runs once a day (`doctor` shows the day it last ran for), and once when the daemon starts after days off. It's one change, listed in `outbox list` as `my_day_rollover`, and `ms-todo undo <op_id>` reverses it. `myday rollover` runs it now; running it again finds nothing. Before the rollover time, My Day's "today" is still the day before, so `rollover_time = "04:00"` keeps late-night work in the day it belongs to. A task put back in today's My Day on another machine before the rollover reaches Microsoft To Do is left there.
+- **Suggestions** come from the cache: open tasks due today, then overdue, then those the last rollover on this machine took out still open (`left_over`, with `left_from`, the day they were in). A task already in today's My Day isn't suggested. CSV is `id,title,list,suggestion,due,left_from`.
+- Adding, removing and the rollover are changes like any other: queued, `pending` until sent, and undone with `ms-todo undo`. Undo leaves alone a task changed since (listed in `refused`).
+
 ## Move tasks between lists
 
 ```sh
@@ -197,11 +216,11 @@ mst tui --theme nord # draw with a theme (mst tui --list-themes names them)
 
 `mst` with no command opens the TUI only when both its input and output are a terminal; from a script, a pipe or an agent it prints help and exits 2, as before. Global flags still work (`mst --instance work`); TUI flags such as `--ascii` need `tui`.
 
-A title bar with the version and the view you're in, a sidebar of smart views (Important, Planned, All, Completed), then your folders, each with its lists under it and their total, then the lists in no folder, all with their counts, the task list, and a detail pane. It opens from the local cache, and changes made anywhere, the phone included, show up as the daemon syncs them. A change you make shows at once, marked pending (dim) until it reaches Microsoft To Do; unknown outcomes are amber and rejected changes red, with a banner saying why.
+A title bar with the version and the view you're in, a sidebar of smart views (My Day, Important, Planned, All, Completed), then your folders, each with its lists under it and their total, then the lists in no folder, all with their counts, the task list, and a detail pane. It opens from the local cache, and changes made anywhere, the phone included, show up as the daemon syncs them. A change you make shows at once, marked pending (dim) until it reaches Microsoft To Do; unknown outcomes are amber and rejected changes red, with a banner saying why.
 
 The keys are in the README's [TUI keys](../README.md#tui-keys) table; `?` inside the TUI lists them all.
 
-In the editor, a due date or a reminder takes what `--due` and `--reminder` take (`tomorrow`, `fri 17:30`, `+2w`, `12 oct`), and shows what it resolves to as you type (`→ Fri 2 Oct`, or `, in the past`); empty or `-` clears it, and input it can't read says why and sends nothing. Importance is picked by level: `1` high, `2` or `3` normal, `4` low (or `h`, `n`, `l`), saved at once. Notes are plain text on several lines: notes written as html on another device are shown as text, and only rewritten as text if you change them. A selection holds only tasks in the view on screen: switching views clears it, and a task that leaves the view drops out of it. The Completed view is grouped by the day each task was completed: Today, Yesterday, then `Mon 21 Sep` and so on.
+In the editor, a due date or a reminder takes what `--due` and `--reminder` take (`tomorrow`, `fri 17:30`, `+2w`, `12 oct`), and shows what it resolves to as you type (`→ Fri 2 Oct`, or `, in the past`); empty or `-` clears it, and input it can't read says why and sends nothing. Importance is picked by level: `1` high, `2` or `3` normal, `4` low (or `h`, `n`, `l`), saved at once. Notes are plain text on several lines: notes written as html on another device are shown as text, and only rewritten as text if you change them. A selection holds only tasks in the view on screen: switching views clears it, and a task that leaves the view drops out of it. The Completed view is grouped by the day each task was completed: Today, Yesterday, then `Mon 21 Sep` and so on. My Day's title has its day (`My Day · Fri 25 Sep`); its tasks come first, then Suggestions. `t` on a suggestion adds it; `t` on the task or the selection puts it in My Day, or takes it out when it's all there already. `a` from My Day adds the new task to it.
 
 ### Themes
 

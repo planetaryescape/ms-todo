@@ -97,6 +97,7 @@ Every command in the tour and the recipes works in it. The seed data is `demo/se
 | See your lists, by folder | `mst lists list` |
 | See a list's tasks | `mst tasks list --list Finances` |
 | Add a task the way you'd say it | `mst tasks add "Call mum in 2 days p1"` |
+| Plan today | `mst myday suggest`, `mst myday add <id>`, `mst myday list` |
 | Preview how it would be read | `mst tasks parse "Call mum in 2 days p1"` |
 | Complete, reopen, edit or delete | `mst tasks complete <id>`, `reopen`, `edit`, `delete` |
 | Find a task in any list | `mst search rent` |
@@ -128,6 +129,7 @@ Recognised  recurrence "every 1st", list "#Finances", priority "p1", date "9am"
 | `!9am`, `!tomorrow 8:30` | a reminder only |
 | `every day`, `every weekday`, `every mon, wed`, `every 1st`, `every last friday` | a recurrence |
 | `@errands` | an Outlook category |
+| `+myday` or `*` | today's [My Day](#my-day) |
 | `"quoted text"`, `\#` | kept as typed |
 
 Flags win over the text (`--list`, `--due`, `--reminder`, `--importance`), and `--no-parse` takes the text as the title exactly as given: use it for text you didn't type, such as an agent's. The full syntax is in [Quick add](docs/usage.md#quick-add).
@@ -161,6 +163,7 @@ In the TUI's add box, a likely list shows as `→ Finances? (Ctrl-l to accept)`.
 | `e` | edit a field: `t` title, `d` due date, `r` reminder, `i` importance, `n` notes, `I` cycles importance |
 | `Enter` in the detail pane | edit the field under the cursor |
 | `v` / `V` | select a task, or every task in the view; `Esc` clears the selection |
+| `t` | put the task or the selection in My Day, or take it out; on a suggestion in the My Day view, add it |
 | `m` | move the task or the selection to another list |
 | `M` | move the current list into a folder |
 | `S` | set one due date on the selection |
@@ -236,6 +239,24 @@ mst undo                                          # moves it back
 
 A move keeps the task's steps, link, attachments and ms-todo's own data, and checks the copy before it deletes the original.
 
+### My Day
+
+My Day is the list of what you'll do today. The To Do apps have one, but Microsoft Graph can't read or write it, so ms-todo keeps its own, and your phone shows it through the due date:
+
+```sh
+mst myday suggest              # due today, overdue, and what was left in yesterday's My Day
+mst myday add <id> <id>        # or `mst tasks add "Call the bank +myday"`
+mst myday list
+mst myday remove <id>
+```
+
+- **On the phone:** a task you add with no due date is due today while it's in My Day. With the To Do app's "Show 'Due Today' tasks in My Day" setting on, the app shows it in its own My Day. A task with a due date keeps it, and shows in the app's My Day on the day it's due. ms-todo can't read that setting, so `mst doctor` reminds you to check it.
+- **At midnight** the daemon empties the day's My Day. A task still open loses the due date My Day gave it; a due date you set or changed is never touched, and a completed task keeps its date. If the daemon was off, it catches up once when it next starts. `my_day.rollover_time` moves the rollover, for example to `"04:00"` for late nights, and `mst myday rollover --dry-run` shows what it would do.
+- **In the TUI**, My Day is the first view in the sidebar, with the day in its title and Suggestions under its tasks. `t` puts the task under the cursor or the selection in My Day, or takes it out.
+- **Across machines:** My Day lives in Microsoft To Do, so every ms-todo you sign in to sees it. Tasks you add to My Day in the To Do app don't reach ms-todo's, since the API can't see them.
+
+Adding, removing and the rollover are changes like any other: `mst undo` reverses them.
+
 ### Undo and the outbox
 
 Every change is queued, sent in the background, and can be undone:
@@ -268,10 +289,21 @@ JSON is `{ "schema_version": 2, "sync": {…}, "items": [...] }`, each item carr
 | `[tui] theme` | the TUI's theme |
 | `[tui.colors]` | single colour roles over the theme |
 | `[suggest]` | optional list suggestions from TypeSafe, off by default ([List suggestions](docs/usage.md#list-suggestions)) |
+| `[my_day] rollover_time` | when the day's [My Day](#my-day) is emptied, `"HH:MM"` local; `"00:00"` by default |
 
 Environment variables (`MS_TODO_INSTANCE`, `MS_TODO_CLIENT_ID`, `MS_TODO_CONFIG_DIR`, `NO_COLOR`, `COLORTERM` and more) and where ms-todo keeps its data are in [docs/usage.md](docs/usage.md#environment-variables).
 
 ## Recipes
+
+### Plan today
+
+```sh
+mst myday suggest
+mst myday add <id> <id> <id>
+mst myday list
+```
+
+`myday suggest` lists open tasks due today, then overdue ones, then those left open in an earlier My Day, each with its list and ID. Add the ones you'll do; one with no due date becomes due today, so your phone's My Day shows it too. In the TUI, open My Day at the top of the sidebar and press `t` on each suggestion.
 
 ### Review the morning: what's overdue or due today
 
@@ -407,13 +439,13 @@ Microsoft Graph's To Do API leaves out some things the To Do apps do. ms-todo wo
 
 | The apps have | The API | ms-todo |
 | --- | --- | --- |
-| My Day | has no My Day | Its own My Day is planned for [rung 7](docs/blueprint/10-roadmap.md). Until then quick add recognises `+myday` and warns that it doesn't do anything yet |
+| My Day | has no My Day | Its own [My Day](#my-day), stored on each task in Microsoft To Do as an open extension, and mirrored on the phone through the due date. A task put in My Day in the app doesn't reach ms-todo's |
 | List groups | doesn't expose them | Folders, stored on each list in Microsoft To Do as an open extension. Every ms-todo you sign in to sees them; the To Do apps don't |
 | Moving a task to another list | has no move | `tasks move` copies the task with everything it holds, checks the copy, then deletes the original. The To Do apps show the moved task as created at the time of the move; ms-todo keeps the original time |
 
 ## Status and roadmap
 
-ms-todo is at 0.1.18 and built in rungs, each a usable release: rung 6b, list suggestions for inbox tasks, is the latest. The [roadmap](docs/blueprint/10-roadmap.md) lists what's next, and the [decision log](docs/blueprint/11-decision-log.md) says why things are the way they are.
+ms-todo is at 0.1.18 and built in rungs, each a usable release: rung 7, My Day, is the latest. The [roadmap](docs/blueprint/10-roadmap.md) lists what's next, and the [decision log](docs/blueprint/11-decision-log.md) says why things are the way they are.
 
 ## Contributing
 

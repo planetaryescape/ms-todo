@@ -26,6 +26,17 @@ A task's extension also holds `opId`, the outbox operation ID of the create that
 - **In the TUI**, My Day is a special view, not a list (see [08](08-tui.md)). In the CLI it's `ms-todo myday`, the `--my-day` flag and the `+myday` quick-add token.
 - **The app's own My Day** can't be read or written through Graph. With "Show 'Due Today' tasks in My Day" on, it holds every task due today, including ones ms-todo never added (S12), and tasks added in the app don't reach ms-todo's My Day. The setting isn't in Graph, so `ms-todo doctor` can't check it; the docs and `doctor` say so.
 
+**As built (rung 7, D-054):**
+
+- **Writes.** Each add or remove is one outbox operation per task of a new kind, `task_extension` (the folders' GET, merge and write of the whole document, on the task: PATCH, POST when there's none, DELETE when no field is left), applied to the cached extension at once, with the whole extension before as its rollback. When the due date changes, a due-date edit follows it under the same command, waiting on it, so a failed extension write fails the edit too and a due date is never set without `myDay`. After writing, the task is read again, since an extension write moves its etag. A task already where it's asked to be is left out.
+- **Preconditions at send time.** The due-date edit carries `expect_due`, the due date it was planned from: it's sent only while Graph's still is that date (read first), so a date changed on the phone meanwhile is kept. The rollover's extension write carries `expect: { myDay: <the day> }`, so a task put back in today's My Day on another machine is left there. A write whose precondition fails is `done` with Graph's copy recorded, and nothing sent.
+- **Adding a task that ms-todo set a due date for earlier** (its `myDayDueSet` date is still its due date, and the rollover hasn't run) moves that date to today. A user's due date clears a stale `myDayDueSet`.
+- **Remove** is the rollover's rule (Q13, placeholder yes): clear `myDay` and `myDayDueSet`, and the due date only if the task is open and its due date is still the `myDay` day.
+- **A new task** (`tasks add --my-day`, `+myday`, `*`, or `a` from the My Day view) carries `myDay`, and without a due or start date also today's due date and `myDayDueSet`, in its create's inline extension: one POST.
+- **"Today"** is My Day's day: the local date at `now − rollover_time`, so with `"04:00"` a task added at 02:00 goes in the day before's My Day. A bad `rollover_time` falls back to 00:00 with a `doctor` problem.
+- **The rollover** runs on the daemon's minute tick, after its first sync pass and only once the lists have synced, when `settings.my_day.last_rollover` is before today, and for every task whose `myDay` is before today, open or not. It records the day even when nothing was taken out; `myday rollover` runs it at once. The open tasks it took out are kept in `settings.my_day.left_over` for suggestions.
+- **Suggestions** are this machine's: the leftovers come from its own last rollover, so a task another machine rolled over first isn't among them.
+
 Why not a special list, copies of tasks, an Outlook category, or always setting the due date? See D-015 and D-037. In short: tasks can't move between lists without losing data, copying them into a "My Day" list shows every task twice on the phone, the phone doesn't show categories, and overwriting real due dates would hide them in the Planned and overdue views.
 
 ## Folders (list groups)

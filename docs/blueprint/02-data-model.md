@@ -53,12 +53,12 @@ outbox(op_id PK, created_at, client_request_id NULL,  -- kept 24 h for IPC idemp
       'pending'|'inflight'|'unknown'|'failed'|'done', last_error NULL,
       rollback_json NULL)       -- the previous state, for undo when rejected
 
-settings(key PK, value)          -- e.g. my_day_category_name, last_rollover_date
+settings(key PK, value)          -- migration 0006: my_day.last_rollover, my_day.left_over (D-054)
 ```
 
 ## Indexes
 
-Index what the TUI views need to be instant: `tasks(list_local_id, status, deleted_at)`, `tasks(due_date)`, `tasks(my_day_date)`, `tasks(importance)`, plus an FTS5 table over each live task's title and its notes as plain text (`tasks_fts`, migration `0004`, kept current by triggers) for search. FTS5 is enough at To Do's scale; we're not using Tantivy (D-011, D-041).
+Index what the TUI views need to be instant: `tasks(list_local_id, status, deleted_at)`, `tasks(due_date)`, `tasks(json_extract(extension_json, '$.myDay'))` (`tasks_by_my_day`, migration `0006`; My Day has no column of its own, D-054), `tasks(importance)`, plus an FTS5 table over each live task's title and its notes as plain text (`tasks_fts`, migration `0004`, kept current by triggers) for search. FTS5 is enough at To Do's scale; we're not using Tantivy (D-011, D-041).
 
 ## Outbox semantics
 
