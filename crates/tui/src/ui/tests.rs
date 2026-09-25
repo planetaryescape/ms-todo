@@ -10,7 +10,7 @@ use ratatui::backend::TestBackend;
 use ratatui::style::Modifier;
 use serde_json::json;
 
-use crate::app::tests::{clock, home_tasks, seed, seeded, task};
+use crate::app::tests::{answer_seed, clock, home_tasks, seed, seeded, task};
 use crate::app::{App, Level, Mode, Msg, Pane};
 use crate::glyphs::ASCII;
 
@@ -190,6 +190,50 @@ fn syncing_before_the_first_sync_not_an_empty_list() {
     app.seeded = true;
     app.activity.in_progress = true;
     insta::assert_snapshot!(render(&app));
+}
+
+/// Important, recurring, a reminder and due, next to tasks with only
+/// some of them: each marker keeps its own cells, in both glyph sets.
+#[test]
+fn task_list_markers_never_overlap() {
+    let due = json!({ "dateTime": "2026-10-01T00:00:00.0000000", "timeZone": "Europe/London" });
+    let recurrence =
+        json!({ "pattern": { "type": "absoluteMonthly", "interval": 1, "dayOfMonth": 1 } });
+    let reminder =
+        json!({ "dateTime": "2026-09-30T09:00:00.0000000", "timeZone": "Europe/London" });
+    let tasks = vec![
+        task(
+            "t1",
+            "Pay rent",
+            json!({ "importance": "high", "dueDateTime": due, "recurrence": recurrence,
+                    "isReminderOn": true, "reminderDateTime": reminder }),
+        ),
+        task(
+            "t2",
+            "Update the budget",
+            json!({ "importance": "high", "dueDateTime": due, "recurrence": recurrence }),
+        ),
+        task(
+            "t3",
+            "Water plants",
+            json!({ "dueDateTime": due, "recurrence": recurrence }),
+        ),
+        task(
+            "t4",
+            "Call Sam",
+            json!({ "isReminderOn": true, "reminderDateTime": reminder }),
+        ),
+    ];
+    let mut app = seeded();
+    let effects = app.update(Msg::Connected);
+    answer_seed(
+        &mut app,
+        &effects[0],
+        seed(Scope::List { id: "home".into() }, tasks.clone()),
+    );
+    let unicode = render(&app);
+    app.glyphs = ASCII;
+    insta::assert_snapshot!(format!("{unicode}\n{}", render(&app)));
 }
 
 #[test]

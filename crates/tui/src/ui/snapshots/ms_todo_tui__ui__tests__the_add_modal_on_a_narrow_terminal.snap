@@ -4,7 +4,7 @@ expression: terminal.backend().to_string()
 ---
 " ms-todo 9.9.9 · Home                  ● synced "
 "╭ Lists ───────────────╮╭ Home ──────╮╭ Detail ╮"
-"│★ Important          1││  t 1 ★↻    ││Title   │"
+"│★ Important          1││  t 1 ★ ↻   ││Title   │"
 "│╭ Add task → Tasks ──────────────────────────╮│"
 "││ > Pay rent every 1st #Tasks p1 9am @bills  ││"
 "││ +myday█                                    ││"

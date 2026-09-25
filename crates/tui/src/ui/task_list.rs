@@ -4,6 +4,7 @@ use ratatui::Frame;
 use ratatui::layout::{Alignment, Constraint, Rect};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Cell, Paragraph, Row, Table, TableState};
+use unicode_width::UnicodeWidthStr;
 
 use super::{focused, pane, selection};
 use crate::app::scope::{completed_groups, planned_groups};
@@ -75,14 +76,15 @@ pub fn draw<'a>(frame: &mut Frame, area: Rect, app: &'a App) {
         }
         None => (app.tasks.iter().map(row).collect(), app.task_index),
     };
-    let status_width = u16::try_from(glyphs.open.chars().count()).unwrap_or(1);
+    let status_width = u16::try_from(glyphs.open.width()).unwrap_or(1);
+    let flags_width = u16::try_from(3 * flag_slot(glyphs)).unwrap_or(u16::MAX);
     let table = Table::new(
         rows,
         [
             Constraint::Length(status_width),
             Constraint::Fill(1),
             Constraint::Length(11),
-            Constraint::Length(5),
+            Constraint::Length(flags_width),
             Constraint::Length(2),
         ],
     )
@@ -139,16 +141,23 @@ fn task_row<'a>(
             Span::styled(due_label(due, today), style)
         },
     );
-    let mut flags = Vec::new();
-    if task.important() {
-        flags.push(Span::styled(glyphs.important, theme.important));
-    }
-    if task.recurrence.is_some() {
-        flags.push(Span::styled(glyphs.recurring, theme.text_muted));
-    }
-    if task.reminder.is_some() {
-        flags.push(Span::styled(glyphs.reminder, theme.text_muted));
-    }
+    let slot = flag_slot(glyphs);
+    // Each marker keeps its own place, blank when it doesn't apply, so a
+    // marker lines up down the list whichever others a task has.
+    let flag = |shown: bool, glyph: &'static str, style| {
+        let glyph = if shown { glyph } else { "" };
+        let padding = " ".repeat(slot.saturating_sub(glyph.width()));
+        Span::styled(format!("{glyph}{padding}"), style)
+    };
+    let flags = vec![
+        flag(task.important(), glyphs.important, theme.important),
+        flag(
+            task.recurrence.is_some(),
+            glyphs.recurring,
+            theme.text_muted,
+        ),
+        flag(task.reminder.is_some(), glyphs.reminder, theme.text_muted),
+    ];
     Row::new(vec![
         Cell::from(status),
         Cell::from(if selected {
@@ -163,6 +172,19 @@ fn task_row<'a>(
         Cell::from(Line::from(flags)),
         Cell::from(sync_marker(task.sync, glyphs, theme)),
     ])
+}
+
+/// Cells each marker (important, recurring, reminder) gets: the widest of
+/// them by display width, plus one. Some fonts draw a width-1 symbol such
+/// as the star a little wider than its cell, so the spare cell keeps it
+/// from running into the next marker.
+fn flag_slot(glyphs: &Glyphs) -> usize {
+    [glyphs.important, glyphs.recurring, glyphs.reminder]
+        .iter()
+        .map(|glyph| glyph.width())
+        .max()
+        .unwrap_or(1)
+        + 1
 }
 
 /// A task's sync marker: pending dim, unknown amber, failed red, and
