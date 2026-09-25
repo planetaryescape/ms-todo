@@ -1,5 +1,22 @@
 # Changelog
 
+## [0.1.13](https://github.com/planetaryescape/ms-todo/compare/v0.1.12...v0.1.13) (2026-09-25)
+
+
+### Features
+
+* group lists into folders (rung 5c) ([4ff31af](https://github.com/planetaryescape/ms-todo/commit/4ff31af8c1522772382bb149bf4345d60068de94))
+
+
+### Bug Fixes
+
+* undo refuses when the field changed since ([1d0c645](https://github.com/planetaryescape/ms-todo/commit/1d0c6451e4b1b53434ccedca27451c9bbba3d1f9))
+
+
+### Documentation
+
+* folders in the README, blueprint, roadmap rung 5c, D-047 and the skill ([2597059](https://github.com/planetaryescape/ms-todo/commit/2597059c30ee459f1b2ce81e52742742ad00f73e))
+
 ## [0.1.12](https://github.com/planetaryescape/ms-todo/compare/v0.1.11...v0.1.12) (2026-09-25)
 
 
