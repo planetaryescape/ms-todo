@@ -426,7 +426,7 @@ fn the_detail_cursor_follows_the_rows_on_screen() {
     let mut terminal = Terminal::new(TestBackend::new(110, 20)).expect("terminal");
     let mut rows = Vec::new();
     for field in Field::ALL {
-        app.detail_field = field;
+        app.detail_row = crate::app::steps::DetailRow::Field(field);
         terminal
             .draw(|frame| super::draw(frame, &app))
             .expect("draw");
@@ -746,4 +746,50 @@ fn my_day_with_its_suggestions() {
     let mut app = crate::app::my_day::tests::in_my_day();
     app.task_index = 2;
     insta::assert_snapshot!(render(&app));
+}
+
+/// A task with steps (one checked) and a link: its row counts them, and
+/// the detail pane shows each with its checkbox, the cursor on one, then
+/// a new step being typed.
+#[test]
+fn steps_and_the_link_in_the_row_and_the_detail_pane() {
+    use crate::action::Action;
+    use crate::app::steps::DetailRow;
+    let mut app = seeded();
+    let effects = app.update(Msg::Event(ms_todo_protocol::Event::ResyncNeeded));
+    let paint = task(
+        "t9",
+        "Paint the room",
+        json!({
+            "checklistItems": [
+                { "id": "c1", "displayName": "Buy paint", "isChecked": true },
+                { "id": "c2", "displayName": "Tape the edges", "isChecked": false },
+                { "id": "c3", "displayName": "Two coats", "isChecked": false }
+            ],
+            "linkedResources": [{
+                "id": "r1", "webUrl": "https://example.com/colours",
+                "applicationName": "ms-todo", "displayName": "Colour chart"
+            }]
+        }),
+    );
+    answer_seed(
+        &mut app,
+        &effects[0],
+        seed(Scope::List { id: "home".into() }, vec![paint]),
+    );
+    app.focus = Pane::Detail;
+    app.detail_row = DetailRow::Step(1);
+    let mut terminal = Terminal::new(TestBackend::new(110, 20)).expect("terminal");
+    terminal
+        .draw(|frame| super::draw(frame, &app))
+        .expect("draw");
+    let browsing = terminal.backend().to_string();
+    app.update(Msg::Action(Action::Add));
+    for ch in "Clean up".chars() {
+        app.update(Msg::Char(ch));
+    }
+    terminal
+        .draw(|frame| super::draw(frame, &app))
+        .expect("draw");
+    insta::assert_snapshot!(format!("{browsing}\n{}", terminal.backend()));
 }

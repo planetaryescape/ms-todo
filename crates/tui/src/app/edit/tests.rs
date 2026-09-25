@@ -69,7 +69,7 @@ fn pick(app: &mut App, field: Field) -> Vec<Effect> {
 fn to_field(app: &mut App, field: Field) {
     act(app, Action::FocusRight);
     act(app, Action::JumpTop);
-    while app.detail_field != field {
+    while app.detail_row != DetailRow::Field(field) {
         act(app, Action::MoveDown);
     }
 }
@@ -185,7 +185,10 @@ fn the_picker_goes_to_each_field() {
                 Context::Prompt
             }
         );
-        assert_eq!((app.focus, app.detail_field), (Pane::Detail, field));
+        assert_eq!(
+            (app.focus, app.detail_row),
+            (Pane::Detail, DetailRow::Field(field))
+        );
         act(&mut app, Action::Cancel);
         assert_eq!(app.mode, Mode::Normal);
     }

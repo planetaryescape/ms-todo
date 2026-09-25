@@ -2,8 +2,8 @@
 //! task row, atomically with the operation's state.
 
 use ms_todo_store::{
-    Cursor, Entity, Hydration, ListsPass, LocalChange, NewOp, OpKind, OpState, Restore, SeenTask,
-    Store, StoreError, TasksPass, tasks_scope,
+    ChildVerb, Cursor, Entity, Hydration, ListsPass, LocalChange, NewOp, OpKind, OpState, Restore,
+    STEPS, SeenTask, Store, StoreError, TasksPass, child_payload, tasks_scope,
 };
 use serde_json::{Value, json};
 
@@ -485,4 +485,139 @@ async fn the_default_undo_passes_over_an_automatic_command() {
             .as_deref(),
         Some("op-2")
     );
+}
+
+fn child(op_id: &str, local_id: &str, list: &str, verb: ChildVerb, id: &str, body: Value) -> NewOp {
+    NewOp {
+        op_id: op_id.into(),
+        entity_local_id: local_id.into(),
+        list_local_id: list.into(),
+        op: OpKind::Child,
+        action: "step".into(),
+        payload: child_payload(STEPS, verb, id, body, &[]),
+        change: LocalChange::Child,
+    }
+}
+
+#[tokio::test]
+async fn a_created_step_takes_graphs_id_everywhere_a_queued_change_names_it() {
+    let (_dir, store, list) = open().await;
+    let rev = store.local_rev().await.expect("rev");
+    store
+        .apply_tasks(TasksPass {
+            scope: tasks_scope("L1"),
+            list_local_id: list.clone(),
+            rev,
+            seen: vec![SeenTask {
+                raw: task("T1", "Paint", "e1"),
+                hydration: Hydration::Kept,
+            }],
+            gone: Vec::new(),
+            failure: None,
+            cursor: whole(),
+        })
+        .await
+        .expect("sync");
+    let local = store.tasks_in_list(&list).await.expect("tasks")[0]
+        .local_id
+        .clone();
+    let add = child(
+        "op-1",
+        &local,
+        &list,
+        ChildVerb::Create,
+        "local-a",
+        json!({ "displayName": "Buy paint", "isChecked": false }),
+    );
+    let check = child(
+        "op-2",
+        &local,
+        &list,
+        ChildVerb::Update,
+        "local-a",
+        json!({ "isChecked": true }),
+    );
+    store.enqueue("op-1", None, vec![add]).await.expect("add");
+    let rows = store
+        .enqueue("op-2", None, vec![check])
+        .await
+        .expect("check");
+    assert_eq!(
+        rows[0].raw["checklistItems"],
+        json!([{ "id": "local-a", "displayName": "Buy paint", "isChecked": true }]),
+        "both applied at once"
+    );
+
+    // Graph created it, and the task read back has it unchecked, since the
+    // check hasn't been sent yet.
+    let created = entity(json!({ "id": "c1", "displayName": "Buy paint", "isChecked": false }));
+    let mut read_back = task("T1", "Paint", "e2");
+    read_back.insert("checklistItems".into(), json!([created.clone()]));
+    store
+        .record_child_created("op-1", &created, Some((read_back, None)))
+        .await
+        .expect("record");
+
+    let row = store.task(&local).await.expect("read").expect("task");
+    assert_eq!(
+        row.raw["checklistItems"],
+        json!([{ "id": "c1", "displayName": "Buy paint", "isChecked": true }]),
+        "Graph's step, with the queued check on top"
+    );
+    assert_eq!(row.raw["@odata.etag"], "e2");
+    for op_id in ["op-1", "op-2"] {
+        let op = store.outbox_op(op_id).await.expect("read").expect("op");
+        assert_eq!(op.payload["id"], "c1", "{op_id} names Graph's ID");
+    }
+    let check = store.outbox_op("op-2").await.expect("read").expect("op-2");
+    assert_eq!(
+        check.rollback.expect("rollback")["checklistItems"][0]["id"],
+        "c1",
+        "what it rolls back to names Graph's ID too"
+    );
+    assert_eq!(
+        store
+            .outbox_op("op-1")
+            .await
+            .expect("read")
+            .expect("op")
+            .state,
+        OpState::Done
+    );
+
+    // A child create still being sent at a restart may have reached Graph.
+    store
+        .enqueue(
+            "op-3",
+            None,
+            vec![child(
+                "op-3",
+                &local,
+                &list,
+                ChildVerb::Create,
+                "local-b",
+                json!({}),
+            )],
+        )
+        .await
+        .expect("add");
+    for op_id in ["op-2", "op-3"] {
+        assert!(store.mark_inflight(op_id).await.expect("claim"));
+    }
+    store.recover_inflight().await.expect("recover");
+    let state = |op_id: &'static str| {
+        let store = &store;
+        async move {
+            store
+                .outbox_op(op_id)
+                .await
+                .expect("read")
+                .expect("op")
+                .state
+        }
+    };
+    assert_eq!(state("op-2").await, OpState::Pending, "a PATCH is resent");
+    assert_eq!(state("op-3").await, OpState::Unknown, "a POST isn't");
+    let (_, flagged) = store.outbox_depth().await.expect("depth");
+    assert_eq!(flagged, 1, "no marker can find a step, so the user decides");
 }

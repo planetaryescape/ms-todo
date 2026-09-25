@@ -7,6 +7,7 @@ use super::task_list::{due_label, sync_marker};
 use super::{focused, line_input, pane, selection};
 use crate::app::edit::{Field, importance_name};
 use crate::app::line_editor::LineEditor;
+use crate::app::steps::{ChildTarget, DetailRow};
 use crate::app::{App, Mode, Pane, SyncMarker, Task};
 use crate::theme::Theme;
 
@@ -33,6 +34,16 @@ pub fn draw(frame: &mut Frame, area: Rect, app: &App) {
     };
     let choosing_importance =
         matches!(&app.mode, Mode::ChoosingImportance { id } if *id == task.id);
+    let cursor = app.detail_row_now();
+    let child_editing = match &app.mode {
+        Mode::EditingChild {
+            id,
+            target,
+            input,
+            error,
+        } if *id == task.id => Some((target, input, error.as_deref())),
+        _ => None,
+    };
     let label = |name: &'static str| Span::styled(format!("{name:<11}"), theme.text_dim);
     let field = |name: &'static str, value: String| Line::from(vec![label(name), Span::raw(value)]);
     let none = || Span::styled("none", theme.text_dim);
@@ -72,7 +83,7 @@ pub fn draw(frame: &mut Frame, area: Rect, app: &App) {
                 spans.extend(value);
                 let line = Line::from(spans);
                 let picking = which == Field::Importance && choosing_importance;
-                if (has_focus && app.detail_field == which) || picking {
+                if (has_focus && cursor == Some(DetailRow::Field(which))) || picking {
                     vec![line.style(selection(theme, true))]
                 } else {
                     vec![line]
@@ -106,8 +117,82 @@ pub fn draw(frame: &mut Frame, area: Rect, app: &App) {
     if let Some(recurrence) = &task.recurrence {
         lines.push(field("Repeats", recurrence.clone()));
     }
-    if let Some((checked, total)) = task.steps {
-        lines.push(field("Steps", format!("{checked} of {total} done")));
+    let highlight = |line: Line<'static>, row: DetailRow| {
+        if has_focus && cursor == Some(row) && child_editing.is_none() {
+            line.style(selection(theme, true))
+        } else {
+            line
+        }
+    };
+    // A step or link being typed: what's typed with its cursor, and under
+    // it why it can't be sent.
+    let typing = |before: Vec<Span<'static>>| -> Vec<Line<'static>> {
+        let Some((_, input, error)) = child_editing else {
+            return Vec::new();
+        };
+        let mut spans = before;
+        spans.extend(line_input::single(input, theme.accent, &app.glyphs, theme));
+        let mut lines = vec![Line::from(spans)];
+        if let Some(why) = error {
+            lines.push(Line::from(vec![
+                label(""),
+                Span::styled(why.to_owned(), theme.error),
+            ]));
+        }
+        lines
+    };
+    let steps_heading = match task.steps_done() {
+        Some((checked, total)) => Span::raw(format!("{checked} of {total} done")),
+        None => none(),
+    };
+    lines.push(highlight(
+        Line::from(vec![label("Steps"), steps_heading]),
+        DetailRow::Steps,
+    ));
+    for (at, step) in task.steps.iter().enumerate() {
+        let (mark, style) = if step.checked {
+            (app.glyphs.done, theme.completed)
+        } else {
+            (app.glyphs.open, theme.text)
+        };
+        let before = vec![label(""), Span::styled(format!("{mark} "), theme.text_dim)];
+        match child_editing {
+            Some((ChildTarget::Step(id), ..)) if *id == step.id => lines.extend(typing(before)),
+            _ => {
+                let mut spans = before;
+                spans.push(Span::styled(step.name.clone(), style));
+                lines.push(highlight(Line::from(spans), DetailRow::Step(at)));
+            }
+        }
+    }
+    if let Some((ChildTarget::NewStep, ..)) = child_editing {
+        lines.extend(typing(vec![
+            label(""),
+            Span::styled(format!("{} ", app.glyphs.open), theme.text_dim),
+        ]));
+    }
+    match child_editing {
+        Some((ChildTarget::Link(_), ..)) => lines.extend(typing(vec![label("Link")])),
+        _ => {
+            // A named link's URL goes on a line of its own, under the name.
+            let (first, url) = match task.linked.first() {
+                Some((url, Some(name))) if name != url => {
+                    (Span::raw(name.clone()), Some(url.clone()))
+                }
+                Some((url, _)) => (Span::styled(url.clone(), theme.link), None),
+                None => (none(), None),
+            };
+            lines.push(highlight(
+                Line::from(vec![label("Link"), first]),
+                DetailRow::Link,
+            ));
+            if let Some(url) = url {
+                lines.push(highlight(
+                    Line::from(vec![label(""), Span::styled(url, theme.link)]),
+                    DetailRow::Link,
+                ));
+            }
+        }
     }
     if !task.categories.is_empty() {
         lines.push(field("Categories", task.categories.join(", ")));

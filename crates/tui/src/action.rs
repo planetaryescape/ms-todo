@@ -84,4 +84,6 @@ pub enum Action {
     OpenLink,
     /// `y`: copy the task's link, or pick one of its links to copy.
     CopyLink,
+    /// Space on a step in the detail pane: check it, or uncheck it.
+    ToggleStep,
 }

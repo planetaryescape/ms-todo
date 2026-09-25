@@ -4,7 +4,9 @@
 
 use ms_todo_core::message_with_causes;
 use ms_todo_protocol::ErrorPayload;
-use ms_todo_store::{Entity, LISTS_SCOPE, OpKind, OutboxRow, Restore, StoreError, tasks_scope};
+use ms_todo_store::{
+    Entity, LISTS_SCOPE, OpKind, OutboxRow, Restore, StoreError, revert_child, tasks_scope,
+};
 use serde_json::Value;
 
 use crate::handlers::State;
@@ -22,6 +24,9 @@ pub(super) fn undo_local(op: &OutboxRow, current: Option<&Entity>) -> Restore {
             Some(before),
         ) => Restore::Replace(revert_fields(current, op.body(), before)),
         (OpKind::Delete, _, Some(before)) => Restore::Replace(before.clone()),
+        (OpKind::Child, Some(current), Some(before)) => {
+            Restore::Replace(revert_child(current, &op.payload, before))
+        }
         // A move's is `move_job::move_back`, which needs its saved steps.
         _ => Restore::Nothing,
     }

@@ -23,6 +23,9 @@ pub enum Context {
     Tasks,
     /// The detail pane, where j and k move between the fields.
     Detail,
+    /// The detail pane with its cursor on the steps or the link, where
+    /// Space checks a step and a, e and d add, edit and delete.
+    Steps,
     /// Typing a filter or a field's new value on one line. Other keys go
     /// to the line editor ([`EDITOR_KEYS`]).
     Prompt,
@@ -71,13 +74,19 @@ pub struct Binding {
     pub hint: bool,
 }
 
-const BROWSE: &[Context] = &[Context::Sidebar, Context::Tasks, Context::Detail];
-const TASKS: &[Context] = &[Context::Tasks, Context::Detail];
+const BROWSE: &[Context] = &[
+    Context::Sidebar,
+    Context::Tasks,
+    Context::Detail,
+    Context::Steps,
+];
+const TASKS: &[Context] = &[Context::Tasks, Context::Detail, Context::Steps];
 const SIDEBAR: &[Context] = &[Context::Sidebar];
 const LISTS: &[Context] = &[
     Context::Sidebar,
     Context::Tasks,
     Context::Detail,
+    Context::Steps,
     Context::Picker,
     Context::Themes,
     Context::Links,
@@ -115,11 +124,18 @@ pub const BINDINGS: &[Binding] = &[
     bind(TASKS, "x", Action::ToggleComplete, "Done", true),
     bind(TASKS, "e", Action::Edit, "Edit", true),
     bind(
-        &[Context::Detail],
+        &[Context::Detail, Context::Steps],
         "Enter",
         Action::EditHere,
         "Edit this field",
         false,
+    ),
+    bind(
+        &[Context::Steps],
+        "Space",
+        Action::ToggleStep,
+        "Check step",
+        true,
     ),
     bind(TASKS, "d", Action::Delete, "Delete", true),
     bind(TASKS, "S", Action::SetDue, "Set due date\u{2026}", false),
@@ -420,6 +436,8 @@ pub fn commands() -> Vec<(String, &'static str, Action)> {
                     | Action::Palette
                     // The palette names each field instead.
                     | Action::EditHere
+                    // Only the step under the detail cursor.
+                    | Action::ToggleStep
             )
     });
     let fields = grouped(|binding| binding.contexts == FIELDS && binding.action != Action::Cancel)

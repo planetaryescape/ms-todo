@@ -10,6 +10,7 @@
 mod args;
 mod auth_commands;
 mod bulk_commands;
+mod child_commands;
 mod confirm;
 mod csv_columns;
 mod daemon_client;
@@ -182,6 +183,8 @@ async fn dispatch(command: Command, paths: &Paths, format: OutputFormat) -> Resu
             let (items, sync) = data_commands::tasks(paths, list, search).await?;
             print_collection(format, &items, sync, &data_commands::TASKS_TABLE)
         }
+        Command::Steps(command) => child_commands::steps(paths, command, format).await,
+        Command::Links(command) => child_commands::links(paths, command, format).await,
         Command::Search(args) => {
             let (items, sync) = data_commands::search(paths, args).await?;
             print_collection(format, &items, sync, &data_commands::SEARCH_TABLE)

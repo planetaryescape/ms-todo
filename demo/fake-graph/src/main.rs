@@ -132,6 +132,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     .await;
     graph.accept_task_patches().await;
     graph.accept_moves().await;
+    graph.accept_children().await;
     graph.edit(|data| {
         for (list, tasks, extension) in lists {
             let id = list["id"].as_str().unwrap_or_default().to_owned();

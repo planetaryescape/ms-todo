@@ -7,6 +7,7 @@
 //! columns reads filter on. What a sync pass or a write means is the
 //! daemon's business; this crate applies it atomically.
 
+mod children;
 mod graph_columns;
 mod idempotency;
 mod list_extension;
@@ -23,6 +24,10 @@ mod views;
 
 use serde_json::{Map, Value};
 
+pub use children::{
+    ChildVerb, LINKS, LOCAL_CHILD_PREFIX, STEPS, apply_child, child_payload, children, find_child,
+    revert_child,
+};
 pub use idempotency::{Claim, IDEMPOTENCY_WINDOW_SECS};
 pub use list_extension::{ListExtensionOp, merge_extension};
 pub use lists::{FOLDER_FIELD, FOLDER_ORDER_FIELD, ListRow, ListsApplied, ListsPass, ORDER_FIELD};

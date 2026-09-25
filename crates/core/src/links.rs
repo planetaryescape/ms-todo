@@ -177,14 +177,21 @@ pub enum Refused {
 /// The link as a URL that's safe to hand to the system's opener: parsed,
 /// http, https or mailto, and without a control character anywhere.
 pub fn openable(url: &str) -> Result<Url, Refused> {
-    if url.chars().any(char::is_control) {
-        return Err(Refused::Control);
-    }
-    let parsed = Url::parse(url).map_err(|_| Refused::Invalid)?;
+    let parsed = storable(url)?;
     match parsed.scheme() {
         "http" | "https" | "mailto" => Ok(parsed),
         other => Err(Refused::Scheme(other.to_owned())),
     }
+}
+
+/// A URL a task's link may hold: parsed, with no control character, of
+/// any scheme; Graph refuses one it can't read as a URL (S15). Only
+/// [`openable`] ones open.
+pub fn storable(url: &str) -> Result<Url, Refused> {
+    if url.chars().any(char::is_control) {
+        return Err(Refused::Control);
+    }
+    Url::parse(url).map_err(|_| Refused::Invalid)
 }
 
 /// The OSC 52 sequence that puts `text` on the clipboard, over SSH too.

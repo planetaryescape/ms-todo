@@ -18,7 +18,9 @@
 
 use ms_todo_core::ErrorKind;
 use ms_todo_protocol::{ErrorPayload, OpError, OutboxOp, OutboxState, ResponseData};
-use ms_todo_store::{OpKind, OpState, OutboxRow, Restore, apply_body, merge_extension};
+use ms_todo_store::{
+    OpKind, OpState, OutboxRow, Restore, apply_body, apply_child, merge_extension,
+};
 
 use super::rollback::{announce, current_of, reconcile, reconcile_list, undo_local};
 use super::{move_job, now};
@@ -112,6 +114,9 @@ pub(crate) async fn discard(state: &State, op_id: &str) -> Result<ResponseData, 
         (_, OpKind::Move) => move_job::discard(state, &op).await?,
         (OpState::Pending, _) => (undo_local(&op, current.as_ref()), false),
         (OpState::Unknown, OpKind::Create) => (Restore::Tombstone, false),
+        // Graph may have the step or link: it arrives by the read, with
+        // Graph's ID, and ms-todo's copy goes now.
+        (OpState::Unknown, OpKind::Child) => (undo_local(&op, current.as_ref()), true),
         (OpState::Unknown, _) => (Restore::Nothing, true),
         _ => (Restore::Nothing, false),
     };
@@ -155,6 +160,11 @@ async fn redo_local(state: &State, op: &OutboxRow) -> Result<Restore, ErrorPaylo
             Restore::Replace(raw)
         }
         OpKind::Delete => Restore::Tombstone,
+        OpKind::Child => {
+            let mut raw = current;
+            apply_child(&mut raw, &op.payload);
+            Restore::Replace(raw)
+        }
         OpKind::Extension | OpKind::TaskExtension => {
             let fields = op.body().as_object().cloned().unwrap_or_default();
             let mut extension = current;

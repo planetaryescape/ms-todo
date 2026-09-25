@@ -13,6 +13,7 @@
 // would only add noise.
 #![allow(clippy::result_large_err)]
 
+mod child_undo;
 mod completed;
 mod doctor;
 mod entities;
@@ -31,6 +32,7 @@ mod seed;
 mod server;
 mod suggest;
 mod sync;
+mod task_children;
 mod task_fields;
 mod task_resolution;
 mod task_writes;

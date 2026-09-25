@@ -65,6 +65,12 @@ pub fn output_schema(command: &str) -> Option<Value> {
         }
         "folders list" => collection(folder()),
         "tasks links" => collection(link()),
+        "steps list" => collection(step()),
+        "links list" => collection(linked_resource()),
+        "steps add" | "steps edit" | "steps check" | "steps uncheck" | "steps delete"
+        | "links add" | "links edit" | "links delete" => {
+            json!({ "oneOf": [applied(), plan()] })
+        }
         "tasks parse" => parsed_task(),
         "tasks suggest-list" => versioned(
             json!({
@@ -445,7 +451,7 @@ fn applied() -> Value {
     versioned(
         json!({
             "op_id": { "type": "string", "description": "What `undo` and `outbox list` know the change by" },
-            "action": { "enum": ["add", "complete", "reopen", "edit", "delete", "undo", "move", "my_day_add", "my_day_remove", "my_day_rollover"] },
+            "action": { "enum": ["add", "complete", "reopen", "edit", "delete", "undo", "move", "my_day_add", "my_day_remove", "my_day_rollover", "step_add", "step_edit", "step_check", "step_uncheck", "step_delete", "link_add", "link_edit", "link_delete"] },
             "items": {
                 "type": "array",
                 "items": task_entity(),
@@ -558,11 +564,41 @@ fn link() -> Value {
     )
 }
 
+/// A step: Graph's checklist item, numbered.
+fn step() -> Value {
+    object(
+        json!({
+            "index": { "type": "integer", "description": "From 1, in Graph's order (the order added): what a STEP argument takes" },
+            "id": { "type": "string", "description": "Graph's ID; `local-…` until Microsoft To Do has the step" },
+            "displayName": { "type": "string" },
+            "isChecked": { "type": "boolean" },
+            "checkedDateTime": timestamp("When it was checked, while it is"),
+            "createdDateTime": timestamp("")
+        }),
+        &["index", "id", "displayName", "isChecked"],
+    )
+}
+
+/// A task's link: Graph's linked resource, numbered.
+fn linked_resource() -> Value {
+    object(
+        json!({
+            "index": { "type": "integer", "description": "From 1; a task has at most one" },
+            "id": { "type": "string", "description": "Graph's ID; `local-…` until Microsoft To Do has the link" },
+            "webUrl": { "type": "string" },
+            "displayName": { "type": "string" },
+            "applicationName": { "type": "string" },
+            "externalId": { "type": "string" }
+        }),
+        &["index", "id", "webUrl", "applicationName"],
+    )
+}
+
 fn plan() -> Value {
     versioned(
         json!({
             "dry_run": { "const": true },
-            "action": { "enum": ["add", "complete", "reopen", "edit", "delete", "move", "my_day_add", "my_day_remove", "my_day_rollover"] },
+            "action": { "enum": ["add", "complete", "reopen", "edit", "delete", "move", "my_day_add", "my_day_remove", "my_day_rollover", "step_add", "step_edit", "step_check", "step_uncheck", "step_delete", "link_add", "link_edit", "link_delete"] },
             "list": candidate(),
             "targets": {
                 "type": "array",
@@ -575,7 +611,7 @@ fn plan() -> Value {
                     &["id", "title", "list_id"],
                 )
             },
-            "changes": { "description": "The Graph fields each target gets; null for delete. For My Day: myDay (the day, or null), and the tasks whose due date is set (due_today) or cleared (due_cleared)" }
+            "changes": { "description": "The Graph fields each target gets; null for delete. For My Day: myDay (the day, or null), and the tasks whose due date is set (due_today) or cleared (due_cleared). For steps and links: each write, as { collection, verb (create, update or delete), id, body, carried }" }
         }),
         &["dry_run", "action", "changes"],
     )

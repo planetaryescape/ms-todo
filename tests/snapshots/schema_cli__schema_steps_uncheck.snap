@@ -1,0 +1,319 @@
+---
+source: tests/schema_cli.rs
+expression: pretty
+---
+{
+  "input": {
+    "additionalProperties": false,
+    "properties": {
+      "dry_run": {
+        "description": "Show what would change without changing anything",
+        "type": "boolean",
+        "x-cli": "--dry-run"
+      },
+      "idempotency_key": {
+        "description": "Run this change at most once: repeating the command with the same key returns the first result for 24 hours, and the same key with a different change exits 2",
+        "type": "string",
+        "x-cli": "--idempotency-key"
+      },
+      "list": {
+        "description": "Look for the task in this list (exact name or ID), which also lets TASK be an exact title",
+        "type": "string",
+        "x-cli": "--list"
+      },
+      "steps": {
+        "description": "The steps: each its number from 1, its ID, or its exact text",
+        "items": {
+          "type": "string"
+        },
+        "type": "array",
+        "x-cli": "<STEP>"
+      },
+      "task": {
+        "description": "The task's ID from `tasks list`, or its exact title when --list is given",
+        "type": "string",
+        "x-cli": "<TASK>"
+      }
+    },
+    "required": [
+      "task",
+      "steps"
+    ],
+    "type": "object"
+  },
+  "output": {
+    "oneOf": [
+      {
+        "properties": {
+          "action": {
+            "enum": [
+              "add",
+              "complete",
+              "reopen",
+              "edit",
+              "delete",
+              "undo",
+              "move",
+              "my_day_add",
+              "my_day_remove",
+              "my_day_rollover",
+              "step_add",
+              "step_edit",
+              "step_check",
+              "step_uncheck",
+              "step_delete",
+              "link_add",
+              "link_edit",
+              "link_delete"
+            ]
+          },
+          "items": {
+            "description": "Each task as ms-todo has it now, sync_state pending until the write reaches Microsoft To Do; for delete, as it was",
+            "items": {
+              "description": "A task: every field Microsoft Graph returns, with `id` replaced",
+              "properties": {
+                "body": {
+                  "type": "object"
+                },
+                "categories": {
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array"
+                },
+                "createdDateTime": {
+                  "type": "string"
+                },
+                "dueDateTime": {
+                  "description": "Graph's dateTimeTimeZone; a date only",
+                  "type": "object"
+                },
+                "extensions": {
+                  "description": "ms-todo's own open extension (com.planetaryescape.mstodo), when it has one and it has been fetched",
+                  "items": {
+                    "type": "object"
+                  },
+                  "type": "array"
+                },
+                "graph_id": {
+                  "description": "Microsoft Graph's ID, for `raw` and debugging; commands take it too",
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "id": {
+                  "description": "ms-todo's local ID; stable, and what commands take",
+                  "type": "string"
+                },
+                "importance": {
+                  "enum": [
+                    "low",
+                    "normal",
+                    "high"
+                  ]
+                },
+                "isReminderOn": {
+                  "type": "boolean"
+                },
+                "lastModifiedDateTime": {
+                  "type": "string"
+                },
+                "list_id": {
+                  "description": "The local ID of the task's list",
+                  "type": "string"
+                },
+                "recurrence": {
+                  "type": "object"
+                },
+                "reminderDateTime": {
+                  "type": "object"
+                },
+                "status": {
+                  "description": "notStarted or completed, among Graph's values",
+                  "type": "string"
+                },
+                "sync_state": {
+                  "description": "From its outbox writes: synced; pending (queued or being sent); unknown (a write may or may not have reached Microsoft To Do; never retry it, see `outbox list`); failed (a write was rejected and rolled back; see `outbox list`)",
+                  "enum": [
+                    "synced",
+                    "pending",
+                    "unknown",
+                    "failed"
+                  ]
+                },
+                "title": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "id",
+                "graph_id",
+                "sync_state",
+                "list_id",
+                "title"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "list_ids": {
+            "description": "The local ID of each item's list, in order",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "op_id": {
+            "description": "What `undo` and `outbox list` know the change by",
+            "type": "string"
+          },
+          "refused": {
+            "description": "For an undo of a change to several tasks: those left alone because a field it set has changed since",
+            "items": {
+              "properties": {
+                "id": {
+                  "type": "string"
+                },
+                "reason": {
+                  "type": "string"
+                },
+                "title": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "id",
+                "title",
+                "reason"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "rolled": {
+            "description": "Recurring tasks completed: still open, due on the next date",
+            "items": {
+              "properties": {
+                "id": {
+                  "type": "string"
+                },
+                "next_due": {
+                  "format": "date",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "id",
+                "next_due"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "schema_version": {
+            "const": 2
+          },
+          "undoes": {
+            "description": "For an undo: the op_id it undoes",
+            "type": "string"
+          }
+        },
+        "required": [
+          "schema_version",
+          "op_id",
+          "action",
+          "items",
+          "list_ids"
+        ],
+        "type": "object"
+      },
+      {
+        "properties": {
+          "action": {
+            "enum": [
+              "add",
+              "complete",
+              "reopen",
+              "edit",
+              "delete",
+              "move",
+              "my_day_add",
+              "my_day_remove",
+              "my_day_rollover",
+              "step_add",
+              "step_edit",
+              "step_check",
+              "step_uncheck",
+              "step_delete",
+              "link_add",
+              "link_edit",
+              "link_delete"
+            ]
+          },
+          "changes": {
+            "description": "The Graph fields each target gets; null for delete. For My Day: myDay (the day, or null), and the tasks whose due date is set (due_today) or cleared (due_cleared). For steps and links: each write, as { collection, verb (create, update or delete), id, body, carried }"
+          },
+          "dry_run": {
+            "const": true
+          },
+          "list": {
+            "properties": {
+              "created_at": {
+                "description": "For a task: when Graph created it",
+                "type": "string"
+              },
+              "id": {
+                "type": "string"
+              },
+              "list_id": {
+                "description": "For a task: its list's local ID",
+                "type": "string"
+              },
+              "name": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "id",
+              "name"
+            ],
+            "type": "object"
+          },
+          "schema_version": {
+            "const": 2
+          },
+          "targets": {
+            "items": {
+              "properties": {
+                "id": {
+                  "type": "string"
+                },
+                "list_id": {
+                  "type": "string"
+                },
+                "title": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "id",
+                "title",
+                "list_id"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "schema_version",
+          "dry_run",
+          "action",
+          "changes"
+        ],
+        "type": "object"
+      }
+    ]
+  }
+}

@@ -8,6 +8,7 @@ use ms_todo_core::REMINDER_FORMAT;
 use ms_todo_nlp::{NotUnderstood, ParseContext, Reading, read_due, read_importance, read_reminder};
 use ms_todo_protocol::{Clearable, Importance, TaskChange, TaskEdit};
 
+use super::steps::DetailRow;
 use super::{App, Effect, Level, LineEditor, Mode, Pane, Task, Write, change};
 use crate::action::Action;
 
@@ -69,16 +70,6 @@ impl Field {
                 .unwrap_or_default(),
             Self::Notes => task.notes().unwrap_or_default(),
         }
-    }
-
-    /// The field `by` rows away, stopping at the first and last.
-    pub fn step(self, by: isize) -> Self {
-        let at = Self::ALL
-            .iter()
-            .position(|field| *field == self)
-            .unwrap_or(0);
-        let last = Self::ALL.len() - 1;
-        Self::ALL[at.saturating_add_signed(by).min(last)]
     }
 }
 
@@ -217,14 +208,14 @@ impl App {
 
     /// The rows may have changed since the edit began: only a task still
     /// on screen, found by its ID, is edited (5a).
-    fn task_in_scope(&self, id: &str) -> Option<&Task> {
+    pub(super) fn task_in_scope(&self, id: &str) -> Option<&Task> {
         self.tasks
             .iter()
             .find(|task| task.id == id)
             .filter(|_| !self.loading())
     }
 
-    fn gone(&mut self) -> Vec<Effect> {
+    pub(super) fn gone(&mut self) -> Vec<Effect> {
         self.mode = Mode::Normal;
         self.show(Level::Info, "That task is gone; nothing was changed");
         Vec::new()
@@ -251,7 +242,11 @@ impl App {
                 self.mode = Mode::ChoosingField { id };
                 Vec::new()
             }
-            Action::EditHere => self.open_field(id, self.detail_field),
+            Action::EditHere => match self.detail_row {
+                DetailRow::Field(field) => self.open_field(id, field),
+                // The steps' and link's rows are `steps`' to edit.
+                _ => Vec::new(),
+            },
             Action::EditField(field) => self.open_field(id, field),
             Action::CycleImportance => {
                 let Some(task) = self.task_in_scope(&id) else {
@@ -284,7 +279,7 @@ impl App {
             _ => Some(LineEditor::single(&field.current(task))),
         };
         self.focus = Pane::Detail;
-        self.detail_field = field;
+        self.detail_row = DetailRow::Field(field);
         self.mode = match input {
             None => Mode::ChoosingImportance { id },
             Some(input) => Mode::Editing {
@@ -304,7 +299,7 @@ impl App {
         };
         let same = task.importance == importance;
         self.mode = Mode::Normal;
-        self.detail_field = Field::Importance;
+        self.detail_row = DetailRow::Field(Field::Importance);
         if same {
             return Vec::new();
         }

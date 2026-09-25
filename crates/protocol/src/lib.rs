@@ -34,8 +34,12 @@ use serde_json::{Map, Value};
 /// rather than have the request refused as unknown. 12: My Day (rung 7):
 /// `Scope::MyDay`, `TaskChange::AddToMyDay` and `RemoveFromMyDay`,
 /// `NewTask.my_day`, `MyDay`, `MyDayRollover` and `Counts.my_day`, so an
-/// older daemon never adds a task without putting it in My Day.
-pub const PROTOCOL_VERSION: u32 = 12;
+/// older daemon never adds a task without putting it in My Day. 13: steps
+/// and links (rung 8a): `TaskChange::AddSteps`, `EditStep`, `CheckSteps`,
+/// `DeleteSteps`, `AddLink`, `EditLink` and `DeleteLink`, and their
+/// `TaskAction`s, so a client restarts an older daemon rather than have
+/// them refused as unknown.
+pub const PROTOCOL_VERSION: u32 = 13;
 
 /// The socket buffer both ends ask for: room for a large list's `Seed` in
 /// one write. macOS gives a Unix socket 8 KiB, so a 350 KiB seed crossed
@@ -813,8 +817,72 @@ pub enum TaskChange {
     /// Take the tasks out of My Day, and an open one's due date with it
     /// when ms-todo set that date and nobody has changed it since.
     RemoveFromMyDay,
+    /// Add a step (checklist item) to the one task named for each text,
+    /// in order, unchecked.
+    AddSteps {
+        steps: Vec<String>,
+    },
+    /// Rename a step of the one task named. `step` is its number from 1
+    /// as shown, its ID, or its exact text.
+    EditStep {
+        step: String,
+        text: String,
+    },
+    /// Check the steps named (as `EditStep` names one), or uncheck them.
+    CheckSteps {
+        steps: Vec<String>,
+        checked: bool,
+    },
+    /// Delete the steps named (as `EditStep` names one).
+    DeleteSteps {
+        steps: Vec<String>,
+    },
+    /// Give the one task named its link (linked resource). Graph allows
+    /// one per task (S14), so a task with one already is refused.
+    AddLink(NewLink),
+    /// Change fields of the task's link. Graph keeps a field left out and
+    /// can't clear one (S15).
+    EditLink(LinkEdit),
+    /// Delete the task's link.
+    DeleteLink {
+        /// Its number from 1 or its ID; `None` is the task's only link.
+        #[serde(default)]
+        link: Option<String>,
+    },
     #[serde(other)]
     Unknown,
+}
+
+/// A link to give a task: Graph's `linkedResource`.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct NewLink {
+    /// `webUrl`. Graph takes any URL; only http, https and mailto open.
+    pub url: String,
+    /// `displayName`.
+    #[serde(default)]
+    pub name: Option<String>,
+    /// `applicationName`, which Graph requires; `ms-todo` when `None`.
+    #[serde(default)]
+    pub app: Option<String>,
+    /// `externalId`: the item's ID in the app it came from.
+    #[serde(default)]
+    pub external_id: Option<String>,
+}
+
+/// The fields of a link to change; `None` leaves one alone.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct LinkEdit {
+    /// Its number from 1 or its ID; `None` is the task's only link.
+    #[serde(default)]
+    pub link: Option<String>,
+    #[serde(default)]
+    pub url: Option<String>,
+    #[serde(default)]
+    pub name: Option<String>,
+    #[serde(default)]
+    pub app: Option<String>,
+    #[serde(default)]
+    pub external_id: Option<String>,
 }
 
 /// Which open tasks a bulk change means, in place of naming them
@@ -881,6 +949,14 @@ pub enum TaskAction {
     MyDayRemove,
     /// An earlier day's My Day emptied.
     MyDayRollover,
+    StepAdd,
+    StepEdit,
+    StepCheck,
+    StepUncheck,
+    StepDelete,
+    LinkAdd,
+    LinkEdit,
+    LinkDelete,
     #[serde(other)]
     Unknown,
 }

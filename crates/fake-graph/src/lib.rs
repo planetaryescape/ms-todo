@@ -2,6 +2,7 @@
 //! `tests/support`) and the demo harness (`demo/fake-graph`), so both
 //! exercise the same behaviour the spikes observed.
 
+pub mod children;
 pub mod graph;
 pub mod moves;
 

@@ -51,6 +51,16 @@ pub enum Command {
     /// there, so the To Do app shows it in its own My Day too
     #[command(subcommand, name = "myday")]
     MyDay(MyDayCommand),
+    /// A task's steps: list, add, rename, check, uncheck and delete them.
+    /// A step is named by its number from 1 (as `steps list` shows them),
+    /// its ID, or its exact text
+    #[command(subcommand)]
+    Steps(StepsCommand),
+    /// A task's link (its linked resource): list, add, change or delete
+    /// it. Microsoft To Do allows one per task; `tasks links` also lists
+    /// the URLs in the notes
+    #[command(subcommand)]
+    Links(LinksCommand),
     /// Find tasks by the words in their title or notes, in every list, best
     /// match first
     Search(SearchArgs),
@@ -128,6 +138,132 @@ pub struct MyDayTargetArgs {
     pub dry_run: bool,
     #[command(flatten)]
     pub idempotency: IdempotencyArgs,
+}
+
+#[derive(Debug, Subcommand)]
+pub enum StepsCommand {
+    /// The task's steps, in order, numbered from 1
+    List(LinkArgs),
+    /// Add steps to the end of the task's steps, unchecked, one per TEXT
+    Add {
+        #[command(flatten)]
+        task: LinkArgs,
+        /// Each step's text; several add several, in order
+        #[arg(required = true, value_name = "TEXT")]
+        steps: Vec<String>,
+        #[command(flatten)]
+        write: WriteArgs,
+    },
+    /// Rename a step; it stays checked or unchecked
+    Edit {
+        #[command(flatten)]
+        task: LinkArgs,
+        /// The step: its number from 1, its ID, or its exact text
+        #[arg(value_name = "STEP")]
+        step: String,
+        /// Its new text
+        #[arg(value_name = "TEXT")]
+        text: String,
+        #[command(flatten)]
+        write: WriteArgs,
+    },
+    /// Check steps off
+    Check(StepTargetArgs),
+    /// Mark checked steps as not done again
+    Uncheck(StepTargetArgs),
+    /// Delete steps. Asks first in a terminal; anywhere else it needs --yes
+    Delete {
+        #[command(flatten)]
+        steps: StepTargetArgs,
+        /// Delete without asking
+        #[arg(long)]
+        yes: bool,
+    },
+}
+
+#[derive(Debug, Args)]
+pub struct StepTargetArgs {
+    #[command(flatten)]
+    pub task: LinkArgs,
+    /// The steps: each its number from 1, its ID, or its exact text
+    #[arg(required = true, value_name = "STEP")]
+    pub steps: Vec<String>,
+    #[command(flatten)]
+    pub write: WriteArgs,
+}
+
+/// `--dry-run` and `--idempotency-key`, on every step and link write.
+#[derive(Debug, Args)]
+pub struct WriteArgs {
+    /// Show what would change without changing anything
+    #[arg(long)]
+    pub dry_run: bool,
+    #[command(flatten)]
+    pub idempotency: IdempotencyArgs,
+}
+
+#[derive(Debug, Subcommand)]
+pub enum LinksCommand {
+    /// The task's link (its linked resource), if it has one
+    List(LinkArgs),
+    /// Give the task a link. It's refused when the task has one already:
+    /// Microsoft To Do allows one per task
+    Add {
+        #[command(flatten)]
+        task: LinkArgs,
+        /// The link's URL. Any scheme is kept, but only http, https and
+        /// mailto open from ms-todo
+        #[arg(value_name = "URL")]
+        url: String,
+        #[command(flatten)]
+        fields: LinkFieldArgs,
+        #[command(flatten)]
+        write: WriteArgs,
+    },
+    /// Change the task's link. Microsoft To Do can set a field but not
+    /// clear one
+    Edit {
+        #[command(flatten)]
+        task: LinkArgs,
+        /// Which link, by number from 1 or ID [default: the task's only one]
+        #[arg(value_name = "LINK")]
+        link: Option<String>,
+        /// A new URL
+        #[arg(long, value_name = "URL")]
+        url: Option<String>,
+        #[command(flatten)]
+        fields: LinkFieldArgs,
+        #[command(flatten)]
+        write: WriteArgs,
+    },
+    /// Delete the task's link. Asks first in a terminal; anywhere else it
+    /// needs --yes
+    Delete {
+        #[command(flatten)]
+        task: LinkArgs,
+        /// Which link, by number from 1 or ID [default: the task's only one]
+        #[arg(value_name = "LINK")]
+        link: Option<String>,
+        /// Delete without asking
+        #[arg(long)]
+        yes: bool,
+        #[command(flatten)]
+        write: WriteArgs,
+    },
+}
+
+#[derive(Debug, Args)]
+pub struct LinkFieldArgs {
+    /// What the link is called (its display name)
+    #[arg(long, value_name = "NAME")]
+    pub name: Option<String>,
+    /// The app it belongs to (Microsoft To Do requires one) [default on
+    /// add: ms-todo]
+    #[arg(long, value_name = "APP")]
+    pub app: Option<String>,
+    /// The item's ID in that app
+    #[arg(long, value_name = "ID")]
+    pub external_id: Option<String>,
 }
 
 #[derive(Debug, Subcommand)]

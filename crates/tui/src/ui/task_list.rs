@@ -162,16 +162,24 @@ fn task_row<'a>(
         ),
         flag(task.reminder.is_some(), glyphs.reminder, theme.text_muted),
     ];
+    let mut title = if selected {
+        vec![
+            Span::styled(format!("{} ", glyphs.selected), theme.key),
+            Span::styled(task.title.as_str(), title_style.patch(theme.accent)),
+        ]
+    } else {
+        vec![Span::styled(task.title.as_str(), title_style)]
+    };
+    // How far through its steps it is, as the To Do app shows under a title.
+    if let Some((checked, total)) = task.steps_done() {
+        title.push(Span::styled(
+            format!("  {checked}/{total}"),
+            theme.text_muted,
+        ));
+    }
     Row::new(vec![
         Cell::from(status),
-        Cell::from(if selected {
-            Line::from(vec![
-                Span::styled(format!("{} ", glyphs.selected), theme.key),
-                Span::styled(task.title.as_str(), title_style.patch(theme.accent)),
-            ])
-        } else {
-            Line::from(Span::styled(task.title.as_str(), title_style))
-        }),
+        Cell::from(Line::from(title)),
         Cell::from(Line::from(due).alignment(Alignment::Right)),
         Cell::from(Line::from(flags)),
         Cell::from(sync_marker(task.sync, glyphs, theme)),

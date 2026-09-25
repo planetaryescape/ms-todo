@@ -175,6 +175,18 @@ pub(crate) async fn undo(
                 }
                 inverse.push(extension_undo(id(inverse.len()), &row, op)?);
             }
+            OpKind::Child => match crate::child_undo::inverse(op, &row.raw) {
+                Ok(writes) => {
+                    for write in writes {
+                        inverse.push(write.into_op(id(inverse.len()), &row));
+                    }
+                }
+                Err(reason) => refused.push(Refused {
+                    id: row.local_id.clone(),
+                    title: row.title.clone(),
+                    reason,
+                }),
+            },
             OpKind::Extension => {
                 return Err(error_payload(
                     ErrorKind::Internal,

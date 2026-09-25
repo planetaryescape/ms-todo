@@ -16,6 +16,7 @@ use ms_todo_protocol::ErrorPayload;
 use ms_todo_store::{Entity, OpKind, OutboxRow, SKIPPED_NOTE};
 use serde_json::{Map, Value};
 
+use super::child_write;
 use super::extension_write;
 use super::move_job;
 use super::rollback::{announce_entity, reconcile_list, reject};
@@ -35,6 +36,15 @@ pub(super) enum Attempt {
         list_graph_id: String,
     },
     Deleted,
+    /// Sent and applied, with nothing to record: the task couldn't be
+    /// read back, and the next sync brings it.
+    Sent,
+    /// A step or link Graph created, and the task read back after it when
+    /// it could be.
+    ChildCreated {
+        created: Entity,
+        task: Option<(Entity, Option<Option<Value>>)>,
+    },
     /// A folder write: our extension on the list as Graph now holds it.
     ExtensionWritten(Map<String, Value>),
     /// Nothing sent: a precondition didn't hold. Graph's task (and our
@@ -124,7 +134,24 @@ pub(super) async fn send_ready(state: &State) -> bool {
                         log_store(&error);
                     }
                 }
-                Ok(Attempt::Deleted) => {
+                Ok(Attempt::ChildCreated { created, task }) => {
+                    if let Err(error) = state
+                        .store
+                        .record_child_created(&op.op_id, &created, task)
+                        .await
+                    {
+                        log_store(&error);
+                        let error = error_payload(
+                            ErrorKind::OutcomeUnknown,
+                            format!(
+                                "Graph took the change, but the cache couldn't record it: {}",
+                                message_with_causes(&error)
+                            ),
+                        );
+                        mark_unknown(state, &op, &error, None).await;
+                    }
+                }
+                Ok(Attempt::Deleted | Attempt::Sent) => {
                     if let Err(error) = state.store.mark_done(&op.op_id).await {
                         log_store(&error);
                     }
@@ -155,7 +182,10 @@ pub(super) async fn send_ready(state: &State) -> bool {
                     break;
                 }
                 Err(Failure::Rejected(error)) => reject(state, &op, &error).await,
-                Err(Failure::Unknown(error)) => mark_unknown(state, &op, &error, None).await,
+                Err(Failure::Unknown(error)) => {
+                    let note = child_write::unknown_note(&op);
+                    mark_unknown(state, &op, &error, note.as_deref()).await;
+                }
             }
             announce_entity(state, kind, entity);
         }
@@ -321,6 +351,9 @@ async fn attempt(state: &State, op: &OutboxRow) -> Result<Attempt, Failure> {
     };
     if op.op == OpKind::TaskExtension {
         return extension_write::send_task(state, &list_graph_id, &graph_id, op).await;
+    }
+    if op.op == OpKind::Child {
+        return child_write::send(state, &list_graph_id, &graph_id, op, &task.raw).await;
     }
     if let Some(expected) = op.payload.get("expect_due") {
         // My Day's due-date edit: made only while Graph's due date is the
@@ -512,7 +545,7 @@ fn store(error: ms_todo_store::StoreError) -> Failure {
     Failure::Temporary(crate::handlers::store_error(error))
 }
 
-fn etag(task: &Entity) -> Option<&str> {
+pub(super) fn etag(task: &Entity) -> Option<&str> {
     task.get("@odata.etag").and_then(Value::as_str)
 }
 

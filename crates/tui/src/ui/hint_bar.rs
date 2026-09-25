@@ -113,7 +113,14 @@ pub fn draw(frame: &mut Frame, area: Rect, app: &App) {
             spans.extend(hint_spans(Context::Importance));
             Line::from(spans)
         }
-        Mode::ConfirmDelete { what, .. } => {
+        Mode::EditingChild { target, .. } => {
+            let mut spans = vec![Span::styled(format!(" {}: ", target.label()), theme.accent)];
+            spans.extend(hint_spans(app.context()));
+            spans.push(key(&format!(" {} ", glyphs.left_right)));
+            spans.push(Span::styled("Move ", theme.text_dim));
+            Line::from(spans)
+        }
+        Mode::ConfirmDelete { what, .. } | Mode::ConfirmDeleteChild { what, .. } => {
             let mut spans = vec![Span::styled(
                 format!(" Delete {what}? "),
                 theme.banner_error,

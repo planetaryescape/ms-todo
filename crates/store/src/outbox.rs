@@ -11,6 +11,7 @@ use serde_json::Value;
 use sqlx::AssertSqlSafe;
 use sqlx::{FromRow, SqliteConnection};
 
+use crate::children::{apply_child, rename_child};
 use crate::graph_columns::{etag, text};
 use crate::list_extension::{merge_extension, restore_list_extension};
 use crate::moves::set_list;
@@ -95,6 +96,10 @@ pub enum OpKind {
     /// list's is. Its rollback is the whole extension before, `{}` for
     /// none.
     TaskExtension,
+    /// A write to one of the task's children, a step or its link: a POST,
+    /// PATCH or DELETE under the task (`crate::children`). Its rollback is
+    /// the task's JSON before.
+    Child,
 }
 
 impl OpKind {
@@ -106,6 +111,7 @@ impl OpKind {
             Self::Extension => "extension",
             Self::Move => "move",
             Self::TaskExtension => "task_extension",
+            Self::Child => "child",
         }
     }
 
@@ -117,6 +123,7 @@ impl OpKind {
             "extension" => Ok(Self::Extension),
             "move" => Ok(Self::Move),
             "task_extension" => Ok(Self::TaskExtension),
+            "child" => Ok(Self::Child),
             other => Err(StoreError::Corrupt(format!("unknown outbox op {other:?}"))),
         }
     }
@@ -192,20 +199,31 @@ impl OutboxRow {
         &self.payload["body"]
     }
 
+    /// For a child write: the fields of `body` sent only because Graph
+    /// resets what a PATCH leaves out, not changed by it (S1).
+    pub fn carried(&self) -> Vec<&str> {
+        self.payload["carried"]
+            .as_array()
+            .map(|keys| keys.iter().filter_map(Value::as_str).collect())
+            .unwrap_or_default()
+    }
+
     /// Whether it completes a recurring task, which is never resent after
     /// an ambiguous answer (D-028).
     pub fn is_recurring_completion(&self) -> bool {
         self.payload["recurring"] == Value::Bool(true)
     }
 
-    /// `unknown` for longer than the lookup window, or a move paused on
-    /// something only the user can settle: the user decides.
+    /// `unknown` for longer than the lookup window, or with nothing that
+    /// could settle it but the user: a move paused so, or a child write,
+    /// which carries no marker to find it by (04). The user decides.
     pub fn is_flagged(&self, now: i64) -> bool {
         self.state == OpState::Unknown
             && (self
                 .unknown_since
                 .is_some_and(|since| since <= now - UNKNOWN_LOOKUP_SECS)
-                || self.needs_user())
+                || self.needs_user()
+                || self.op == OpKind::Child)
     }
 
     /// Done without sending anything: its send-time precondition didn't
@@ -322,6 +340,9 @@ pub enum LocalChange {
     /// The payload's `body` goes over the task's extension (a null
     /// removing a field); the extension when queued is the rollback.
     Extension,
+    /// The payload's child change goes into the task's JSON
+    /// ([`apply_child`]); its JSON when queued is the rollback.
+    Child,
 }
 
 /// What a resolved operation does to its task row.
@@ -412,6 +433,14 @@ impl Store {
                     let current =
                         parse_object(&row_identity(&mut tx, &op.entity_local_id).await?.raw_json)?;
                     set_list(&mut tx, &op.entity_local_id, to, rev).await?;
+                    rollback = Some(current);
+                }
+                LocalChange::Child => {
+                    let current =
+                        parse_object(&row_identity(&mut tx, &op.entity_local_id).await?.raw_json)?;
+                    let mut raw = current.clone();
+                    apply_child(&mut raw, &op.payload);
+                    replace_row(&mut tx, &op.entity_local_id, &raw, rev).await?;
                     rollback = Some(current);
                 }
                 LocalChange::Extension => {
@@ -577,7 +606,7 @@ impl Store {
                 .await?;
         let flagged: i64 = sqlx::query_scalar(
             "SELECT COUNT(*) FROM outbox WHERE state = 'unknown' AND (unknown_since <= ? \
-             OR json_extract(progress_json, '$.needs_user') = 1)",
+             OR json_extract(progress_json, '$.needs_user') = 1 OR op = 'child')",
         )
         .bind(now() - UNKNOWN_LOOKUP_SECS)
         .fetch_one(self.reader())
@@ -682,6 +711,69 @@ impl Store {
         if done {
             finish(&mut tx, op_id, OpState::Done, None).await?;
         }
+        tx.commit().await?;
+        Ok(())
+    }
+
+    /// Graph created child operation `op_id`'s step or link as `created`:
+    /// its placeholder ID becomes Graph's, in the task and in every
+    /// operation that names it (so an undo, or a check queued before the
+    /// answer, reaches it), and the operation is `done`, in one
+    /// transaction. `task` is the task as Graph has it now, when it could
+    /// be read after the create (the create moved its etag, S1).
+    pub async fn record_child_created(
+        &self,
+        op_id: &str,
+        created: &Entity,
+        task: Option<(Entity, Option<Option<Value>>)>,
+    ) -> Result<(), StoreError> {
+        let created_id = text(created, "id").ok_or_else(|| {
+            StoreError::Invalid("Graph returned a step or link with no id".into())
+        })?;
+        let mut tx = self.writer().begin().await?;
+        let op = op_in(&mut tx, op_id).await?;
+        let placeholder = op.payload["id"].as_str().unwrap_or_default().to_owned();
+        let collection = op.payload["collection"]
+            .as_str()
+            .unwrap_or_default()
+            .to_owned();
+        sqlx::query(
+            "UPDATE outbox SET payload_json = json_set(payload_json, '$.id', ?) \
+             WHERE entity_local_id = ? AND op = 'child' AND json_extract(payload_json, '$.id') = ?",
+        )
+        .bind(&created_id)
+        .bind(&op.entity_local_id)
+        .bind(&placeholder)
+        .execute(&mut *tx)
+        .await?;
+        // What they roll back to names it too. A placeholder is a fresh
+        // UUID, so replacing it as a JSON string can't touch anything else.
+        sqlx::query(
+            "UPDATE outbox SET rollback_json = replace(rollback_json, ?, ?) \
+             WHERE entity_local_id = ? AND op = 'child' AND rollback_json IS NOT NULL",
+        )
+        .bind(
+            serde_json::to_string(&placeholder)
+                .map_err(|error| StoreError::Invalid(error.to_string()))?,
+        )
+        .bind(
+            serde_json::to_string(&created_id)
+                .map_err(|error| StoreError::Invalid(error.to_string()))?,
+        )
+        .bind(&op.entity_local_id)
+        .execute(&mut *tx)
+        .await?;
+        match task {
+            Some((raw, extension)) => record_in(&mut tx, op_id, &raw, extension).await?,
+            None => {
+                let rev = next_local_rev(&mut tx).await?;
+                let mut raw =
+                    parse_object(&row_identity(&mut tx, &op.entity_local_id).await?.raw_json)?;
+                rename_child(&mut raw, &collection, &placeholder, created);
+                replace_row(&mut tx, &op.entity_local_id, &raw, rev).await?;
+            }
+        }
+        finish(&mut tx, op_id, OpState::Done, None).await?;
         tx.commit().await?;
         Ok(())
     }
@@ -844,6 +936,7 @@ impl Store {
              note = 'the daemon stopped while this was being sent' \
              WHERE state = 'inflight' \
              AND (op = 'create' OR json_extract(payload_json, '$.recurring') = 1 \
+             OR (op = 'child' AND json_extract(payload_json, '$.verb') = 'create') \
              OR (op = 'move' AND json_extract(progress_json, '$.in_doubt') = 1))",
         )
         .bind(now())
@@ -1143,6 +1236,7 @@ async fn write_attributed(
                     extension_changed = true;
                 }
             }
+            OpKind::Child => apply_child(&mut raw, &payload),
             OpKind::Create | OpKind::Extension | OpKind::Move => {}
         }
     }
@@ -1220,6 +1314,7 @@ async fn apply_restore(
             Restore::Nothing | Restore::Tombstone | Restore::MoveBack { .. } => Ok(()),
         };
     }
+    // A child write's restore is the task's JSON, as an update's is.
     match restore {
         Restore::Nothing => Ok(()),
         Restore::Tombstone => tombstone_row(tx, local_id, rev).await,

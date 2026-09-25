@@ -22,6 +22,15 @@ pub enum SyncMarker {
     Failed,
 }
 
+/// A step (checklist item).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Step {
+    /// Graph's ID, or `local-…` until Microsoft To Do has it.
+    pub id: String,
+    pub name: String,
+    pub checked: bool,
+}
+
 #[derive(Clone, Debug, PartialEq)]
 pub struct Task {
     /// ms-todo's local ID.
@@ -40,8 +49,10 @@ pub struct Task {
     pub body: Option<Body>,
     /// Graph's `linkedResources`, as `(webUrl, displayName)`.
     pub linked: Vec<(String, Option<String>)>,
-    /// `(checked, total)`; `None` when it has no steps.
-    pub steps: Option<(usize, usize)>,
+    /// The link's ID, to change or delete it: Graph allows one (S14).
+    pub link_id: Option<String>,
+    /// Graph's `checklistItems`, in its order.
+    pub steps: Vec<Step>,
     pub categories: Vec<String>,
     pub sync: SyncMarker,
     /// Graph's `completedDateTime`, local, for ordering.
@@ -70,14 +81,24 @@ impl Task {
         let steps = entity
             .get("checklistItems")
             .and_then(Value::as_array)
-            .filter(|steps| !steps.is_empty())
-            .map(|steps| {
-                let checked = steps
-                    .iter()
-                    .filter(|step| step.get("isChecked").and_then(Value::as_bool) == Some(true))
-                    .count();
-                (checked, steps.len())
-            });
+            .into_iter()
+            .flatten()
+            .filter_map(|step| {
+                Some(Step {
+                    id: step.get("id")?.as_str()?.to_owned(),
+                    name: step
+                        .get("displayName")
+                        .and_then(Value::as_str)
+                        .unwrap_or_default()
+                        .to_owned(),
+                    checked: step.get("isChecked").and_then(Value::as_bool) == Some(true),
+                })
+            })
+            .collect();
+        let link_id = entity
+            .get("linkedResources")
+            .and_then(|links| links.get(0)?.get("id")?.as_str())
+            .map(str::to_owned);
         Some(Self {
             id: text("id")?.to_owned(),
             list_id: text("list_id").unwrap_or_default().to_owned(),
@@ -95,6 +116,7 @@ impl Task {
             recurrence: entity.get("recurrence").and_then(describe_recurrence),
             body: entity.get("body").and_then(Body::of),
             linked: ms_todo_core::links::linked_resources(entity),
+            link_id,
             steps,
             categories: entity
                 .get("categories")
@@ -158,6 +180,14 @@ impl Task {
                 .as_ref()
                 .map(|body| (body.content.as_str(), body.html)),
         )
+    }
+
+    /// `(checked, total)`; `None` when it has no steps.
+    pub fn steps_done(&self) -> Option<(usize, usize)> {
+        (!self.steps.is_empty()).then(|| {
+            let checked = self.steps.iter().filter(|step| step.checked).count();
+            (checked, self.steps.len())
+        })
     }
 
     pub fn important(&self) -> bool {
@@ -252,7 +282,10 @@ mod tests {
             "isReminderOn": true,
             "reminderDateTime": { "dateTime": "2026-10-01T09:00:00.0000000", "timeZone": "Europe/London" },
             "body": { "content": "<p>Call <b>Sam</b></p>", "contentType": "html" },
-            "checklistItems": [{ "isChecked": true }, { "isChecked": false }],
+            "checklistItems": [
+                { "id": "c1", "displayName": "Call", "isChecked": true },
+                { "id": "c2", "displayName": "Pay", "isChecked": false }
+            ],
             "categories": ["Home"],
             "sync_state": "unknown",
         }));
@@ -266,7 +299,8 @@ mod tests {
             Some("2026-10-01 09:00:00")
         );
         assert_eq!(task.notes().as_deref(), Some("Call Sam"));
-        assert_eq!(task.steps, Some((1, 2)));
+        assert_eq!(task.steps_done(), Some((1, 2)));
+        assert_eq!(task.steps[1].name, "Pay");
         assert_eq!(task.categories, ["Home"]);
         assert_eq!(task.sync, SyncMarker::Unknown);
     }
@@ -280,7 +314,7 @@ mod tests {
         }));
         assert_eq!(task.reminder, None);
         assert_eq!(task.notes(), None);
-        assert_eq!(task.steps, None);
+        assert_eq!(task.steps_done(), None);
         assert_eq!(task.sync, SyncMarker::Synced);
     }
 

@@ -17,6 +17,7 @@
 //!
 //! After sending anything it asks for a sync pass.
 
+mod child_write;
 mod commands;
 mod extension_write;
 pub(crate) mod move_job;

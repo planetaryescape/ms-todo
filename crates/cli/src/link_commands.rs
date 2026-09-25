@@ -142,7 +142,8 @@ fn open_link(
     })
 }
 
-async fn task(paths: &Paths, args: LinkArgs) -> Result<(Entity, SyncInfo), CliError> {
+/// The one task `args` names, as the daemon has it cached.
+pub(crate) async fn task(paths: &Paths, args: LinkArgs) -> Result<(Entity, SyncInfo), CliError> {
     let request = Request::GetTasks {
         tasks: vec![args.task],
         list: args.list,

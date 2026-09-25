@@ -30,7 +30,15 @@ expression: pretty
               "move",
               "my_day_add",
               "my_day_remove",
-              "my_day_rollover"
+              "my_day_rollover",
+              "step_add",
+              "step_edit",
+              "step_check",
+              "step_uncheck",
+              "step_delete",
+              "link_add",
+              "link_edit",
+              "link_delete"
             ]
           },
           "items": {
@@ -206,11 +214,19 @@ expression: pretty
               "move",
               "my_day_add",
               "my_day_remove",
-              "my_day_rollover"
+              "my_day_rollover",
+              "step_add",
+              "step_edit",
+              "step_check",
+              "step_uncheck",
+              "step_delete",
+              "link_add",
+              "link_edit",
+              "link_delete"
             ]
           },
           "changes": {
-            "description": "The Graph fields each target gets; null for delete. For My Day: myDay (the day, or null), and the tasks whose due date is set (due_today) or cleared (due_cleared)"
+            "description": "The Graph fields each target gets; null for delete. For My Day: myDay (the day, or null), and the tasks whose due date is set (due_today) or cleared (due_cleared). For steps and links: each write, as { collection, verb (create, update or delete), id, body, carried }"
           },
           "dry_run": {
             "const": true

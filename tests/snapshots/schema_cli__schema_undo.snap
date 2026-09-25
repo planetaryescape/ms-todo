@@ -40,7 +40,15 @@ expression: pretty
               "move",
               "my_day_add",
               "my_day_remove",
-              "my_day_rollover"
+              "my_day_rollover",
+              "step_add",
+              "step_edit",
+              "step_check",
+              "step_uncheck",
+              "step_delete",
+              "link_add",
+              "link_edit",
+              "link_delete"
             ]
           },
           "items": {

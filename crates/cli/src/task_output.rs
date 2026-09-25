@@ -188,6 +188,7 @@ pub fn print_applied(format: OutputFormat, applied: &Applied) -> Result<(), CliE
                     continue;
                 }
                 writeln!(stdout, "{done} {:?}  {id}{state}", text(task, "title"))?;
+                write_children(&mut stdout, applied.action, task)?;
                 if let Some(rolled) = applied.rolled.iter().find(|rolled| rolled.id == id) {
                     writeln!(
                         stdout,
@@ -209,6 +210,50 @@ pub fn print_applied(format: OutputFormat, applied: &Applied) -> Result<(), CliE
     }
 }
 
+/// After a step or link write, the task's steps or link as they are now.
+fn write_children(
+    out: &mut impl Write,
+    action: TaskAction,
+    task: &ms_todo_protocol::Entity,
+) -> std::io::Result<()> {
+    let (collection, step) = match action {
+        TaskAction::StepAdd
+        | TaskAction::StepEdit
+        | TaskAction::StepCheck
+        | TaskAction::StepUncheck
+        | TaskAction::StepDelete => ("checklistItems", true),
+        TaskAction::LinkAdd | TaskAction::LinkEdit | TaskAction::LinkDelete => {
+            ("linkedResources", false)
+        }
+        _ => return Ok(()),
+    };
+    let children = task
+        .get(collection)
+        .and_then(Value::as_array)
+        .map(Vec::as_slice)
+        .unwrap_or_default();
+    if children.is_empty() {
+        writeln!(out, "  (no {})", if step { "steps" } else { "link" })?;
+    }
+    for (at, child) in children.iter().enumerate() {
+        let field = |key: &str| {
+            ms_todo_core::display_safe(child.get(key).and_then(Value::as_str).unwrap_or_default())
+        };
+        if step {
+            let mark = if child["isChecked"] == true { "x" } else { " " };
+            writeln!(out, "  {} [{mark}] {}", at + 1, field("displayName"))?;
+        } else {
+            let name = field("displayName");
+            let url = field("webUrl");
+            match name.as_ref() {
+                "" => writeln!(out, "  {} {url}", at + 1)?,
+                name => writeln!(out, "  {} {name}  {url}", at + 1)?,
+            }
+        }
+    }
+    Ok(())
+}
+
 fn verb(action: TaskAction) -> &'static str {
     match action {
         TaskAction::Add => "add",
@@ -226,6 +271,14 @@ fn verb(action: TaskAction) -> &'static str {
         TaskAction::MyDayAdd => "put in My Day",
         TaskAction::MyDayRemove => "take out of My Day",
         TaskAction::MyDayRollover => "roll out of an earlier My Day",
+        TaskAction::StepAdd => "add steps to",
+        TaskAction::StepEdit => "rename a step of",
+        TaskAction::StepCheck => "check steps of",
+        TaskAction::StepUncheck => "uncheck steps of",
+        TaskAction::StepDelete => "delete steps of",
+        TaskAction::LinkAdd => "add a link to",
+        TaskAction::LinkEdit => "change the link of",
+        TaskAction::LinkDelete => "delete the link of",
         TaskAction::Unknown => "change",
     }
 }
@@ -247,6 +300,14 @@ fn past_tense(action: TaskAction) -> &'static str {
         TaskAction::MyDayAdd => "In My Day:",
         TaskAction::MyDayRemove => "Out of My Day:",
         TaskAction::MyDayRollover => "Rolled out of My Day:",
+        TaskAction::StepAdd => "Added steps to",
+        TaskAction::StepEdit => "Renamed a step of",
+        TaskAction::StepCheck => "Checked steps of",
+        TaskAction::StepUncheck => "Unchecked steps of",
+        TaskAction::StepDelete => "Deleted steps of",
+        TaskAction::LinkAdd => "Added a link to",
+        TaskAction::LinkEdit => "Changed the link of",
+        TaskAction::LinkDelete => "Deleted the link of",
         TaskAction::Unknown => "Changed",
     }
 }

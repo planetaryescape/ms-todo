@@ -106,6 +106,15 @@ pub(crate) async fn change_tasks(
             let action = TaskAction::MyDayRemove;
             return crate::my_day::change(state, targets, action, dry_run, op_id).await;
         }
+        change @ (TaskChange::AddSteps { .. }
+        | TaskChange::EditStep { .. }
+        | TaskChange::CheckSteps { .. }
+        | TaskChange::DeleteSteps { .. }
+        | TaskChange::AddLink(_)
+        | TaskChange::EditLink(_)
+        | TaskChange::DeleteLink { .. }) => {
+            return crate::task_children::change(state, &targets, change, dry_run, op_id).await;
+        }
         TaskChange::Unknown => {
             return Err(error_payload(
                 ms_todo_core::ErrorKind::Unsupported,
@@ -235,7 +244,10 @@ pub(crate) fn move_op(op_id: String, row: &TaskRow, to: &str) -> NewOp {
     }
 }
 
-async fn resolve(state: &State, targets: &Targets<'_>) -> Result<Vec<Target>, ErrorPayload> {
+pub(crate) async fn resolve(
+    state: &State,
+    targets: &Targets<'_>,
+) -> Result<Vec<Target>, ErrorPayload> {
     match targets.select {
         Some(_) if !targets.names.is_empty() => Err(error_payload(
             ms_todo_core::ErrorKind::InvalidInput,
@@ -381,6 +393,14 @@ pub(crate) fn action_name(action: TaskAction) -> &'static str {
         TaskAction::MyDayAdd => "my_day_add",
         TaskAction::MyDayRemove => "my_day_remove",
         TaskAction::MyDayRollover => "my_day_rollover",
+        TaskAction::StepAdd => "step_add",
+        TaskAction::StepEdit => "step_edit",
+        TaskAction::StepCheck => "step_check",
+        TaskAction::StepUncheck => "step_uncheck",
+        TaskAction::StepDelete => "step_delete",
+        TaskAction::LinkAdd => "link_add",
+        TaskAction::LinkEdit => "link_edit",
+        TaskAction::LinkDelete => "link_delete",
         TaskAction::Undo | TaskAction::Unknown => "change",
     }
 }

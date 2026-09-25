@@ -27,6 +27,7 @@ pub mod palette;
 pub mod quick_add;
 pub mod scope;
 mod selection;
+pub mod steps;
 pub mod task;
 mod themes;
 
@@ -87,6 +88,22 @@ pub enum Mode {
         input: LineEditor,
         /// Why the text can't be sent, shown under it.
         error: Option<String>,
+    },
+    /// Typing a step's text or the link's URL for the task `id`.
+    EditingChild {
+        id: String,
+        target: steps::ChildTarget,
+        input: LineEditor,
+        /// Why the text can't be sent, shown under it.
+        error: Option<String>,
+    },
+    /// The inline "Delete …? y/n" for a step or the link of the task `id`,
+    /// and the change that deletes it.
+    ConfirmDeleteChild {
+        id: String,
+        change: TaskChange,
+        /// What's deleted, as the question names it.
+        what: String,
     },
     /// The inline "Delete …? y/n", for one task or the selection.
     ConfirmDelete {
@@ -303,8 +320,9 @@ pub struct App {
     pub shown: Option<Scope>,
     pub tasks: Vec<Task>,
     pub task_index: usize,
-    /// The detail pane's cursor: the field `e` and Enter edit.
-    pub detail_field: Field,
+    /// The detail pane's cursor: the field `e` and Enter edit, or a step
+    /// or the link.
+    pub detail_row: steps::DetailRow,
     /// The tasks `v` and `V` selected, by ID; all rows of `tasks`.
     pub selection: HashSet<String>,
     pub diagnostics: Diagnostics,
@@ -359,7 +377,7 @@ impl App {
             shown: None,
             tasks: Vec::new(),
             task_index: 0,
-            detail_field: Field::default(),
+            detail_row: steps::DetailRow::default(),
             selection: HashSet::new(),
             diagnostics: Diagnostics::default(),
             tasks_ready: false,
@@ -391,13 +409,14 @@ impl App {
                 ..
             } => Context::Notes,
             Mode::Adding { .. } => Context::Adding,
-            Mode::Filtering { .. } | Mode::Editing { .. } | Mode::SettingDue { .. } => {
-                Context::Prompt
-            }
+            Mode::Filtering { .. }
+            | Mode::Editing { .. }
+            | Mode::EditingChild { .. }
+            | Mode::SettingDue { .. } => Context::Prompt,
             Mode::ChoosingField { .. } => Context::Fields,
             Mode::MovingList { .. } => Context::Folder,
             Mode::ChoosingImportance { .. } => Context::Importance,
-            Mode::ConfirmDelete { .. } => Context::Confirm,
+            Mode::ConfirmDelete { .. } | Mode::ConfirmDeleteChild { .. } => Context::Confirm,
             Mode::Picker { .. } => Context::Picker,
             Mode::Palette { .. } => Context::Palette,
             Mode::MovingTasks { .. } => Context::MoveTo,
@@ -408,6 +427,7 @@ impl App {
             Mode::Normal => match self.focus {
                 Pane::Sidebar => Context::Sidebar,
                 Pane::Tasks => Context::Tasks,
+                Pane::Detail if self.on_child_row() => Context::Steps,
                 Pane::Detail => Context::Detail,
             },
         }
@@ -574,6 +594,8 @@ impl App {
             }
             (Mode::Diagnostics, Action::Refresh) => self.refresh_diagnostics(),
             (Mode::Editing { .. }, Action::Submit) => self.submit_edit(),
+            (Mode::EditingChild { .. }, Action::Submit) => self.submit_child(),
+            (Mode::ConfirmDeleteChild { .. }, Action::Confirm) => self.confirm_child_delete(),
             (Mode::SettingDue { .. }, Action::Submit) => self.submit_set_due(),
             (Mode::ChoosingField { .. }, Action::EditField(_) | Action::CycleImportance)
             | (Mode::ChoosingImportance { .. }, Action::SetImportance(_)) => {
@@ -623,6 +645,12 @@ impl App {
     }
 
     fn browse(&mut self, action: Action) -> Vec<Effect> {
+        if self.on_child_row()
+            && !self.still_loading()
+            && let Some(effects) = self.child_action(action)
+        {
+            return effects;
+        }
         match action {
             Action::MoveDown | Action::MoveUp | Action::JumpTop | Action::JumpBottom => {
                 self.navigate(action)
@@ -759,13 +787,7 @@ impl App {
 
     fn navigate(&mut self, action: Action) -> Vec<Effect> {
         if self.focus == Pane::Detail {
-            self.detail_field = match action {
-                Action::MoveDown => self.detail_field.step(1),
-                Action::MoveUp => self.detail_field.step(-1),
-                Action::JumpTop => Field::ALL[0],
-                Action::JumpBottom => Field::ALL[Field::ALL.len() - 1],
-                _ => self.detail_field,
-            };
+            self.move_detail(action);
             return Vec::new();
         }
         let (index, len) = match self.focus {
@@ -827,7 +849,9 @@ impl App {
                 return Vec::new();
             }
             Mode::Filtering { input } | Mode::MovingList { input, .. } => edit(input),
-            Mode::Editing { input, error, .. } | Mode::SettingDue { input, error, .. } => {
+            Mode::Editing { input, error, .. }
+            | Mode::EditingChild { input, error, .. }
+            | Mode::SettingDue { input, error, .. } => {
                 let changed = edit(input);
                 if changed {
                     *error = None;
