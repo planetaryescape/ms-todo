@@ -1,5 +1,23 @@
 # Changelog
 
+## [0.1.21](https://github.com/planetaryescape/ms-todo/compare/v0.1.20...v0.1.21) (2026-09-25)
+
+
+### Features
+
+* My Day in the extension, mirrored on the phone through the due date (rung 7) ([5a2242e](https://github.com/planetaryescape/ms-todo/commit/5a2242ed0d176f492c4e3fe2a8707554ac875755))
+
+
+### Bug Fixes
+
+* never keep myDayDueSet when ms-todo didn't set the date ([fc8aa78](https://github.com/planetaryescape/ms-todo/commit/fc8aa781917c415abca615890ecbbe488a4ce5b0))
+* undo defaults to your own last change, not the automatic rollover ([e50c5dd](https://github.com/planetaryescape/ms-todo/commit/e50c5ddc5435ccafed902ad0bb958220524bb20a))
+
+
+### Documentation
+
+* rung 7 My Day in the README, usage, blueprint, D-054 and the skill ([04e96db](https://github.com/planetaryescape/ms-todo/commit/04e96dbac14af3585f8d710c0cae9f78d8b4344b))
+
 ## [0.1.20](https://github.com/planetaryescape/ms-todo/compare/v0.1.19...v0.1.20) (2026-09-25)
 
 
