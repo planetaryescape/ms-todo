@@ -54,6 +54,15 @@ ms-todo search 'insur* NOT renew' --list Tasks --format csv
 ms-todo tasks list --list Home --search boiler # one list's matches, in the `tasks list` shape
 ```
 
+A task's links, and opening one:
+
+```sh
+ms-todo tasks links <TASK>              # its linked resources, then the URLs in its notes
+ms-todo tasks open <TASK> --index 2     # in the browser or mail app; http, https and mailto only
+```
+
+`tasks links` numbers them from 1 (every format; CSV is `url,text,source`). `tasks open` with one link opens it; with several and no `--index` it lists them and exits 2, so a script never waits on a choice.
+
 Search looks through every task's title and notes (html notes as text), ignoring case and accents, and ranks title matches first. Words can end in `*` to match a prefix; `OR`, `NOT` and parentheses work too, in capitals. It shows open tasks by default (`--status completed|all` for the rest) and at most 50 (`--limit`). Each JSON item is the task plus `list`, its list's name, and `snippet`, the passage that matched with each match between `**`; CSV has `id,title,list,status,due,snippet`. A query ms-todo can't read, like `OR milk` or an unclosed quote, exits 2. It answers from the local cache, in a few milliseconds.
 
 ## Add and finish tasks
@@ -167,6 +176,7 @@ A title bar with the version and the view you're in, a sidebar of smart views (I
 | `/` | filter the current view as you type (the same search as `ms-todo search`); `Esc` clears it |
 | `:` | the command palette: type part of an action's or a list's name, then `Enter` |
 | `D` | diagnostics: what `ms-todo doctor` says (sign-in, the daemon, the cache, each list's sync, the outbox, flagged changes); `r` refreshes, `Esc` goes back |
+| `o` / `y` | open or copy the task's link: its linked resources' web addresses, then the URLs in its notes. With several, pick one (`Enter` or `o` opens, `y` copies). Only http, https and mailto links open; `y` copies over SSH too (OSC 52) |
 | `r` | sync now |
 | `?` | every key |
 | `q` | quit |
@@ -188,7 +198,7 @@ theme = "catppuccin-mocha"
 overdue = "#ff5f5f"    # #rrggbb, an ANSI name (red, bright-blue, dark-gray), 0-255, or reset
 ```
 
-The roles are `background`, `text`, `text_dim`, `text_muted`, `border`, `border_focused`, `title`, `selection_bg`, `selection_fg`, `accent`, `overdue`, `due_today`, `important`, `completed`, `sync_pending`, `sync_unknown`, `sync_failed`, `error`, `warning`, `banner_error`, `banner_info`, `search_match`, `cursor` and `header_bar`. `--theme` wins over the file. An unknown theme, role or colour stops the TUI with an error naming it. The fixed palettes need truecolor, which the terminal announces with `COLORTERM=truecolor`; without it they're brought to the nearest of the 256 colours. `NO_COLOR` turns colour off whatever the theme: bold, dim and reverse carry the meaning instead.
+The roles are `background`, `text`, `text_dim`, `text_muted`, `border`, `border_focused`, `title`, `selection_bg`, `selection_fg`, `accent`, `overdue`, `due_today`, `important`, `completed`, `sync_pending`, `sync_unknown`, `sync_failed`, `error`, `warning`, `banner_error`, `banner_info`, `search_match`, `link`, `cursor` and `header_bar`. `--theme` wins over the file. An unknown theme, role or colour stops the TUI with an error naming it. The fixed palettes need truecolor, which the terminal announces with `COLORTERM=truecolor`; without it they're brought to the nearest of the 256 colours. `NO_COLOR` turns colour off whatever the theme: bold, dim and reverse carry the meaning instead.
 
 Everything the TUI does is also a command, so scripts and agents use the commands. `mst tui --bench-startup` measures the start and a run of keys against your cache and prints the timings; `MS_TODO_TUI_TRACE=<file>` writes every keypress's timing to a file.
 

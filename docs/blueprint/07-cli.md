@@ -41,6 +41,8 @@ tasks      list [--list L] [--status S] [--due before/after/today/overdue] [--im
            edit T... [same field flags, plus --clear-due etc.]   # several, `-`, or --overdue / --due-before (5d)
            complete T... | reopen T... | delete T...
            move T --to L
+           links T [--list L]           # linked resources' webUrls, then URLs in the notes, deduped (D-050)
+           open T [--index N] [--list L]   # http, https, mailto only; several and no --index: listed, exit 2
            parse "text"                 # show how quick add will read the text; no writes
 search     QUERY [--list L] [--status open|completed|all] [--limit N]   # title and notes, every list, best first (D-041)
 done       [--since W] [--until W] [--list L | --folder F] [--limit N]     # completed, by local day, newest first (D-048)
