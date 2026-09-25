@@ -78,6 +78,13 @@ fn titles(items: &Value) -> Vec<String> {
         .collect()
 }
 
+fn sorted_titles(items: &Value) -> Vec<String> {
+    // Tasks with the same creation time can arrive from different lists in either order.
+    let mut titles = titles(items);
+    titles.sort();
+    titles
+}
+
 /// A change on the phone or another ms-todo: `change` to task `id`, then
 /// a new etag, as Graph gives any write.
 fn elsewhere(graph: &FakeGraph, id: &str, change: impl FnOnce(&mut Value)) {
@@ -392,19 +399,27 @@ async fn lists_filter_by_person_whatever_the_case_and_waiting_groups_them() {
 
     // Every list's open tasks for Sam, however the name was typed.
     let sam = env.json(&["tasks", "list", "--assignee", "sam"]);
-    assert_eq!(titles(&sam["items"]), ["Get the quote", "Fix the gate"]);
-    assert_eq!(sam["items"][1]["list"], "Home");
+    assert_eq!(
+        sorted_titles(&sam["items"]),
+        ["Fix the gate", "Get the quote"]
+    );
+    assert!(sam["items"].as_array().is_some_and(|items| {
+        items
+            .iter()
+            .any(|item| item["title"] == "Fix the gate" && item["list"] == "Home")
+    }));
     // Anyone, grouped by person.
     let anyone = env.json(&["tasks", "list", "--assignee", "*"]);
     assert_eq!(
-        titles(&anyone["items"]),
-        ["Chase the invoice", "Get the quote", "Fix the gate"]
+        sorted_titles(&anyone["items"]),
+        ["Chase the invoice", "Fix the gate", "Get the quote"]
     );
+    assert_eq!(anyone["items"][0]["title"], "Chase the invoice");
     // The same tasks: compared by title, since a background sync pass may
     // refresh other fields between the two reads.
     assert_eq!(
-        titles(&env.json(&["waiting"])["items"]),
-        titles(&anyone["items"])
+        sorted_titles(&env.json(&["waiting"])["items"]),
+        sorted_titles(&anyone["items"])
     );
     assert_eq!(
         titles(&env.json(&["waiting", "Ada@Example.com"])["items"]),
@@ -412,7 +427,10 @@ async fn lists_filter_by_person_whatever_the_case_and_waiting_groups_them() {
     );
     // In one list, completed ones too, as `tasks list` has them.
     let in_tasks = env.json(&["tasks", "list", "--list", "Tasks", "--assignee", "Sam"]);
-    assert_eq!(titles(&in_tasks["items"]), ["Get the quote", "Old favour"]);
+    assert_eq!(
+        sorted_titles(&in_tasks["items"]),
+        ["Get the quote", "Old favour"]
+    );
     // Nobody by that name.
     assert_eq!(
         env.json(&["tasks", "list", "--assignee", "Kim"])["items"],

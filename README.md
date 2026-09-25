@@ -412,6 +412,8 @@ t "Buy stamps tomorrow @Errands"
 
 Any launcher or hotkey tool that can run a shell command can call `mst tasks add "<text>"` the same way. The add answers at once, even offline.
 
+For Raycast, use the [extension](raycast/ms-todo/README.md) to search and browse tasks, capture and edit them, or manage My Day.
+
 ### Find anything
 
 ```sh
