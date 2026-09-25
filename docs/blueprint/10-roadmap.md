@@ -273,6 +273,33 @@ Pulled forward from 8d at BK's request (D-047): his To Do app groups lists PARA-
 
 **Left out:** `lists create --folder` (with `lists create`, 8e), moving a list by keys in the TUI (only by typing a folder name), and ordering in the TUI (the CLI's `lists order` and `folders order`).
 
+### Rung 5d: Motorbike with a logbook: what I finished, and clearing what's overdue
+
+BK's research pick, trimmed to what's worth building (D-048): a logbook of what was finished (Things' Logbook; the standup question on Hacker News), and a way out of the overdue pile that doesn't take one edit per task. Plain code, no AI.
+
+**Promise:** "I can see what I finished yesterday for my standup, and clear a pile of overdue tasks in one command, then undo it."
+
+**Build:**
+
+- `done [--since W] [--until W] [--list L | --folder F] [--limit N]`: completed tasks from the cache, by local day, newest first; every format, with `completed_on` in JSON and CSV. `--since` and `--until` read phrases looking back (`mon` is the latest Monday), a new mode of `crates/nlp`.
+- `reschedule [--overdue | --due-before W | TASK... | -] --to W [--list L | --folder F] [--dry-run] [--yes]`, and `tasks edit` over the same selection or several IDs, for `--due`, `--importance` and `--reminder`: one command of one outbox operation per task.
+- Undo per task for a change to several: tasks changed since are left alone and reported.
+- TUI: the Completed view grouped by day; "Set due date…" (`S`) for the selection and "Reschedule overdue to…" (`R`), both in the palette.
+
+**Unknowns:** whether `completedDateTime` is always midnight UTC of the day (S12 saw 418 of 420); how Graph takes back a due date it gave (it keeps the date part of what it's sent, S11).
+
+**Demo:** `mst done --since yesterday`, `mst done --since mon --list Work --format csv`, `mst reschedule --overdue --to today`, `mst undo`.
+
+**Done when:**
+
+- `done` shows a task completed today under Today, on the day Graph keeps, in every format.
+- `reschedule --overdue` previews, asks (or needs `--yes` off a terminal), moves every overdue task, and one `undo` puts every one back, as `raw GET` shows; a task changed since is left alone and named.
+- The latency budget still holds.
+
+**As built (2026-09-25, D-048):** driven live on the `livetest` instance on the spike list only: three tasks due yesterday; `reschedule --overdue --list ms-todo-spike-2026-09-24 --to tomorrow` planned exactly those 3, refused without `--yes` off a terminal (exit 2), and with it moved all three (`raw GET`: `2026-09-25T23:00Z`, midnight London on the 26th). The first `undo` found a bug that predates 5d: undo sent back the UTC instant Graph had given (`2026-09-23T23:00Z`), Graph kept only its date part, and every task landed a day early (the 23rd). Fixed: a date is put back as its local day's midnight in the user's zone, unless it's already midnight in its own. After the fix, `undo` restored all three exactly (`2026-09-23T23:00Z`); a second batch with one task moved again undid two and reported the third in `refused`. A bulk `tasks edit - --due yesterday --yes` from stdin moved all three. Completing one showed it in `done --since today --list …` at once as "Not synced yet" (`completed_on` null), then, once sent, under Today with `completed_on` 2026-09-25; Graph held `completedDateTime` `2026-09-25T00:00:00Z` (completed at 03:29 BST). The test tasks were deleted; the spike list is back to 31 tasks. Latency with `--bench-startup`: cold start 5.4 ms, keypress p95 0.2 ms, view switch p95 3.7 ms.
+
+**Left out:** a `--where` expression language (the selection is `--overdue` or `--due-before`, as `tasks list`'s planned `--due` filter reads); clearing several due dates at once in the TUI; the time of day a task was completed, which Graph doesn't keep; per-day totals and "done this week" summaries beyond what `done --format json` gives an agent.
+
 ## Rung 6: Car: quick add
 
 **Previously:** a CLI and TUI that take task text literally. **Now:** the same, plus Todoist-style quick add in both.

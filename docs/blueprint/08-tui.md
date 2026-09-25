@@ -50,7 +50,7 @@ Use glyphs from a Nerd Font or Unicode symbol set, with an ASCII fallback option
 - Important (`importance = high`)
 - Planned (has a due date, grouped into Overdue, Today, Tomorrow, This week, Later)
 - All
-- Completed
+- Completed (grouped by the day each task was completed: Today, Yesterday, `Mon 21 Sep`…; rung 5d)
 - Assigned (has an assignee)
 
 The **My Day view** has:
@@ -58,7 +58,7 @@ The **My Day view** has:
 - A heading with the date.
 - Today's tasks, with a "Suggestions" section below them: due today, overdue, and yesterday's unfinished My Day tasks. One key adds a suggestion.
 
-**Folders** are collapsible groups in the sidebar, from the list extension. As built (rung 5c, D-047): after the smart views come the folders in order, each a heading with the open-task total of its lists and the lists indented under it, then the lists in no folder. `Enter` or `Space` on a heading collapses or expands it, remembered for the session; moving onto a heading shows nothing new. The cursor follows its row by ID, not position, across a collapse and a seed that reorders lists; a shown list hidden in a collapsed folder is stood for by its heading. `M` (and the palette's "Move list to folder…") asks for a folder for the list under the cursor or on screen, prefilled with its folder, suggesting existing folders as you type (`Tab` takes the first); empty takes it out. The answer redraws the sidebar at once; the palette's "Go to" reaches a list in a collapsed folder and opens the folder.
+**Folders** are collapsible groups in the sidebar, from the list extension. As built (rung 5c, D-047): after the smart views come the folders in order, each a heading with the open-task total of its lists and the lists indented under it, then the lists in no folder. `Enter` or `Space` on a heading collapses or expands it, remembered for the session; moving onto a heading shows nothing new. The cursor follows its row by ID, not position, across a collapse and a seed that reorders lists; a shown list hidden in a collapsed folder is stood for by its heading. `M` (and the palette's "Move list to folder…") asks for a folder for the list under the cursor or on screen, prefilled with its folder, suggesting existing folders as you type (`Tab` takes the first); `Enter` on an empty name (`Ctrl-u` clears the prefill) takes it out, and the hint bar says so ("Enter on empty: no folder", rung 5d). The answer redraws the sidebar at once; the palette's "Go to" reaches a list in a collapsed folder and opens the folder.
 
 ## Quick add
 
@@ -94,3 +94,12 @@ As built in the editing fix (D-045):
 - **Every prompt is a line editor** (the add, filter, edit and palette prompts): `ratatui-textarea` holds the text and the cursor, and `app/line_editor.rs` picks its keys. Left and Right, Home and End (Ctrl-a, Ctrl-e), a word back and forward (Alt-b, Alt-f, Ctrl- or Alt-arrows), Backspace, Delete, Ctrl-w a word back, Ctrl-u to the line's start, Ctrl-k to its end. The cursor starts after the value, and the character under it is drawn reversed (the cursor glyph past the end). Keys the registry doesn't bind in a prompt go to the editor as `Msg::Key`; the registry lists the prompt keys, and help lists the editor's.
 - **Notes are multi-line:** Enter is a new line, and Ctrl-s or Alt-Enter saves.
 - **Dates take phrases** (`tomorrow`, `fri 17:30`, `+2w`, `in 2 days`, `12 oct`), read by `crates/nlp` as the CLI's flags are ([07](07-cli.md)). A reminder given only a day is 09:00 on it (`in 2 days` → `Sat 26 Sep 09:00`). What the text resolves to shows under it as it's typed (`→ Fri 2 Oct`, `, in the past`), or why it can't be read; Enter with input it can't read shows the reason in red and sends nothing.
+
+## What I finished; clearing what's overdue
+
+As built in rung 5d (D-048):
+
+- **The Completed view is grouped by day**, newest first: a heading per local day a task was completed (`Today`, `Yesterday`, then `Mon 21 Sep`, with the year when it isn't this one), the same headings `ms-todo done` prints. Graph keeps the day only (S12), read by the due dates' rounding. A completion Graph hasn't answered yet has no day and comes first, under "Not synced yet"; the daemon orders the view that way too, so the cursor moves through the rows in the order drawn.
+- **`S` "Set due date…"** asks for one due date for the selection, or the task under the cursor, in the hint bar: `Due date for 3 tasks: next mon█  → Mon 28 Sep`. It reads, previews and refuses what the due-date editor does; empty is refused rather than clearing several tasks' dates. `e` `d` with a selection opens it too. One `ChangeTasks` goes out, so one `u` puts every task back.
+- **`R` "Reschedule overdue to…"** does the same for every open task on screen that's overdue (`Due date for 4 overdue tasks:`), or says "Nothing here is overdue". Both are in the palette.
+- A change to more than one task says "Changed N tasks; u puts them all back". An undo that left tasks alone because they changed since names them: "Undone, except "Dentist": changed since, so left alone".

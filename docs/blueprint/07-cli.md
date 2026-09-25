@@ -36,11 +36,13 @@ tasks      list [--list L] [--status S] [--due before/after/today/overdue] [--im
            add "text" [--list L] [--no-parse] [--due D] [--start D] [--reminder DT]
                 [--importance I] [--category C]... [--recur "every …"] [--body TEXT|--body-file F]
                 [--my-day] [--assignee A]
-           edit T [same field flags, plus --clear-due etc.]
+           edit T... [same field flags, plus --clear-due etc.]   # several, `-`, or --overdue / --due-before (5d)
            complete T... | reopen T... | delete T...
            move T --to L
            parse "text"                 # show how quick add will read the text; no writes
 search     QUERY [--list L] [--status open|completed|all] [--limit N]   # title and notes, every list, best first (D-041)
+done       [--since W] [--until W] [--list L | --folder F] [--limit N]     # completed, by local day, newest first (D-048)
+reschedule [--overdue | --due-before W | T... | -] --to W [--list L | --folder F] [--dry-run] [--yes]
 
 steps      list T | add T "text" | edit T S "text" | check T S | uncheck T S | delete T S | order …
 links      list T | add T URL [--name N] [--app A] [--external-id X] | edit … | delete T R
@@ -65,6 +67,13 @@ raw        GET|POST|PATCH|DELETE PATH [--body JSON]   # authenticated passthroug
 - `--importance` takes `high`, `normal`, `low`, `1`–`4` or `p1`–`p4`: 1 is high, 2 and 3 are both normal (Graph has one level for them, D-017), 4 is low. Keeping the typed level in our extension is Q3, still open. The schema lists it as a string with those forms in its description.
 
 **Folders, as built (rung 5c, D-047).** `lists move L... --folder F | --no-folder` moves one list or several in one command (one `op_id`; the bulk form is for the one-time import of the To Do app's groups); `lists order L --before|--after L2` needs both in the same folder; `folders list` gives `{ name, lists, list_count, open_count }` in order (CSV `name,list_count,open_count,lists`); `folders rename F NEW`, `folders delete F [--yes]` (asks in a terminal, exit 2 elsewhere without `--yes`; no list is deleted) and `folders order F --before|--after F2`. Every one but `folders list` takes `--dry-run`, which answers `{ dry_run, action, lists: [{ id, name, changes }] }`, and `--idempotency-key`. A real run answers the `Applied` shape with the lists changed as `items` and `action` one of `move_list`, `order_list`, `rename_folder`, `delete_folder`, `order_folder`; `undo` of one answers with lists too. A change that needs no write (a list already in place) answers with no items and queues nothing. `lists create --folder` waits for rung 8e's `lists create`.
+
+**What I finished, and bulk changes, as built (rung 5d, D-048).**
+
+- `done` answers from the cache through the daemon: completed tasks in `--list`, `--folder` or every list, newest first, at most `--limit`. Each carries `completed_on`, its local day (`YYYY-MM-DD`), and `list`, its list's name. Graph keeps a completion as midnight UTC of the day (S12), so it's a date, read by the due dates' rounding (02), and no time is claimed. A completion Graph hasn't answered has `completed_on` null and counts as today's. `--since` (default 7 days ago) and `--until` (default open) are both included, and read phrases looking back: a weekday is the latest one, today included; a day and month the latest one; `this week`, `last week` (Mondays), `this month`, `last month` (1sts); the rest as `--due` reads them. A table groups by day under `Today`, `Yesterday`, `Mon 21 Sep`; CSV is `id,title,list,completed_on,due,importance,sync_state`.
+- `reschedule --to W` is a due-date edit of the tasks named (`-` reads IDs from stdin) or picked: `--overdue` (open, due before today) or `--due-before W` (open, due before that day), in `--list`, `--folder` or every list. `tasks edit` takes the same selection or several tasks, for `--due`, `--importance` and `--reminder`; `--title` and `--body` over more than one task are invalid input. The selection travels to the daemon (`ChangeTasks.select`, protocol 7) and is resolved there when the change runs, so `--dry-run` and the real run pick by one rule, and a repeat under an `--idempotency-key` repeats the same request.
+- A change that may reach more than one task is previewed first (a dry run). One or none: it runs. More, in a terminal: the plan goes to stderr and it asks; the IDs shown are what runs. Off a terminal, or with the IDs on stdin: exit 2 unless `--yes`. A selection that matches nothing answers `Applied` with no items and queues nothing.
+- One command, one outbox operation per task, one `op_id`: one `undo` reverses the batch. Undo checks each task on its own: a task whose field has changed since is left alone and listed in the answer's `refused` (`{ id, title, reason }`), the rest are undone, and only when every task changed is the undo refused (`conflict`, exit 5).
 
 `raw` counts as coverage of the full surface: anything Graph adds later can be reached before it gets a proper command.
 

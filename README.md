@@ -2,7 +2,7 @@
 
 A local-first, keyboard-native terminal client for Microsoft To Do. It has a daemon that keeps a local SQLite cache in sync with Microsoft Graph, and two clients of that daemon: a scriptable CLI with stable JSON output and a very fast ratatui TUI.
 
-**Status: Rung 5b: a TUI to live in.** ms-todo signs in to your Microsoft account, shows every task in any of your lists, finds any task by the words in it, and adds, edits, completes, reopens and deletes tasks, from a terminal or an agent. Reads come from a local cache the daemon keeps in step with Microsoft To Do through delta sync, so they answer in milliseconds and a change on your phone shows up by itself within about 30 seconds while you're using ms-todo. Writes answer at once too, with or without a network: they're queued and sent in the background, and nothing you write is silently dropped. `ms-todo undo` reverses a change. `mst` on its own opens a keyboard-driven view of every list, where you can edit any field, act on several tasks at once, run any action from a palette and check ms-todo's health. Quick-add parsing comes in a later rung of the [roadmap](docs/blueprint/10-roadmap.md).
+**Status: Rung 5d: see what I finished, clear what's overdue.** ms-todo signs in to your Microsoft account, shows every task in any of your lists, finds any task by the words in it, and adds, edits, completes, reopens and deletes tasks, from a terminal or an agent. Reads come from a local cache the daemon keeps in step with Microsoft To Do through delta sync, so they answer in milliseconds and a change on your phone shows up by itself within about 30 seconds while you're using ms-todo. Writes answer at once too, with or without a network: they're queued and sent in the background, and nothing you write is silently dropped. `ms-todo undo` reverses a change. `mst` on its own opens a keyboard-driven view of every list, where you can edit any field, act on several tasks at once, run any action from a palette and check ms-todo's health. `ms-todo done` lists what you completed, day by day, and `ms-todo reschedule` moves every overdue task at once, put back with one `undo`. Quick-add parsing comes in a later rung of the [roadmap](docs/blueprint/10-roadmap.md).
 
 ## Install
 
@@ -79,6 +79,23 @@ ms-todo tasks list --format ids | ms-todo tasks complete -   # `-` reads IDs fro
 - Each change answers at once with the task as ms-todo now has it and an `op_id`, and the daemon sends it to Microsoft To Do in the background (see [Offline, and never lose a write](#offline-and-never-lose-a-write)).
 - If someone changed the same field on another device since ms-todo last read the task, the change is rejected (and rolled back) rather than overwriting theirs.
 
+## What you finished, and clearing what's overdue
+
+```sh
+ms-todo done --since yesterday                          # for a standup: grouped by day, newest first
+ms-todo done --since mon --list Work --format csv       # a sheet of this week's work
+ms-todo reschedule --overdue --to today                 # every overdue open task, due today
+ms-todo reschedule --due-before fri --folder Areas --to "next mon" --dry-run
+ms-todo tasks edit - --importance high --yes < ids.txt  # one change to several tasks
+ms-todo undo                                            # puts the whole batch back
+```
+
+- `done` lists completed tasks from the cache, by the day they were completed, newest first: the last 7 days unless `--since` says otherwise. `--since` and `--until` (both included) take a day, read looking back: `yesterday`, `mon` (the latest Monday, today included), `last week` (its Monday), `this month`, `12 sep` (the latest one), `3 days ago`, `2026-09-01`. `--list` or `--folder` narrow it, and `--limit N` keeps the newest N. JSON and CSV give each task `completed_on` (`YYYY-MM-DD`) and `list`; CSV's columns are `id,title,list,completed_on,due,importance,sync_state`.
+- Microsoft To Do keeps the day a task was completed, not the time (as midnight UTC), so `done` shows days only. A completion that hasn't reached Microsoft To Do yet has no day: it's listed first as "Not synced yet", with `completed_on` null.
+- `reschedule --to DAY` moves the due date of open tasks: `--overdue` (due before today), `--due-before DAY`, or the tasks named (`-` reads IDs from stdin), in `--list` or `--folder` or every list. `tasks edit` takes the same `--overdue`, `--due-before` and several task IDs for `--due`, `--importance` and `--reminder`; a title or notes change one task at a time.
+- A change that may reach more than one task shows the tasks and asks first in a terminal; anywhere else it needs `--yes` (exit 2 otherwise). `--dry-run` shows the plan. What runs after a yes is the tasks you were shown.
+- However many tasks it moves, it's one change with one `op_id`, so one `ms-todo undo` puts them all back. A task whose due date has changed again since is left alone and listed under `refused`; only when every task changed is the undo refused (exit 5).
+
 ## Group lists into folders
 
 ```sh
@@ -109,7 +126,7 @@ ms-todo outbox discard <OP> --yes     # drop a change; one that never reached Mi
 ms-todo undo                          # reverse the latest change; or `ms-todo undo <OP_ID>`
 ```
 
-Undo is itself a change, so it can be undone. An edit, complete, reopen or folder change is undone only while what it set is still there: if a later change or another device has changed that field since, `undo` refuses with exit 5 (`conflict`) rather than overwrite it, and changes nothing. Undoing an add deletes the task; an edit, complete or reopen puts the fields back; a delete brings the task back with the same ID (and a new Graph ID). Undoing the completion of a recurring task also deletes the completed copy Microsoft To Do made, so it asks which one: `ms-todo undo <OP_ID> --copy <ID>` (without `--copy`, it lists the candidates and exits 2).
+Undo is itself a change, so it can be undone. An edit, complete, reopen or folder change is undone only while what it set is still there: if a later change or another device has changed that field since, `undo` refuses with exit 5 (`conflict`) rather than overwrite it, and changes nothing. For a change to several tasks the rule is per task: the ones changed since are left alone and named in `refused`, and the rest are undone. Undoing an add deletes the task; an edit, complete or reopen puts the fields back; a delete brings the task back with the same ID (and a new Graph ID). Undoing the completion of a recurring task also deletes the completed copy Microsoft To Do made, so it asks which one: `ms-todo undo <OP_ID> --copy <ID>` (without `--copy`, it lists the candidates and exits 2).
 
 A database upgraded by a newer ms-todo is refused with "this database was upgraded by a newer ms-todo; install the latest version" (error kind `database_too_new`, exit 1).
 
@@ -135,13 +152,15 @@ A title bar with the version and the view you're in, a sidebar of smart views (I
 | `j` / `k`, `g` / `G` | down, up, top, bottom |
 | `h` / `l`, `Tab` | move between the sidebar, the list and the detail pane |
 | `Enter` / `Space` in the sidebar | on a folder, collapse or expand it (remembered until you quit); on a list or view, open it |
-| `M` | move the current list to a folder: type its name (`Tab` takes the first of the folders suggested), or leave it empty to take the list out of its folder |
+| `M` | move the current list to a folder: type its name (`Tab` takes the first of the folders suggested), or `Enter` on an empty name (`Ctrl-u` clears it) to take the list out of its folder |
 | `a` | add a task to the current list; the text is taken literally |
 | `x` | complete, or reopen a completed task; with a selection, completes its open tasks (or reopens them all) in one change |
 | `e` | pick a field to edit, from the list or the detail pane: `t` title, `d` due date, `r` reminder, `i` importance, `n` notes, `I` cycles importance low, normal, high and saves; `Esc` cancels |
 | `Enter` in the detail pane | edit the field under the detail pane's cursor (`j` / `k` there move between title, due date, reminder, importance and notes) |
 | in an editor | `Enter` saves (`Ctrl-s` or `Alt-Enter` in notes, where `Enter` is a new line), `Esc` cancels; `←` / `→`, `Home` / `End` (`Ctrl-a` / `Ctrl-e`), `Alt-b` / `Alt-f` (or `Ctrl-←` / `Ctrl-→`) a word, `Backspace` / `Delete`, `Ctrl-w` a word back, `Ctrl-u` / `Ctrl-k` to the line's start / end. The add, filter and palette prompts edit the same way |
 | `v` / `V` | select a task, or every task in the view; `Esc` clears the selection |
+| `S` | set one due date on the selection (or the task under the cursor); `e` `d` with a selection does the same |
+| `R` | reschedule every overdue open task in the view to the day you type; one `u` puts them all back |
 | `d` | delete the task or the selection, after a `y` / `n` confirmation that names the count |
 | `u` | undo the last change; for a repeating task, pick the completed copy to delete |
 | `/` | filter the current view as you type (the same search as `ms-todo search`); `Esc` clears it |
@@ -151,7 +170,7 @@ A title bar with the version and the view you're in, a sidebar of smart views (I
 | `?` | every key |
 | `q` | quit |
 
-In the editor, a due date or a reminder takes what `--due` and `--reminder` take (`tomorrow`, `fri 17:30`, `+2w`, `12 oct`), and shows what it resolves to as you type (`→ Fri 2 Oct`, or `, in the past`); empty or `-` clears it, and input it can't read says why and sends nothing. Importance is picked by level: `1` high, `2` or `3` normal, `4` low (or `h`, `n`, `l`), saved at once. Notes are plain text on several lines: notes written as html on another device are shown as text, and only rewritten as text if you change them. A selection holds only tasks in the view on screen: switching views clears it, and a task that leaves the view drops out of it.
+In the editor, a due date or a reminder takes what `--due` and `--reminder` take (`tomorrow`, `fri 17:30`, `+2w`, `12 oct`), and shows what it resolves to as you type (`→ Fri 2 Oct`, or `, in the past`); empty or `-` clears it, and input it can't read says why and sends nothing. Importance is picked by level: `1` high, `2` or `3` normal, `4` low (or `h`, `n`, `l`), saved at once. Notes are plain text on several lines: notes written as html on another device are shown as text, and only rewritten as text if you change them. A selection holds only tasks in the view on screen: switching views clears it, and a task that leaves the view drops out of it. The Completed view is grouped by the day each task was completed: Today, Yesterday, then `Mon 21 Sep` and so on.
 
 Everything the TUI does is also a command, so scripts and agents use the commands. `mst tui --bench-startup` measures the start and a run of keys against your cache and prints the timings; `MS_TODO_TUI_TRACE=<file>` writes every keypress's timing to a file.
 
@@ -182,7 +201,7 @@ Its socket is private to your user (0600, in a 0700 directory), and its log is `
 
 ## Plan
 
-The design is in [`docs/blueprint/`](docs/blueprint/README.md), the Phase 0 results are in [`12-open-questions.md`](docs/blueprint/12-open-questions.md), and the evidence is in `docs/research/spikes/`. Still open: the S4 deltaLink replay, and product questions Q3, Q6–Q10 and Q12. The build climbs a ladder of usable releases: a foundation turn (install and sign in), rung 1 (see my tasks), rung 2 (capture and finish tasks), rung 3a (instant reads from a local cache), rung 3b (live sync through delta), rung 4 (offline writes that are never lost, and undo), rung 4b (search), rung 5a (a TUI to browse and act in), rung 5b (a TUI to live in: editing, multi-select, the palette, diagnostics, and Homebrew), and next rung 6 (quick add).
+The design is in [`docs/blueprint/`](docs/blueprint/README.md), the Phase 0 results are in [`12-open-questions.md`](docs/blueprint/12-open-questions.md), and the evidence is in `docs/research/spikes/`. Still open: the S4 deltaLink replay, and product questions Q3, Q6–Q10 and Q12. The build climbs a ladder of usable releases: a foundation turn (install and sign in), rung 1 (see my tasks), rung 2 (capture and finish tasks), rung 3a (instant reads from a local cache), rung 3b (live sync through delta), rung 4 (offline writes that are never lost, and undo), rung 4b (search), rung 5a (a TUI to browse and act in), rung 5b (a TUI to live in: editing, multi-select, the palette, diagnostics, and Homebrew), rung 5c (folders), rung 5d (what I finished, and clearing what's overdue), and next rung 6 (quick add).
 
 What's planned:
 
