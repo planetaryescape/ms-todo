@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.23](https://github.com/planetaryescape/ms-todo/compare/v0.1.22...v0.1.23) (2026-09-25)
+
+
+### Bug Fixes
+
+* e edits the field you're on in the detail pane ([fac9906](https://github.com/planetaryescape/ms-todo/commit/fac9906e1b51d42daece05b4f3431fbd1b63c99d))
+
 ## [0.1.22](https://github.com/planetaryescape/ms-todo/compare/v0.1.21...v0.1.22) (2026-09-25)
 
 
