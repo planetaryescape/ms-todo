@@ -7,8 +7,8 @@ use ratatui::widgets::{Cell, Paragraph, Row, Table, TableState};
 use unicode_width::UnicodeWidthStr;
 
 use super::{focused, pane, selection};
-use crate::app::scope::{assigned_groups, completed_groups, my_day_groups, planned_groups};
-use crate::app::{App, Connection, Pane, SyncMarker, Task};
+use crate::app::scope::task_groups;
+use crate::app::{App, Connection, Mode, Pane, SyncMarker, Task};
 use crate::glyphs::Glyphs;
 use crate::theme::Theme;
 
@@ -25,6 +25,21 @@ pub fn draw<'a>(frame: &mut Frame, area: Rect, app: &'a App) {
     };
     let theme = &app.theme;
     let block = pane(theme, title, has_focus);
+    let block = if !app.seeded
+        || !app.tasks_ready
+        || app.loading()
+        || app.mode != Mode::Normal
+        || app.focus != Pane::Tasks
+    {
+        block
+    } else {
+        let position = if app.tasks.is_empty() {
+            0
+        } else {
+            app.task_index.min(app.tasks.len() - 1) + 1
+        };
+        block.title(Line::from(format!(" {position}/{} ", app.tasks.len())).right_aligned())
+    };
     if app.tasks.is_empty() || app.loading() {
         let text = empty_text(app);
         let inner = block.inner(area);
@@ -48,19 +63,7 @@ pub fn draw<'a>(frame: &mut Frame, area: Rect, app: &'a App) {
         |task: &'a Task| task_row(task, app.selection.contains(&task.id), glyphs, theme, today);
     // Planned is grouped by how soon, Completed by day; a header row goes
     // before each group.
-    let groups: Option<Vec<(String, Vec<usize>)>> = match &app.shown {
-        _ if app.filter.is_some() => None,
-        Some(Scope::Planned) => Some(
-            planned_groups(&app.tasks, today)
-                .into_iter()
-                .map(|(group, members)| (group.name().to_owned(), members))
-                .collect(),
-        ),
-        Some(Scope::Completed) => Some(completed_groups(&app.tasks, today)),
-        Some(Scope::MyDay) => Some(my_day_groups(&app.tasks)),
-        Some(Scope::Assigned) => Some(assigned_groups(&app.tasks)),
-        _ => None,
-    };
+    let groups = task_groups(app.shown.as_ref(), app.filter.is_some(), &app.tasks, today);
     let (rows, selected) = match groups {
         Some(groups) => {
             let mut rows = Vec::new();

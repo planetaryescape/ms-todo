@@ -6,7 +6,7 @@ Buffer {
     area: Rect { x: 0, y: 0, width: 110, height: 16 },
     content: [
         " ms-todo 9.9.9 · Home                                                                                ● synced ",
-        "╭ Lists ───────────────╮╭ Home ────────────────────────────────────────────╮╭ Detail ────────────────────────╮",
+        "╭ Lists ───────────────╮╭ Home ─────────────────────────────────────── 1/4 ╮╭ Detail ────────────────────────╮",
         "│☼ My Day              ││○ Pay rent                         Oct 1 ★ ↻      ││Title      Pay rent             │",
         "│★ Important          1││○ Call Sam                                      ◌ ││                                │",
         "│▦ Planned            2││○ Water plants                                  ✗ ││Status     open                 │",
@@ -33,6 +33,8 @@ Buffer {
         x: 24, y: 1, fg: Rgb(180, 190, 254), bg: Rgb(30, 30, 46), underline: Reset, modifier: NONE,
         x: 25, y: 1, fg: Rgb(180, 190, 254), bg: Rgb(30, 30, 46), underline: Reset, modifier: BOLD,
         x: 31, y: 1, fg: Rgb(180, 190, 254), bg: Rgb(30, 30, 46), underline: Reset, modifier: NONE,
+        x: 70, y: 1, fg: Rgb(180, 190, 254), bg: Rgb(30, 30, 46), underline: Reset, modifier: BOLD,
+        x: 75, y: 1, fg: Rgb(180, 190, 254), bg: Rgb(30, 30, 46), underline: Reset, modifier: NONE,
         x: 76, y: 1, fg: Rgb(69, 71, 90), bg: Rgb(30, 30, 46), underline: Reset, modifier: NONE,
         x: 77, y: 1, fg: Rgb(166, 173, 200), bg: Rgb(30, 30, 46), underline: Reset, modifier: BOLD,
         x: 85, y: 1, fg: Rgb(69, 71, 90), bg: Rgb(30, 30, 46), underline: Reset, modifier: NONE,

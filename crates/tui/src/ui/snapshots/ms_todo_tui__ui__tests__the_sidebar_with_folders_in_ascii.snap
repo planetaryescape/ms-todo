@@ -3,7 +3,7 @@ source: crates/tui/src/ui/tests.rs
 expression: render(&app)
 ---
 " ms-todo 9.9.9 · Home                                                                                + synced "
-"╭ Lists ───────────────╮╭ Home ────────────────────────────────────────────╮╭ Detail ────────────────────────╮"
+"╭ Lists ───────────────╮╭ Home ─────────────────────────────────────── 1/4 ╮╭ Detail ────────────────────────╮"
 "│o My Day              ││[ ] Pay rent                       Oct 1 ! R      ││Title      Pay rent             │"
 "│! Important          1││[ ] Call Sam                                    ~ ││                                │"
 "│# Planned            2││[ ] Water plants                                X ││Status     open                 │"

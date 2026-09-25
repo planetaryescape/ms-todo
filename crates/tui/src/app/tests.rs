@@ -214,6 +214,54 @@ fn j_k_g_and_capital_g_move_through_tasks_within_bounds() {
 }
 
 #[test]
+fn page_keys_move_by_the_visible_rows_and_stop_at_the_ends() {
+    let mut app = seeded();
+    app.update(Msg::Resize(Size::new(80, 8)));
+    act(&mut app, Action::PageDown);
+    assert_eq!(app.task_index, 2);
+    act(&mut app, Action::PageDown);
+    assert_eq!(app.task_index, 3);
+    act(&mut app, Action::PageUp);
+    assert_eq!(app.task_index, 1);
+    act(&mut app, Action::PageUp);
+    assert_eq!(app.task_index, 0);
+
+    app.focus = Pane::Sidebar;
+    act(&mut app, Action::PageUp);
+    assert_eq!(app.sidebar_index, 5);
+    act(&mut app, Action::PageDown);
+    assert_eq!(app.sidebar_index, 7);
+}
+
+#[test]
+fn page_keys_count_group_headings_in_completed_view() {
+    let mut app = seeded();
+    app.update(Msg::Resize(Size::new(80, 10)));
+    app.shown = Some(Scope::Completed);
+    app.tasks = (0..6)
+        .map(|index| {
+            Task::from_entity(&task(
+                &format!("c{index}"),
+                &format!("Task {index}"),
+                json!({
+                    "status": "completed",
+                    "completedDateTime": {
+                        "dateTime": format!("2026-09-{:02}T00:00:00.0000000", 24 - index),
+                        "timeZone": "UTC"
+                    }
+                }),
+            ))
+            .expect("task")
+        })
+        .collect();
+    act(&mut app, Action::PageDown);
+    // Each task has a heading, so four screen rows move two tasks.
+    assert_eq!(app.task_index, 2);
+    act(&mut app, Action::PageUp);
+    assert_eq!(app.task_index, 0);
+}
+
+#[test]
 fn h_l_and_tab_move_between_panes() {
     let mut app = seeded();
     assert_eq!(app.focus, Pane::Tasks);

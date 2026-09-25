@@ -3,7 +3,7 @@ source: crates/tui/src/ui/tests.rs
 expression: render(&app)
 ---
 " ms-todo 9.9.9 · Completed                                                                           ● synced "
-"╭ Lists ───────────────╮╭ Completed ───────────────────────────────────────╮╭ Detail ────────────────────────╮"
+"╭ Lists ───────────────╮╭ Completed ────────────────────────────────── 3/4 ╮╭ Detail ────────────────────────╮"
 "│☼ My Day              ││  Not synced yet                                  ││Title      Call Sam             │"
 "│★ Important          1││✓ Just now                                      ◌ ││                                │"
 "│▦ Planned            2││  Today                                           ││Status     completed            │"
