@@ -62,6 +62,8 @@ mst auth login     # prints a URL and a code; enter the code in your browser
 mst auth status    # the account, token expiry, client ID and scopes
 ```
 
+If you open the TUI before signing in, it shows the login command for that instance. Run it in another terminal, then reopen the TUI.
+
 `auth login` uses Microsoft's device-code sign-in: you enter the code in any browser, so it works over SSH too. Release builds sign in as the maintainer's Entra app, asking for `Tasks.ReadWrite`, `MailboxSettings.ReadWrite` (your Outlook categories, for `@labels`), `User.Read` and `offline_access`. With that ID you consent to the maintainer's app registration, and sign-in depends on it staying available. So register your own if you can ([the guide](docs/setup/entra-app-registration.md) takes about 10 minutes); you need one if you built from source. Then set its ID:
 
 ```sh

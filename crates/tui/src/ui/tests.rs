@@ -216,6 +216,18 @@ fn syncing_before_the_first_sync_not_an_empty_list() {
     insta::assert_snapshot!(render(&app));
 }
 
+#[test]
+fn signed_out_shows_the_instance_login_command() {
+    let mut app = App::new(crate::glyphs::UNICODE, clock())
+        .with_sign_in_command(Some("ms-todo --instance scratch auth login".into()));
+    app.version = "9.9.9";
+    app.update(Msg::Connected);
+    let frame = render(&app);
+    assert!(frame.contains("ms-todo --instance scratch auth login"));
+    assert!(!frame.contains("Nothing here"));
+    insta::assert_snapshot!(frame);
+}
+
 /// Important, recurring, a reminder and due, next to tasks with only
 /// some of them: each marker keeps its own cells, in both glyph sets.
 #[test]

@@ -339,6 +339,8 @@ pub struct App {
     pub focus: Pane,
     pub mode: Mode,
     pub connection: Connection,
+    /// The command for this instance while no credential is stored.
+    pub sign_in_command: Option<String>,
     /// Every list, in the daemon's order: folder by folder, then those in
     /// no folder.
     pub lists: Vec<SidebarList>,
@@ -414,6 +416,7 @@ impl App {
             focus: Pane::Tasks,
             mode: Mode::Normal,
             connection: Connection::Connecting,
+            sign_in_command: None,
             lists: Vec::new(),
             collapsed: HashSet::new(),
             counts: Counts::default(),
@@ -452,6 +455,11 @@ impl App {
     /// With the download directory and where typed paths start.
     pub fn with_places(mut self, places: attachments::Places) -> Self {
         self.places = places;
+        self
+    }
+
+    pub fn with_sign_in_command(mut self, command: Option<String>) -> Self {
+        self.sign_in_command = command;
         self
     }
 
@@ -573,6 +581,13 @@ impl App {
 
     fn handle(&mut self, msg: Msg) -> Vec<Effect> {
         match msg {
+            Msg::Action(action)
+                if self.sign_in_command.is_some()
+                    && self.mode == Mode::Normal
+                    && !matches!(action, Action::Quit | Action::Help | Action::Diagnostics) =>
+            {
+                Vec::new()
+            }
             Msg::Action(action) => self.act(action),
             Msg::Char(ch) => self.edit_with(|input| {
                 input.insert(ch);
@@ -581,7 +596,11 @@ impl App {
             Msg::Key(key) => self.edit_with(|input| input.key(key)),
             Msg::Connected => {
                 self.connection = Connection::Connected;
-                vec![self.seed_now()]
+                if self.sign_in_command.is_some() {
+                    Vec::new()
+                } else {
+                    vec![self.seed_now()]
+                }
             }
             Msg::Disconnected(why) => {
                 self.connection = Connection::Lost(why);

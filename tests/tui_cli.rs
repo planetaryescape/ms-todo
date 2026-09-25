@@ -54,3 +54,16 @@ fn a_bad_colour_in_config_names_the_key() {
     let stderr = String::from_utf8(output.stderr).expect("utf8");
     assert!(stderr.contains("tui.colors.overdue"), "{stderr}");
 }
+
+#[test]
+fn signed_out_benchmark_exits_with_the_instance_login_command() {
+    let env = Env::new();
+    let error = env.failure(&["tui", "--bench-startup"], 4);
+    assert_eq!(error["error"]["kind"], "auth_required");
+    assert!(
+        error["error"]["message"]
+            .as_str()
+            .expect("message")
+            .contains("ms-todo --instance dev auth login")
+    );
+}

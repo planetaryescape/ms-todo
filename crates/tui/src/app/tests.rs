@@ -98,6 +98,17 @@ pub(crate) fn seeded() -> App {
     app
 }
 
+#[test]
+fn signed_out_start_does_not_seed_or_accept_task_actions() {
+    let mut app = App::new(UNICODE, clock())
+        .with_sign_in_command(Some("ms-todo --instance scratch auth login".into()));
+    assert!(app.update(Msg::Connected).is_empty());
+    assert!(app.update(Msg::Action(Action::Add)).is_empty());
+    assert_eq!(app.mode, Mode::Normal);
+    assert!(app.update(Msg::Action(Action::Help)).is_empty());
+    assert!(matches!(app.mode, Mode::Help { .. }));
+}
+
 pub(crate) fn scope_home() -> Scope {
     Scope::List { id: "home".into() }
 }
