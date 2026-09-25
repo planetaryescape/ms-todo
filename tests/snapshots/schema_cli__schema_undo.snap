@@ -36,7 +36,8 @@ expression: pretty
               "reopen",
               "edit",
               "delete",
-              "undo"
+              "undo",
+              "move"
             ]
           },
           "items": {

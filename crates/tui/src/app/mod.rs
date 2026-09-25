@@ -20,6 +20,7 @@ pub mod edit;
 pub(crate) mod folders;
 pub mod line_editor;
 mod links;
+pub mod move_tasks;
 pub mod palette;
 pub mod scope;
 mod selection;
@@ -110,6 +111,15 @@ pub enum Mode {
         /// Why the text can't be sent, shown after it.
         error: Option<String>,
     },
+    /// `m`: which list to move the tasks `ids` to, by typing part of its
+    /// name or its folder's; `what` names the tasks, as `"Call Sam"` or
+    /// `3 tasks`.
+    MovingTasks {
+        ids: Vec<String>,
+        what: String,
+        query: LineEditor,
+        index: usize,
+    },
     /// Undoing a recurring completion: which completed copy to delete.
     Picker {
         target: String,
@@ -197,6 +207,7 @@ pub enum Write {
     Reopen,
     Edit,
     Delete,
+    Move,
 }
 
 /// What goes into [`App::update`]. A seed makes `Response` the big one;
@@ -363,6 +374,7 @@ impl App {
             Mode::ConfirmDelete { .. } => Context::Confirm,
             Mode::Picker { .. } => Context::Picker,
             Mode::Palette { .. } => Context::Palette,
+            Mode::MovingTasks { .. } => Context::MoveTo,
             Mode::Diagnostics => Context::Diagnostics,
             Mode::Help => Context::Help,
             Mode::Themes { .. } => Context::Themes,
@@ -516,6 +528,11 @@ impl App {
                 self.revert_theme();
                 Vec::new()
             }
+            (Mode::MovingTasks { .. }, Action::MoveDown | Action::MoveUp) => {
+                self.move_step(action == Action::MoveDown);
+                Vec::new()
+            }
+            (Mode::MovingTasks { .. }, Action::Submit) => self.submit_move_tasks(),
             (_, Action::Backspace) => self.edit_with(LineEditor::backspace),
             (Mode::Editing { .. }, Action::Newline) => self.edit_with(LineEditor::newline),
             (Mode::Diagnostics, Action::MoveDown | Action::MoveUp) => {
@@ -604,6 +621,7 @@ impl App {
             | Action::Delete
             | Action::SetDue
             | Action::RescheduleOverdue
+            | Action::MoveTasks
                 if self.still_loading() =>
             {
                 Vec::new()
@@ -617,6 +635,10 @@ impl App {
                 Vec::new()
             }
             Action::ToggleComplete => self.toggle_complete(),
+            Action::MoveTasks => {
+                self.start_move_tasks();
+                Vec::new()
+            }
             Action::Delete => {
                 let targets = self.targets();
                 let what = match targets.as_slice() {
@@ -760,7 +782,7 @@ impl App {
                 }
                 changed
             }
-            Mode::Palette { query, index } => {
+            Mode::Palette { query, index } | Mode::MovingTasks { query, index, .. } => {
                 let changed = edit(query);
                 if changed {
                     *index = 0;
@@ -968,6 +990,9 @@ impl App {
             }
             (Tag::Write(write), Ok(ResponseData::Applied(applied))) => {
                 self.apply_write(write, &applied.items);
+                if write == Write::Move {
+                    self.moved(&applied);
+                }
                 if write == Write::Edit && applied.items.len() > 1 {
                     let count = applied.items.len();
                     self.show(
@@ -1159,7 +1184,7 @@ impl App {
     }
 }
 
-fn change(write: Write, ids: Vec<String>, change: TaskChange) -> Effect {
+pub(super) fn change(write: Write, ids: Vec<String>, change: TaskChange) -> Effect {
     Effect {
         tag: Tag::Write(write),
         request: Request::ChangeTasks {

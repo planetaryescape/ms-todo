@@ -18,8 +18,8 @@
 use ms_todo_core::{ErrorKind, message_with_causes};
 use ms_todo_store::{OpKind, OpState, OutboxRow};
 
-use super::now;
 use super::rollback::reject;
+use super::{move_job, now};
 use crate::handlers::{State, error_payload};
 use crate::task_fields::graph_due_date;
 
@@ -40,6 +40,7 @@ pub(super) async fn resolve(state: &State) -> bool {
     for op in ops.iter().filter(|op| !op.is_flagged(now())) {
         let outcome = match op.op {
             OpKind::Create => attribute_create(state, op).await,
+            OpKind::Move => attribute_move(state, op).await,
             OpKind::Update if op.is_recurring_completion() => {
                 observe_recurring(state, op).await;
                 Ok(false)
@@ -124,6 +125,67 @@ async fn attribute_create(state: &State, op: &OutboxRow) -> Result<bool, String>
         }
         Err(error) => Err(message_with_causes(&error)),
     }
+}
+
+/// A move paused because creating its copy got no answer: the copy
+/// carries the move's `opId`, so a task sync found with it is the copy.
+/// On an exact match the task becomes the copy and the move carries on
+/// from its attachments; its check still confirms the target list is live. Anything else a
+/// move pauses on has no attribution rule and waits for the user.
+async fn attribute_move(state: &State, op: &OutboxRow) -> Result<bool, String> {
+    let mut progress = move_job::Progress::of(op);
+    if progress.stage != move_job::Stage::Create || !progress.in_doubt {
+        return Ok(false);
+    }
+    let found = state
+        .store
+        .tasks_with_op_id(&op.op_id)
+        .await
+        .map_err(|error| message_with_causes(&error))?;
+    let found: Vec<_> = found
+        .into_iter()
+        .filter(|task| task.local_id != op.entity_local_id)
+        .collect();
+    let task = match found.as_slice() {
+        [] => return Ok(false),
+        [task] => task,
+        several => {
+            let ids: Vec<&str> = several.iter().map(|task| task.local_id.as_str()).collect();
+            let note = format!(
+                "DuplicateDetected: tasks {} all carry this move's opId; nothing was deleted. \
+                 Keep one and delete the others, then `ms-todo outbox discard {}`",
+                ids.join(", "),
+                op.op_id
+            );
+            state
+                .store
+                .set_note(&op.op_id, &note)
+                .await
+                .map_err(|error| message_with_causes(&error))?;
+            return Ok(false);
+        }
+    };
+    // The move's own check confirms the target list is live (and rolls
+    // back if it isn't) before anything is deleted.
+    progress.in_doubt = false;
+    progress.copy_id = task.graph_id.clone();
+    progress.stage = move_job::Stage::Attachments;
+    let resumed = state
+        .store
+        .resume_move(&op.op_id, &task.local_id, &progress.to_value())
+        .await
+        .map_err(|error| message_with_causes(&error))?;
+    if resumed {
+        state
+            .events
+            .tasks_changed(vec![op.entity_local_id.clone(), task.local_id.clone()]);
+        state.outbox.wake();
+        eprintln!(
+            "ms-todo daemon: the copy made by move {} was found by its opId; the move carries on",
+            op.op_id
+        );
+    }
+    Ok(resumed)
 }
 
 /// Record whether the task's due date has moved since the completion was

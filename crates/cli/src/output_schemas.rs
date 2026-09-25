@@ -55,8 +55,8 @@ pub fn output_schema(command: &str) -> Option<Value> {
         "tasks list" => collection(task_entity()),
         "search" => collection(search_result()),
         "done" => collection(done_result()),
-        "tasks add" | "tasks complete" | "tasks reopen" | "tasks edit" | "tasks delete"
-        | "reschedule" => json!({ "oneOf": [applied(), plan()] }),
+        "tasks add" | "tasks complete" | "tasks reopen" | "tasks edit" | "tasks move"
+        | "tasks delete" | "reschedule" => json!({ "oneOf": [applied(), plan()] }),
         "undo" => json!({ "oneOf": [applied(), list_applied()] }),
         "lists move" | "lists order" | "folders rename" | "folders delete" | "folders order" => {
             json!({ "oneOf": [list_applied(), list_plan()] })
@@ -195,7 +195,7 @@ fn outbox_op() -> Value {
         json!({
             "op_id": { "type": "string" },
             "command_id": { "type": "string", "description": "The op_id the change printed; a change to several tasks has one operation per task" },
-            "action": { "enum": ["add", "edit", "complete", "reopen", "delete"] },
+            "action": { "enum": ["add", "edit", "complete", "reopen", "delete", "move"] },
             "task_id": { "type": "string" },
             "list_id": { "type": "string" },
             "title": nullable("string", ""),
@@ -355,7 +355,7 @@ fn applied() -> Value {
     versioned(
         json!({
             "op_id": { "type": "string", "description": "What `undo` and `outbox list` know the change by" },
-            "action": { "enum": ["add", "complete", "reopen", "edit", "delete", "undo"] },
+            "action": { "enum": ["add", "complete", "reopen", "edit", "delete", "undo", "move"] },
             "items": {
                 "type": "array",
                 "items": task_entity(),
@@ -472,7 +472,7 @@ fn plan() -> Value {
     versioned(
         json!({
             "dry_run": { "const": true },
-            "action": { "enum": ["add", "complete", "reopen", "edit", "delete"] },
+            "action": { "enum": ["add", "complete", "reopen", "edit", "delete", "move"] },
             "list": candidate(),
             "targets": {
                 "type": "array",

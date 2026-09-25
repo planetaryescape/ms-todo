@@ -56,14 +56,10 @@ impl App {
             command: Command::Themes,
         };
         let query = query.trim().to_lowercase();
-        let mut ranked: Vec<((u8, usize), usize, Item)> = actions
-            .chain(std::iter::once(themes))
-            .chain(places)
-            .enumerate()
-            .filter_map(|(order, item)| Some((score(&item, &query)?, order, item)))
-            .collect();
-        ranked.sort_by_key(|(score, order, _)| (*score, *order));
-        ranked.into_iter().map(|(_, _, item)| item).collect()
+        rank(
+            actions.chain(std::iter::once(themes)).chain(places),
+            |item| score(item, &query),
+        )
     }
 
     pub(super) fn open_palette(&mut self) {
@@ -78,13 +74,9 @@ impl App {
         let Mode::Palette { query, .. } = &self.mode else {
             return;
         };
-        let last = self.palette_items(&query.text()).len().saturating_sub(1);
+        let count = self.palette_items(&query.text()).len();
         if let Mode::Palette { index, .. } = &mut self.mode {
-            *index = if down {
-                (*index + 1).min(last)
-            } else {
-                index.saturating_sub(1)
-            };
+            *index = step(*index, count, down);
         }
     }
 
@@ -129,13 +121,49 @@ impl App {
     }
 }
 
+/// The items that match, best `score` first, ties in their given order.
+pub(super) fn rank<T>(
+    items: impl Iterator<Item = T>,
+    score: impl Fn(&T) -> Option<(u8, usize)>,
+) -> Vec<T> {
+    let mut ranked: Vec<((u8, usize), usize, T)> = items
+        .enumerate()
+        .filter_map(|(order, item)| Some((score(&item)?, order, item)))
+        .collect();
+    ranked.sort_by_key(|(score, order, _)| (*score, *order));
+    ranked.into_iter().map(|(_, _, item)| item).collect()
+}
+
+/// A picker's choice after Up or Down, within `count` matches.
+pub(super) fn step(index: usize, count: usize, down: bool) -> usize {
+    if down {
+        (index + 1).min(count.saturating_sub(1))
+    } else {
+        index.saturating_sub(1)
+    }
+}
+
 /// How well `item` matches `query`, lower first; `None` when it doesn't.
 /// The second number orders fuzzy matches by how spread out they are.
 fn score(item: &Item, query: &str) -> Option<(u8, usize)> {
+    let text = text_score(&item.label, query);
+    if matches!(text, Some((tier, _)) if tier <= 3) {
+        return text;
+    }
+    if item.keys.to_lowercase().split('/').any(|key| key == query) {
+        return Some((4, 0));
+    }
+    text
+}
+
+/// How well `label` matches `query` (already lowercase), lower first:
+/// exact, prefix, a word's prefix, substring, then the query's letters in
+/// order, by how spread out they are. `None` when it doesn't match.
+pub(super) fn text_score(label: &str, query: &str) -> Option<(u8, usize)> {
     if query.is_empty() {
         return Some((0, 0));
     }
-    let label = item.label.to_lowercase();
+    let label = label.to_lowercase();
     if label == query {
         return Some((0, 0));
     }
@@ -147,9 +175,6 @@ fn score(item: &Item, query: &str) -> Option<(u8, usize)> {
     }
     if label.contains(query) {
         return Some((3, 0));
-    }
-    if item.keys.to_lowercase().split('/').any(|key| key == query) {
-        return Some((4, 0));
     }
     spread(&label, query).map(|spread| (5, spread))
 }

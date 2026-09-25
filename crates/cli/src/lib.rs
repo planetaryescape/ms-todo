@@ -202,6 +202,9 @@ async fn dispatch(command: Command, paths: &Paths, format: OutputFormat) -> Resu
             let opener = ms_todo_tui::open::SystemOpener;
             link_commands::open(paths, task, index, format, &opener).await
         }
+        Command::Tasks(TasksCommand::Move(args)) => {
+            task_commands::move_tasks(paths, args, format).await
+        }
         Command::Raw(args) => print_raw(format, &task_commands::raw(paths, args).await?),
         Command::Outbox(OutboxCommand::List { state }) => {
             outbox_commands::list(paths, state, format).await

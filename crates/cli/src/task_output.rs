@@ -105,6 +105,18 @@ pub fn describe_plan(plan: &Plan) -> Vec<String> {
             list.name,
             list.id
         )),
+        (TaskAction::Move, Some(list)) => {
+            let count = plan.targets.len();
+            let noun = if count == 1 { "task" } else { "tasks" };
+            lines.push(format!(
+                "Would move {count} {noun} to {:?} ({}):",
+                list.name, list.id
+            ));
+            for target in &plan.targets {
+                lines.push(format!("  {:?}  {}", target.title, target.id));
+            }
+            return lines;
+        }
         _ => {
             let count = plan.targets.len();
             let noun = if count == 1 { "task" } else { "tasks" };
@@ -205,6 +217,7 @@ fn verb(action: TaskAction) -> &'static str {
         TaskAction::Edit => "edit",
         TaskAction::Delete => "delete",
         TaskAction::Undo => "undo",
+        TaskAction::Move => "move",
         TaskAction::MoveList => "move",
         TaskAction::OrderList => "reorder",
         TaskAction::RenameFolder => "rename the folder of",
@@ -222,6 +235,7 @@ fn past_tense(action: TaskAction) -> &'static str {
         TaskAction::Edit => "Updated",
         TaskAction::Delete => "Deleted",
         TaskAction::Undo => "  Reverting",
+        TaskAction::Move => "Moving",
         TaskAction::MoveList => "Moved",
         TaskAction::OrderList => "Reordered",
         TaskAction::RenameFolder => "Renamed the folder of",

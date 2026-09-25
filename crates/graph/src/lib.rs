@@ -6,6 +6,7 @@
 compile_error!("ms-todo supports macOS and Linux only; the token store relies on Unix file modes");
 
 mod api_error;
+mod attachments;
 pub mod auth;
 mod batch;
 mod client;
@@ -14,6 +15,7 @@ pub mod private_file;
 pub mod retry;
 
 pub use api_error::ApiError;
+pub use attachments::MAX_ATTACHMENT_BYTES;
 pub use client::{Delta, Entity, GraphClient};
 pub use error::GraphError;
 /// The HTTP method of a `raw` write.

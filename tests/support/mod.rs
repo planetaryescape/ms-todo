@@ -6,6 +6,7 @@
 //! test stops its daemon, even when it fails.
 
 pub mod fake_graph;
+pub mod fake_moves;
 
 use std::path::PathBuf;
 

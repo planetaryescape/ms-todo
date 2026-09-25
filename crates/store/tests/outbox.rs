@@ -339,13 +339,13 @@ async fn a_retry_that_loses_the_race_changes_nothing() {
     // Read as unknown by two retries; the first wins.
     assert!(
         store
-            .requeue("c", OpState::Unknown, &Restore::Nothing)
+            .requeue("c", OpState::Unknown, &Restore::Nothing, None)
             .await
             .expect("retry")
     );
     assert!(
         !store
-            .requeue("c", OpState::Unknown, &Restore::Nothing)
+            .requeue("c", OpState::Unknown, &Restore::Nothing, None)
             .await
             .expect("retry")
     );
@@ -353,7 +353,7 @@ async fn a_retry_that_loses_the_race_changes_nothing() {
     assert!(store.mark_inflight("c").await.expect("claim"));
     assert!(
         !store
-            .requeue("c", OpState::Unknown, &Restore::Nothing)
+            .requeue("c", OpState::Unknown, &Restore::Nothing, None)
             .await
             .expect("retry")
     );
@@ -373,7 +373,7 @@ async fn only_a_done_dependency_unblocks_an_operation() {
     // Put e1 back to pending, as a retry that skipped the check would.
     assert!(
         store
-            .requeue("e1", OpState::Failed, &Restore::Nothing)
+            .requeue("e1", OpState::Failed, &Restore::Nothing, None)
             .await
             .expect("requeue")
     );

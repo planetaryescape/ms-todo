@@ -1806,6 +1806,7 @@ name = "ms-todo"
 version = "0.1.16"
 dependencies = [
  "assert_cmd",
+ "base64 0.23.1",
  "chrono",
  "futures-util",
  "insta",
@@ -1884,6 +1885,7 @@ dependencies = [
 name = "ms-todo-graph"
 version = "0.1.16"
 dependencies = [
+ "base64 0.23.1",
  "chrono",
  "fastrand",
  "fs2",

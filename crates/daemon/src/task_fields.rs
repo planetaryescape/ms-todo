@@ -145,7 +145,7 @@ pub(crate) fn graph_completion_date(task: &Entity) -> Option<NaiveDate> {
     graph_date(task, "completedDateTime", completion_date)
 }
 
-fn graph_date(
+pub(crate) fn graph_date(
     task: &Entity,
     key: &str,
     read: fn(&str, &str) -> Option<NaiveDate>,
@@ -166,7 +166,35 @@ pub(crate) fn parse_day(value: &str) -> Result<NaiveDate, ErrorPayload> {
 
 /// A task's date-only fields: Graph keeps only the date part of what it's
 /// sent, in the zone sent (S11).
-const DATE_ONLY: [&str; 2] = ["dueDateTime", "startDateTime"];
+pub(crate) const DATE_ONLY: [&str; 2] = ["dueDateTime", "startDateTime"];
+
+/// Everything a task POST can set that a task read from Graph has: what a
+/// re-created or copied task gets back.
+const CREATABLE: [&str; 11] = [
+    "title",
+    "body",
+    "importance",
+    "status",
+    "isReminderOn",
+    "reminderDateTime",
+    "dueDateTime",
+    "startDateTime",
+    "completedDateTime",
+    "categories",
+    "recurrence",
+];
+
+/// The fields of `task`, Graph's JSON, that a create can set, each as it's
+/// written back ([`as_written`]); nulls left out.
+pub(crate) fn creatable_fields(task: &Entity) -> Map<String, Value> {
+    CREATABLE
+        .iter()
+        .filter_map(|&key| {
+            let value = task.get(key).filter(|value| !value.is_null())?;
+            Some((key.to_owned(), as_written(key, value.clone())))
+        })
+        .collect()
+}
 
 /// `value`, as Graph gave it for the field `key`, as it's written back.
 /// Graph gives a date as an instant in UTC, midnight London in summer
@@ -197,7 +225,7 @@ pub(crate) fn as_written(key: &str, value: Value) -> Value {
 }
 
 /// A date-only field's value: midnight of `date` in `zone` (D-027).
-fn midnight(date: NaiveDate, zone: &str) -> Value {
+pub(crate) fn midnight(date: NaiveDate, zone: &str) -> Value {
     date_time_time_zone(&format!("{}T00:00:00", date.format(DATE_FORMAT)), zone)
 }
 

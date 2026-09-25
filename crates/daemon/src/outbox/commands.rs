@@ -20,8 +20,8 @@ use ms_todo_core::ErrorKind;
 use ms_todo_protocol::{ErrorPayload, OpError, OutboxOp, OutboxState, ResponseData};
 use ms_todo_store::{OpKind, OpState, OutboxRow, Restore, apply_body, merge_extension};
 
-use super::now;
-use super::rollback::{announce, current_of, reconcile, undo_local};
+use super::rollback::{announce, current_of, reconcile, reconcile_list, undo_local};
+use super::{move_job, now};
 use crate::handlers::{State, error_payload, store_error};
 
 pub(crate) async fn list(
@@ -66,7 +66,13 @@ pub(crate) async fn retry(state: &State, op_id: &str) -> Result<ResponseData, Er
             ));
         }
     }
+    let mut progress = None;
     let restore = match op.state {
+        OpState::Unknown | OpState::Failed if op.op == OpKind::Move => {
+            let (restore, steps) = move_job::retry(state, &op).await?;
+            progress = Some(steps);
+            restore
+        }
         OpState::Unknown => Restore::Nothing,
         OpState::Failed => redo_local(state, &op).await?,
         OpState::Pending => {
@@ -83,7 +89,7 @@ pub(crate) async fn retry(state: &State, op_id: &str) -> Result<ResponseData, Er
     };
     let requeued = state
         .store
-        .requeue(&op.op_id, op.state, &restore)
+        .requeue(&op.op_id, op.state, &restore, progress.as_ref())
         .await
         .map_err(store_error)?;
     if !requeued {
@@ -103,6 +109,7 @@ pub(crate) async fn discard(state: &State, op_id: &str) -> Result<ResponseData, 
     }
     let current = current_of(state, &op).await.map_err(store_error)?;
     let (restore, read_again) = match (op.state, op.op) {
+        (_, OpKind::Move) => move_job::discard(state, &op).await?,
         (OpState::Pending, _) => (undo_local(&op, current.as_ref()), false),
         (OpState::Unknown, OpKind::Create) => (Restore::Tombstone, false),
         (OpState::Unknown, _) => (Restore::Nothing, true),
@@ -116,6 +123,10 @@ pub(crate) async fn discard(state: &State, op_id: &str) -> Result<ResponseData, 
         .ok_or_else(|| moved(&op))?;
     if read_again || !cascaded.is_empty() {
         reconcile(state, &op).await;
+    }
+    if op.op == OpKind::Move {
+        reconcile_list(state, &move_job::from_list(&op)).await;
+        move_job::remove_spool(&state.moves_dir, &op.op_id).await;
     }
     announce(state, &op);
     let cause = format!("not sent: it waited on {}, which was discarded", op.op_id);
@@ -150,6 +161,8 @@ async fn redo_local(state: &State, op: &OutboxRow) -> Result<Restore, ErrorPaylo
             merge_extension(&mut extension, &fields);
             Restore::Replace(extension)
         }
+        // `retry` asks `move_job` before it gets here.
+        OpKind::Move => Restore::Nothing,
     })
 }
 

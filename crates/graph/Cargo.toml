@@ -8,6 +8,7 @@ description = "Microsoft Graph provider for ms-todo: sign-in, the HTTP client an
 
 [dependencies]
 ms-todo-core = { workspace = true }
+base64 = { workspace = true }
 chrono = { workspace = true }
 fastrand = { workspace = true }
 fs2 = { workspace = true }

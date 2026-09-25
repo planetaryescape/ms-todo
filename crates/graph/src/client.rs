@@ -6,7 +6,7 @@
 use std::sync::Arc;
 use std::time::Duration;
 
-use reqwest::header::IF_MATCH;
+use reqwest::header::{CONTENT_RANGE, CONTENT_TYPE, IF_MATCH};
 use reqwest::{Method, StatusCode, Url};
 use serde::Deserialize;
 use serde_json::{Map, Value};
@@ -357,7 +357,7 @@ impl GraphClient {
     }
 
     /// Every item of a collection.
-    async fn get_collection(&self, first: Url) -> Result<Vec<Entity>, GraphError> {
+    pub(crate) async fn get_collection(&self, first: Url) -> Result<Vec<Entity>, GraphError> {
         Ok(self.pages(first).await?.0)
     }
 
@@ -395,7 +395,7 @@ impl GraphClient {
 
     // The bearer token goes wherever a nextLink or deltaLink points, so it
     // must stay on the Graph origin.
-    fn next_link(&self, link: &str) -> Result<Url, GraphError> {
+    pub(crate) fn next_link(&self, link: &str) -> Result<Url, GraphError> {
         Url::parse(link)
             .ok()
             .filter(|url| self.is_under_base(url))
@@ -416,6 +416,21 @@ impl GraphClient {
     /// Any other failure after it may have reached Graph is `OutcomeUnknown`
     /// (D-028).
     pub(crate) async fn send(&self, call: Call<'_>) -> Result<Value, GraphError> {
+        let idempotent = call.idempotent;
+        let body = self.send_bytes(call).await?;
+        parse_body(&body).map_err(|error| {
+            // It ran, but we can't tell what it made.
+            if idempotent {
+                error
+            } else {
+                GraphError::OutcomeUnknown(Box::new(error))
+            }
+        })
+    }
+
+    /// [`GraphClient::send`], answering the body's bytes as they came: a
+    /// download, or an answer that isn't JSON.
+    pub(crate) async fn send_bytes(&self, call: Call<'_>) -> Result<Vec<u8>, GraphError> {
         let mut attempt = 0;
         let mut refreshed = false;
         let mut token = self.auth.valid_token().await?;
@@ -439,6 +454,12 @@ impl GraphClient {
                 if let Some(body) = call.body {
                     request = request.json(body);
                 }
+                if let Some(chunk) = &call.chunk {
+                    request = request
+                        .header(CONTENT_TYPE, "application/octet-stream")
+                        .header(CONTENT_RANGE, &chunk.range)
+                        .body(chunk.bytes.to_vec());
+                }
                 read(request).await
             };
             let (status, headers, body) = match sent {
@@ -455,16 +476,7 @@ impl GraphClient {
                 Err(error) => return Err(error.into()),
             };
             match retry::decide_retry(status, &headers, attempt, call.idempotent) {
-                RetryDecision::Success => {
-                    return parse_body(&body).map_err(|error| {
-                        // It ran, but we can't tell what it made.
-                        if call.idempotent {
-                            error
-                        } else {
-                            GraphError::OutcomeUnknown(Box::new(error))
-                        }
-                    });
-                }
+                RetryDecision::Success => return Ok(body),
                 RetryDecision::RefreshToken if !refreshed => {
                     refreshed = true;
                     token = self.auth.refresh(&token).await?;
@@ -518,6 +530,15 @@ pub(crate) struct Call<'a> {
     pub paged: bool,
     /// False for every create and for a PATCH that completes a recurring task.
     pub idempotent: bool,
+    /// Bytes of an upload session, sent as they are, in place of `body`.
+    pub chunk: Option<Chunk<'a>>,
+}
+
+/// One range of an attachment's bytes, for an upload session's PUT.
+pub(crate) struct Chunk<'a> {
+    pub bytes: &'a [u8],
+    /// `bytes <first>-<last>/<total>`.
+    pub range: String,
 }
 
 impl Call<'_> {
@@ -530,6 +551,7 @@ impl Call<'_> {
             if_match: None,
             paged: false,
             idempotent: true,
+            chunk: None,
         }
     }
 }
@@ -548,7 +570,7 @@ async fn read(request: reqwest::RequestBuilder) -> Result<ReadResponse, reqwest:
 
 // `$expand` works only with a filter on the extension's ID (S2). Spaces are
 // written as %20: `+` isn't a space outside form encoding.
-fn expand_extension(url: &mut Url, name: &str) {
+pub(crate) fn expand_extension(url: &mut Url, name: &str) {
     url.set_query(Some(&format!(
         "$expand=extensions($filter=id%20eq%20'{name}')"
     )));

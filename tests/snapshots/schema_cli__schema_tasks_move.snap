@@ -7,7 +7,7 @@ expression: pretty
     "additionalProperties": false,
     "properties": {
       "dry_run": {
-        "description": "Show what would change without changing anything",
+        "description": "Show which tasks would move without changing anything",
         "type": "boolean",
         "x-cli": "--dry-run"
       },
@@ -22,21 +22,27 @@ expression: pretty
         "x-cli": "--list"
       },
       "tasks": {
-        "description": "Task IDs from `tasks list`, or exact titles when --list is given. `-` reads IDs from stdin, one per line",
+        "description": "Task IDs from `tasks list`, or exact titles when --list is given. Several move together; `-` reads IDs from stdin, one per line",
         "items": {
           "type": "string"
         },
         "type": "array",
         "x-cli": "<TASK>"
       },
+      "to": {
+        "description": "The list to move them to (exact name or ID)",
+        "type": "string",
+        "x-cli": "--to"
+      },
       "yes": {
-        "description": "Delete without asking",
+        "description": "Move several tasks without asking. Off a terminal, moving more than one needs it",
         "type": "boolean",
         "x-cli": "--yes"
       }
     },
     "required": [
-      "tasks"
+      "tasks",
+      "to"
     ],
     "type": "object"
   },

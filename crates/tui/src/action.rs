@@ -48,6 +48,9 @@ pub enum Action {
     SetDue,
     /// `R`: a new due date for every overdue open task on screen.
     RescheduleOverdue,
+    /// `m`: move the selection, or the task under the cursor, to a list
+    /// picked by name.
+    MoveTasks,
     /// `v`: add the task to the selection, or take it out.
     ToggleSelect,
     /// `V`: select every task in the view.

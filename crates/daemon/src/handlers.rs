@@ -33,6 +33,8 @@ pub(crate) struct State {
     pub events: Events,
     pub instance: String,
     pub started_at: i64,
+    /// Where a move keeps its attachments' bytes until it's settled.
+    pub moves_dir: std::path::PathBuf,
 }
 
 impl State {

@@ -11,6 +11,7 @@ mod graph_columns;
 mod idempotency;
 mod list_extension;
 mod lists;
+mod moves;
 mod outbox;
 mod pool;
 mod search;

@@ -84,6 +84,7 @@ pub(crate) async fn change_tasks(
         TaskChange::Reopen => (TaskAction::Reopen, vec![Field::Status("notStarted")]),
         TaskChange::Edit(edit) => (TaskAction::Edit, edit_fields(&edit)?),
         TaskChange::Delete => (TaskAction::Delete, Vec::new()),
+        TaskChange::Move { to } => return move_tasks(state, &targets, &to, dry_run, op_id).await,
         TaskChange::Unknown => {
             return Err(error_payload(
                 ms_todo_core::ErrorKind::Unsupported,
@@ -137,6 +138,80 @@ pub(crate) async fn change_tasks(
         })
         .collect();
     queue(state, &op_id, None, ops, action).await
+}
+
+/// `tasks move`: one move operation per task, all under `op_id`. Each task
+/// shows in the list `to` at once, keeping its local ID; the outbox's move
+/// job copies it there, checks the copy and deletes the original
+/// (docs/blueprint/05-custom-features.md#move-between-lists).
+async fn move_tasks(
+    state: &State,
+    targets: &Targets<'_>,
+    to: &str,
+    dry_run: bool,
+    op_id: String,
+) -> Result<ResponseData, ErrorPayload> {
+    if targets.select.is_some() {
+        return Err(error_payload(
+            ms_todo_core::ErrorKind::InvalidInput,
+            "name the tasks to move; --overdue and --due-before don't pick tasks to move".into(),
+        ));
+    }
+    ensure_ready(state, LISTS_SCOPE).await?;
+    let lists = state.store.lists().await.map_err(store_error)?;
+    let list = resolve_list(&lists, Some(to))?;
+    let targets = resolve(state, targets).await?;
+    let already: Vec<String> = targets
+        .iter()
+        .filter(|target| target.row.list_local_id == list.local_id)
+        .map(|target| format!("{:?}", target.title()))
+        .collect();
+    if !already.is_empty() {
+        return Err(error_payload(
+            ms_todo_core::ErrorKind::InvalidInput,
+            format!(
+                "{} {} in {:?} already",
+                already.join(", "),
+                if already.len() == 1 { "is" } else { "are" },
+                list.name
+            ),
+        ));
+    }
+    if dry_run {
+        return Ok(ResponseData::Plan(Plan {
+            action: TaskAction::Move,
+            list: Some(list.candidate()),
+            targets: targets
+                .iter()
+                .map(|target| PlannedTask {
+                    id: target.local_id().to_owned(),
+                    title: target.title().to_owned(),
+                    list_id: target.list.local_id.clone(),
+                })
+                .collect(),
+            lists: Vec::new(),
+            changes: json!({ "list_id": list.local_id }),
+        }));
+    }
+    let ops = targets
+        .iter()
+        .enumerate()
+        .map(|(index, target)| move_op(op_id_for(&op_id, index), &target.row, &list.local_id))
+        .collect();
+    queue(state, &op_id, None, ops, TaskAction::Move).await
+}
+
+/// A move of `row` to the list `to` (local IDs), shown there at once.
+pub(crate) fn move_op(op_id: String, row: &TaskRow, to: &str) -> NewOp {
+    NewOp {
+        op_id,
+        entity_local_id: row.local_id.clone(),
+        list_local_id: to.to_owned(),
+        op: OpKind::Move,
+        action: action_name(TaskAction::Move).to_owned(),
+        payload: json!({ "body": { "from_list": row.list_local_id } }),
+        change: LocalChange::Move { to: to.to_owned() },
+    }
 }
 
 async fn resolve(state: &State, targets: &Targets<'_>) -> Result<Vec<Target>, ErrorPayload> {
@@ -270,6 +345,7 @@ pub(crate) fn action_name(action: TaskAction) -> &'static str {
         TaskAction::Reopen => "reopen",
         TaskAction::Edit => "edit",
         TaskAction::Delete => "delete",
+        TaskAction::Move => "move",
         TaskAction::MoveList => "move_list",
         TaskAction::OrderList => "order_list",
         TaskAction::RenameFolder => "rename_folder",

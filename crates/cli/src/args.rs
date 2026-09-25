@@ -286,6 +286,10 @@ pub enum TasksCommand {
     /// Change a task's title, due date, importance, reminder or notes; or
     /// the due date, importance or reminder of several tasks at once
     Edit(EditArgs),
+    /// Move tasks to another list, keeping everything they hold: steps,
+    /// link, attachments and ms-todo's own fields. Each is copied, the copy
+    /// checked, and only then the original deleted; `undo` moves it back
+    Move(MoveArgs),
     /// Delete tasks. Asks first in a terminal; anywhere else it needs --yes
     Delete {
         #[command(flatten)]
@@ -473,6 +477,30 @@ pub struct TargetArgs {
     /// Show what would change without changing anything
     #[arg(long)]
     pub dry_run: bool,
+    #[command(flatten)]
+    pub idempotency: IdempotencyArgs,
+}
+
+#[derive(Debug, Args)]
+pub struct MoveArgs {
+    /// Task IDs from `tasks list`, or exact titles when --list is given.
+    /// Several move together; `-` reads IDs from stdin, one per line
+    #[arg(required = true, value_name = "TASK")]
+    pub tasks: Vec<String>,
+    /// The list to move them to (exact name or ID)
+    #[arg(long, value_name = "NAME|ID")]
+    pub to: String,
+    /// Look for the tasks in this list (exact name or ID), which also lets
+    /// TASK be an exact title
+    #[arg(long, value_name = "NAME|ID")]
+    pub list: Option<String>,
+    /// Show which tasks would move without changing anything
+    #[arg(long)]
+    pub dry_run: bool,
+    /// Move several tasks without asking. Off a terminal, moving more than
+    /// one needs it
+    #[arg(long)]
+    pub yes: bool,
     #[command(flatten)]
     pub idempotency: IdempotencyArgs,
 }

@@ -46,6 +46,9 @@ pub enum Context {
     Themes,
     /// A task's links, to open or copy one.
     Links,
+    /// Picking the list to move tasks to. Other printable keys are its
+    /// query.
+    MoveTo,
     Help,
 }
 
@@ -84,6 +87,7 @@ const FIELDS: &[Context] = &[Context::Fields];
 const FOLDER: &[Context] = &[Context::Folder];
 const LEVELS: &[Context] = &[Context::Importance];
 const DIAGNOSTICS: &[Context] = &[Context::Diagnostics];
+const MOVE_TO: &[Context] = &[Context::MoveTo];
 
 /// Every binding, in the order help shows them.
 pub const BINDINGS: &[Binding] = &[
@@ -117,6 +121,7 @@ pub const BINDINGS: &[Binding] = &[
         "Reschedule overdue to\u{2026}",
         false,
     ),
+    bind(TASKS, "m", Action::MoveTasks, "Move to list\u{2026}", false),
     bind(TASKS, "v", Action::ToggleSelect, "Select", true),
     bind(TASKS, "V", Action::SelectAll, "Select all", false),
     bind(BROWSE, "u", Action::Undo, "Undo", true),
@@ -239,6 +244,14 @@ pub const BINDINGS: &[Binding] = &[
     bind(PALETTE, "Ctrl-n", Action::MoveDown, "Down", false),
     bind(PALETTE, "Ctrl-p", Action::MoveUp, "Up", false),
     bind(PALETTE, "Ctrl-c", Action::Cancel, "Close", false),
+    bind(MOVE_TO, "Enter", Action::Submit, "Move here", true),
+    bind(MOVE_TO, "Esc", Action::Cancel, "Cancel", true),
+    bind(MOVE_TO, "Backspace", Action::Backspace, "Erase", false),
+    bind(MOVE_TO, "Down", Action::MoveDown, "Down", true),
+    bind(MOVE_TO, "Up", Action::MoveUp, "Up", false),
+    bind(MOVE_TO, "Ctrl-n", Action::MoveDown, "Down", false),
+    bind(MOVE_TO, "Ctrl-p", Action::MoveUp, "Up", false),
+    bind(MOVE_TO, "Ctrl-c", Action::Cancel, "Cancel", false),
     bind(DIAGNOSTICS, "r", Action::Refresh, "Refresh", true),
     bind(DIAGNOSTICS, "Esc", Action::Cancel, "Back", true),
     bind(DIAGNOSTICS, "q", Action::Cancel, "Back", false),

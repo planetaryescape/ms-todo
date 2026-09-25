@@ -46,7 +46,8 @@ expression: pretty
               "reopen",
               "edit",
               "delete",
-              "undo"
+              "undo",
+              "move"
             ]
           },
           "items": {
@@ -218,7 +219,8 @@ expression: pretty
               "complete",
               "reopen",
               "edit",
-              "delete"
+              "delete",
+              "move"
             ]
           },
           "changes": {

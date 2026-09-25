@@ -25,8 +25,10 @@ use serde_json::{Map, Value};
 /// than show lists ungrouped. 7: `CompletedTasks`, `ChangeTasks.select`
 /// and `Applied.refused` (rung 5d), so an older daemon never reads a bulk
 /// change without its selection as a change to no task. 8: `GetTasks`,
-/// for `tasks links` and `tasks open`.
-pub const PROTOCOL_VERSION: u32 = 8;
+/// for `tasks links` and `tasks open`. 9: moving tasks between lists
+/// (`TaskChange::Move`, rung 5e), so a client restarts an older daemon
+/// rather than have a move refused as unknown.
+pub const PROTOCOL_VERSION: u32 = 9;
 
 /// The socket buffer both ends ask for: room for a large list's `Seed` in
 /// one write. macOS gives a Unix socket 8 KiB, so a 350 KiB seed crossed
@@ -657,6 +659,12 @@ pub enum TaskChange {
     Reopen,
     Delete,
     Edit(TaskEdit),
+    /// Move the tasks to the list `to` (a name or an ID): each is copied
+    /// there with everything it holds, the copy checked, then the original
+    /// deleted (docs/blueprint/05-custom-features.md#move-between-lists).
+    Move {
+        to: String,
+    },
     #[serde(other)]
     Unknown,
 }
@@ -708,6 +716,8 @@ pub enum TaskAction {
     Edit,
     Delete,
     Undo,
+    /// Tasks to another list.
+    Move,
     /// Lists into a folder, or out of any.
     MoveList,
     /// A list before or after another in its folder.
@@ -780,7 +790,8 @@ pub struct PlannedList {
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct Plan {
     pub action: TaskAction,
-    /// The list a task is added to. Empty for other actions.
+    /// The list a task is added to, or tasks are moved to. Empty for other
+    /// actions.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub list: Option<Candidate>,
     /// The tasks changed, in order. Empty for `add`.

@@ -40,25 +40,10 @@ use serde_json::{Map, Value, json};
 
 use crate::handlers::{State, error_payload, store_error};
 use crate::list_writes::queue_lists;
-use crate::outbox::fields_not_holding;
-use crate::outbox::op_id_for;
-use crate::task_fields::as_written;
-use crate::task_writes::{delete_op, new_task_raw, our_extension, queue, update_op};
-
-/// The fields a re-created task gets back: everything a POST can set.
-const RECREATED: &[&str] = &[
-    "title",
-    "body",
-    "importance",
-    "status",
-    "isReminderOn",
-    "reminderDateTime",
-    "dueDateTime",
-    "startDateTime",
-    "completedDateTime",
-    "categories",
-    "recurrence",
-];
+use crate::outbox::move_job;
+use crate::outbox::{fields_not_holding, op_id_for};
+use crate::task_fields::{as_written, creatable_fields};
+use crate::task_writes::{delete_op, move_op, new_task_raw, our_extension, queue, update_op};
 
 /// A completed copy is created at real time (S12), so a copy of this
 /// completion was created no earlier than this before it was sent.
@@ -148,6 +133,28 @@ pub(crate) async fn undo(
                 }
                 let (body, action) = inverse_update(op)?;
                 inverse.push(update_op(id(inverse.len()), &row, &body, action));
+            }
+            OpKind::Move => {
+                if op.state != OpState::Done {
+                    return Err(error_payload(
+                        ErrorKind::InvalidInput,
+                        format!(
+                            "moving {:?} hasn't finished yet, so it can't be undone; wait for it \
+                             (`ms-todo outbox list`)",
+                            row.title
+                        ),
+                    ));
+                }
+                if let Some(reason) = moved_since(op, &row) {
+                    refused.push(Refused {
+                        id: row.local_id.clone(),
+                        title: row.title.clone(),
+                        reason,
+                    });
+                    continue;
+                }
+                let from_list = move_job::from_list(op);
+                inverse.push(move_op(id(inverse.len()), &row, &from_list));
             }
             OpKind::Extension => {
                 return Err(error_payload(
@@ -256,6 +263,27 @@ fn check_list_unchanged(op: &OutboxRow, list: &ListRow) -> Result<(), ErrorPaylo
     )))
 }
 
+/// Why undoing the move `op` would overwrite a later change to its task,
+/// if it would: the task has moved on to another list, or the copy the
+/// move made has changed since (D-047).
+fn moved_since(op: &OutboxRow, row: &TaskRow) -> Option<String> {
+    if row.list_local_id != op.list_local_id {
+        return Some("has moved to another list since; undo would overwrite that".into());
+    }
+    let progress = move_job::Progress::of(op);
+    let copy = progress.copy.as_ref()?;
+    let changed = move_job::differences(
+        &move_job::comparable(copy, progress.copy_extension.as_ref()),
+        &move_job::comparable(&row.raw, row.extension.as_ref()),
+    );
+    (!changed.is_empty()).then(|| {
+        format!(
+            "has changed since ({}); undo would overwrite that",
+            changed.join(", ")
+        )
+    })
+}
+
 fn conflict(message: String) -> ErrorPayload {
     error_payload(ErrorKind::Conflict, message)
 }
@@ -319,13 +347,7 @@ fn inverse_fields(op: &OutboxRow) -> Result<Map<String, Value>, ErrorPayload> {
 /// keeps its local ID and gets a new Graph ID when it's sent.
 fn recreate(op_id: String, row: &TaskRow, op: &OutboxRow) -> Result<NewOp, ErrorPayload> {
     let before = before(op)?;
-    let mut body: Map<String, Value> = RECREATED
-        .iter()
-        .filter_map(|&key| {
-            let value = before.get(key).filter(|value| !value.is_null())?;
-            Some((key.to_owned(), as_written(key, value.clone())))
-        })
-        .collect();
+    let mut body = creatable_fields(before);
     body.insert(
         "extensions".into(),
         json!([our_extension(&op_id, row.extension.as_ref())]),
@@ -483,6 +505,7 @@ mod tests {
             unknown_since: None,
             note: None,
             finished_at: None,
+            progress: None,
             title: None,
         }
     }

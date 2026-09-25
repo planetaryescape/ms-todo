@@ -11,7 +11,9 @@ use ms_todo_protocol::{
 };
 use serde_json::Value;
 
-use crate::args::{AddArgs, EditArgs, RawArgs, RawMethod, RescheduleArgs, TargetArgs, UndoArgs};
+use crate::args::{
+    AddArgs, EditArgs, MoveArgs, RawArgs, RawMethod, RescheduleArgs, TargetArgs, UndoArgs,
+};
 use crate::bulk_commands::{self, Bulk};
 use crate::confirm::{can_prompt, confirm};
 use crate::error::CliError;
@@ -60,6 +62,27 @@ pub async fn edit(paths: &Paths, args: EditArgs, format: OutputFormat) -> Result
         yes: args.yes,
         idempotency_key: args.idempotency.idempotency_key,
         verb: "Change",
+    };
+    bulk_commands::apply(paths, bulk, format).await
+}
+
+/// `tasks move`: the tasks named, to the list `--to`.
+pub async fn move_tasks(
+    paths: &Paths,
+    args: MoveArgs,
+    format: OutputFormat,
+) -> Result<(), CliError> {
+    let (tasks, from_stdin) = expand_stdin(args.tasks)?;
+    let bulk = Bulk {
+        tasks,
+        from_stdin,
+        list: args.list,
+        select: None,
+        change: TaskChange::Move { to: args.to },
+        dry_run: args.dry_run,
+        yes: args.yes,
+        idempotency_key: args.idempotency.idempotency_key,
+        verb: "Move",
     };
     bulk_commands::apply(paths, bulk, format).await
 }

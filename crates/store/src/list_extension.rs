@@ -128,7 +128,7 @@ pub(crate) async fn restore_list_extension(
     rev: i64,
 ) -> Result<(), StoreError> {
     match restore {
-        Restore::Nothing | Restore::Tombstone => Ok(()),
+        Restore::Nothing | Restore::Tombstone | Restore::MoveBack { .. } => Ok(()),
         Restore::Replace(extension) => write_extension(tx, local_id, extension, rev).await,
     }
 }

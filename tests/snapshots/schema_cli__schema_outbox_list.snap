@@ -33,7 +33,8 @@ expression: pretty
                 "edit",
                 "complete",
                 "reopen",
-                "delete"
+                "delete",
+                "move"
               ]
             },
             "attempts": {

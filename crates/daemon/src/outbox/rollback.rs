@@ -20,6 +20,7 @@ pub(super) fn undo_local(op: &OutboxRow, current: Option<&Entity>) -> Restore {
             Restore::Replace(revert_fields(current, op.body(), before))
         }
         (OpKind::Delete, _, Some(before)) => Restore::Replace(before.clone()),
+        // A move's is `move_job::move_back`, which needs its saved steps.
         _ => Restore::Nothing,
     }
 }

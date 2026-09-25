@@ -52,6 +52,10 @@ pub struct Data {
     next_token: u64,
     /// Extension writes so far, to make each one's new etag.
     extension_writes: u64,
+    /// File attachments by task ID (see `fake_moves`).
+    pub attachments: HashMap<String, Vec<super::fake_moves::Attachment>>,
+    /// Upload sessions by ID.
+    pub(crate) sessions: HashMap<String, super::fake_moves::Session>,
 }
 
 impl Data {
@@ -72,7 +76,7 @@ impl Data {
 
 pub struct FakeGraph {
     pub server: MockServer,
-    data: Arc<Mutex<Data>>,
+    pub(crate) data: Arc<Mutex<Data>>,
 }
 
 impl FakeGraph {
@@ -416,13 +420,13 @@ impl FakeGraph {
 }
 
 /// A number for each task write, for its new etag.
-fn next_write() -> usize {
+pub(crate) fn next_write() -> usize {
     use std::sync::atomic::{AtomicUsize, Ordering};
     static WRITES: AtomicUsize = AtomicUsize::new(0);
     WRITES.fetch_add(1, Ordering::Relaxed) + 1
 }
 
-fn lock(data: &Mutex<Data>) -> std::sync::MutexGuard<'_, Data> {
+pub(crate) fn lock(data: &Mutex<Data>) -> std::sync::MutexGuard<'_, Data> {
     data.lock().unwrap_or_else(PoisonError::into_inner)
 }
 
@@ -536,7 +540,7 @@ fn delta_page(data: &Data, base: &str, path: &str, skip: &str) -> ResponseTempla
     }))
 }
 
-fn not_found() -> ResponseTemplate {
+pub(crate) fn not_found() -> ResponseTemplate {
     ResponseTemplate::new(404)
         .set_body_json(json!({ "error": { "code": "ErrorItemNotFound", "message": "not found" } }))
 }

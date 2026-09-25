@@ -13,6 +13,7 @@ use sqlx::{FromRow, SqliteConnection};
 
 use crate::graph_columns::{etag, text};
 use crate::list_extension::restore_list_extension;
+use crate::moves::set_list;
 use crate::pool::next_local_rev;
 use crate::tasks::{TaskRecord, WriteTask, task_record_columns, write_task};
 use crate::{Entity, Store, StoreError, TaskRow, now, parse_object, parse_optional, to_json};
@@ -67,7 +68,8 @@ pub(crate) const LIST_SYNC_STATE: &str = sync_state!("lists");
 const OP_COLUMNS: &str = "o.op_id, o.seq, o.command_id, o.created_at, o.entity_local_id, \
      o.list_local_id, o.op, o.action, o.payload_json, o.depends_on_op_id, o.undoes_command_id, \
      o.attempts, o.next_attempt_at, o.state, o.last_error_kind, o.last_error, o.rollback_json, \
-     o.sent_at, o.unknown_since, o.note, o.finished_at, COALESCE(t.title, l.display_name) AS title";
+     o.sent_at, o.unknown_since, o.note, o.finished_at, o.progress_json, \
+     COALESCE(t.title, l.display_name) AS title";
 
 const FROM_OUTBOX: &str = "FROM outbox o LEFT JOIN tasks t ON t.local_id = o.entity_local_id \
      LEFT JOIN lists l ON l.local_id = o.entity_local_id AND o.entity_kind = 'list'";
@@ -83,6 +85,9 @@ pub enum OpKind {
     /// A change to some fields of a list's extension (its folder and
     /// order), sent as GET, merge and a write of the whole document.
     Extension,
+    /// A move to another list: a job that copies the task there, checks
+    /// the copy and deletes the source, saving each step (`progress`).
+    Move,
 }
 
 impl OpKind {
@@ -92,6 +97,7 @@ impl OpKind {
             Self::Update => "update",
             Self::Delete => "delete",
             Self::Extension => "extension",
+            Self::Move => "move",
         }
     }
 
@@ -101,6 +107,7 @@ impl OpKind {
             "update" => Ok(Self::Update),
             "delete" => Ok(Self::Delete),
             "extension" => Ok(Self::Extension),
+            "move" => Ok(Self::Move),
             other => Err(StoreError::Corrupt(format!("unknown outbox op {other:?}"))),
         }
     }
@@ -164,6 +171,8 @@ pub struct OutboxRow {
     pub unknown_since: Option<i64>,
     pub note: Option<String>,
     pub finished_at: Option<i64>,
+    /// A move's steps so far, as the daemon saved them.
+    pub progress: Option<Value>,
     /// The task's title as cached.
     pub title: Option<String>,
 }
@@ -180,12 +189,21 @@ impl OutboxRow {
         self.payload["recurring"] == Value::Bool(true)
     }
 
-    /// `unknown` for longer than the lookup window: the user decides.
+    /// `unknown` for longer than the lookup window, or a move paused on
+    /// something only the user can settle: the user decides.
     pub fn is_flagged(&self, now: i64) -> bool {
         self.state == OpState::Unknown
-            && self
+            && (self
                 .unknown_since
                 .is_some_and(|since| since <= now - UNKNOWN_LOOKUP_SECS)
+                || self.needs_user())
+    }
+
+    /// A move paused where no lookup can find the answer (04).
+    pub fn needs_user(&self) -> bool {
+        self.progress
+            .as_ref()
+            .is_some_and(|progress| progress["needs_user"] == Value::Bool(true))
     }
 }
 
@@ -212,6 +230,7 @@ struct OpRecord {
     unknown_since: Option<i64>,
     note: Option<String>,
     finished_at: Option<i64>,
+    progress_json: Option<String>,
     title: Option<String>,
 }
 
@@ -244,6 +263,7 @@ impl TryFrom<OpRecord> for OutboxRow {
             unknown_since: record.unknown_since,
             note: record.note,
             finished_at: record.finished_at,
+            progress: parse_optional(record.progress_json)?,
             title: record.title,
         })
     }
@@ -277,6 +297,9 @@ pub enum LocalChange {
     Update,
     /// Tombstone the task; its JSON when queued is the rollback.
     Tombstone,
+    /// The task shows in the list `to` at once; its JSON when queued is
+    /// the rollback. A move puts it there on Graph.
+    Move { to: String },
 }
 
 /// What a resolved operation does to its task row.
@@ -286,6 +309,13 @@ pub enum Restore {
     Tombstone,
     /// The task's JSON becomes this, and it's live.
     Replace(Entity),
+    /// A move undone: the task is back in `list_local_id` as `raw`, with
+    /// the Graph ID it had there (none if it had none), and it's live.
+    MoveBack {
+        graph_id: Option<String>,
+        list_local_id: String,
+        raw: Entity,
+    },
 }
 
 /// Overlay the fields of a PATCH or POST `body` on a task's JSON, as Graph
@@ -354,6 +384,12 @@ impl Store {
                     let current =
                         parse_object(&row_identity(&mut tx, &op.entity_local_id).await?.raw_json)?;
                     tombstone_row(&mut tx, &op.entity_local_id, rev).await?;
+                    rollback = Some(current);
+                }
+                LocalChange::Move { to } => {
+                    let current =
+                        parse_object(&row_identity(&mut tx, &op.entity_local_id).await?.raw_json)?;
+                    set_list(&mut tx, &op.entity_local_id, to, rev).await?;
                     rollback = Some(current);
                 }
             }
@@ -506,7 +542,8 @@ impl Store {
                 .fetch_all(self.reader())
                 .await?;
         let flagged: i64 = sqlx::query_scalar(
-            "SELECT COUNT(*) FROM outbox WHERE state = 'unknown' AND unknown_since <= ?",
+            "SELECT COUNT(*) FROM outbox WHERE state = 'unknown' AND (unknown_since <= ? \
+             OR json_extract(progress_json, '$.needs_user') = 1)",
         )
         .bind(now() - UNKNOWN_LOOKUP_SECS)
         .fetch_one(self.reader())
@@ -606,29 +643,8 @@ impl Store {
         extension: Option<Option<Value>>,
         done: bool,
     ) -> Result<(), StoreError> {
-        let graph_id = text(raw, "id")
-            .ok_or_else(|| StoreError::Invalid("Graph returned a task with no id".into()))?;
         let mut tx = self.writer().begin().await?;
-        let rev = next_local_rev(&mut tx).await?;
-        let op = op_in(&mut tx, op_id).await?;
-        let (extension_json, hydrated_etag) = match extension {
-            Some(extension) => (extension.as_ref().map(Value::to_string), etag(raw)),
-            None => sqlx::query_as::<_, (Option<String>, Option<String>)>(
-                "SELECT extension_json, hydrated_etag FROM tasks WHERE local_id = ?",
-            )
-            .bind(&op.entity_local_id)
-            .fetch_optional(&mut *tx)
-            .await?
-            .unwrap_or_default(),
-        };
-        let attributed = Attributed {
-            graph_id: &graph_id,
-            list_local_id: &op.list_local_id,
-            raw: raw.clone(),
-            extension_json,
-            hydrated_etag,
-        };
-        write_attributed(&mut tx, &op, attributed, rev).await?;
+        record_in(&mut tx, op_id, raw, extension).await?;
         if done {
             finish(&mut tx, op_id, OpState::Done, None).await?;
         }
@@ -754,18 +770,21 @@ impl Store {
     /// if it's still in state `expected`: one conditional update, so it
     /// can't race a send. Returns false, changing nothing, if its state
     /// moved.
+    /// A move's `progress` is replaced with the one given, if any.
     pub async fn requeue(
         &self,
         op_id: &str,
         expected: OpState,
         restore: &Restore,
+        progress: Option<&Value>,
     ) -> Result<bool, StoreError> {
         let mut tx = self.writer().begin().await?;
         let requeued = sqlx::query(
             "UPDATE outbox SET state = 'pending', next_attempt_at = 0, last_error_kind = NULL, \
-             last_error = NULL, unknown_since = NULL, note = NULL, finished_at = NULL \
-             WHERE op_id = ? AND state = ?",
+             last_error = NULL, unknown_since = NULL, note = NULL, finished_at = NULL, \
+             progress_json = COALESCE(?, progress_json) WHERE op_id = ? AND state = ?",
         )
+        .bind(progress.map(Value::to_string))
         .bind(op_id)
         .bind(expected.as_str())
         .execute(&mut *tx)
@@ -790,7 +809,8 @@ impl Store {
             "UPDATE outbox SET state = 'unknown', unknown_since = ?, \
              note = 'the daemon stopped while this was being sent' \
              WHERE state = 'inflight' \
-             AND (op = 'create' OR json_extract(payload_json, '$.recurring') = 1)",
+             AND (op = 'create' OR json_extract(payload_json, '$.recurring') = 1 \
+             OR (op = 'move' AND json_extract(progress_json, '$.in_doubt') = 1))",
         )
         .bind(now())
         .execute(&mut *tx)
@@ -826,6 +846,38 @@ impl Store {
                 .await?,
         )
     }
+}
+
+/// Write Graph's answer `raw` to operation `op_id`'s task (see
+/// [`Store::record_sent`]), inside `tx`.
+pub(crate) async fn record_in(
+    tx: &mut SqliteConnection,
+    op_id: &str,
+    raw: &Entity,
+    extension: Option<Option<Value>>,
+) -> Result<(), StoreError> {
+    let graph_id = text(raw, "id")
+        .ok_or_else(|| StoreError::Invalid("Graph returned a task with no id".into()))?;
+    let rev = next_local_rev(tx).await?;
+    let op = op_in(tx, op_id).await?;
+    let (extension_json, hydrated_etag) = match extension {
+        Some(extension) => (extension.as_ref().map(Value::to_string), etag(raw)),
+        None => sqlx::query_as::<_, (Option<String>, Option<String>)>(
+            "SELECT extension_json, hydrated_etag FROM tasks WHERE local_id = ?",
+        )
+        .bind(&op.entity_local_id)
+        .fetch_optional(&mut *tx)
+        .await?
+        .unwrap_or_default(),
+    };
+    let attributed = Attributed {
+        graph_id: &graph_id,
+        list_local_id: &op.list_local_id,
+        raw: raw.clone(),
+        extension_json,
+        hydrated_etag,
+    };
+    write_attributed(tx, &op, attributed, rev).await
 }
 
 fn ops_sql(condition: &str) -> String {
@@ -1038,30 +1090,14 @@ async fn write_attributed(
     rev: i64,
 ) -> Result<(), StoreError> {
     let local_id = &op.entity_local_id;
-    let duplicate: Option<String> =
-        sqlx::query_scalar("SELECT local_id FROM tasks WHERE graph_id = ? AND local_id != ?")
-            .bind(task.graph_id)
-            .bind(local_id)
-            .fetch_optional(&mut *tx)
-            .await?;
-    if let Some(duplicate) = duplicate {
-        sqlx::query("UPDATE outbox SET entity_local_id = ? WHERE entity_local_id = ?")
-            .bind(local_id)
-            .bind(&duplicate)
-            .execute(&mut *tx)
-            .await?;
-        sqlx::query("DELETE FROM tasks WHERE local_id = ?")
-            .bind(&duplicate)
-            .execute(&mut *tx)
-            .await?;
-    }
+    merge_duplicate(tx, task.graph_id, local_id).await?;
     let mut raw = task.raw;
     let mut deleted = false;
     for (kind, payload) in later_ops(tx, op).await? {
         match kind {
             OpKind::Update => apply_body(&mut raw, &payload["body"]),
             OpKind::Delete => deleted = true,
-            OpKind::Create | OpKind::Extension => {}
+            OpKind::Create | OpKind::Extension | OpKind::Move => {}
         }
     }
     write_task(
@@ -1084,6 +1120,34 @@ async fn write_attributed(
     Ok(())
 }
 
+/// Merge into the task `local_id` any other row with the Graph ID
+/// `graph_id` (one sync inserted meanwhile): its operations are re-pointed
+/// to `local_id` and the row goes, so `graph_id` stays unique.
+pub(crate) async fn merge_duplicate(
+    tx: &mut SqliteConnection,
+    graph_id: &str,
+    local_id: &str,
+) -> Result<(), StoreError> {
+    let duplicate: Option<String> =
+        sqlx::query_scalar("SELECT local_id FROM tasks WHERE graph_id = ? AND local_id != ?")
+            .bind(graph_id)
+            .bind(local_id)
+            .fetch_optional(&mut *tx)
+            .await?;
+    if let Some(duplicate) = duplicate {
+        sqlx::query("UPDATE outbox SET entity_local_id = ? WHERE entity_local_id = ?")
+            .bind(local_id)
+            .bind(&duplicate)
+            .execute(&mut *tx)
+            .await?;
+        sqlx::query("DELETE FROM tasks WHERE local_id = ?")
+            .bind(&duplicate)
+            .execute(&mut *tx)
+            .await?;
+    }
+    Ok(())
+}
+
 /// Undo `op`'s local change by `restore`: on its task, or for a list
 /// extension write, on the list's extension.
 async fn apply_restore(
@@ -1100,6 +1164,14 @@ async fn apply_restore(
         Restore::Nothing => Ok(()),
         Restore::Tombstone => tombstone_row(tx, local_id, rev).await,
         Restore::Replace(raw) => replace_row(tx, local_id, raw, rev).await,
+        Restore::MoveBack {
+            graph_id,
+            list_local_id,
+            raw,
+        } => {
+            crate::moves::move_back(tx, local_id, graph_id.as_deref(), list_local_id, raw, rev)
+                .await
+        }
     }
 }
 
@@ -1130,15 +1202,15 @@ async fn replace_row(
 
 /// Who a cached task is, apart from its JSON's content.
 #[derive(FromRow)]
-struct RowIdentity {
-    graph_id: Option<String>,
-    list_local_id: String,
-    raw_json: String,
-    extension_json: Option<String>,
-    hydrated_etag: Option<String>,
+pub(crate) struct RowIdentity {
+    pub graph_id: Option<String>,
+    pub list_local_id: String,
+    pub raw_json: String,
+    pub extension_json: Option<String>,
+    pub hydrated_etag: Option<String>,
 }
 
-async fn row_identity(
+pub(crate) async fn row_identity(
     tx: &mut SqliteConnection,
     local_id: &str,
 ) -> Result<RowIdentity, StoreError> {

@@ -176,6 +176,7 @@ async fn build_state(paths: &Paths) -> Result<State, Fatal> {
         events: Events::new(),
         instance: paths.instance.label().to_owned(),
         started_at: chrono::Utc::now().timestamp(),
+        moves_dir: paths.data_dir.join("moves"),
     })
 }
 

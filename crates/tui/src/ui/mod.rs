@@ -13,6 +13,7 @@ mod hint_bar;
 mod line_input;
 mod link_picker;
 mod modals;
+mod move_picker;
 mod palette;
 mod sidebar;
 mod status_line;
@@ -64,6 +65,12 @@ pub fn draw(frame: &mut Frame, app: &App) {
             candidates, index, ..
         } => modals::picker(frame, app, candidates, *index),
         Mode::Palette { query, index } => palette::draw(frame, app, query, *index),
+        Mode::MovingTasks {
+            ids,
+            what,
+            query,
+            index,
+        } => move_picker::draw(frame, app, ids, what, query, *index),
         Mode::Diagnostics => diagnostics::draw(frame, main, app),
         Mode::Themes { index, .. } => theme_picker::draw(frame, app, *index),
         Mode::Links { links, index } => link_picker::draw(frame, app, links, *index),

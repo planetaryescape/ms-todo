@@ -17,7 +17,8 @@ use ms_todo_store::{Entity, OpKind, OutboxRow};
 use serde_json::{Map, Value};
 
 use super::extension_write;
-use super::rollback::{announce_entity, reject};
+use super::move_job;
+use super::rollback::{announce_entity, reconcile_list, reject};
 use super::{backoff, now};
 use crate::entities::split_extension;
 use crate::handlers::{State, error_payload, graph_error};
@@ -77,6 +78,16 @@ pub(super) async fn send_ready(state: &State) -> bool {
             sent = true;
             // Whatever the outcome, the task's (or list's) sync state moved.
             let (kind, entity) = (op.op, op.entity_local_id.clone());
+            if kind == OpKind::Move {
+                let settled = move_job::run(state, &op).await;
+                let temporary = settle_move(state, &op, settled).await;
+                announce_entity(state, kind, entity);
+                if temporary {
+                    deferred = true;
+                    break;
+                }
+                continue;
+            }
             match attempt(state, &op).await {
                 Ok(Attempt::Created {
                     task,
@@ -131,6 +142,78 @@ pub(super) async fn send_ready(state: &State) -> bool {
         if deferred {
             return sent;
         }
+    }
+}
+
+/// Record how an attempt at a move ended. Returns whether it was a
+/// temporary failure, which holds the queue.
+async fn settle_move(state: &State, op: &OutboxRow, settled: move_job::Settled) -> bool {
+    match settled {
+        move_job::Settled::Done => false,
+        move_job::Settled::Paused { error, note } => {
+            mark_unknown(state, op, &error, Some(&note)).await;
+            false
+        }
+        move_job::Settled::Failed(error) => {
+            fail_move(state, op, &error).await;
+            false
+        }
+        move_job::Settled::Temporary(error) => {
+            let until = now() + backoff(op.attempts + 1);
+            if let Err(store) = state
+                .store
+                .defer(&op.op_id, until, (&error.kind, &error.message))
+                .await
+            {
+                log_store(&store);
+            }
+            true
+        }
+    }
+}
+
+/// A move rolled back: it's `failed`, and the task is back in its list as
+/// the source is. Both lists are read whole on the next pass.
+pub(super) async fn fail_move(state: &State, op: &OutboxRow, error: &ErrorPayload) {
+    // The steps the attempt saved, not those `op` was read with.
+    let op = match state.store.outbox_op(&op.op_id).await {
+        Ok(Some(op)) => op,
+        Ok(None) => return,
+        Err(store) => {
+            log_store(&store);
+            return;
+        }
+    };
+    let op = &op;
+    let restore = match move_job::move_back(state, op).await {
+        Ok(restore) => restore,
+        Err(store) => {
+            log_store(&store);
+            return;
+        }
+    };
+    let cascaded = match state
+        .store
+        .fail_op(&op.op_id, (&error.kind, &error.message), &restore)
+        .await
+    {
+        Ok(cascaded) => cascaded,
+        Err(store) => {
+            log_store(&store);
+            return;
+        }
+    };
+    move_job::remove_spool(&state.moves_dir, &op.op_id).await;
+    reconcile_list(state, &move_job::from_list(op)).await;
+    reconcile_list(state, &op.list_local_id).await;
+    state
+        .events
+        .write_rejected(&op.op_id, &op.entity_local_id, &error.kind, &error.message);
+    for later in cascaded {
+        let message = format!("not sent: the move it waited on ({}) was undone", op.op_id);
+        state
+            .events
+            .write_rejected(&later, &op.entity_local_id, &error.kind, &message);
     }
 }
 

@@ -21,6 +21,7 @@ ms-todo-daemon = { workspace = true }
 [dev-dependencies]
 ms-todo-protocol = { workspace = true }
 assert_cmd = { workspace = true }
+base64 = { workspace = true }
 chrono = { workspace = true }
 futures-util = { workspace = true }
 insta = { workspace = true }

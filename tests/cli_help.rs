@@ -72,6 +72,7 @@ fn cli_help_snapshots_cover_all_commands() {
         ("cli_help_tasks_complete", &["tasks", "complete", "--help"]),
         ("cli_help_tasks_reopen", &["tasks", "reopen", "--help"]),
         ("cli_help_tasks_edit", &["tasks", "edit", "--help"]),
+        ("cli_help_tasks_move", &["tasks", "move", "--help"]),
         ("cli_help_tasks_delete", &["tasks", "delete", "--help"]),
         ("cli_help_tasks_links", &["tasks", "links", "--help"]),
         ("cli_help_tasks_open", &["tasks", "open", "--help"]),

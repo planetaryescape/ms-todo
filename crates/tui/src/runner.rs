@@ -177,7 +177,7 @@ fn key_msg(app: &App, key: &KeyEvent) -> Option<Msg> {
     }
     if !matches!(
         context,
-        Context::Prompt | Context::Notes | Context::Palette | Context::Folder
+        Context::Prompt | Context::Notes | Context::Palette | Context::Folder | Context::MoveTo
     ) {
         return None;
     }

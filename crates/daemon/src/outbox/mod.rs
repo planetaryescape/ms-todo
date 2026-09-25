@@ -19,6 +19,7 @@
 
 mod commands;
 mod extension_write;
+pub(crate) mod move_job;
 mod rollback;
 mod send;
 mod unknown;
