@@ -6,3 +6,4 @@
 # everyone who runs the test benefits from these saved cases.
 cc ebe24fcd52ab976a51fc0bd200272e1cda6892a51221b1b235d0b03d95571a61 # shrinks to input = "\"\u{e}\"\0"
 cc 0c3fa4def0758dee3ebeacedb5ad3f8aaa8f81a0bb7ceb2bd27a51462197afae # shrinks to input = " A\"A \""
+cc d5252a7f199ea5a9828cde5614c6e4e5116e87f86cf8eee2c6472642a3ed9d44 # shrinks to input = "#\" @\"\\@\""

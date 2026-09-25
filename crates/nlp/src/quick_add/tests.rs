@@ -584,18 +584,29 @@ fn uncovered(input: &str, spans: &[Span]) -> String {
     kept.split_whitespace().collect::<Vec<_>>().join(" ")
 }
 
+/// The spans are in order, apart and on character boundaries, and the
+/// title is exactly what they leave.
+fn covers(input: &str) -> Result<(), TestCaseError> {
+    let parsed = parse(input);
+    let mut end = 0;
+    for span in &parsed.spans {
+        prop_assert!(
+            span.start >= end && span.start < span.end,
+            "{:?}",
+            parsed.spans
+        );
+        prop_assert!(input.is_char_boundary(span.start) && input.is_char_boundary(span.end));
+        end = span.end;
+    }
+    prop_assert!(end <= input.len());
+    prop_assert_eq!(parsed.title, uncovered(input, &parsed.spans));
+    Ok(())
+}
+
 proptest! {
     #[test]
     fn never_panics_and_the_title_and_spans_cover_the_input(input in ".{0,60}") {
-        let parsed = parse(&input);
-        let mut end = 0;
-        for span in &parsed.spans {
-            prop_assert!(span.start >= end && span.start < span.end, "{:?}", parsed.spans);
-            prop_assert!(input.is_char_boundary(span.start) && input.is_char_boundary(span.end));
-            end = span.end;
-        }
-        prop_assert!(end <= input.len());
-        prop_assert_eq!(parsed.title, uncovered(&input, &parsed.spans));
+        covers(&input)?;
     }
 
     #[test]
@@ -635,5 +646,40 @@ fn a_list_token_reads_back_as_its_list() {
         let parsed = parse(&format!("Pay rent {}", list_token(&list.name)));
         assert_eq!(parsed.list.as_ref(), Some(&list), "{}", list.name);
         assert_eq!(parsed.title, "Pay rent");
+    }
+}
+
+#[test]
+fn a_quoted_name_never_takes_in_a_part_already_read() {
+    // `#home` inside the quotes is read as the list first; the label's
+    // quotes can't then claim it again (they overlapped, and the title
+    // panicked).
+    let parsed = parse("@\"x #home y\"");
+    assert_eq!(
+        parsed.list.as_ref().map(|list| list.name.as_str()),
+        Some("Home")
+    );
+    assert!(parsed.categories.is_empty(), "{parsed:?}");
+    assert_eq!(parsed.title, "@\"x y\"");
+    let parsed = parse("@\"\u{a0}#Home\u{3000}\"");
+    assert_eq!(
+        parsed.list.as_ref().map(|list| list.name.as_str()),
+        Some("Home")
+    );
+    assert!(parsed.categories.is_empty(), "{parsed:?}");
+    // Found by the proptest below.
+    covers("#\" @\"\\@\"").expect("covered");
+}
+
+proptest! {
+    // Rare shapes: at the default 256 cases it missed `@"x #home"`.
+    #![proptest_config(ProptestConfig::with_cases(4096))]
+
+    // Dense in what the passes read, and in spaces wider than a byte.
+    #[test]
+    fn sigils_quotes_and_wide_spaces_never_overlap(
+        input in "(@\"|#\"|#home|#w|@x|\"| |\u{a0}|\u{3000}|x|é|\\\\|!9am|p1){0,8}"
+    ) {
+        covers(&input)?;
     }
 }

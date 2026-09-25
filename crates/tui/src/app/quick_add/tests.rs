@@ -225,6 +225,17 @@ proptest::proptest! {
     }
 }
 
+/// Found by `tab_never_panics`: `#h` read as a list inside a label's
+/// quotes, which then claimed it again.
+#[test]
+fn a_list_inside_a_labels_quotes_never_panics() {
+    let mut app = seeded();
+    act(&mut app, Action::Add);
+    typed(&mut app, "@\"\u{a0}#h\u{3000}\"");
+    act(&mut app, Action::Complete);
+    assert!(matches!(app.mode, Mode::Adding { .. }));
+}
+
 #[test]
 fn categories_are_asked_for_once_and_a_failure_calls_no_label_unknown() {
     let mut app = seeded();

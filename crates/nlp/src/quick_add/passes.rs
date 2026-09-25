@@ -130,11 +130,16 @@ impl<'i> Scan<'i> {
     }
 
     /// `#Name` or `#"Two words"` at `at`: the name and where the token
-    /// ends. Trailing punctuation isn't part of a bare name.
+    /// ends. Trailing punctuation isn't part of a bare name, and quotes
+    /// around a part an earlier pass has read (`@"x #List"`) aren't a
+    /// name: spans never overlap.
     fn sigil_name(&self, at: usize) -> Option<(String, usize)> {
         let rest = &self.scan[at + 1..];
         if let Some(quoted) = rest.strip_prefix('"') {
             let close = quoted.find('"')?;
+            if quoted[..close].contains(MASK) {
+                return None;
+            }
             let end = at + 2 + close + 1;
             let name = self.input[at + 2..end - 1].trim().to_owned();
             return (!name.is_empty() && ends_word(&self.scan, end)).then_some((name, end));
