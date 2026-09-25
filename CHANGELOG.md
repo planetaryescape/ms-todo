@@ -1,5 +1,23 @@
 # Changelog
 
+## [0.1.26](https://github.com/planetaryescape/ms-todo/compare/v0.1.25...v0.1.26) (2026-09-25)
+
+
+### Features
+
+* assignment, who a task is waiting on (rung 8d) ([fc93492](https://github.com/planetaryescape/ms-todo/commit/fc934922742b6d07932cab2e05347505f87d82d1))
+
+
+### Bug Fixes
+
+* never claim a value another device wrote ([60c1c70](https://github.com/planetaryescape/ms-todo/commit/60c1c707931d11c1eea9a207696fb383247929c5))
+
+
+### Documentation
+
+* README's status points at Releases instead of naming a version ([a4495f3](https://github.com/planetaryescape/ms-todo/commit/a4495f3c61604469628e8c949b935c61b89b73bb))
+* rung 8d assignment in the README, usage, blueprint, D-057, issue 001 and the skill ([40044af](https://github.com/planetaryescape/ms-todo/commit/40044afd071a17796a6c3e7aa935f25526d1783b))
+
 ## [0.1.25](https://github.com/planetaryescape/ms-todo/compare/v0.1.24...v0.1.25) (2026-09-25)
 
 
