@@ -19,17 +19,25 @@
 //!
 //! An operation Graph rejected changed nothing, so it's skipped; one whose
 //! outcome is `unknown` must be resolved first.
+//!
+//! An edit, complete, reopen or folder change is undone only while every
+//! field it set still holds the value it set, as the cache has it now. If a
+//! later change or a sync from another device moved one, putting the old
+//! value back would overwrite that, so the undo is refused (`conflict`,
+//! exit 5) and nothing is queued.
 
 use chrono::{DateTime, Duration};
 use ms_todo_core::ErrorKind;
 use ms_todo_protocol::{Candidate, ErrorPayload, ResponseData, TaskAction};
 use ms_todo_store::{
-    Entity, ListExtensionOp, LocalChange, NewOp, OpKind, OpState, OutboxRow, TaskRow,
+    Entity, FOLDER_FIELD, ListExtensionOp, ListRow, LocalChange, NewOp, OpKind, OpState, OutboxRow,
+    TaskRow,
 };
 use serde_json::{Map, Value, json};
 
 use crate::handlers::{State, error_payload, store_error};
 use crate::list_writes::queue_lists;
+use crate::outbox::fields_not_holding;
 use crate::outbox::op_id_for;
 use crate::task_writes::{delete_op, new_task_raw, our_extension, queue, update_op};
 
@@ -120,6 +128,14 @@ pub(crate) async fn undo(
                 inverse.push(update_op(id(inverse.len()), &row, &body, TaskAction::Edit));
             }
             OpKind::Update => {
+                let moved = fields_not_holding(op.body(), &row.raw);
+                if !moved.is_empty() {
+                    return Err(conflict(format!(
+                        "{:?} has changed since ({}); undo would overwrite that",
+                        row.title,
+                        moved.join(", ")
+                    )));
+                }
                 let (body, action) = inverse_update(op)?;
                 inverse.push(update_op(id(inverse.len()), &row, &body, action));
             }
@@ -150,13 +166,12 @@ async fn undo_lists(
         if rejected(op)? {
             continue;
         }
-        if state
+        let Some(list) = state
             .store
             .list(&op.entity_local_id)
             .await
             .map_err(store_error)?
-            .is_none()
-        {
+        else {
             return Err(error_payload(
                 ErrorKind::NotFound,
                 format!(
@@ -164,7 +179,8 @@ async fn undo_lists(
                     op.entity_local_id
                 ),
             ));
-        }
+        };
+        check_list_unchanged(op, &list)?;
         inverse.push(ListExtensionOp {
             op_id: op_id_for(op_id, inverse.len()),
             list_local_id: op.entity_local_id.clone(),
@@ -176,6 +192,45 @@ async fn undo_lists(
         return Err(nothing_to_undo(target));
     }
     queue_lists(state, op_id, Some(target), inverse, TaskAction::Undo).await
+}
+
+/// Refuse to undo `op` if a field it set on `list`'s extension doesn't
+/// hold the value it set any more (a null having removed it).
+fn check_list_unchanged(op: &OutboxRow, list: &ListRow) -> Result<(), ErrorPayload> {
+    let Some(fields) = op.body().as_object() else {
+        return Ok(());
+    };
+    let current = |key: &str| {
+        list.extension
+            .as_ref()
+            .and_then(|extension| extension.get(key))
+            .cloned()
+            .unwrap_or(Value::Null)
+    };
+    let moved: Vec<&String> = fields
+        .iter()
+        .filter(|(key, set)| current(key) != **set)
+        .map(|(key, _)| key)
+        .collect();
+    if moved.is_empty() {
+        return Ok(());
+    }
+    let since = if moved.iter().any(|key| key.as_str() == FOLDER_FIELD) {
+        match list.folder() {
+            Some(folder) => format!("has moved to {folder:?}"),
+            None => "has moved out of its folder".to_owned(),
+        }
+    } else {
+        "was reordered".to_owned()
+    };
+    Err(conflict(format!(
+        "{:?} {since} since; undo would overwrite that",
+        list.display_name
+    )))
+}
+
+fn conflict(message: String) -> ErrorPayload {
+    error_payload(ErrorKind::Conflict, message)
 }
 
 /// Whether `op` is skipped because Graph rejected it, so it changed

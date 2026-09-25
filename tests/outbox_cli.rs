@@ -526,6 +526,48 @@ async fn undo_reverses_an_add_an_edit_a_complete_and_a_delete() {
     );
 }
 
+#[tokio::test]
+async fn undo_refuses_when_a_field_it_set_has_changed_since() {
+    let mut env = Env::new();
+    let graph = graph_with(&mut env, vec![task("T1", "Buy milk", "W/\"e1\"")]).await;
+    Mock::given(method("PATCH"))
+        .and(path(format!("{TASKS}/T1")))
+        .respond_with(patched(task("T1", "Buy milk", "x"), "W/\"e2\""))
+        .mount(&graph.server)
+        .await;
+    env.synced();
+    let t1 = env.local_id(&["tasks", "list"], "T1");
+
+    // A later edit of the same field.
+    let first = env.json(&["tasks", "edit", &t1, "--title", "Buy oat milk"]);
+    env.json(&["tasks", "edit", &t1, "--title", "Buy soy milk"]);
+    env.settled();
+    let queued = env.outbox().len();
+    let refused = env.failure(&["undo", &op_id(&first)], 5);
+    assert_eq!(refused["error"]["kind"], "conflict");
+    assert!(
+        refused["error"]["message"]
+            .as_str()
+            .is_some_and(|message| message.contains("has changed since (title)")),
+        "{refused}"
+    );
+    assert_eq!(env.outbox().len(), queued, "nothing queued");
+    assert_eq!(tasks(&env, "Tasks")[0]["title"], "Buy soy milk");
+
+    // A change synced from the phone.
+    let latest = env.json(&["tasks", "edit", &t1, "--importance", "high"]);
+    env.settled();
+    graph.edit(|data| {
+        let mut phone = task("T1", "Buy soy milk", "W/\"p1\"");
+        phone["importance"] = json!("low");
+        data.tasks.insert("L-tasks".into(), vec![phone]);
+    });
+    env.synced();
+    let refused = env.failure(&["undo", &op_id(&latest)], 5);
+    assert_eq!(refused["error"]["kind"], "conflict");
+    assert_eq!(tasks(&env, "Tasks")[0]["importance"], "low");
+}
+
 fn recurring(id: &str, etag: &str, due: &str) -> Value {
     let mut task = task(id, "Water plants", etag);
     task["recurrence"] = json!({ "pattern": { "type": "weekly", "interval": 1 } });

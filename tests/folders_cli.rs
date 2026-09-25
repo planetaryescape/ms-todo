@@ -249,3 +249,52 @@ async fn a_folder_set_on_another_machine_arrives_with_the_next_sync() {
     env.synced();
     assert_eq!(lists(&env)[0], pair("Groceries", Some("Areas")));
 }
+
+#[tokio::test]
+async fn undo_refuses_to_overwrite_a_later_move() {
+    let mut env = Env::new();
+    let graph = graph(&mut env).await;
+    let first = env.json(&["lists", "move", "Finances", "--folder", "Areas"]);
+    env.json(&["lists", "move", "Finances", "--folder", "Someday"]);
+    env.settled();
+    let queued = env.outbox().len();
+    let first_op = first["op_id"].as_str().expect("op_id").to_owned();
+    let refused = env.failure(&["undo", &first_op], 5);
+    assert_eq!(refused["error"]["kind"], "conflict");
+    assert_eq!(
+        refused["error"]["message"],
+        "\"Finances\" has moved to \"Someday\" since; undo would overwrite that"
+    );
+    assert_eq!(env.outbox().len(), queued, "nothing queued");
+    assert_eq!(lists(&env)[0], pair("Finances", Some("Someday")));
+    assert_eq!(
+        graph.extension("L-fin").expect("written")["folder"],
+        "Someday"
+    );
+
+    // A move synced from another machine counts the same.
+    let health = env.json(&["lists", "move", "Health", "--folder", "Areas"]);
+    env.settled();
+    graph.edit(|data| {
+        data.extensions.insert(
+            "L-health".into(),
+            json!({ "extensionName": "com.planetaryescape.mstodo", "folder": "Projects" }),
+        );
+        let list = data
+            .lists
+            .iter_mut()
+            .find(|list| list["id"] == "L-health")
+            .expect("list");
+        list["@odata.etag"] = Value::String("W/\"L-health-phone\"".into());
+    });
+    env.synced();
+    let refused = env.failure(&["undo", health["op_id"].as_str().expect("op_id")], 5);
+    assert_eq!(
+        refused["error"]["message"],
+        "\"Health\" has moved to \"Projects\" since; undo would overwrite that"
+    );
+    assert_eq!(
+        graph.extension("L-health").expect("kept")["folder"],
+        "Projects"
+    );
+}

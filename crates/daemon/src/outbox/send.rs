@@ -301,21 +301,31 @@ fn rolled_on(before: &Entity, after: &Entity) -> bool {
 }
 
 /// Whether `task`, as Graph returned it, already holds every field of
-/// `body`. Dates are compared as dates: Graph writes them back in its own
-/// shape.
+/// `body`.
 fn is_applied(body: &Value, task: &Entity) -> bool {
+    body.is_object() && fields_not_holding(body, task).is_empty()
+}
+
+/// The fields of `body` whose value `task` doesn't hold. Dates are
+/// compared as dates: Graph writes them back in its own shape.
+pub(crate) fn fields_not_holding(body: &Value, task: &Entity) -> Vec<String> {
     let Value::Object(fields) = body else {
-        return false;
+        return Vec::new();
     };
-    fields.iter().all(|(key, sent)| {
-        let current = task.get(key.as_str()).unwrap_or(&Value::Null);
-        match key.as_str() {
-            "dueDateTime" | "startDateTime" => as_date(sent) == as_date(current),
-            "reminderDateTime" => as_time(sent) == as_time(current),
-            "body" => sent.get("content") == current.get("content"),
-            _ => sent == current,
-        }
-    })
+    fields
+        .iter()
+        .filter(|(key, sent)| {
+            let current = task.get(key.as_str()).unwrap_or(&Value::Null);
+            let holds = match key.as_str() {
+                "dueDateTime" | "startDateTime" => as_date(sent) == as_date(current),
+                "reminderDateTime" => as_time(sent) == as_time(current),
+                "body" => sent.get("content") == current.get("content"),
+                _ => *sent == current,
+            };
+            !holds
+        })
+        .map(|(key, _)| key.clone())
+        .collect()
 }
 
 fn as_date(value: &Value) -> Option<String> {

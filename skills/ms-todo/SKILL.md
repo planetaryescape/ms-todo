@@ -119,7 +119,7 @@ ms-todo undo --format json            # the latest change not undone yet
 ms-todo undo <OP_ID> --format json    # a change by the op_id it returned
 ```
 
-Undo queues the reverse change, which is itself a change with its own `op_id` (so `undo <that op_id>` redoes). Undoing an add deletes the task; an edit, complete or reopen puts back the fields it changed; a delete creates the task again, with the same `id` and a new `graph_id`. A change still `unknown` can't be undone yet.
+Undo queues the reverse change, which is itself a change with its own `op_id` (so `undo <that op_id>` redoes). Undoing an add deletes the task; an edit, complete or reopen puts back the fields it changed; a delete creates the task again, with the same `id` and a new `graph_id`. A change still `unknown` can't be undone yet. If a field the change set has changed since (a later change, or another device), `undo` exits 5 with kind `conflict` and changes nothing: tell the user rather than forcing it.
 
 Undoing a **recurring** completion deletes the completed copy Microsoft To Do made, so you must name it: without `--copy`, `undo` exits 2 with the copies in `candidates` (`id`, `name`, `created_at`, `list_id`). Show them to the user and let them pick, then run `ms-todo undo <OP_ID> --copy <ID> --format json`. Never pick one yourself. "can't undo yet" means the copy hasn't synced: `ms-todo sync --wait`, then try again.
 

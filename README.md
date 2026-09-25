@@ -109,7 +109,7 @@ ms-todo outbox discard <OP> --yes     # drop a change; one that never reached Mi
 ms-todo undo                          # reverse the latest change; or `ms-todo undo <OP_ID>`
 ```
 
-Undo is itself a change, so it can be undone. Undoing an add deletes the task; an edit, complete or reopen puts the fields back; a delete brings the task back with the same ID (and a new Graph ID). Undoing the completion of a recurring task also deletes the completed copy Microsoft To Do made, so it asks which one: `ms-todo undo <OP_ID> --copy <ID>` (without `--copy`, it lists the candidates and exits 2).
+Undo is itself a change, so it can be undone. An edit, complete, reopen or folder change is undone only while what it set is still there: if a later change or another device has changed that field since, `undo` refuses with exit 5 (`conflict`) rather than overwrite it, and changes nothing. Undoing an add deletes the task; an edit, complete or reopen puts the fields back; a delete brings the task back with the same ID (and a new Graph ID). Undoing the completion of a recurring task also deletes the completed copy Microsoft To Do made, so it asks which one: `ms-todo undo <OP_ID> --copy <ID>` (without `--copy`, it lists the candidates and exits 2).
 
 A database upgraded by a newer ms-todo is refused with "this database was upgraded by a newer ms-todo; install the latest version" (error kind `database_too_new`, exit 1).
 
