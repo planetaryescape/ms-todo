@@ -852,3 +852,41 @@ async fn a_restart_with_both_there_after_the_source_changed_deletes_nothing() {
     assert_eq!(source["title"], "Renew passport (photos done)");
     assert_eq!(graph.tasks_in("L-groc").len(), 1, "the copy is kept");
 }
+
+#[tokio::test]
+async fn an_edit_after_the_check_but_before_the_delete_stops_the_delete() {
+    let mut env = Env::new();
+    let graph = rich_graph(&mut env).await;
+    // The source is read three times: to copy it, to check it hasn't
+    // changed, and right before the DELETE. The phone edits it after the
+    // check.
+    graph
+        .edit_after_gets(TASK, 2, |data| {
+            if let Some(source) = data
+                .tasks
+                .get_mut("L-tasks")
+                .and_then(|tasks| tasks.iter_mut().find(|task| task["id"] == "T1"))
+            {
+                source["title"] = json!("Renew passport (booked)");
+                source["@odata.etag"] = json!("W/\"phone\"");
+            }
+        })
+        .await;
+    let moved = move_t1(&env);
+    let paused = env.op_in_state(&op_id(&moved), "unknown");
+    assert_eq!(paused["flagged"], true);
+    let note = paused["note"].as_str().unwrap_or_default();
+    assert!(
+        note.contains("changed on another device during the move"),
+        "{note}"
+    );
+    assert_eq!(
+        deletes_in(&graph, "L-tasks").await,
+        0,
+        "the source was never deleted"
+    );
+    assert_eq!(deletes_in(&graph, "L-groc").await, 0, "nor the copy");
+    let source = graph.task("L-tasks", "T1").expect("the source is kept");
+    assert_eq!(source["title"], "Renew passport (booked)");
+    assert_eq!(graph.tasks_in("L-groc").len(), 1);
+}

@@ -26,6 +26,8 @@ const CHECKLIST_FIELDS: [&str; 4] = [
     "createdDateTime",
 ];
 const LINK_FIELDS: [&str; 4] = ["webUrl", "applicationName", "displayName", "externalId"];
+/// The attributes above that are timestamps, compared to the second.
+const CHILD_TIMESTAMPS: [&str; 2] = ["checkedDateTime", "createdDateTime"];
 
 /// The POST that makes the copy of `source` (Graph's JSON, as a GET gives
 /// it) with our extension `extension`, as operation `op_id`.
@@ -126,10 +128,12 @@ pub(crate) fn comparable(task: &Entity, extension: Option<&Value>) -> Map<String
         for (index, item) in items.iter().enumerate() {
             for &attribute in attributes {
                 let value = item.get(attribute).unwrap_or(&Value::Null);
-                fields.insert(
-                    format!("{collection}[{index}].{attribute}"),
-                    instant_to_second(value),
-                );
+                let value = if CHILD_TIMESTAMPS.contains(&attribute) {
+                    instant_to_second(value)
+                } else {
+                    value.clone()
+                };
+                fields.insert(format!("{collection}[{index}].{attribute}"), value);
             }
         }
     }
@@ -169,7 +173,7 @@ fn field_value(task: &Entity, key: &str) -> Value {
     }
 }
 
-/// A child's timestamp to the second: Graph keeps a step's
+/// A child's timestamp ([`CHILD_TIMESTAMPS`]) to the second: Graph keeps a step's
 /// `createdDateTime` to the second only (S14: `…23.3795339Z` came back
 /// `…23Z`). Anything else, as it is.
 fn instant_to_second(value: &Value) -> Value {
@@ -331,6 +335,20 @@ mod tests {
         assert_eq!(
             differences(&expected, &comparable(&unchecked, Some(&ours))),
             ["checklistItems[0].checkedDateTime"]
+        );
+
+        // Only timestamps are rounded: names that look like instants a
+        // fraction of a second apart are different names.
+        let mut renamed = copy.clone();
+        renamed["checklistItems"][0]["displayName"] = json!("2026-09-24T10:00:00.2Z");
+        let mut named_original = original.clone();
+        named_original["checklistItems"][0]["displayName"] = json!("2026-09-24T10:00:00.1Z");
+        assert_eq!(
+            differences(
+                &comparable(&named_original, Some(&theirs)),
+                &comparable(&renamed, Some(&ours))
+            ),
+            ["checklistItems[0].displayName"]
         );
 
         copy.insert("checklistItems".into(), json!([]));

@@ -579,7 +579,7 @@ fn with_extension(entity: &Value, extensions: &HashMap<String, Value>) -> Value 
 }
 
 // `/me/todo/lists/{l}/tasks/{t}?$expand=…`
-fn answer_get(data: &Data, url: &str) -> (u16, Value) {
+pub(crate) fn answer_get(data: &Data, url: &str) -> (u16, Value) {
     let path = url.split('?').next().unwrap_or_default();
     let parts: Vec<&str> = path.split('/').collect();
     let (Some(list), Some(task)) = (parts.get(4), parts.get(6)) else {

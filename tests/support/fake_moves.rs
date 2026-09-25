@@ -16,7 +16,7 @@ use serde_json::{Value, json};
 use wiremock::matchers::{method, path_regex};
 use wiremock::{Mock, Request, ResponseTemplate};
 
-use super::fake_graph::{Data, FakeGraph, lock, next_write, not_found};
+use super::fake_graph::{Data, FakeGraph, answer_get, lock, next_write, not_found};
 
 /// Below the default (5), so a test's own mock wins.
 const PRIORITY: u8 = 10;
@@ -179,6 +179,29 @@ impl FakeGraph {
                 answer.set_delay(delay)
             })
             .up_to_n_times(1)
+            .with_priority(1)
+            .mount(&self.server)
+            .await;
+    }
+
+    /// Answer GETs of `path` from what Graph holds, and right after the
+    /// `nth` one (from 1), change what it holds with `edit`: an edit on
+    /// another device landing between two reads.
+    pub async fn edit_after_gets(&self, path: &str, nth: usize, edit: fn(&mut Data)) {
+        let shared = Arc::clone(&self.data);
+        let seen = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        Mock::given(method("GET"))
+            .and(path_regex(path))
+            .respond_with(move |request: &Request| {
+                let mut data = lock(&shared);
+                let relative = request.url.path().trim_start_matches("/v1.0");
+                let (status, body) = answer_get(&data, relative);
+                let count = seen.fetch_add(1, std::sync::atomic::Ordering::SeqCst) + 1;
+                if count == nth {
+                    edit(&mut data);
+                }
+                ResponseTemplate::new(status).set_body_json(body)
+            })
             .with_priority(1)
             .mount(&self.server)
             .await;

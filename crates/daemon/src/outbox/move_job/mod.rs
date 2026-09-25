@@ -670,15 +670,38 @@ impl Job<'_> {
         }
         progress.delete_started = true;
         self.save(progress).await?;
-        self.delete_source(progress, &source, &source_id).await
+        let verified = source.raw.get("@odata.etag").cloned();
+        self.delete_source(progress, &source, &source_id, verified.as_ref())
+            .await
     }
 
+    /// Delete the source, if it's still as it was when the copy was
+    /// checked (`verified`, its etag then): read it once more first. Task
+    /// DELETE ignores `If-Match` (S6), so an edit in the moment between
+    /// that read and the DELETE can still be lost (docs/issues/004).
     async fn delete_source(
         &self,
         progress: &mut Progress,
         source: &Source,
         source_id: &str,
+        verified: Option<&Value>,
     ) -> Step {
+        match self
+            .state
+            .graph
+            .get_task(&source.list_graph_id, source_id)
+            .await
+        {
+            Ok(now) if now.get("@odata.etag") != verified => {
+                return self
+                    .source_changed(progress, &["@odata.etag".to_owned()])
+                    .await;
+            }
+            Ok(_) => {}
+            // Gone already: nothing left to delete.
+            Err(error) if error.status() == Some(404) => return self.finish(progress).await,
+            Err(error) => return Err(read_failure(error)),
+        }
         // A 404 counts as deleted.
         match self
             .state
@@ -811,25 +834,11 @@ impl Job<'_> {
                 progress.copy = Some(copy);
                 progress.copy_extension = extension;
                 self.save(progress).await?;
-                self.delete_source(progress, source, source_id).await
+                let verified = now.get("@odata.etag").cloned();
+                self.delete_source(progress, source, source_id, verified.as_ref())
+                    .await
             }
-            Ok(Check::Mismatch(wrong)) => {
-                progress.needs_user = true;
-                self.save(progress).await?;
-                Err(Settled::Paused {
-                    error: error_payload(
-                        ErrorKind::Conflict,
-                        format!("the task changed during the move ({})", wrong.join(", ")),
-                    ),
-                    note: format!(
-                        "the task changed on another device during the move ({}), so the \
-                         original wasn't deleted; both it and the copy are kept. `ms-todo outbox \
-                         discard` keeps the original where it was (the copy then shows as a task \
-                         of its own); `ms-todo outbox retry` checks again",
-                        wrong.join(", ")
-                    ),
-                })
-            }
+            Ok(Check::Mismatch(wrong)) => self.source_changed(progress, &wrong).await,
             // The copy went with its list, or was deleted: the original is
             // kept, and there's nothing of the move's to delete.
             Ok(Check::ListGone | Check::CopyGone) => {
@@ -838,6 +847,27 @@ impl Job<'_> {
             }
             Err(error) => Err(read_failure(error)),
         }
+    }
+
+    /// The source changed (`what`) after the copy was made, and its DELETE
+    /// may have been sent: keep both and pause for the user, deleting
+    /// nothing.
+    async fn source_changed(&self, progress: &mut Progress, what: &[String]) -> Step {
+        progress.needs_user = true;
+        self.save(progress).await?;
+        let what = what.join(", ");
+        Err(Settled::Paused {
+            error: error_payload(
+                ErrorKind::Conflict,
+                format!("the task changed during the move ({what})"),
+            ),
+            note: format!(
+                "the task changed on another device during the move ({what}), so the original \
+                 wasn't deleted; both it and the copy are kept. `ms-todo outbox discard` keeps \
+                 the original where it was (the copy then shows as a task of its own); \
+                 `ms-todo outbox retry` checks again"
+            ),
+        })
     }
 
     /// The move is done: the task is the checked copy, `progress.copy`.
