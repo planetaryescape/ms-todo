@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.25](https://github.com/planetaryescape/ms-todo/compare/v0.1.24...v0.1.25) (2026-09-25)
+
+
+### Bug Fixes
+
+* help screen scrolls and uses two columns, so no key is hidden ([ff17e22](https://github.com/planetaryescape/ms-todo/commit/ff17e226b9ffce28048d5945d588c1f77e2dc0b6))
+
 ## [0.1.24](https://github.com/planetaryescape/ms-todo/compare/v0.1.23...v0.1.24) (2026-09-25)
 
 
