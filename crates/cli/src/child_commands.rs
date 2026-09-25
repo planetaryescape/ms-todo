@@ -182,7 +182,7 @@ async fn list(
     print_collection(format, &items, sync, table)
 }
 
-fn numbered(task: &Entity, collection: &str) -> Vec<Entity> {
+pub(crate) fn numbered(task: &Entity, collection: &str) -> Vec<Entity> {
     task.get(collection)
         .and_then(Value::as_array)
         .into_iter()
@@ -209,7 +209,7 @@ async fn check(
     write_child(paths, args.task, change, args.write, format).await
 }
 
-async fn write_child(
+pub(crate) async fn write_child(
     paths: &Paths,
     task: LinkArgs,
     change: TaskChange,
@@ -227,10 +227,10 @@ async fn write_child(
     send(paths, request, format).await
 }
 
-/// Delete steps or the link: at once with `--yes` or `--dry-run`; in a
+/// Delete steps, the link or attachments: at once with `--yes` or `--dry-run`; in a
 /// terminal, after showing what goes and asking; anywhere else, not at
 /// all (exit 2).
-async fn delete(
+pub(crate) async fn delete(
     paths: &Paths,
     task: LinkArgs,
     change: TaskChange,
@@ -283,6 +283,7 @@ async fn delete(
     .await?;
     let (collection, noun, label) = match change {
         TaskChange::DeleteLink { .. } => ("linkedResources", "link", "webUrl"),
+        TaskChange::DeleteAttachments { .. } => ("attachments", "attachment", "name"),
         _ => ("checklistItems", "step", "displayName"),
     };
     for child in numbered(&cached, collection) {
@@ -304,6 +305,7 @@ async fn delete(
         TaskChange::DeleteLink { .. } => TaskChange::DeleteLink {
             link: ids.first().cloned(),
         },
+        TaskChange::DeleteAttachments { .. } => TaskChange::DeleteAttachments { attachments: ids },
         _ => TaskChange::DeleteSteps { steps: ids },
     };
     let request = change_request(vec![target.id.clone()], None, None, change, false, key);
@@ -324,7 +326,7 @@ fn warn_unopenable(url: &str, format: OutputFormat) {
     }
 }
 
-fn number(child: &Entity) -> String {
+pub(crate) fn number(child: &Entity) -> String {
     child.get("index").map(Value::to_string).unwrap_or_default()
 }
 

@@ -133,3 +133,39 @@ async fn a_delete_that_finds_nothing_is_success() {
 
     graph.delete_task("L1", "T1").await.expect("already gone");
 }
+
+#[tokio::test]
+async fn an_attachment_over_25_mb_is_refused_before_any_request() {
+    let server = MockServer::start().await;
+    let dir = tempfile::tempdir().expect("tempdir");
+    let graph = client(&server, &dir).await;
+    let bytes = vec![0_u8; ms_todo_graph::MAX_ATTACHMENT_BYTES + 1];
+
+    let error = graph
+        .add_attachment("L1", "T1", "big.bin", "application/octet-stream", &bytes)
+        .await
+        .expect_err("refused");
+
+    assert_eq!(error.kind(), ErrorKind::InvalidInput);
+    assert_eq!(requests(&server).await, 0);
+}
+
+#[tokio::test]
+async fn a_lost_answer_to_an_attachment_post_is_unknown_and_not_resent() {
+    let server = MockServer::start().await;
+    let dir = tempfile::tempdir().expect("tempdir");
+    let graph = client(&server, &dir).await;
+    Mock::given(method("POST"))
+        .and(path(format!("{TASK}/attachments")))
+        .respond_with(ResponseTemplate::new(503))
+        .mount(&server)
+        .await;
+
+    let error = graph
+        .add_attachment("L1", "T1", "a.txt", "text/plain", b"hello")
+        .await
+        .expect_err("unknown");
+
+    assert!(matches!(error, GraphError::OutcomeUnknown(_)), "{error:?}");
+    assert_eq!(requests(&server).await, 1, "never resent");
+}

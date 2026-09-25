@@ -182,7 +182,8 @@ fn lost(tag: Tag, why: &str) -> Msg {
         | Tag::Sync
         | Tag::Diagnostics(_)
         | Tag::Categories
-        | Tag::ListHint => why.to_owned(),
+        | Tag::ListHint
+        | Tag::Download => why.to_owned(),
     };
     Msg::Response {
         tag,

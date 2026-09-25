@@ -1,0 +1,95 @@
+---
+source: tests/schema_cli.rs
+expression: pretty
+---
+{
+  "input": {
+    "additionalProperties": false,
+    "properties": {
+      "attachments": {
+        "description": "The attachments: each its number from 1, its ID, or its exact name [default: all of them]",
+        "items": {
+          "type": "string"
+        },
+        "type": "array",
+        "x-cli": "<ATTACHMENT>"
+      },
+      "force": {
+        "description": "Replace a file of the same name instead of numbering the new one",
+        "type": "boolean",
+        "x-cli": "--force"
+      },
+      "list": {
+        "description": "Look for the task in this list (exact name or ID), which also lets TASK be an exact title",
+        "type": "string",
+        "x-cli": "--list"
+      },
+      "out": {
+        "description": "The directory to save into [default: the current directory]",
+        "type": "string",
+        "x-cli": "--out"
+      },
+      "task": {
+        "description": "The task's ID from `tasks list`, or its exact title when --list is given",
+        "type": "string",
+        "x-cli": "<TASK>"
+      }
+    },
+    "required": [
+      "task"
+    ],
+    "type": "object"
+  },
+  "output": {
+    "properties": {
+      "files": {
+        "description": "Each file written, in order",
+        "items": {
+          "properties": {
+            "bytes": {
+              "type": "integer"
+            },
+            "id": {
+              "description": "The attachment's ID",
+              "type": "string"
+            },
+            "name": {
+              "description": "Its name in Microsoft To Do",
+              "type": "string"
+            },
+            "path": {
+              "description": "Where it was written: a safe name in the directory, numbered if the name was taken",
+              "type": "string"
+            },
+            "sha256": {
+              "description": "The bytes' sha256, as hex",
+              "type": "string"
+            }
+          },
+          "required": [
+            "id",
+            "name",
+            "path",
+            "bytes",
+            "sha256"
+          ],
+          "type": "object"
+        },
+        "type": "array"
+      },
+      "schema_version": {
+        "const": 2
+      },
+      "task_id": {
+        "description": "The task's local ID",
+        "type": "string"
+      }
+    },
+    "required": [
+      "schema_version",
+      "task_id",
+      "files"
+    ],
+    "type": "object"
+  }
+}

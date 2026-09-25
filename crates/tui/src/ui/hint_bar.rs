@@ -120,6 +120,13 @@ pub fn draw(frame: &mut Frame, area: Rect, app: &App) {
             spans.push(Span::styled("Move ", theme.text_dim));
             Line::from(spans)
         }
+        Mode::Attaching { .. } => {
+            let mut spans = vec![Span::styled(" Attach the file at: ", theme.accent)];
+            spans.extend(hint_spans(app.context()));
+            spans.push(key(&format!(" {} ", glyphs.left_right)));
+            spans.push(Span::styled("Move ", theme.text_dim));
+            Line::from(spans)
+        }
         Mode::ConfirmDelete { what, .. } | Mode::ConfirmDeleteChild { what, .. } => {
             let mut spans = vec![Span::styled(
                 format!(" Delete {what}? "),

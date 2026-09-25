@@ -49,6 +49,9 @@ pub(crate) struct ChildWrite {
     /// leaves out, not changed by it.
     pub carried: &'static [&'static str],
     pub action: TaskAction,
+    /// For an attachment's create: the file it's read from when sent
+    /// (`crate::attachments`).
+    pub file: Option<Value>,
 }
 
 impl ChildWrite {
@@ -60,6 +63,7 @@ impl ChildWrite {
             body,
             carried: &[],
             action,
+            file: None,
         }
     }
 
@@ -71,6 +75,7 @@ impl ChildWrite {
             body,
             carried: &[],
             action,
+            file: None,
         }
     }
 
@@ -82,17 +87,22 @@ impl ChildWrite {
             body: json!({}),
             carried: &[],
             action,
+            file: None,
         }
     }
 
-    fn payload(&self) -> Value {
-        child_payload(
+    pub fn payload(&self) -> Value {
+        let mut payload = child_payload(
             self.collection,
             self.verb,
             &self.id,
             self.body.clone(),
             self.carried,
-        )
+        );
+        if let Some(file) = &self.file {
+            payload["file"] = file.clone();
+        }
+        payload
     }
 
     pub fn into_op(self, op_id: String, row: &ms_todo_store::TaskRow) -> NewOp {
@@ -115,20 +125,35 @@ pub(crate) async fn change(
     dry_run: bool,
     op_id: String,
 ) -> Result<ResponseData, ErrorPayload> {
+    let writes = |raw: &Entity| plan(raw, change);
+    change_children(state, targets, "steps and links", dry_run, op_id, writes).await
+}
+
+/// Resolve the one task `targets` names, plan its child writes with
+/// `plan`, then answer the plan for a dry run or queue them. `what`
+/// names the children, for the errors.
+pub(crate) async fn change_children(
+    state: &State,
+    targets: &Targets<'_>,
+    what: &str,
+    dry_run: bool,
+    op_id: String,
+    plan: impl FnOnce(&Entity) -> Result<(TaskAction, Vec<ChildWrite>), ErrorPayload>,
+) -> Result<ResponseData, ErrorPayload> {
     if targets.select.is_some() {
-        return Err(invalid(
-            "name the task; --overdue and --due-before don't pick a task for steps or links".into(),
-        ));
+        return Err(invalid(format!(
+            "name the task; --overdue and --due-before don't pick a task for {what}"
+        )));
     }
     let target = match resolve(state, targets).await?.as_slice() {
         [one] => one.clone(),
         _ => {
-            return Err(invalid(
-                "steps and links change one task at a time; name one task".into(),
-            ));
+            return Err(invalid(format!(
+                "{what} change one task at a time; name one task"
+            )));
         }
     };
-    let (action, writes) = plan(&target.row.raw, change)?;
+    let (action, writes) = plan(&target.row.raw)?;
     if dry_run {
         return Ok(ResponseData::Plan(Plan {
             action,
@@ -254,15 +279,25 @@ fn step_text(text: &str) -> Result<&str, ErrorPayload> {
 /// The steps `names` name, each once, in the order named; every name must
 /// match, or nothing is changed.
 fn find_steps(raw: &Entity, names: &[String]) -> Result<Vec<Value>, ErrorPayload> {
-    let steps = children(raw, STEPS);
+    find_all(children(raw, STEPS), names, "step", "displayName")
+}
+
+/// The children `names` name among `items` (see [`find`]), each once, in
+/// the order named; every name must match, or it's an error.
+pub(crate) fn find_all(
+    items: &[Value],
+    names: &[String],
+    noun: &str,
+    text_key: &str,
+) -> Result<Vec<Value>, ErrorPayload> {
     if names.is_empty() {
-        return Err(invalid("name at least one step".into()));
+        return Err(invalid(format!("name at least one {noun}")));
     }
     let mut found: Vec<Value> = Vec::new();
     for name in names {
-        let step = find(steps, name, "step", "displayName")?;
-        if !found.iter().any(|seen| seen["id"] == step["id"]) {
-            found.push(step.clone());
+        let item = find(items, name, noun, text_key)?;
+        if !found.iter().any(|seen| seen["id"] == item["id"]) {
+            found.push(item.clone());
         }
     }
     Ok(found)
@@ -408,7 +443,7 @@ fn non_empty(value: Option<String>) -> Option<String> {
         .filter(|value| !value.is_empty())
 }
 
-fn invalid(message: String) -> ErrorPayload {
+pub(crate) fn invalid(message: String) -> ErrorPayload {
     error_payload(ErrorKind::InvalidInput, message)
 }
 

@@ -86,4 +86,6 @@ pub enum Action {
     CopyLink,
     /// Space on a step in the detail pane: check it, or uncheck it.
     ToggleStep,
+    /// `A`: attach a file to the task, by its path.
+    Attach,
 }

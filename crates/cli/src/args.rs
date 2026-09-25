@@ -61,6 +61,12 @@ pub enum Command {
     /// the URLs in the notes
     #[command(subcommand)]
     Links(LinksCommand),
+    /// A task's files: list, attach, download and delete them. An
+    /// attachment is named by its number from 1 (as `attachments list`
+    /// shows them), its ID, or its exact name. Files go by path: the
+    /// daemon reads and writes them
+    #[command(subcommand)]
+    Attachments(AttachmentsCommand),
     /// Find tasks by the words in their title or notes, in every list, best
     /// match first
     Search(SearchArgs),
@@ -244,6 +250,58 @@ pub enum LinksCommand {
         /// Which link, by number from 1 or ID [default: the task's only one]
         #[arg(value_name = "LINK")]
         link: Option<String>,
+        /// Delete without asking
+        #[arg(long)]
+        yes: bool,
+        #[command(flatten)]
+        write: WriteArgs,
+    },
+}
+
+#[derive(Debug, Subcommand)]
+pub enum AttachmentsCommand {
+    /// The task's attachments, numbered from 1, with Microsoft To Do's
+    /// size for each (a little more than the file's bytes)
+    List(LinkArgs),
+    /// Attach files to the task, up to 25 MB each. The daemon reads each
+    /// file when it sends it, and refuses one that changed after this
+    /// command
+    Add {
+        #[command(flatten)]
+        task: LinkArgs,
+        /// The files; several attach several, in order
+        #[arg(required = true, value_name = "FILE")]
+        files: Vec<std::path::PathBuf>,
+        #[command(flatten)]
+        write: WriteArgs,
+    },
+    /// Save the task's attachments into a directory: every one, or those
+    /// named. A file there is never replaced unless --force: the new one
+    /// gets a number, as `name (1).pdf`
+    Download {
+        #[command(flatten)]
+        task: LinkArgs,
+        /// The attachments: each its number from 1, its ID, or its exact
+        /// name [default: all of them]
+        #[arg(value_name = "ATTACHMENT")]
+        attachments: Vec<String>,
+        /// The directory to save into [default: the current directory]
+        #[arg(long, value_name = "DIR")]
+        out: Option<std::path::PathBuf>,
+        /// Replace a file of the same name instead of numbering the new one
+        #[arg(long)]
+        force: bool,
+    },
+    /// Delete attachments. Asks first in a terminal; anywhere else it
+    /// needs --yes. For a week, `undo` attaches one again from a copy
+    /// ms-todo keeps
+    Delete {
+        #[command(flatten)]
+        task: LinkArgs,
+        /// The attachments: each its number from 1, its ID, or its exact
+        /// name
+        #[arg(required = true, value_name = "ATTACHMENT")]
+        attachments: Vec<String>,
         /// Delete without asking
         #[arg(long)]
         yes: bool,

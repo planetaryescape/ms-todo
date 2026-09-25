@@ -117,6 +117,7 @@ pub(crate) async fn serve(paths: Paths) -> Result<(), Fatal> {
         settle_unfinished(&state).await;
         // Before anything is sent, so nothing new is mistaken for left over.
         outbox::recover(&state).await;
+        crate::attachments::kept::sweep(&state.kept_dir).await;
         eprintln!(
             "ms-todo daemon {} (pid {}) listening on {}",
             env!("CARGO_PKG_VERSION"),
@@ -177,6 +178,7 @@ async fn build_state(paths: &Paths) -> Result<State, Fatal> {
         instance: paths.instance.label().to_owned(),
         started_at: chrono::Utc::now().timestamp(),
         moves_dir: paths.data_dir.join("moves"),
+        kept_dir: paths.data_dir.join("attachments-kept"),
         suggest: crate::suggest::Suggester::load(&paths.config_file),
         my_day: crate::my_day::Config::load(&paths.config_file),
     })

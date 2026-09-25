@@ -25,6 +25,10 @@ pub enum DetailRow {
     Step(usize),
     /// The task's one link, or where one is added.
     Link,
+    /// The Attachments heading: where a file is attached.
+    Attachments,
+    /// The attachment at this index.
+    Attachment(usize),
 }
 
 impl Default for DetailRow {
@@ -44,12 +48,14 @@ impl DetailRow {
         rows.push(Self::Steps);
         rows.extend((0..task.steps.len()).map(Self::Step));
         rows.push(Self::Link);
+        rows.push(Self::Attachments);
+        rows.extend((0..task.attachments.len()).map(Self::Attachment));
         rows.push(Self::Field(Field::Notes));
         rows
     }
 
-    /// This row on `task`: a step past its last is its last, or the
-    /// heading when it has none.
+    /// This row on `task`: a step or attachment past its last is its
+    /// last, or the heading when it has none.
     pub fn on(self, task: &Task) -> Self {
         match self {
             Self::Step(at) if at >= task.steps.len() => task
@@ -57,13 +63,21 @@ impl DetailRow {
                 .len()
                 .checked_sub(1)
                 .map_or(Self::Steps, Self::Step),
+            Self::Attachment(at) if at >= task.attachments.len() => task
+                .attachments
+                .len()
+                .checked_sub(1)
+                .map_or(Self::Attachments, Self::Attachment),
             row => row,
         }
     }
 
-    /// Whether this row is the steps' or the link's.
+    /// Whether this row is the steps', the link's or the attachments'.
     pub fn is_child(self) -> bool {
-        matches!(self, Self::Steps | Self::Step(_) | Self::Link)
+        matches!(
+            self,
+            Self::Steps | Self::Step(_) | Self::Link | Self::Attachments | Self::Attachment(_)
+        )
     }
 }
 
@@ -123,19 +137,33 @@ impl App {
     /// A key on a step or the link row. `None` when it's not a step or
     /// link action, which the task's own handling then takes.
     pub(super) fn child_action(&mut self, action: Action) -> Option<Vec<Effect>> {
+        let row = self.detail_row_now()?;
         let is_child_key = matches!(
             action,
             Action::ToggleStep | Action::Add | Action::Edit | Action::EditHere | Action::Delete
-        );
+        ) || (action == Action::OpenLink
+            && matches!(row, DetailRow::Attachment(_)));
         if !is_child_key {
             return None;
         }
-        let row = self.detail_row_now()?;
         if action != Action::Add && self.refuse_if_stale() {
             return Some(Vec::new());
         }
         let task = self.selected()?.clone();
         let effects = match (action, row) {
+            (Action::Add | Action::Edit | Action::EditHere, DetailRow::Attachments)
+            | (Action::Add, DetailRow::Attachment(_)) => {
+                self.start_attach(&task);
+                Vec::new()
+            }
+            // `e`, like Enter, does what the row is for: save and open it.
+            (Action::Edit | Action::EditHere | Action::OpenLink, DetailRow::Attachment(at)) => {
+                self.download_attachment(&task, at)
+            }
+            (Action::Delete, DetailRow::Attachment(at)) => {
+                self.confirm_attachment_delete(&task, at);
+                Vec::new()
+            }
             (Action::ToggleStep, DetailRow::Step(at)) => {
                 let step = &task.steps[at];
                 let change = TaskChange::CheckSteps {

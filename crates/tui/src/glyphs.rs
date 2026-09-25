@@ -27,6 +27,8 @@ pub struct Glyphs {
     pub left_right: &'static str,
     /// Marks a task `v` selected.
     pub selected: &'static str,
+    /// A task with attachments, and each attachment in the detail pane.
+    pub attachment: &'static str,
 }
 
 pub const UNICODE: Glyphs = Glyphs {
@@ -50,6 +52,7 @@ pub const UNICODE: Glyphs = Glyphs {
     cursor: "\u{2588}",              // █
     left_right: "\u{2190}/\u{2192}", // ←/→
     selected: "\u{25c6}",            // ◆
+    attachment: "\u{2398}",          // ⎘
 };
 
 pub const ASCII: Glyphs = Glyphs {
@@ -73,4 +76,5 @@ pub const ASCII: Glyphs = Glyphs {
     cursor: "_",
     left_right: "Left/Right",
     selected: "*",
+    attachment: "&",
 };

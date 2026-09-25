@@ -14,6 +14,7 @@
 
 mod action;
 mod app;
+pub mod downloads;
 mod glyphs;
 mod ipc;
 mod keybindings;
@@ -32,6 +33,7 @@ use futures_util::StreamExt;
 use futures_util::stream::BoxStream;
 use tokio::sync::{mpsc, oneshot};
 
+pub use app::attachments::Places;
 pub use runner::RunError;
 
 pub struct Options {
@@ -41,6 +43,8 @@ pub struct Options {
     pub ascii: bool,
     /// The theme, from [`theme::load`].
     pub theme: theme::ThemeChoice,
+    /// Where attachments are saved, from [`downloads::places`].
+    pub places: Places,
     /// Measure the start and a scripted run of keys, then quit and print
     /// the numbers.
     pub bench_startup: bool,
@@ -78,7 +82,9 @@ pub async fn run(options: Options) -> Result<Option<String>, TuiError> {
     } else {
         glyphs::UNICODE
     };
-    let app = app::App::new(glyphs, app::Clock::now()).with_theme(options.theme);
+    let app = app::App::new(glyphs, app::Clock::now())
+        .with_theme(options.theme)
+        .with_places(options.places);
     // The date rules' regexes compile on first use, about 3 ms: do it
     // now, off the render path, not in the first frame of a date editor.
     let now = app.parse_context();

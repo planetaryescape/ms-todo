@@ -11,12 +11,12 @@ use serde_json::Value;
 use sqlx::AssertSqlSafe;
 use sqlx::{FromRow, SqliteConnection};
 
-use crate::children::{apply_child, rename_child};
+use crate::children::{ATTACHMENTS, apply_child, rename_child};
 use crate::graph_columns::{etag, text};
 use crate::list_extension::{merge_extension, restore_list_extension};
 use crate::moves::set_list;
 use crate::pool::next_local_rev;
-use crate::tasks::{TaskRecord, WriteTask, task_record_columns, write_task};
+use crate::tasks::{TaskRecord, WriteTask, carry_attachments, task_record_columns, write_task};
 use crate::{Entity, Store, StoreError, TaskRow, now, parse_object, parse_optional, to_json};
 
 /// How the note of an operation that [`OutboxRow::was_skipped`] starts.
@@ -715,7 +715,8 @@ impl Store {
         Ok(())
     }
 
-    /// Graph created child operation `op_id`'s step or link as `created`:
+    /// Graph created child operation `op_id`'s step, link or attachment
+    /// as `created`:
     /// its placeholder ID becomes Graph's, in the task and in every
     /// operation that names it (so an undo, or a check queued before the
     /// answer, reaches it), and the operation is `done`, in one
@@ -728,7 +729,7 @@ impl Store {
         task: Option<(Entity, Option<Option<Value>>)>,
     ) -> Result<(), StoreError> {
         let created_id = text(created, "id").ok_or_else(|| {
-            StoreError::Invalid("Graph returned a step or link with no id".into())
+            StoreError::Invalid("Graph returned a step, link or attachment with no id".into())
         })?;
         let mut tx = self.writer().begin().await?;
         let op = op_in(&mut tx, op_id).await?;
@@ -763,15 +764,18 @@ impl Store {
         .bind(&op.entity_local_id)
         .execute(&mut *tx)
         .await?;
-        match task {
-            Some((raw, extension)) => record_in(&mut tx, op_id, &raw, extension).await?,
-            None => {
-                let rev = next_local_rev(&mut tx).await?;
-                let mut raw =
-                    parse_object(&row_identity(&mut tx, &op.entity_local_id).await?.raw_json)?;
-                rename_child(&mut raw, &collection, &placeholder, created);
-                replace_row(&mut tx, &op.entity_local_id, &raw, rev).await?;
-            }
+        // Graph's JSON read back has a new step or link inline, but never
+        // the attachments: those are renamed in the cached task, which the
+        // write of Graph's JSON then carries.
+        if task.is_none() || collection == ATTACHMENTS {
+            let rev = next_local_rev(&mut tx).await?;
+            let mut raw =
+                parse_object(&row_identity(&mut tx, &op.entity_local_id).await?.raw_json)?;
+            rename_child(&mut raw, &collection, &placeholder, created);
+            replace_row(&mut tx, &op.entity_local_id, &raw, rev).await?;
+        }
+        if let Some((raw, extension)) = task {
+            record_in(&mut tx, op_id, &raw, extension).await?;
         }
         finish(&mut tx, op_id, OpState::Done, None).await?;
         tx.commit().await?;
@@ -1217,8 +1221,10 @@ async fn write_attributed(
     rev: i64,
 ) -> Result<(), StoreError> {
     let local_id = &op.entity_local_id;
-    merge_duplicate(tx, task.graph_id, local_id).await?;
     let mut raw = task.raw;
+    // Before the merge, which may drop the row that holds them.
+    carry_attachments(tx, task.graph_id, &mut raw).await?;
+    merge_duplicate(tx, task.graph_id, local_id).await?;
     let mut deleted = false;
     let mut extension: Option<Entity> = task
         .extension_json

@@ -35,6 +35,8 @@ pub(crate) struct State {
     pub started_at: i64,
     /// Where a move keeps its attachments' bytes until it's settled.
     pub moves_dir: std::path::PathBuf,
+    /// Where a deleted attachment's bytes are kept for undo (D-056).
+    pub kept_dir: std::path::PathBuf,
     /// List suggestions, when `[suggest]` turns them on.
     pub suggest: crate::suggest::Suggester,
     /// `[my_day]`: when a day's My Day ends.
@@ -121,6 +123,23 @@ pub(crate) async fn handle(state: &State, request: Request) -> Response {
         Request::MyDayRollover { dry_run, op_id } => {
             let op_id = op_id.unwrap_or_else(new_op_id);
             crate::my_day::rollover(state, dry_run, op_id, crate::my_day::Origin::User).await
+        }
+        Request::DownloadAttachments {
+            task,
+            list,
+            attachments,
+            out_dir,
+            force,
+        } => {
+            crate::attachments::download(
+                state,
+                &task,
+                list.as_deref(),
+                &attachments,
+                &out_dir,
+                force,
+            )
+            .await
         }
         Request::Bearer => match state.auth.valid_token().await {
             Ok(token) => Ok(ResponseData::Bearer {

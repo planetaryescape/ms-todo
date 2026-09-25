@@ -38,8 +38,11 @@ use serde_json::{Map, Value};
 /// and links (rung 8a): `TaskChange::AddSteps`, `EditStep`, `CheckSteps`,
 /// `DeleteSteps`, `AddLink`, `EditLink` and `DeleteLink`, and their
 /// `TaskAction`s, so a client restarts an older daemon rather than have
-/// them refused as unknown.
-pub const PROTOCOL_VERSION: u32 = 13;
+/// them refused as unknown. 14: attachments (rung 8b):
+/// `TaskChange::AddAttachments` and `DeleteAttachments`, their
+/// `TaskAction`s, and `DownloadAttachments`, so a client restarts an older
+/// daemon rather than have them refused as unknown.
+pub const PROTOCOL_VERSION: u32 = 14;
 
 /// The socket buffer both ends ask for: room for a large list's `Seed` in
 /// one write. macOS gives a Unix socket 8 KiB, so a 350 KiB seed crossed
@@ -278,6 +281,23 @@ pub enum Request {
         #[serde(default)]
         op_id: Option<String>,
     },
+    /// Download attachments of the one task named (as `GetTasks` names
+    /// it) into the directory `out_dir`, an absolute path: each named
+    /// attachment (its number from 1, ID or exact name), or every one
+    /// when `attachments` is empty. The daemon writes the files; no bytes
+    /// cross the socket. Each file gets a safe name in `out_dir`, made
+    /// unique (`name (1).pdf`) unless `force` lets it replace a file there.
+    /// Answered `Downloaded`, out of order, like `SuggestList`.
+    DownloadAttachments {
+        task: String,
+        #[serde(default)]
+        list: Option<String>,
+        #[serde(default)]
+        attachments: Vec<String>,
+        out_dir: String,
+        #[serde(default)]
+        force: bool,
+    },
     /// A valid access token, for `auth bearer --reveal-secret`.
     Bearer,
     /// Stop the daemon. It answers `Ack`, then exits.
@@ -303,7 +323,10 @@ impl Request {
     /// Whether the daemon may answer this after requests sent later on
     /// the same connection: slow, read-only, and needing nothing in order.
     pub fn answered_out_of_order(&self) -> bool {
-        matches!(self, Self::SuggestList { .. })
+        matches!(
+            self,
+            Self::SuggestList { .. } | Self::DownloadAttachments { .. }
+        )
     }
 }
 
@@ -366,9 +389,30 @@ pub enum ResponseData {
         suggestion: Option<ListSuggestion>,
     },
     MyDay(MyDay),
+    /// The files `DownloadAttachments` wrote, in order.
+    Downloaded {
+        /// The task's local ID.
+        task_id: String,
+        files: Vec<DownloadedFile>,
+    },
     Ack,
     #[serde(other)]
     Unknown,
+}
+
+/// An attachment written to disk.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct DownloadedFile {
+    /// The attachment's ID.
+    pub id: String,
+    /// Its name, as Microsoft To Do has it.
+    pub name: String,
+    /// Where it was written: an absolute path.
+    pub path: String,
+    /// How many bytes were written.
+    pub bytes: u64,
+    /// The bytes' sha256, as hex.
+    pub sha256: String,
 }
 
 /// A list a task might belong in, and how sure the provider is.
@@ -849,6 +893,16 @@ pub enum TaskChange {
         #[serde(default)]
         link: Option<String>,
     },
+    /// Attach files to the one task named, in order. Each is an absolute
+    /// path the daemon reads when it sends it: no bytes cross the socket.
+    AddAttachments {
+        files: Vec<String>,
+    },
+    /// Delete attachments of the one task named: each by its number from
+    /// 1, its ID or its exact name.
+    DeleteAttachments {
+        attachments: Vec<String>,
+    },
     #[serde(other)]
     Unknown,
 }
@@ -957,6 +1011,8 @@ pub enum TaskAction {
     LinkAdd,
     LinkEdit,
     LinkDelete,
+    AttachmentAdd,
+    AttachmentDelete,
     #[serde(other)]
     Unknown,
 }

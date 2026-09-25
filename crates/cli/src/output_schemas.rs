@@ -68,9 +68,31 @@ pub fn output_schema(command: &str) -> Option<Value> {
         "steps list" => collection(step()),
         "links list" => collection(linked_resource()),
         "steps add" | "steps edit" | "steps check" | "steps uncheck" | "steps delete"
-        | "links add" | "links edit" | "links delete" => {
+        | "links add" | "links edit" | "links delete" | "attachments add"
+        | "attachments delete" => {
             json!({ "oneOf": [applied(), plan()] })
         }
+        "attachments list" => collection(attachment()),
+        "attachments download" => versioned(
+            json!({
+                "task_id": { "type": "string", "description": "The task's local ID" },
+                "files": {
+                    "type": "array",
+                    "description": "Each file written, in order",
+                    "items": object(
+                        json!({
+                            "id": { "type": "string", "description": "The attachment's ID" },
+                            "name": { "type": "string", "description": "Its name in Microsoft To Do" },
+                            "path": { "type": "string", "description": "Where it was written: a safe name in the directory, numbered if the name was taken" },
+                            "bytes": { "type": "integer" },
+                            "sha256": { "type": "string", "description": "The bytes' sha256, as hex" }
+                        }),
+                        &["id", "name", "path", "bytes", "sha256"],
+                    )
+                }
+            }),
+            &["task_id", "files"],
+        ),
         "tasks parse" => parsed_task(),
         "tasks suggest-list" => versioned(
             json!({
@@ -359,6 +381,11 @@ fn task_entity() -> Value {
     properties["recurrence"] = json!({ "type": "object" });
     properties["createdDateTime"] = json!({ "type": "string" });
     properties["lastModifiedDateTime"] = json!({ "type": "string" });
+    properties["attachments"] = json!({
+        "type": "array",
+        "description": "Its attachments' metadata, as `attachments list` gives it without `index`; absent until a sync has fetched it",
+        "items": { "type": "object" }
+    });
     let mut schema = object(
         properties,
         &["id", "graph_id", "sync_state", "list_id", "title"],
@@ -451,7 +478,7 @@ fn applied() -> Value {
     versioned(
         json!({
             "op_id": { "type": "string", "description": "What `undo` and `outbox list` know the change by" },
-            "action": { "enum": ["add", "complete", "reopen", "edit", "delete", "undo", "move", "my_day_add", "my_day_remove", "my_day_rollover", "step_add", "step_edit", "step_check", "step_uncheck", "step_delete", "link_add", "link_edit", "link_delete"] },
+            "action": { "enum": ["add", "complete", "reopen", "edit", "delete", "undo", "move", "my_day_add", "my_day_remove", "my_day_rollover", "step_add", "step_edit", "step_check", "step_uncheck", "step_delete", "link_add", "link_edit", "link_delete", "attachment_add", "attachment_delete"] },
             "items": {
                 "type": "array",
                 "items": task_entity(),
@@ -579,6 +606,21 @@ fn step() -> Value {
     )
 }
 
+/// A task's attachment: Graph's metadata, numbered.
+fn attachment() -> Value {
+    object(
+        json!({
+            "index": { "type": "integer", "description": "From 1, in Graph's order: what an ATTACHMENT argument takes" },
+            "id": { "type": "string", "description": "Graph's ID; `local-…` until Microsoft To Do has the file" },
+            "name": { "type": "string" },
+            "contentType": { "type": "string" },
+            "size": { "type": "integer", "description": "Microsoft To Do's size, a few hundred bytes more than the file's; the file's own byte count until it's uploaded" },
+            "lastModifiedDateTime": timestamp("")
+        }),
+        &["index", "id", "name"],
+    )
+}
+
 /// A task's link: Graph's linked resource, numbered.
 fn linked_resource() -> Value {
     object(
@@ -598,7 +640,7 @@ fn plan() -> Value {
     versioned(
         json!({
             "dry_run": { "const": true },
-            "action": { "enum": ["add", "complete", "reopen", "edit", "delete", "move", "my_day_add", "my_day_remove", "my_day_rollover", "step_add", "step_edit", "step_check", "step_uncheck", "step_delete", "link_add", "link_edit", "link_delete"] },
+            "action": { "enum": ["add", "complete", "reopen", "edit", "delete", "move", "my_day_add", "my_day_remove", "my_day_rollover", "step_add", "step_edit", "step_check", "step_uncheck", "step_delete", "link_add", "link_edit", "link_delete", "attachment_add", "attachment_delete"] },
             "list": candidate(),
             "targets": {
                 "type": "array",
@@ -611,7 +653,7 @@ fn plan() -> Value {
                     &["id", "title", "list_id"],
                 )
             },
-            "changes": { "description": "The Graph fields each target gets; null for delete. For My Day: myDay (the day, or null), and the tasks whose due date is set (due_today) or cleared (due_cleared). For steps and links: each write, as { collection, verb (create, update or delete), id, body, carried }" }
+            "changes": { "description": "The Graph fields each target gets; null for delete. For My Day: myDay (the day, or null), and the tasks whose due date is set (due_today) or cleared (due_cleared). For steps, links and attachments: each write, as { collection, verb (create, update or delete), id, body, carried }, and for an attachment's create the file it's read from, as file: { path, bytes, modified }" }
         }),
         &["dry_run", "action", "changes"],
     )

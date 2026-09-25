@@ -200,14 +200,14 @@ async fn sync_list(context: &PassContext, list: &ListRow) -> Result<u64, ErrorPa
     }
     let (removed, tasks): (Vec<Entity>, Vec<Entity>) =
         round.items.into_iter().partition(is_removed);
-    let etags: Vec<(String, Option<String>)> = tasks
+    let etags: Vec<(String, Option<String>, bool)> = tasks
         .iter()
         .filter_map(|task| {
             let etag = task
                 .get("@odata.etag")
                 .and_then(|etag| etag.as_str())
                 .map(str::to_owned);
-            Some((graph_id(task)?, etag))
+            Some((graph_id(task)?, etag, has_attachments(task)))
         })
         .collect();
     let needed = store.needing_hydration(&etags).await.map_err(store_error)?;
@@ -341,6 +341,10 @@ async fn list_not_found(
 
 fn is_removed(item: &Entity) -> bool {
     item.contains_key("@removed")
+}
+
+fn has_attachments(item: &Entity) -> bool {
+    item.get("hasAttachments").and_then(|flag| flag.as_bool()) == Some(true)
 }
 
 fn graph_id(item: &Entity) -> Option<String> {

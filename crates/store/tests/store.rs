@@ -379,7 +379,7 @@ async fn a_failed_fetch_applies_what_came_back_but_does_not_checkpoint() {
 async fn a_task_needs_its_extension_fetched_until_it_is_fetched_at_its_etag() {
     let (_dir, store) = open().await;
     let groceries = with_list(&store).await;
-    let wanted = [("T1".to_owned(), Some("e1".to_owned()))];
+    let wanted = [("T1".to_owned(), Some("e1".to_owned()), false)];
     assert!(
         store
             .needing_hydration(&wanted)
@@ -413,7 +413,7 @@ async fn a_task_needs_its_extension_fetched_until_it_is_fetched_at_its_etag() {
         .apply_tasks(pass(&groceries, rev, vec![seen(task("T1", "Milk", "e2"))]))
         .await
         .expect("apply");
-    let moved = [("T1".to_owned(), Some("e2".to_owned()))];
+    let moved = [("T1".to_owned(), Some("e2".to_owned()), false)];
     assert!(
         store
             .needing_hydration(&moved)
@@ -664,4 +664,111 @@ async fn migration_0002_applies_on_top_of_a_rung_3a_database() {
         !scope.is_delta(),
         "a rung 3a scope starts in enumeration mode"
     );
+}
+
+#[tokio::test]
+async fn the_attachments_list_survives_graphs_json_until_it_is_fetched_again() {
+    let (_dir, store) = open().await;
+    let groceries = with_list(&store).await;
+    let rev = store.local_rev().await.expect("rev");
+    let mut with_file = task("T1", "Milk", "e1");
+    with_file.insert("hasAttachments".into(), json!(true));
+    // A task with attachments and no list yet needs one fetched.
+    let wanted = [("T1".to_owned(), Some("e1".to_owned()), true)];
+    assert!(
+        store
+            .needing_hydration(&wanted)
+            .await
+            .expect("read")
+            .contains("T1")
+    );
+
+    let mut fetched = with_file.clone();
+    fetched.insert(
+        "attachments".into(),
+        json!([{ "id": "A1", "name": "a.pdf" }]),
+    );
+    store
+        .apply_tasks(pass(
+            &groceries,
+            rev,
+            vec![SeenTask {
+                raw: fetched,
+                hydration: Hydration::Fetched(None),
+            }],
+        ))
+        .await
+        .expect("apply");
+    assert!(
+        store
+            .needing_hydration(&wanted)
+            .await
+            .expect("read")
+            .is_empty()
+    );
+
+    // Graph's JSON, as a whole read sends it, never has the list: the
+    // cache keeps it, and an unchanged task isn't a change.
+    let changed = store
+        .apply_tasks(pass(&groceries, rev, vec![seen(with_file.clone())]))
+        .await
+        .expect("apply");
+    assert!(changed.is_empty(), "{changed:?}");
+    let row = store.task("T1").await.expect("read").expect("row");
+    assert_eq!(
+        row.raw["attachments"],
+        json!([{ "id": "A1", "name": "a.pdf" }])
+    );
+}
+
+#[tokio::test]
+async fn migration_0007_reads_whole_the_lists_with_attachments() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let path = dir.path().join("ms-todo.db");
+    let before = dir.path().join("migrations");
+    std::fs::create_dir(&before).expect("mkdir");
+    for entry in std::fs::read_dir(concat!(env!("CARGO_MANIFEST_DIR"), "/migrations"))
+        .expect("migrations")
+        .filter_map(Result::ok)
+    {
+        if !entry.file_name().to_string_lossy().starts_with("0007") {
+            std::fs::copy(entry.path(), before.join(entry.file_name())).expect("copy");
+        }
+    }
+    {
+        let options = sqlx::sqlite::SqliteConnectOptions::new()
+            .filename(&path)
+            .create_if_missing(true);
+        let pool = sqlx::SqlitePool::connect_with(options)
+            .await
+            .expect("connect");
+        sqlx::migrate::Migrator::new(before.as_path())
+            .await
+            .expect("migrator")
+            .run(&pool)
+            .await
+            .expect("0001-0006");
+        for statement in [
+            "INSERT INTO lists (local_id, graph_id, display_name, raw_json) VALUES \
+             ('l1', 'L1', 'Files', '{}'), ('l2', 'L2', 'Plain', '{}')",
+            "INSERT INTO tasks (local_id, graph_id, list_local_id, title, status, importance, \
+             has_attachments, raw_json) VALUES \
+             ('t1', 'T1', 'l1', 'a', 'notStarted', 'normal', 1, '{}'), \
+             ('t2', 'T2', 'l2', 'b', 'notStarted', 'normal', 0, '{}')",
+            "INSERT INTO sync_state (scope, generation, delta_link) VALUES \
+             ('tasks:L1', 3, 'link-1'), ('tasks:L2', 3, 'link-2')",
+        ] {
+            sqlx::query(statement)
+                .execute(&pool)
+                .await
+                .expect("a rung 8a cache");
+        }
+        pool.close().await;
+    }
+
+    let store = Store::open(&path).await.expect("open applies 0007");
+    let files = store.scope("tasks:L1").await.expect("read").expect("row");
+    let plain = store.scope("tasks:L2").await.expect("read").expect("row");
+    assert!(!files.is_delta(), "read whole, to fetch the attachments");
+    assert!(plain.is_delta(), "left alone");
 }

@@ -38,6 +38,7 @@ pub(crate) use copy::{comparable, differences};
 use progress::{AttachmentStep, Source};
 pub(crate) use progress::{Progress, Stage, StepState, from_list};
 pub(crate) use spool::remove as remove_spool;
+pub(crate) use spool::{blocking, sha256_hex};
 
 use super::send::{Failure, classify};
 use crate::entities::{EXTENSION_NAME, split_extension};
@@ -465,7 +466,7 @@ impl Job<'_> {
                 )
                 .await;
             let failure = match sent {
-                Ok(()) => {
+                Ok(_) => {
                     progress.attachments[index].state = StepState::Done;
                     progress.in_doubt = false;
                     progress.needs_user = false;

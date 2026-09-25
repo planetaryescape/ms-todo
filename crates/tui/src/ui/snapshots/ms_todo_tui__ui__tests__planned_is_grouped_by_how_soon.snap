@@ -14,7 +14,7 @@ expression: render(&app)
 "│                      ││○ Book train                      Sun 27          ││Importance normal               │"
 "│                      ││  Later                                           ││Steps      none                 │"
 "│                      ││○ Pay rent                         Oct 1          ││Link       none                 │"
-"│                      ││                                                  ││Sync       synced               │"
+"│                      ││                                                  ││Files      none                 │"
 "╰──────────────────────╯╰──────────────────────────────────────────────────╯╰────────────────────────────────╯"
 " ● daemon  ·  synced 12s ago  ·  all changes sent                                                             "
 " a Add  x Done  e Edit  d Delete  v Select  u Undo  / Filter  : Palette  r Sync  ? Help  q Quit  o Open link  "

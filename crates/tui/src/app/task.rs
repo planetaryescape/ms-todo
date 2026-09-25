@@ -31,6 +31,23 @@ pub struct Step {
     pub checked: bool,
 }
 
+/// An attachment: Graph's metadata, never the bytes.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Attachment {
+    /// Graph's ID, or `local-…` while it's uploading.
+    pub id: String,
+    pub name: String,
+    /// Microsoft To Do's size, or the file's bytes while it's uploading.
+    pub size: Option<u64>,
+}
+
+impl Attachment {
+    /// Still on its way to Microsoft To Do.
+    pub fn uploading(&self) -> bool {
+        self.id.starts_with(ms_todo_core::LOCAL_CHILD_PREFIX)
+    }
+}
+
 #[derive(Clone, Debug, PartialEq)]
 pub struct Task {
     /// ms-todo's local ID.
@@ -53,6 +70,10 @@ pub struct Task {
     pub link_id: Option<String>,
     /// Graph's `checklistItems`, in its order.
     pub steps: Vec<Step>,
+    /// Its attachments, in Graph's order, once a sync has fetched them.
+    pub attachments: Vec<Attachment>,
+    /// Graph's `hasAttachments`: true before the list itself has synced.
+    pub has_attachments: bool,
     pub categories: Vec<String>,
     pub sync: SyncMarker,
     /// Graph's `completedDateTime`, local, for ordering.
@@ -95,6 +116,23 @@ impl Task {
                 })
             })
             .collect();
+        let attachments: Vec<Attachment> = entity
+            .get("attachments")
+            .and_then(Value::as_array)
+            .into_iter()
+            .flatten()
+            .filter_map(|attachment| {
+                Some(Attachment {
+                    id: attachment.get("id")?.as_str()?.to_owned(),
+                    name: attachment
+                        .get("name")
+                        .and_then(Value::as_str)
+                        .unwrap_or_default()
+                        .to_owned(),
+                    size: attachment.get("size").and_then(Value::as_u64),
+                })
+            })
+            .collect();
         let link_id = entity
             .get("linkedResources")
             .and_then(|links| links.get(0)?.get("id")?.as_str())
@@ -118,6 +156,9 @@ impl Task {
             linked: ms_todo_core::links::linked_resources(entity),
             link_id,
             steps,
+            has_attachments: !attachments.is_empty()
+                || entity.get("hasAttachments").and_then(Value::as_bool) == Some(true),
+            attachments,
             categories: entity
                 .get("categories")
                 .and_then(Value::as_array)

@@ -115,6 +115,9 @@ pub(crate) async fn change_tasks(
         | TaskChange::DeleteLink { .. }) => {
             return crate::task_children::change(state, &targets, change, dry_run, op_id).await;
         }
+        change @ (TaskChange::AddAttachments { .. } | TaskChange::DeleteAttachments { .. }) => {
+            return crate::attachments::change(state, &targets, change, dry_run, op_id).await;
+        }
         TaskChange::Unknown => {
             return Err(error_payload(
                 ms_todo_core::ErrorKind::Unsupported,
@@ -401,6 +404,8 @@ pub(crate) fn action_name(action: TaskAction) -> &'static str {
         TaskAction::LinkAdd => "link_add",
         TaskAction::LinkEdit => "link_edit",
         TaskAction::LinkDelete => "link_delete",
+        TaskAction::AttachmentAdd => "attachment_add",
+        TaskAction::AttachmentDelete => "attachment_delete",
         TaskAction::Undo | TaskAction::Unknown => "change",
     }
 }

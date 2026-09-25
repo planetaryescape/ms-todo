@@ -15,6 +15,9 @@ pub struct ApiError {
     pub message: String,
     /// Graph's `request-id` response header.
     pub request_id: Option<String>,
+    /// Graph's `error.innerError.code`, when it says more than `code`:
+    /// an upload session's `InvalidStart` (S16).
+    pub inner_code: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -27,6 +30,14 @@ struct Detail {
     code: String,
     #[serde(default)]
     message: String,
+    #[serde(default, rename = "innerError")]
+    inner: Option<Inner>,
+}
+
+#[derive(Deserialize)]
+struct Inner {
+    #[serde(default)]
+    code: Option<String>,
 }
 
 /// Longest slice of a non-Graph body kept in the message, so an HTML error
@@ -44,11 +55,16 @@ impl ApiError {
     }
 
     pub(crate) fn parse(status: u16, request_id: Option<String>, body: &str) -> Self {
-        let (code, message) = match serde_json::from_str::<Body>(body) {
-            Ok(parsed) => (parsed.error.code, parsed.error.message),
+        let (code, message, inner_code) = match serde_json::from_str::<Body>(body) {
+            Ok(parsed) => (
+                parsed.error.code,
+                parsed.error.message,
+                parsed.error.inner.and_then(|inner| inner.code),
+            ),
             Err(_) => (
                 "unknown".to_owned(),
                 body.chars().take(RAW_BODY_EXCERPT).collect(),
+                None,
             ),
         };
         Self {
@@ -56,6 +72,7 @@ impl ApiError {
             code,
             message,
             request_id,
+            inner_code,
         }
     }
 }

@@ -15,6 +15,13 @@ expression: pretty
         "items": {
           "description": "A task: every field Microsoft Graph returns, with `id` replaced",
           "properties": {
+            "attachments": {
+              "description": "Its attachments' metadata, as `attachments list` gives it without `index`; absent until a sync has fetched it",
+              "items": {
+                "type": "object"
+              },
+              "type": "array"
+            },
             "body": {
               "type": "object"
             },

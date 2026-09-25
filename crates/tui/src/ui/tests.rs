@@ -793,3 +793,46 @@ fn steps_and_the_link_in_the_row_and_the_detail_pane() {
         .expect("draw");
     insta::assert_snapshot!(format!("{browsing}\n{}", terminal.backend()));
 }
+
+/// A task with files: its row's marker, and the detail pane listing each
+/// with its size, one still uploading, the cursor on one; then a path
+/// being typed to attach another.
+#[test]
+fn attachments_in_the_row_and_the_detail_pane() {
+    use crate::action::Action;
+    use crate::app::steps::DetailRow;
+    let mut app = seeded();
+    let effects = app.update(Msg::Event(ms_todo_protocol::Event::ResyncNeeded));
+    let taxes = task(
+        "t9",
+        "File taxes",
+        json!({
+            "hasAttachments": true,
+            "attachments": [
+                { "id": "A1", "name": "return.pdf", "size": 48_000 },
+                { "id": "A2", "name": "scan.tiff", "size": 9_437_184 },
+                { "id": "local-1", "name": "receipt.jpg", "size": 900 }
+            ]
+        }),
+    );
+    answer_seed(
+        &mut app,
+        &effects[0],
+        seed(Scope::List { id: "home".into() }, vec![taxes]),
+    );
+    app.focus = Pane::Detail;
+    app.detail_row = DetailRow::Attachment(1);
+    let mut terminal = Terminal::new(TestBackend::new(110, 20)).expect("terminal");
+    terminal
+        .draw(|frame| super::draw(frame, &app))
+        .expect("draw");
+    let browsing = terminal.backend().to_string();
+    app.update(Msg::Action(Action::Attach));
+    for ch in "~/invoice.pdf".chars() {
+        app.update(Msg::Char(ch));
+    }
+    terminal
+        .draw(|frame| super::draw(frame, &app))
+        .expect("draw");
+    insta::assert_snapshot!(format!("{browsing}\n{}", terminal.backend()));
+}

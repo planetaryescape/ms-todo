@@ -30,6 +30,9 @@ pub(super) async fn send(
     op: &OutboxRow,
     cached: &Entity,
 ) -> Result<Attempt, Failure> {
+    if super::attachment_write::is_attachment(op) {
+        return super::attachment_write::send(state, list, task, op).await;
+    }
     let collection = op.payload["collection"].as_str().unwrap_or_default();
     let id = op.payload["id"].as_str().unwrap_or_default();
     let body = op.body();
@@ -116,8 +119,8 @@ pub(super) fn unknown_note(op: &OutboxRow) -> Option<String> {
     (ChildVerb::of(&op.payload) == Some(ChildVerb::Create)).then(|| {
         let noun = noun(collection);
         format!(
-            "Microsoft To Do may have added the {noun}, and a {noun} carries nothing to find it \
-             by: check the task, then `ms-todo outbox retry {}` to send it again or \
+            "Microsoft To Do may have added the {noun}, and nothing on it says it's this one: \
+             check the task, then `ms-todo outbox retry {}` to send it again or \
              `ms-todo outbox discard {}` if it's there",
             op.op_id, op.op_id
         )
@@ -135,10 +138,10 @@ fn compared(collection: &str) -> &'static [&'static str] {
 }
 
 fn noun(collection: &str) -> &'static str {
-    if collection == ms_todo_store::LINKS {
-        "link"
-    } else {
-        "step"
+    match collection {
+        ms_todo_store::LINKS => "link",
+        ms_todo_store::ATTACHMENTS => "attachment",
+        _ => "step",
     }
 }
 
@@ -202,7 +205,7 @@ fn with_carried(op: &OutboxRow, body: &Value, now: &Value) -> Value {
 }
 
 /// The task as Graph has it now, and our extension if it said.
-async fn fetch(
+pub(super) async fn fetch(
     state: &State,
     list: &str,
     task: &str,
@@ -213,7 +216,7 @@ async fn fetch(
 
 /// The task read back after a write; if it can't be, the next sync
 /// brings it.
-async fn done(state: &State, list: &str, task: &str) -> Attempt {
+pub(super) async fn done(state: &State, list: &str, task: &str) -> Attempt {
     match fetch(state, list, task).await.ok() {
         Some((task, extension)) => Attempt::Changed(task, extension),
         None => Attempt::Sent,

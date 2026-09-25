@@ -15,6 +15,7 @@ chrono = { workspace = true }
 fs2 = { workspace = true }
 futures-util = { workspace = true }
 iana-time-zone = { workspace = true }
+mime_guess = { workspace = true }
 # TypeSafe, for list suggestions (rung 6b).
 reqwest = { workspace = true }
 serde = { workspace = true }

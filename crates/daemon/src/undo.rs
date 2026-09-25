@@ -175,7 +175,7 @@ pub(crate) async fn undo(
                 }
                 inverse.push(extension_undo(id(inverse.len()), &row, op)?);
             }
-            OpKind::Child => match crate::child_undo::inverse(op, &row.raw) {
+            OpKind::Child => match child_inverse(state, op, &row.raw) {
                 Ok(writes) => {
                     for write in writes {
                         inverse.push(write.into_op(id(inverse.len()), &row));
@@ -219,6 +219,19 @@ pub(crate) async fn undo(
         applied.refused = refused;
     }
     Ok(answer)
+}
+
+/// The writes that undo a step, link or attachment write.
+fn child_inverse(
+    state: &State,
+    op: &OutboxRow,
+    raw: &Entity,
+) -> Result<Vec<crate::task_children::ChildWrite>, String> {
+    if op.payload["collection"] == ms_todo_store::ATTACHMENTS {
+        crate::attachments::inverse(&state.kept_dir, op, raw)
+    } else {
+        crate::child_undo::inverse(op, raw)
+    }
 }
 
 /// Undo a folder change: each list's extension fields it wrote go back to

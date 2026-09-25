@@ -8,6 +8,7 @@ use serde_json::Value;
 use sqlx::AssertSqlSafe;
 use sqlx::{FromRow, SqliteConnection};
 
+use crate::children::ATTACHMENTS;
 use crate::graph_columns::{TaskColumns, etag, text};
 use crate::outbox::{NO_UNRESOLVED_OPS, SYNC_STATE};
 use crate::pool::next_local_rev;
@@ -130,29 +131,36 @@ impl Store {
         record.map(TaskRow::try_from).transpose()
     }
 
-    /// The Graph IDs, among `tasks` (`(graph_id, etag)`), whose extension
-    /// hasn't been fetched at that etag: new tasks and changed ones. Every
-    /// cached task is considered, so a task moved from another list counts
-    /// as seen.
+    /// The Graph IDs, among `tasks` (`(graph_id, etag, hasAttachments)`),
+    /// whose extension and attachments haven't been fetched at that etag:
+    /// new tasks and changed ones, and those with attachments whose list
+    /// the cache doesn't have yet. Every cached task is considered, so a
+    /// task moved from another list counts as seen.
     pub async fn needing_hydration(
         &self,
-        tasks: &[(String, Option<String>)],
+        tasks: &[(String, Option<String>, bool)],
     ) -> Result<HashSet<String>, StoreError> {
         if tasks.is_empty() {
             return Ok(HashSet::new());
         }
-        let hydrated: HashMap<String, Option<String>> =
-            sqlx::query_as("SELECT graph_id, hydrated_etag FROM tasks WHERE graph_id IS NOT NULL")
-                .fetch_all(self.reader())
-                .await?
-                .into_iter()
-                .collect();
+        let hydrated: HashMap<String, (Option<String>, bool)> =
+            sqlx::query_as::<_, (String, Option<String>, bool)>(
+                "SELECT graph_id, hydrated_etag, \
+             has_attachments = 1 AND json_type(raw_json, '$.attachments') IS NOT NULL \
+             FROM tasks WHERE graph_id IS NOT NULL",
+            )
+            .fetch_all(self.reader())
+            .await?
+            .into_iter()
+            .map(|(graph_id, etag, listed)| (graph_id, (etag, listed)))
+            .collect();
         Ok(tasks
             .iter()
-            .filter(|(graph_id, current)| {
-                current.is_none() || hydrated.get(graph_id).cloned().flatten() != *current
+            .filter(|(graph_id, current, has_attachments)| {
+                let (etag, listed) = hydrated.get(graph_id).cloned().unwrap_or_default();
+                current.is_none() || etag != *current || (*has_attachments && !listed)
             })
-            .map(|(graph_id, _)| graph_id.clone())
+            .map(|(graph_id, ..)| graph_id.clone())
             .collect())
     }
 
@@ -234,6 +242,9 @@ impl Store {
             .ok_or_else(|| StoreError::Invalid("Graph returned a task with no id".into()))?;
         let mut tx = self.writer().begin().await?;
         let rev = next_local_rev(&mut tx).await?;
+        let mut raw = raw.clone();
+        carry_attachments(&mut tx, &graph_id, &mut raw).await?;
+        let raw = &raw;
         let existing: Option<(String, Option<String>, Option<String>)> = sqlx::query_as(
             "SELECT local_id, extension_json, hydrated_etag FROM tasks WHERE graph_id = ?",
         )
@@ -292,6 +303,8 @@ struct Cached {
     local_id: String,
     list_local_id: String,
     raw_json: String,
+    /// The attachments list in `raw_json`, as JSON, if it has one.
+    attachments: Option<String>,
     extension_json: Option<String>,
     hydrated_etag: Option<String>,
     deleted_at: Option<i64>,
@@ -308,7 +321,10 @@ async fn upsert_seen(
     task: &SeenTask,
 ) -> Result<Option<String>, StoreError> {
     let existing: Option<Cached> = sqlx::query_as(AssertSqlSafe(format!(
-        "SELECT local_id, list_local_id, raw_json, extension_json, hydrated_etag, deleted_at, \
+        "SELECT local_id, list_local_id, raw_json, \
+         CASE WHEN json_type(raw_json, '$.attachments') = 'array' \
+         THEN json_extract(raw_json, '$.attachments') END AS attachments, \
+         extension_json, hydrated_etag, deleted_at, \
          local_rev, NOT {NO_UNRESOLVED_OPS} AS busy FROM tasks WHERE graph_id = ?"
     )))
     .bind(graph_id)
@@ -320,7 +336,16 @@ async fn upsert_seen(
     {
         return Ok(None);
     }
-    let raw_json = to_json(&task.raw)?;
+    let raw_json = match &existing {
+        Some(cached) if !task.raw.contains_key(ATTACHMENTS) => {
+            // As `write_task` would store it, so an unchanged task compares
+            // equal.
+            let mut raw = task.raw.clone();
+            with_attachments(&mut raw, cached.attachments.as_deref())?;
+            to_json(&raw)?
+        }
+        _ => to_json(&task.raw)?,
+    };
     // `(extension_json, hydrated_etag)` when this pass fetched the extension.
     let fetched = match &task.hydration {
         Hydration::Fetched(extension) => {
@@ -363,6 +388,37 @@ async fn upsert_seen(
     Ok(changed.then_some(local_id))
 }
 
+/// Give Graph's JSON of a task (`raw`, which never has `attachments`)
+/// the attachments list the cache holds for the Graph task `graph_id`,
+/// if it holds one, so changes applied on top of it start from that list.
+pub(crate) async fn carry_attachments(
+    tx: &mut SqliteConnection,
+    graph_id: &str,
+    raw: &mut Entity,
+) -> Result<(), StoreError> {
+    if raw.contains_key(ATTACHMENTS) {
+        return Ok(());
+    }
+    let cached: Option<String> = sqlx::query_scalar(
+        "SELECT json_extract(raw_json, '$.attachments') FROM tasks \
+         WHERE graph_id = ? AND json_type(raw_json, '$.attachments') = 'array'",
+    )
+    .bind(graph_id)
+    .fetch_optional(&mut *tx)
+    .await?;
+    with_attachments(raw, cached.as_deref())
+}
+
+/// `raw` with the attachments list `cached` (JSON), if there is one.
+fn with_attachments(raw: &mut Entity, cached: Option<&str>) -> Result<(), StoreError> {
+    if let Some(cached) = cached {
+        let attachments =
+            serde_json::from_str(cached).map_err(|error| StoreError::Corrupt(error.to_string()))?;
+        raw.insert(ATTACHMENTS.to_owned(), attachments);
+    }
+    Ok(())
+}
+
 pub(crate) struct WriteTask<'a> {
     pub local_id: &'a str,
     /// `None` for a task only ms-todo knows yet: created offline, not sent.
@@ -377,7 +433,9 @@ pub(crate) struct WriteTask<'a> {
     pub local_rev: i64,
 }
 
-/// Insert or overwrite a task row, clearing any tombstone.
+/// Insert or overwrite a task row, clearing any tombstone. A caller
+/// writing Graph's JSON gives it the cached attachments first
+/// ([`carry_attachments`]).
 pub(crate) async fn write_task(
     tx: &mut SqliteConnection,
     task: &WriteTask<'_>,

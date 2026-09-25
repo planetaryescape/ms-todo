@@ -1,8 +1,7 @@
 //! What a move needs from the Graph double (rung 5e, S14), mounted by
 //! [`FakeGraph::accept_moves`]: task creates that take their checklist
 //! items, their one linked resource and our extension inline, task
-//! deletes, and file attachments: listing, downloading, a direct POST and
-//! an upload session whose bytes go to `<uploadUrl>/content`. Every child
+//! deletes, and file attachments (`crate::attachments`). Every child
 //! change moves the task's etag, as S1 found.
 //!
 //! Each mock sits below the default priority, so a test's own mock for the
@@ -11,38 +10,20 @@
 use std::sync::Arc;
 use std::time::Duration;
 
-use base64::Engine;
 use serde_json::{Value, json};
 use wiremock::matchers::{method, path_regex};
 use wiremock::{Mock, Request, ResponseTemplate};
 
+pub use crate::attachments::{Attachment, post_attachment, put_chunk};
+use crate::attachments::{find_task, list_and_task};
 use crate::graph::{Data, FakeGraph, answer_get, lock, next_write, not_found};
 
 /// Below the default (5), so a test's own mock wins.
 const PRIORITY: u8 = 10;
 
-#[derive(Clone, Debug)]
-pub struct Attachment {
-    pub id: String,
-    pub name: String,
-    pub content_type: String,
-    pub bytes: Vec<u8>,
-}
-
-#[derive(Clone, Debug)]
-pub(crate) struct Session {
-    list: String,
-    task: String,
-    name: String,
-    content_type: String,
-    size: usize,
-    received: Vec<u8>,
-}
-
 impl FakeGraph {
     /// Answer every request a move sends, as Graph does.
     pub async fn accept_moves(&self) {
-        let base = self.server.uri();
         let shared = Arc::clone(&self.data);
         Mock::given(method("POST"))
             .and(path_regex(r"^/v1\.0/me/todo/lists/[^/]+/tasks$"))
@@ -59,108 +40,7 @@ impl FakeGraph {
             .mount(&self.server)
             .await;
 
-        let shared = Arc::clone(&self.data);
-        Mock::given(method("GET"))
-            .and(path_regex(
-                r"^/v1\.0/me/todo/lists/[^/]+/tasks/[^/]+/attachments$",
-            ))
-            .respond_with(move |request: &Request| {
-                let data = lock(&shared);
-                let (list, task) = list_and_task(request);
-                if find_task(&data, &list, &task).is_none() {
-                    return not_found();
-                }
-                let listed: Vec<Value> = data
-                    .attachments
-                    .get(&task)
-                    .map(|all| all.iter().map(metadata).collect())
-                    .unwrap_or_default();
-                ResponseTemplate::new(200).set_body_json(json!({ "value": listed }))
-            })
-            .with_priority(PRIORITY)
-            .mount(&self.server)
-            .await;
-
-        let shared = Arc::clone(&self.data);
-        Mock::given(method("GET"))
-            .and(path_regex(
-                r"^/v1\.0/me/todo/lists/[^/]+/tasks/[^/]+/attachments/[^/]+/\$value$",
-            ))
-            .respond_with(move |request: &Request| {
-                let data = lock(&shared);
-                let (_, task) = list_and_task(request);
-                let id = request.url.path().split('/').nth(9).unwrap_or_default();
-                match data
-                    .attachments
-                    .get(&task)
-                    .and_then(|all| all.iter().find(|found| found.id == id))
-                {
-                    Some(found) => ResponseTemplate::new(200).set_body_bytes(found.bytes.clone()),
-                    None => not_found(),
-                }
-            })
-            .with_priority(PRIORITY)
-            .mount(&self.server)
-            .await;
-
-        let shared = Arc::clone(&self.data);
-        Mock::given(method("POST"))
-            .and(path_regex(
-                r"^/v1\.0/me/todo/lists/[^/]+/tasks/[^/]+/attachments$",
-            ))
-            .respond_with(move |request: &Request| post_attachment(&mut lock(&shared), request))
-            .with_priority(PRIORITY)
-            .mount(&self.server)
-            .await;
-
-        let shared = Arc::clone(&self.data);
-        Mock::given(method("POST"))
-            .and(path_regex(
-                r"^/v1\.0/me/todo/lists/[^/]+/tasks/[^/]+/attachments/createUploadSession$",
-            ))
-            .respond_with(move |request: &Request| {
-                let mut data = lock(&shared);
-                let (list, task) = list_and_task(request);
-                if find_task(&data, &list, &task).is_none() {
-                    return not_found();
-                }
-                let sent: Value = serde_json::from_slice(&request.body).unwrap_or_default();
-                let info = &sent["attachmentInfo"];
-                let id = format!("S{}", next_write());
-                data.sessions.insert(
-                    id.clone(),
-                    Session {
-                        list: list.clone(),
-                        task: task.clone(),
-                        name: info["name"].as_str().unwrap_or_default().to_owned(),
-                        content_type: info["contentType"].as_str().unwrap_or_default().to_owned(),
-                        size: usize::try_from(info["size"].as_u64().unwrap_or(0)).unwrap_or(0),
-                        received: Vec::new(),
-                    },
-                );
-                // As S14 saw it: under users/<address>, not /me.
-                let url = format!(
-                    "{base}/v1.0/users/someone@example.com/todo/lists/{list}/tasks/{task}/attachmentSessions/{id}"
-                );
-                ResponseTemplate::new(201).set_body_json(json!({
-                    "uploadUrl": url,
-                    "expirationDateTime": "2099-01-01T00:00:00Z",
-                    "nextExpectedRanges": ["0-"]
-                }))
-            })
-            .with_priority(PRIORITY)
-            .mount(&self.server)
-            .await;
-
-        let shared = Arc::clone(&self.data);
-        Mock::given(method("PUT"))
-            .and(path_regex(
-                r"^/v1\.0/users/[^/]+/todo/lists/[^/]+/tasks/[^/]+/attachmentSessions/[^/]+/content$",
-            ))
-            .respond_with(move |request: &Request| put_chunk(&mut lock(&shared), request))
-            .with_priority(PRIORITY)
-            .mount(&self.server)
-            .await;
+        self.accept_attachments().await;
     }
 
     /// Make the next `verb` request to a path matching `path` take `delay`
@@ -229,20 +109,6 @@ impl FakeGraph {
             .await;
     }
 
-    /// Put `bytes` on the task `task` in `list` as the file `name`, as a
-    /// phone would.
-    pub fn attach(&self, list: &str, task: &str, name: &str, bytes: &[u8]) {
-        let mut data = lock(&self.data);
-        attach(
-            &mut data,
-            list,
-            task,
-            name.to_owned(),
-            "application/octet-stream".into(),
-            bytes.to_vec(),
-        );
-    }
-
     /// The task `task` in `list` as Graph holds it, without its extension.
     pub fn task(&self, list: &str, task: &str) -> Option<Value> {
         find_task(&lock(&self.data), list, task).cloned()
@@ -254,19 +120,6 @@ impl FakeGraph {
             .tasks
             .get(list)
             .cloned()
-            .unwrap_or_default()
-    }
-
-    /// The attachments of task `task`, name and bytes.
-    pub fn attachments_of(&self, task: &str) -> Vec<(String, Vec<u8>)> {
-        lock(&self.data)
-            .attachments
-            .get(task)
-            .map(|all| {
-                all.iter()
-                    .map(|found| (found.name.clone(), found.bytes.clone()))
-                    .collect()
-            })
             .unwrap_or_default()
     }
 }
@@ -288,56 +141,6 @@ pub fn delete_task(data: &mut Data, request: &Request) -> ResponseTemplate {
     data.attachments.remove(&task);
     data.extensions.remove(&task);
     ResponseTemplate::new(204)
-}
-
-/// An attachment's direct POST, with its bytes as `contentBytes`.
-pub fn post_attachment(data: &mut Data, request: &Request) -> ResponseTemplate {
-    let (list, task) = list_and_task(request);
-    let sent: Value = serde_json::from_slice(&request.body).unwrap_or_default();
-    let bytes = base64::engine::general_purpose::STANDARD
-        .decode(sent["contentBytes"].as_str().unwrap_or_default())
-        .unwrap_or_default();
-    let name = sent["name"].as_str().unwrap_or_default().to_owned();
-    let content_type = sent["contentType"].as_str().unwrap_or_default().to_owned();
-    match attach(data, &list, &task, name, content_type, bytes) {
-        Some(created) => ResponseTemplate::new(201).set_body_json(metadata(&created)),
-        None => not_found(),
-    }
-}
-
-/// One PUT of an upload session's bytes; the last one attaches the file.
-pub fn put_chunk(data: &mut Data, request: &Request) -> ResponseTemplate {
-    let id = request
-        .url
-        .path()
-        .split('/')
-        .nth(10)
-        .unwrap_or_default()
-        .to_owned();
-    let Some(session) = data.sessions.get_mut(&id) else {
-        return not_found();
-    };
-    session.received.extend_from_slice(&request.body);
-    if session.received.len() < session.size {
-        let next = session.received.len();
-        return ResponseTemplate::new(200)
-            .set_body_json(json!({ "nextExpectedRanges": [format!("{next}-")] }));
-    }
-    let Some(session) = data.sessions.remove(&id) else {
-        return not_found();
-    };
-    match attach(
-        data,
-        &session.list,
-        &session.task,
-        session.name,
-        session.content_type,
-        session.received,
-    ) {
-        Some(created) => ResponseTemplate::new(201)
-            .insert_header("Location", format!("attachments/{}", created.id)),
-        None => not_found(),
-    }
 }
 
 /// A POST of a task: Graph's defaults, then what was sent, children with
@@ -408,59 +211,4 @@ pub fn create_task(data: &mut Data, request: &Request) -> ResponseTemplate {
         task["extensions"] = json!([extension]);
     }
     ResponseTemplate::new(201).set_body_json(task)
-}
-
-fn attach(
-    data: &mut Data,
-    list: &str,
-    task: &str,
-    name: String,
-    content_type: String,
-    bytes: Vec<u8>,
-) -> Option<Attachment> {
-    let found = data
-        .tasks
-        .get_mut(list)?
-        .iter_mut()
-        .find(|found| found["id"] == task)?;
-    found["hasAttachments"] = json!(true);
-    found["@odata.etag"] = json!(format!("W/\"{task}-{}\"", next_write()));
-    let created = Attachment {
-        id: format!("A{}", next_write()),
-        name,
-        content_type,
-        bytes,
-    };
-    data.attachments
-        .entry(task.to_owned())
-        .or_default()
-        .push(created.clone());
-    Some(created)
-}
-
-fn metadata(attachment: &Attachment) -> Value {
-    json!({
-        "@odata.type": "#microsoft.graph.taskFileAttachment",
-        "id": attachment.id,
-        "name": attachment.name,
-        "contentType": attachment.content_type,
-        // Graph's size counts more than the bytes (S14: 321 for 63).
-        "size": attachment.bytes.len() + 258,
-        "lastModifiedDateTime": "2026-09-25T02:53:23Z"
-    })
-}
-
-fn find_task<'a>(data: &'a Data, list: &str, task: &str) -> Option<&'a Value> {
-    data.tasks
-        .get(list)?
-        .iter()
-        .find(|found| found["id"] == task)
-}
-
-// `/v1.0/me/todo/lists/{list}/tasks/{task}/…`
-fn list_and_task(request: &Request) -> (String, String) {
-    let mut parts = request.url.path().split('/').skip(5);
-    let list = parts.next().unwrap_or_default().to_owned();
-    let task = parts.nth(1).unwrap_or_default().to_owned();
-    (list, task)
 }

@@ -436,6 +436,15 @@ impl GraphClient {
     /// [`GraphClient::send`], answering the body's bytes as they came: a
     /// download, or an answer that isn't JSON.
     pub(crate) async fn send_bytes(&self, call: Call<'_>) -> Result<Vec<u8>, GraphError> {
+        Ok(self.send_full(call).await?.1)
+    }
+
+    /// [`GraphClient::send_bytes`] with the answer's headers: an upload
+    /// session's last PUT names the attachment only in `Location` (S14).
+    pub(crate) async fn send_full(
+        &self,
+        call: Call<'_>,
+    ) -> Result<(reqwest::header::HeaderMap, Vec<u8>), GraphError> {
         let mut attempt = 0;
         let mut refreshed = false;
         let mut token = self.auth.valid_token().await?;
@@ -481,7 +490,7 @@ impl GraphClient {
                 Err(error) => return Err(error.into()),
             };
             match retry::decide_retry(status, &headers, attempt, call.idempotent) {
-                RetryDecision::Success => return Ok(body),
+                RetryDecision::Success => return Ok((headers, body)),
                 RetryDecision::RefreshToken if !refreshed => {
                     refreshed = true;
                     token = self.auth.refresh(&token).await?;

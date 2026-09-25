@@ -194,6 +194,45 @@ pub fn draw(frame: &mut Frame, area: Rect, app: &App) {
             }
         }
     }
+    let files_heading = match task.attachments.len() {
+        0 if task.has_attachments => Span::styled("not synced yet", theme.text_dim),
+        0 => none(),
+        1 => Span::raw("1 file"),
+        count => Span::raw(format!("{count} files")),
+    };
+    lines.push(highlight(
+        Line::from(vec![label("Files"), files_heading]),
+        DetailRow::Attachments,
+    ));
+    for (at, attachment) in task.attachments.iter().enumerate() {
+        // One still uploading has the pending marker in place of the clip.
+        let mark = if attachment.uploading() {
+            Span::styled(format!("{} ", app.glyphs.pending), theme.sync_pending)
+        } else {
+            Span::styled(format!("{} ", app.glyphs.attachment), theme.text_dim)
+        };
+        let mut spans = vec![label(""), mark, Span::raw(attachment.name.clone())];
+        if let Some(size) = attachment.size {
+            spans.push(Span::styled(
+                format!("  {}", human_size(size)),
+                theme.text_dim,
+            ));
+        }
+        lines.push(highlight(Line::from(spans), DetailRow::Attachment(at)));
+    }
+    if let Mode::Attaching { id, input, error } = &app.mode
+        && *id == task.id
+    {
+        let mut spans = vec![label(""), Span::styled("Path ", theme.text_dim)];
+        spans.extend(line_input::single(input, theme.accent, &app.glyphs, theme));
+        lines.push(Line::from(spans));
+        if let Some(why) = error {
+            lines.push(Line::from(vec![
+                label(""),
+                Span::styled(why.clone(), theme.error),
+            ]));
+        }
+    }
     if !task.categories.is_empty() {
         lines.push(field("Categories", task.categories.join(", ")));
     }
@@ -260,6 +299,18 @@ fn linked(line: &str, theme: &Theme) -> Line<'static> {
     }
     spans.push(Span::raw(line[at..].to_owned()));
     Line::from(spans)
+}
+
+/// A size as people read it: bytes, KB or MB (1024s, as Finder's older
+/// and `ls -h`'s sizes are).
+fn human_size(bytes: u64) -> String {
+    const KB: u64 = 1024;
+    const MB: u64 = 1024 * 1024;
+    match bytes {
+        0..KB => format!("{bytes} B"),
+        KB..MB => format!("{} KB", bytes.div_ceil(KB)),
+        _ => format!("{:.1} MB", bytes as f64 / MB as f64),
+    }
 }
 
 /// The due date, with how soon when it's near.

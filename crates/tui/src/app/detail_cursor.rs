@@ -30,6 +30,9 @@ enum Child {
     Step { id: String, name: String },
     /// The link, by ID (`None` when there's no link yet).
     Link(Option<String>),
+    /// An attachment by ID, and its name, to find it again once a
+    /// `local-…` ID becomes Graph's.
+    Attachment { id: String, name: String },
 }
 
 impl App {
@@ -67,6 +70,21 @@ impl App {
                 None => (self.detail_row.on(task), true),
             },
             Child::Link(id) => (DetailRow::Link, *id != task.link_id),
+            Child::Attachment { id, name } => {
+                let attachments: Vec<(&str, &str)> = task
+                    .attachments
+                    .iter()
+                    .map(|attachment| (attachment.id.as_str(), attachment.name.as_str()))
+                    .collect();
+                let was = match self.detail_row {
+                    DetailRow::Attachment(at) => Some(at),
+                    _ => None,
+                };
+                match find_child(&attachments, id, name, was) {
+                    Some(at) => (DetailRow::Attachment(at), false),
+                    None => (self.detail_row.on(task), true),
+                }
+            }
         };
         let anchor = anchor_for(task, row);
         self.detail_row = row;
@@ -80,10 +98,10 @@ impl App {
         if !std::mem::take(&mut self.detail_stale) {
             return false;
         }
-        let what = if self.detail_row == DetailRow::Link {
-            "The link changed"
-        } else {
-            "That step changed"
+        let what = match self.detail_row {
+            DetailRow::Link => "The link changed",
+            DetailRow::Attachments | DetailRow::Attachment(_) => "That attachment changed",
+            _ => "That step changed",
         };
         self.show(Level::Info, &format!("{what}; nothing was done"));
         true
@@ -101,7 +119,15 @@ fn anchor_for(task: &Task, row: DetailRow) -> Anchor {
             name: step.name.clone(),
         }),
         DetailRow::Link => Child::Link(task.link_id.clone()),
-        DetailRow::Field(_) | DetailRow::Steps => Child::None,
+        DetailRow::Attachment(at) => {
+            task.attachments
+                .get(at)
+                .map_or(Child::None, |attachment| Child::Attachment {
+                    id: attachment.id.clone(),
+                    name: attachment.name.clone(),
+                })
+        }
+        DetailRow::Field(_) | DetailRow::Steps | DetailRow::Attachments => Child::None,
     };
     Anchor {
         task: task.id.clone(),
@@ -109,27 +135,48 @@ fn anchor_for(task: &Task, row: DetailRow) -> Anchor {
     }
 }
 
-/// Where the step `id` is now. A step ms-todo added has a `local-…` ID
-/// until Microsoft To Do answers, then Graph's: that's the same step if
-/// it has the same text, where it was or the only one with that text.
+/// Where the step `id` is now.
 fn find_step(task: &Task, id: &str, name: &str, was: DetailRow) -> Option<usize> {
-    if let Some(at) = task.steps.iter().position(|step| step.id == id) {
+    let steps: Vec<(&str, &str)> = task
+        .steps
+        .iter()
+        .map(|step| (step.id.as_str(), step.name.as_str()))
+        .collect();
+    let was = match was {
+        DetailRow::Step(at) => Some(at),
+        _ => None,
+    };
+    find_child(&steps, id, name, was)
+}
+
+/// Where the child `id` is now among `children` (`(id, name)`, in order).
+/// A step or attachment ms-todo added has a `local-…` ID until Microsoft
+/// To Do answers, then Graph's: that's the same one if it has the same
+/// name, where it was (`was`) or the only one with that name.
+fn find_child(
+    children: &[(&str, &str)],
+    id: &str,
+    name: &str,
+    was: Option<usize>,
+) -> Option<usize> {
+    if let Some(at) = children.iter().position(|(child, _)| *child == id) {
         return Some(at);
     }
     if !id.starts_with(LOCAL_PREFIX) {
         return None;
     }
-    let named = |step: &super::task::Step| step.name == name && !step.id.starts_with(LOCAL_PREFIX);
-    if let DetailRow::Step(at) = was
-        && task.steps.get(at).is_some_and(named)
+    let named = |(child, child_name): &(&str, &str)| {
+        *child_name == name && !child.starts_with(LOCAL_PREFIX)
+    };
+    if let Some(at) = was
+        && children.get(at).is_some_and(named)
     {
         return Some(at);
     }
-    let mut matching = task
-        .steps
+    let mut matching = children
         .iter()
         .enumerate()
-        .filter(|(_, step)| named(step));
+        .filter(|(_, child)| named(child));
     match (matching.next(), matching.next()) {
         (Some((at, _)), None) => Some(at),
         _ => None,

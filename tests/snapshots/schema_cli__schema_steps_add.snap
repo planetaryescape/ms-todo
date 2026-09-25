@@ -64,7 +64,9 @@ expression: pretty
               "step_delete",
               "link_add",
               "link_edit",
-              "link_delete"
+              "link_delete",
+              "attachment_add",
+              "attachment_delete"
             ]
           },
           "items": {
@@ -72,6 +74,13 @@ expression: pretty
             "items": {
               "description": "A task: every field Microsoft Graph returns, with `id` replaced",
               "properties": {
+                "attachments": {
+                  "description": "Its attachments' metadata, as `attachments list` gives it without `index`; absent until a sync has fetched it",
+                  "items": {
+                    "type": "object"
+                  },
+                  "type": "array"
+                },
                 "body": {
                   "type": "object"
                 },
@@ -248,11 +257,13 @@ expression: pretty
               "step_delete",
               "link_add",
               "link_edit",
-              "link_delete"
+              "link_delete",
+              "attachment_add",
+              "attachment_delete"
             ]
           },
           "changes": {
-            "description": "The Graph fields each target gets; null for delete. For My Day: myDay (the day, or null), and the tasks whose due date is set (due_today) or cleared (due_cleared). For steps and links: each write, as { collection, verb (create, update or delete), id, body, carried }"
+            "description": "The Graph fields each target gets; null for delete. For My Day: myDay (the day, or null), and the tasks whose due date is set (due_today) or cleared (due_cleared). For steps, links and attachments: each write, as { collection, verb (create, update or delete), id, body, carried }, and for an attachment's create the file it's read from, as file: { path, bytes, modified }"
           },
           "dry_run": {
             "const": true

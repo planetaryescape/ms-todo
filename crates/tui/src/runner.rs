@@ -129,6 +129,12 @@ where
                     next = daemon.try_recv().ok();
                 }
                 paint(terminal, &app)?;
+                // An answer can leave something to do here too: open an
+                // attachment the daemon saved.
+                if let Some(effect) = app.local.take() {
+                    local(&mut app, effect);
+                    paint(terminal, &app)?;
+                }
                 for (tag, at) in finished {
                     let took = at.elapsed();
                     match tag {

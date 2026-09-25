@@ -14,7 +14,7 @@ expression: render(&app)
 "│                      ││       │kanagawa                                    │epeats    monthly on day 1     │"
 "│                      ││       │night-owl                                   │teps      none                 │"
 "│                      ││       │cobalt2                                     │ink       none                 │"
-"│                      ││       │high-contrast                               │ync       synced               │"
+"│                      ││       │high-contrast                               │iles      none                 │"
 "╰──────────────────────╯╰───────│                                            │───────────────────────────────╯"
 " ● daemon  ·  synced 12s ago  · │Enter keeps it in config.toml; Esc goes back│                                "
 " Enter Keep  Esc Revert         ╰────────────────────────────────────────────╯                                "

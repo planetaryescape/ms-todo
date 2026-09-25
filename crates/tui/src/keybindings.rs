@@ -172,6 +172,7 @@ pub const BINDINGS: &[Binding] = &[
     bind(TASKS, "o", Action::OpenLink, "Open link", true),
     bind(TASKS, "y", Action::CopyLink, "Copy link", true),
     bind(TASKS, "t", Action::ToggleMyDay, "My Day", true),
+    bind(TASKS, "A", Action::Attach, "Attach a file\u{2026}", false),
     bind(&[Context::Prompt], "Enter", Action::Submit, "Done", true),
     bind(ADDING, "Enter", Action::Submit, "Add", true),
     bind(ADDING, "Tab", Action::Complete, "Complete", true),

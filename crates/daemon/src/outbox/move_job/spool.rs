@@ -14,7 +14,8 @@ use std::path::{Path, PathBuf};
 use ms_todo_graph::private_file::{atomic_write_mode_0600, ensure_private_dir};
 use sha2::{Digest, Sha256};
 
-fn sha256_hex(bytes: &[u8]) -> String {
+/// `bytes`' sha256, as hex.
+pub(crate) fn sha256_hex(bytes: &[u8]) -> String {
     Sha256::digest(bytes)
         .iter()
         .map(|byte| format!("{byte:02x}"))
@@ -26,7 +27,8 @@ fn dir(root: &Path, op_id: &str) -> PathBuf {
     root.join(&sha256_hex(op_id.as_bytes())[..32])
 }
 
-async fn blocking<T: Send + 'static>(
+/// Disk work, off the async workers: files run to 25 MB.
+pub(crate) async fn blocking<T: Send + 'static>(
     work: impl FnOnce() -> io::Result<T> + Send + 'static,
 ) -> io::Result<T> {
     tokio::task::spawn_blocking(work)

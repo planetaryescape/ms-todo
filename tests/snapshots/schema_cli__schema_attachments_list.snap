@@ -1,0 +1,93 @@
+---
+source: tests/schema_cli.rs
+expression: pretty
+---
+{
+  "input": {
+    "additionalProperties": false,
+    "properties": {
+      "list": {
+        "description": "Look for the task in this list (exact name or ID), which also lets TASK be an exact title",
+        "type": "string",
+        "x-cli": "--list"
+      },
+      "task": {
+        "description": "The task's ID from `tasks list`, or its exact title when --list is given",
+        "type": "string",
+        "x-cli": "<TASK>"
+      }
+    },
+    "required": [
+      "task"
+    ],
+    "type": "object"
+  },
+  "output": {
+    "properties": {
+      "items": {
+        "items": {
+          "properties": {
+            "contentType": {
+              "type": "string"
+            },
+            "id": {
+              "description": "Graph's ID; `local-…` until Microsoft To Do has the file",
+              "type": "string"
+            },
+            "index": {
+              "description": "From 1, in Graph's order: what an ATTACHMENT argument takes",
+              "type": "integer"
+            },
+            "lastModifiedDateTime": {
+              "format": "date-time",
+              "type": "string"
+            },
+            "name": {
+              "type": "string"
+            },
+            "size": {
+              "description": "Microsoft To Do's size, a few hundred bytes more than the file's; the file's own byte count until it's uploaded",
+              "type": "integer"
+            }
+          },
+          "required": [
+            "index",
+            "id",
+            "name"
+          ],
+          "type": "object"
+        },
+        "type": "array"
+      },
+      "schema_version": {
+        "const": 2
+      },
+      "sync": {
+        "properties": {
+          "generation": {
+            "description": "Goes up by one per finished sync of the scope",
+            "type": "integer"
+          },
+          "state": {
+            "description": "initial until this scope's first sync finishes: an empty `items` then doesn't mean empty",
+            "enum": [
+              "initial",
+              "ready"
+            ]
+          }
+        },
+        "required": [
+          "state",
+          "generation"
+        ],
+        "type": "object"
+      }
+    },
+    "required": [
+      "schema_version",
+      "sync",
+      "items"
+    ],
+    "type": "object"
+  }
+}

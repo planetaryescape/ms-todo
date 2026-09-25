@@ -23,3 +23,8 @@ pub use paths::{
 /// answers its create with Graph's ID (D-055). Graph's own child IDs are
 /// bare UUIDs.
 pub const LOCAL_CHILD_PREFIX: &str = "local-";
+
+/// The largest file Microsoft To Do takes as an attachment (03): 25 MiB.
+/// The CLI refuses a larger one before asking the daemon, and the daemon
+/// before sending anything.
+pub const MAX_ATTACHMENT_BYTES: usize = 25 * 1024 * 1024;

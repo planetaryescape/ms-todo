@@ -177,6 +177,13 @@ fn task_row<'a>(
             theme.text_muted,
         ));
     }
+    // It has files, as the To Do app's paperclip says.
+    if task.has_attachments {
+        title.push(Span::styled(
+            format!("  {}", glyphs.attachment),
+            theme.text_muted,
+        ));
+    }
     Row::new(vec![
         Cell::from(status),
         Cell::from(Line::from(title)),

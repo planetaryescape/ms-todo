@@ -1,10 +1,16 @@
 //! A task's children as the cache holds them: its steps (Graph's
 //! `checklistItems`) and its link (`linkedResources`), inline in the
 //! task's JSON as Graph sends them in every task read and delta round
-//! (S1). There are no tables for them (D-055): a child write is an
-//! outbox operation on its task, and what it does to the task's JSON is
-//! [`apply_child`], whose inverse for a rejection or a discard is
-//! [`revert_child`].
+//! (S1), and its attachments' metadata (`attachments`), which Graph never
+//! sends inline: the daemon fetches it and keeps it there (D-056). There
+//! are no tables for them (D-055): a child write is an outbox operation on
+//! its task, and what it does to the task's JSON is [`apply_child`], whose
+//! inverse for a rejection or a discard is [`revert_child`].
+//!
+//! Since Graph's JSON never has `attachments`, the key is ms-todo's own:
+//! present, even empty, it's the task's attachments as last known; absent,
+//! they haven't been fetched, and a write of Graph's JSON keeps what the
+//! cache had ([`crate::tasks`]).
 //!
 //! A child ms-todo creates has no Graph ID until its POST is answered, so
 //! it's cached under a placeholder ID ([`LOCAL_CHILD_PREFIX`]) that later
@@ -20,6 +26,7 @@ pub use ms_todo_core::LOCAL_CHILD_PREFIX;
 /// The collections a child operation writes to.
 pub const STEPS: &str = "checklistItems";
 pub const LINKS: &str = "linkedResources";
+pub const ATTACHMENTS: &str = "attachments";
 
 /// What a child operation does, as its payload's `verb` says.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -99,7 +106,12 @@ pub fn apply_child(raw: &mut Entity, payload: &Value) {
         ChildVerb::Create => {
             let mut item = body;
             item.insert("id".into(), Value::String(id.to_owned()));
-            items.push(Value::Object(item));
+            // Once, however often it's applied: a cached attachment list
+            // already holds the creates it was written with.
+            match items.iter_mut().find(|child| child["id"] == id) {
+                Some(existing) => *existing = Value::Object(item),
+                None => items.push(Value::Object(item)),
+            }
         }
         ChildVerb::Update => {
             if let Some(Value::Object(item)) = items.iter_mut().find(|child| child["id"] == id) {
@@ -173,9 +185,14 @@ fn merge_fields(item: &mut Map<String, Value>, fields: &Map<String, Value>) {
     }
 }
 
-/// Graph leaves an empty collection out (S1), so the cache does too.
+/// Graph leaves an empty collection out (S1), so the cache does too,
+/// except for attachments, whose empty list says there are none (see the
+/// module's docs), and which also set `hasAttachments` as Graph will.
 fn set_children(raw: &mut Entity, collection: &str, items: Vec<Value>) {
-    if items.is_empty() {
+    if collection == ATTACHMENTS {
+        raw.insert("hasAttachments".into(), Value::Bool(!items.is_empty()));
+        raw.insert(collection.to_owned(), Value::Array(items));
+    } else if items.is_empty() {
         raw.remove(collection);
     } else {
         raw.insert(collection.to_owned(), Value::Array(items));
@@ -262,6 +279,26 @@ mod tests {
                 .get(STEPS)
                 .is_none()
         );
+    }
+
+    #[test]
+    fn attachments_stay_as_an_empty_list_and_a_create_lands_once() {
+        let mut raw = entity(json!({ "title": "Invoice", "hasAttachments": false }));
+        let add = child_payload(
+            ATTACHMENTS,
+            ChildVerb::Create,
+            "local-1",
+            json!({ "name": "a.pdf", "contentType": "application/pdf", "size": 3 }),
+            &[],
+        );
+        apply_child(&mut raw, &add);
+        apply_child(&mut raw, &add);
+        assert_eq!(raw[ATTACHMENTS].as_array().map(Vec::len), Some(1));
+        assert_eq!(raw["hasAttachments"], true);
+        let delete = child_payload(ATTACHMENTS, ChildVerb::Delete, "local-1", json!({}), &[]);
+        apply_child(&mut raw, &delete);
+        assert_eq!(raw[ATTACHMENTS], json!([]), "known to have none");
+        assert_eq!(raw["hasAttachments"], false);
     }
 
     #[test]

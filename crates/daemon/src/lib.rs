@@ -13,6 +13,7 @@
 // would only add noise.
 #![allow(clippy::result_large_err)]
 
+mod attachments;
 mod child_undo;
 mod completed;
 mod doctor;

@@ -14,6 +14,7 @@
 //! drawn at once; the event that follows it brings the rest (the counts,
 //! the sync marker) up to date.
 
+pub mod attachments;
 mod detail_cursor;
 pub mod diagnostics;
 mod due_batch;
@@ -96,6 +97,13 @@ pub enum Mode {
         target: steps::ChildTarget,
         input: LineEditor,
         /// Why the text can't be sent, shown under it.
+        error: Option<String>,
+    },
+    /// Typing the path of a file to attach to the task `id`.
+    Attaching {
+        id: String,
+        input: LineEditor,
+        /// Why the path can't be read, shown under it.
         error: Option<String>,
     },
     /// The inline "Delete …? y/n" for a step or the link of the task `id`,
@@ -225,6 +233,8 @@ pub enum Tag {
     Categories,
     /// A list suggestion for the task being added (rung 6b).
     ListHint,
+    /// An attachment saved to open (rung 8b).
+    Download,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
@@ -359,6 +369,8 @@ pub struct App {
     /// My Day's day, as the daemon last said (it turns over at
     /// `my_day.rollover_time`); until then, today.
     pub my_day_date: Option<NaiveDate>,
+    /// Where attachments are saved, and how typed paths are read.
+    pub places: attachments::Places,
 }
 
 impl App {
@@ -402,7 +414,14 @@ impl App {
             categories: quick_add::Categories::default(),
             list_hint: list_hint::ListHint::default(),
             my_day_date: None,
+            places: attachments::Places::default(),
         }
+    }
+
+    /// With the download directory and where typed paths start.
+    pub fn with_places(mut self, places: attachments::Places) -> Self {
+        self.places = places;
+        self
     }
 
     /// My Day's day.
@@ -421,6 +440,7 @@ impl App {
             Mode::Filtering { .. }
             | Mode::Editing { .. }
             | Mode::EditingChild { .. }
+            | Mode::Attaching { .. }
             | Mode::SettingDue { .. } => Context::Prompt,
             Mode::ChoosingField { .. } => Context::Fields,
             Mode::MovingList { .. } => Context::Folder,
@@ -610,6 +630,7 @@ impl App {
             (Mode::Diagnostics, Action::Refresh) => self.refresh_diagnostics(),
             (Mode::Editing { .. }, Action::Submit) => self.submit_edit(),
             (Mode::EditingChild { .. }, Action::Submit) => self.submit_child(),
+            (Mode::Attaching { .. }, Action::Submit) => self.submit_attach(),
             (Mode::ConfirmDeleteChild { .. }, Action::Confirm) => self.confirm_child_delete(),
             (Mode::SettingDue { .. }, Action::Submit) => self.submit_set_due(),
             (Mode::ChoosingField { .. }, Action::EditField(_) | Action::CycleImportance)
@@ -710,6 +731,7 @@ impl App {
             | Action::RescheduleOverdue
             | Action::MoveTasks
             | Action::ToggleMyDay
+            | Action::Attach
                 if self.still_loading() =>
             {
                 Vec::new()
@@ -723,6 +745,12 @@ impl App {
                 Vec::new()
             }
             Action::ToggleComplete => self.toggle_complete(),
+            Action::Attach => {
+                if let Some(task) = self.selected().cloned() {
+                    self.start_attach(&task);
+                }
+                Vec::new()
+            }
             Action::ToggleMyDay => self.toggle_my_day(),
             Action::MoveTasks => {
                 self.start_move_tasks();
@@ -866,6 +894,7 @@ impl App {
             Mode::Filtering { input } | Mode::MovingList { input, .. } => edit(input),
             Mode::Editing { input, error, .. }
             | Mode::EditingChild { input, error, .. }
+            | Mode::Attaching { input, error, .. }
             | Mode::SettingDue { input, error, .. } => {
                 let changed = edit(input);
                 if changed {
@@ -1044,6 +1073,10 @@ impl App {
             // Only a hint: without one, nothing to say.
             (Tag::ListHint, result) => {
                 self.list_hint_answered(result);
+                Vec::new()
+            }
+            (Tag::Download, result) => {
+                self.downloaded(result);
                 Vec::new()
             }
             (Tag::Write(write), Ok(ResponseData::Applied(applied))) => {

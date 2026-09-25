@@ -58,6 +58,7 @@ pub(crate) async fn start(
                     code: "device_code_request_failed".into(),
                     message: body.chars().take(RAW_BODY_EXCERPT).collect(),
                     request_id: None,
+                    inner_code: None,
                 })
             }));
     }

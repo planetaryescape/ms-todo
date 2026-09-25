@@ -41,6 +41,13 @@ expression: pretty
         "items": {
           "description": "A completed task, newest completion first: the task as `tasks list` gives it, with `list` and `completed_on`",
           "properties": {
+            "attachments": {
+              "description": "Its attachments' metadata, as `attachments list` gives it without `index`; absent until a sync has fetched it",
+              "items": {
+                "type": "object"
+              },
+              "type": "array"
+            },
             "body": {
               "type": "object"
             },

@@ -53,9 +53,9 @@ pub struct Data {
     /// Extension writes so far, to make each one's new etag.
     extension_writes: u64,
     /// File attachments by task ID (see `moves`).
-    pub attachments: HashMap<String, Vec<crate::moves::Attachment>>,
+    pub attachments: HashMap<String, Vec<crate::attachments::Attachment>>,
     /// Upload sessions by ID.
-    pub(crate) sessions: HashMap<String, crate::moves::Session>,
+    pub(crate) sessions: HashMap<String, crate::attachments::Session>,
 }
 
 impl Data {
@@ -689,6 +689,15 @@ pub(crate) fn answer_get(data: &Data, url: &str) -> (u16, Value) {
             json!({ "error": { "code": "BadRequest", "message": url } }),
         );
     };
+    if parts.get(7) == Some(&"attachments") && parts.len() == 8 {
+        return match crate::attachments::listing(data, list, task) {
+            Some(listed) => (200, listed),
+            None => (
+                404,
+                json!({ "error": { "code": "ErrorItemNotFound", "message": "gone" } }),
+            ),
+        };
+    }
     if data.forbidden_on_fetch.contains(*task) {
         return (
             403,

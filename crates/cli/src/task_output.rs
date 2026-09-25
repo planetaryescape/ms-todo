@@ -210,21 +210,23 @@ pub fn print_applied(format: OutputFormat, applied: &Applied) -> Result<(), CliE
     }
 }
 
-/// After a step or link write, the task's steps or link as they are now.
+/// After a step, link or attachment write, the task's steps, link or
+/// attachments as they are now.
 fn write_children(
     out: &mut impl Write,
     action: TaskAction,
     task: &ms_todo_protocol::Entity,
 ) -> std::io::Result<()> {
-    let (collection, step) = match action {
+    let (collection, none) = match action {
         TaskAction::StepAdd
         | TaskAction::StepEdit
         | TaskAction::StepCheck
         | TaskAction::StepUncheck
-        | TaskAction::StepDelete => ("checklistItems", true),
+        | TaskAction::StepDelete => ("checklistItems", "steps"),
         TaskAction::LinkAdd | TaskAction::LinkEdit | TaskAction::LinkDelete => {
-            ("linkedResources", false)
+            ("linkedResources", "link")
         }
+        TaskAction::AttachmentAdd | TaskAction::AttachmentDelete => ("attachments", "attachments"),
         _ => return Ok(()),
     };
     let children = task
@@ -233,15 +235,21 @@ fn write_children(
         .map(Vec::as_slice)
         .unwrap_or_default();
     if children.is_empty() {
-        writeln!(out, "  (no {})", if step { "steps" } else { "link" })?;
+        writeln!(out, "  (no {none})")?;
     }
     for (at, child) in children.iter().enumerate() {
         let field = |key: &str| {
             ms_todo_core::display_safe(child.get(key).and_then(Value::as_str).unwrap_or_default())
         };
-        if step {
+        if collection == "checklistItems" {
             let mark = if child["isChecked"] == true { "x" } else { " " };
             writeln!(out, "  {} [{mark}] {}", at + 1, field("displayName"))?;
+        } else if collection == "attachments" {
+            let pending = child["id"]
+                .as_str()
+                .is_some_and(|id| id.starts_with(ms_todo_core::LOCAL_CHILD_PREFIX));
+            let state = if pending { "  (uploading)" } else { "" };
+            writeln!(out, "  {} {}{state}", at + 1, field("name"))?;
         } else {
             let name = field("displayName");
             let url = field("webUrl");
@@ -279,6 +287,8 @@ fn verb(action: TaskAction) -> &'static str {
         TaskAction::LinkAdd => "add a link to",
         TaskAction::LinkEdit => "change the link of",
         TaskAction::LinkDelete => "delete the link of",
+        TaskAction::AttachmentAdd => "attach files to",
+        TaskAction::AttachmentDelete => "delete attachments of",
         TaskAction::Unknown => "change",
     }
 }
@@ -308,6 +318,8 @@ fn past_tense(action: TaskAction) -> &'static str {
         TaskAction::LinkAdd => "Added a link to",
         TaskAction::LinkEdit => "Changed the link of",
         TaskAction::LinkDelete => "Deleted the link of",
+        TaskAction::AttachmentAdd => "Attaching to",
+        TaskAction::AttachmentDelete => "Deleted attachments of",
         TaskAction::Unknown => "Changed",
     }
 }

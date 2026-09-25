@@ -14,7 +14,7 @@ expression: screen
 "│                     ╰────────────────────────────────────────────────────────────────╯monthly on day 1     │"
 "│                      ││                                                  ││Steps      none                 │"
 "│                      ││                                                  ││Link       none                 │"
-"│                      ││                                                  ││Sync       synced               │"
+"│                      ││                                                  ││Files      none                 │"
 "╰──────────────────────╯╰──────────────────────────────────────────────────╯╰────────────────────────────────╯"
 " ● daemon  ·  synced 12s ago  ·  all changes sent                                                             "
 " Enter Add  Tab Complete  Ctrl-r Literal  Esc Cancel                                                          "

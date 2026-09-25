@@ -25,8 +25,8 @@ mod views;
 use serde_json::{Map, Value};
 
 pub use children::{
-    ChildVerb, LINKS, LOCAL_CHILD_PREFIX, STEPS, apply_child, child_payload, children, find_child,
-    revert_child,
+    ATTACHMENTS, ChildVerb, LINKS, LOCAL_CHILD_PREFIX, STEPS, apply_child, child_payload, children,
+    find_child, revert_child,
 };
 pub use idempotency::{Claim, IDEMPOTENCY_WINDOW_SECS};
 pub use list_extension::{ListExtensionOp, merge_extension};

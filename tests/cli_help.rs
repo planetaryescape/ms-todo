@@ -92,6 +92,23 @@ fn cli_help_snapshots_cover_all_commands() {
         ("cli_help_links_add", &["links", "add", "--help"]),
         ("cli_help_links_edit", &["links", "edit", "--help"]),
         ("cli_help_links_delete", &["links", "delete", "--help"]),
+        ("cli_help_attachments", &["attachments", "--help"]),
+        (
+            "cli_help_attachments_list",
+            &["attachments", "list", "--help"],
+        ),
+        (
+            "cli_help_attachments_add",
+            &["attachments", "add", "--help"],
+        ),
+        (
+            "cli_help_attachments_download",
+            &["attachments", "download", "--help"],
+        ),
+        (
+            "cli_help_attachments_delete",
+            &["attachments", "delete", "--help"],
+        ),
         ("cli_help_myday", &["myday", "--help"]),
         ("cli_help_myday_list", &["myday", "list", "--help"]),
         ("cli_help_myday_add", &["myday", "add", "--help"]),

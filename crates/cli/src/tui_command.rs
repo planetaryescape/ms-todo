@@ -22,6 +22,8 @@ pub async fn tui(paths: &Paths, args: TuiArgs, started: Instant) -> Result<(), C
     // Before the daemon and the terminal: a bad theme is a plain error.
     let theme = ms_todo_tui::theme::load(&paths.config_file, args.theme.as_deref())
         .map_err(|error| CliError::new(ErrorKind::InvalidInput, &error))?;
+    let places = ms_todo_tui::downloads::places(&paths.config_file)
+        .map_err(|error| CliError::new(ErrorKind::InvalidInput, &error))?;
     // Started now, or restarted if it's another version; the TUI makes
     // its own connection.
     drop(daemon_client::connect(paths).await?);
@@ -29,6 +31,7 @@ pub async fn tui(paths: &Paths, args: TuiArgs, started: Instant) -> Result<(), C
         socket: paths.socket_path(),
         ascii: args.ascii,
         theme,
+        places,
         bench_startup: args.bench_startup,
         started,
         trace: std::env::var_os(TRACE_ENV).map(Into::into),

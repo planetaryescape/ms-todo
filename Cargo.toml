@@ -30,6 +30,8 @@ insta = { workspace = true }
 # The daemon's session and parent, to check auto-start detaches it.
 nix = { workspace = true }
 serde_json = { workspace = true }
+# Attachments' bytes compared by hash.
+sha2 = { workspace = true }
 # Tests reach into a daemon's database to make its writes fail.
 sqlx = { workspace = true }
 tempfile = { workspace = true }
@@ -100,7 +102,11 @@ fs2 = "0.4"
 html2text = "0.17"
 iana-time-zone = "0.1"
 linkify = "0.11"
+# An attachment's content type, from its file name.
+mime_guess = "2"
 futures-util = { version = "0.3", default-features = false, features = ["sink", "std"] }
+# An attachment ID in an upload session's `Location`.
+percent-encoding = "2"
 nix = { version = "0.30", default-features = false, features = ["process", "signal"] }
 ratatui = "0.30"
 regex = "1"

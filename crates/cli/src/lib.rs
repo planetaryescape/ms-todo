@@ -8,6 +8,7 @@
 #![allow(clippy::result_large_err)]
 
 mod args;
+mod attachment_commands;
 mod auth_commands;
 mod bulk_commands;
 mod child_commands;
@@ -185,6 +186,7 @@ async fn dispatch(command: Command, paths: &Paths, format: OutputFormat) -> Resu
         }
         Command::Steps(command) => child_commands::steps(paths, command, format).await,
         Command::Links(command) => child_commands::links(paths, command, format).await,
+        Command::Attachments(command) => attachment_commands::run(paths, command, format).await,
         Command::Search(args) => {
             let (items, sync) = data_commands::search(paths, args).await?;
             print_collection(format, &items, sync, &data_commands::SEARCH_TABLE)

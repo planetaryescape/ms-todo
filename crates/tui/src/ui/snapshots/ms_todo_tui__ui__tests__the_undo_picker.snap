@@ -14,7 +14,7 @@ expression: render(&app)
 "│                   │Pay rent  Home  created 2026-09-24 10:01                            │nthly on day 1     │"
 "│                   ╰────────────────────────────────────────────────────────────────────╯ne                 │"
 "│                      ││                                                  ││Link       none                 │"
-"│                      ││                                                  ││Sync       synced               │"
+"│                      ││                                                  ││Files      none                 │"
 "╰──────────────────────╯╰──────────────────────────────────────────────────╯╰────────────────────────────────╯"
 " ● daemon  ·  synced 12s ago  ·  all changes sent                                                             "
 " Enter Delete this copy  Esc Cancel                                                                           "
