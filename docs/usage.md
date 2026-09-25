@@ -10,11 +10,29 @@ Every example uses `ms-todo`; `mst` is the same binary.
 ms-todo lists list                    # every list, folder by folder
 ms-todo tasks list                    # every task in "Tasks", completed ones included
 ms-todo tasks list --list Groceries   # by exact name, or by the ID from `lists list`
+ms-todo tasks show <TASK>             # one task, every field
+ms-todo lists show Groceries          # one list, with its open and completed counts
 ms-todo raw GET /me/todo/lists        # any Graph v1.0 path, authenticated
 ms-todo auth bearer --reveal-secret   # a valid access token, for curl
 ```
 
 Output is a table in a terminal and JSON when piped. `--format json|jsonl|ids|csv|table` picks one. JSON is `{ "schema_version": 2, "sync": { "state", "generation" }, "items": [...] }`. Each item has every field Graph returns, except that `id` is ms-todo's own stable ID, with Graph's beside it as `graph_id` (commands take either), plus `sync_state` (below). `sync.state` is `initial` until that list's first sync has finished, so an empty `initial` list isn't really empty (other formats say so on stderr). `--format ids` prints one ID per line. `--format csv` has a header row and fixed columns (tasks: `id,title,status,importance,due,reminder,categories,created,modified,sync_state`; lists: `id,name,wellknown,is_owner,is_shared,folder,sync_state`); a task's notes aren't a column, so use JSON for those. A `--list` name that matches more than one list is an error that lists the candidates; ms-todo never picks one for you.
+
+### Filter and sort
+
+```sh
+ms-todo tasks list --due overdue                     # open tasks due before today, in every list
+ms-todo tasks list --due "before tomorrow" --status open
+ms-todo tasks list --due today --importance high
+ms-todo tasks list --category Errands --sort due --limit 10
+ms-todo tasks list --list Work --status waiting --sort modified
+```
+
+- `--status` is `open`, `completed` (or `--completed`), `all`, or one of Graph's own: `not-started`, `in-progress`, `waiting` (on others), `deferred`.
+- `--due` is `today`, `overdue` (open, due before today), `none`, `any`, `"before W"`, `"after W"`, or a day W on its own, W in the forms `--due` takes on `tasks add`. Due dates are read as your local days.
+- `--importance` takes what `tasks add` takes; `--category` matches ignoring case.
+- `--sort` is `due` (soonest first, no due date last), `importance` (high first), `created` or `modified` (newest first), or `title`; `--limit N` keeps the first N after sorting.
+- A filter (`--status`, `--due`, `--importance`, `--category`) with no `--list` looks in every list, soonest due first unless `--sort` says otherwise, and each task carries `list`, its list's name: the table has a `LIST` column, and CSV adds `list` after the task columns. With `--list`, it's that list, in its own order.
 
 ## Find a task
 
@@ -111,6 +129,11 @@ ms-todo tasks list --format ids | ms-todo tasks complete -   # `-` reads IDs fro
 - `tasks add` reads its text for dates and more ([Quick add](#quick-add)); `--no-parse` takes it as the title, exactly as given. With no `--list` or `#List`, it goes to "Tasks".
 - Due dates are dates only; put a time in `--reminder`. Dates are written in your local time zone (`TZ`, or the system's).
 - `--due` takes `2026-10-02` or a phrase: `today`, `tomorrow` (`tom`), `yesterday`, `fri` (the next one, never today), `this fri`, `next fri` (next week's), `in 3 days`, `three days from today`, `+2w`, `-1d`, `2 days ago`, `next week` (its Monday), `next month` (the 1st), `eow`, `eom`, `12 oct`, `oct 12`, `12/10` (day first). A day and month already past means next year's. `--reminder` takes the same with a time: `17:30` alone (today's, or tomorrow's once it's past), `tomorrow 9am`, `fri 5:30pm`, `noon`, `2026-10-02 09:30`. On `tasks edit`, an empty value or `-` clears either. A phrase ms-todo can't read exits 2 and names the part it didn't understand.
+- `--start W` sets a start date. With no due date, Microsoft To Do makes it the due date too, and says so in a note; on `tasks edit`, the task's own due date is sent with it, so it stays. `--clear-start` (or `--start -`) removes it.
+- `--recur "every mon"` makes it repeat: the `every …` of [Quick add](#quick-add), with or without the `every` (`weekday`, `every 2 weeks on tue, thu`, `every month on the 1st until dec`, `daily`). It's first due on the first day it falls on, from `--due` or from today, and that becomes the due date. `--clear-recur` stops it; the due date stays. The zone is always sent with it (S12). A repeating task keeps no start date of its own: Microsoft To Do counts the recurrence from the start date and moves the due date with it, so `--start` on a repeating task is refused, a recurrence set on a task with a start date moves the start to the first occurrence too, and on `tasks add` a start date with a recurrence must be the first due date.
+- `--category NAME` (several times for several) sets the task's categories, over any `@label` in the text; on `tasks edit` they replace the task's, and `--clear-categories` removes them. `categories list` shows your Outlook categories.
+- `--body-file FILE` reads the notes from a file (`-` is stdin), in place of `--body`.
+- `tasks add --strict` exits 2 where the parser would add the task with a note, such as for an unknown `#List`.
 - `--importance` takes `high`, `normal` or `low`, or Todoist's levels: `1` or `p1` is high, `2`, `3`, `p2` and `p3` are normal (Microsoft To Do has one level for both), `4` or `p4` is low.
 - A task can also be named by its exact title, together with `--list`. A title several tasks share is an error listing them.
 - `--dry-run` shows what a command would change, resolved exactly as the real run would, and changes nothing.
@@ -244,6 +267,40 @@ ms-todo lists order Health --before Finances        # within a folder
 
 Folders work like the To Do app's list groups, one level deep, and exist only as a name on each list: a folder with no lists is gone. They're kept in ms-todo's own data on each list in Microsoft To Do, so every ms-todo you sign in to shows them after its next sync, while the To Do apps don't see them. A folder name that exists matches ignoring case. `lists list` gives each list's `folder` (null for none) and lists them folder by folder, then those in no folder; lists without an order go last, in the order ms-todo first saw them. Every folder change is a change like any other: queued, sent in the background, shown `pending` until then, undone with `ms-todo undo`, and it takes `--dry-run` and `--idempotency-key`. One command that moves or renames several lists is one change, so one `undo` reverses all of it.
 
+## Make, rename and delete lists
+
+```sh
+ms-todo lists create Garden --folder Home   # in a folder, made if it's new
+ms-todo lists rename Garden "Garden and shed"
+ms-todo lists delete Scratch --dry-run      # how many tasks would go with it
+ms-todo lists delete Scratch --yes          # asks first in a terminal; needs --yes anywhere else
+```
+
+A new list shows at once, and takes tasks at once too: they wait in the outbox for the list to be made. A name another list has is refused, so `--list NAME` stays unambiguous. "Tasks" and Flagged Emails are Microsoft To Do's own and can't be renamed or deleted. Deleting a list deletes every task in it. `undo` reverses a create (while the list is still empty and keeps its name), a rename (while the name holds) and the delete of an empty list, which is made again with a new Graph ID and the same local ID, name and folder. The delete of a list that had tasks can't be undone: Microsoft To Do deleted them with it, so `undo` exits 7 and says so. A list with changes to its tasks still waiting in the outbox isn't deleted until they're sent.
+
+## Categories
+
+```sh
+ms-todo categories list
+ms-todo categories create Errands --color preset3   # preset0 to preset24 (preset3 yellow, preset4 green), or none
+ms-todo categories recolor Errands --color preset4
+ms-todo categories delete Errands --yes             # tasks keep the name as a label, without a colour
+```
+
+Categories are your Outlook master categories: Outlook and Graph show their colours; the iPhone To Do app shows no categories at all. Names are unique ignoring case, and Microsoft To Do can't rename one (it ignores a new name), so there's no `rename`: create the new one, re-tag the tasks with `tasks edit --category`, then delete the old one. A category is named by its name (ignoring case) or ID. These go straight to Microsoft To Do rather than through the outbox (they need the network, and they aren't cached), take `--dry-run` and `--idempotency-key`, and `undo` reverses each: a create by deleting it, a recolour by the old colour, a delete by making it again with its colour, each only while nothing has changed it since.
+
+## Open extensions
+
+```sh
+ms-todo extensions set list Garden com.example.garden --json '{"beds": 3}'
+ms-todo extensions get list Garden com.example.garden
+ms-todo extensions set task <TASK> com.example.app --json '{"ref": "A-12"}'
+ms-todo extensions delete task <TASK> com.example.app --yes
+ms-todo extensions list task <TASK>         # ms-todo's own
+```
+
+Open extensions are named JSON documents other apps (or you) keep on a list or a task. `set` makes the extension hold exactly the object given, creating it if it's missing; `get` reads one by name; `delete` removes one (asks first, or `--yes`). Microsoft To Do can't list a list's or a task's extensions, so `list` shows ms-todo's own, `com.planetaryescape.mstodo`, which can be read but not written here: My Day, folders and assignees change it. Like categories, these go straight to Microsoft To Do, take `--dry-run` and `--idempotency-key`, and `undo` puts the document back as it was (or removes one `set` made) while nobody has changed it since.
+
 ## Offline, and never lose a write
 
 Every change is applied to the local cache and queued in an outbox in one step, so it answers in milliseconds even with no network. The daemon sends the queue in order, each task's changes one after another, and backs off while the network is down. Each task shows how its changes are doing in `sync_state`, and `tasks list` marks it in its `SYNC` column:
@@ -282,7 +339,7 @@ mst tui --theme nord # draw with a theme (mst tui --list-themes names them)
 
 A title bar with the version and the view you're in, a sidebar of smart views (My Day, Important, Planned, All, Completed), then your folders, each with its lists under it and their total, then the lists in no folder, all with their counts, the task list, and a detail pane. It opens from the local cache, and changes made anywhere, the phone included, show up as the daemon syncs them. A change you make shows at once, marked pending (dim) until it reaches Microsoft To Do; unknown outcomes are amber and rejected changes red, with a banner saying why.
 
-The keys are in the README's [TUI keys](../README.md#tui-keys) table; `?` inside the TUI lists them all.
+The keys are in the README's [TUI keys](../README.md#tui-keys) table; `?` inside the TUI lists them all. The palette (`:`) also has "New list…", "Rename list…" and "Delete list…" (the list under the sidebar's cursor, or the one shown), and a task's categories show on its row as `@label`.
 
 In the editor, a due date or a reminder takes what `--due` and `--reminder` take (`tomorrow`, `fri 17:30`, `+2w`, `12 oct`), and shows what it resolves to as you type (`→ Fri 2 Oct`, or `, in the past`); empty or `-` clears it, and input it can't read says why and sends nothing. Importance is picked by level: `1` high, `2` or `3` normal, `4` low (or `h`, `n`, `l`), saved at once. Notes are plain text on several lines: notes written as html on another device are shown as text, and only rewritten as text if you change them. A selection holds only tasks in the view on screen: switching views clears it, and a task that leaves the view drops out of it. The Completed view is grouped by the day each task was completed: Today, Yesterday, then `Mon 21 Sep` and so on. My Day's title has its day (`My Day · Fri 25 Sep`); its tasks come first, then Suggestions. `t` on a suggestion adds it; `t` on the task or the selection puts it in My Day, or takes it out when it's all there already. `a` from My Day adds the new task to it.
 
@@ -314,7 +371,10 @@ ms-todo sync --wait    # returns once a sync that started after it has finished;
 ms-todo sync           # just asks for one
 ms-todo doctor         # sign-in, daemon, the cache's path and size, each list's sync state and mode, the last error, the outbox by state
 ms-todo schema tasks list   # the JSON schemas of a command's input and output; `ms-todo schema` for all
+ms-todo --fresh tasks list --due today   # sync and wait first, then answer
 ```
+
+Every command takes three more global flags: `--fresh` syncs and waits before a read, so the answer is as fresh as Microsoft To Do's; `--quiet` prints nothing on stderr but errors (no notes, no progress); `--no-color` turns off bold in tables, as `NO_COLOR` does.
 
 A change made on your phone shows up after the next sync. The first sync of each list reads all of it; after that, a sync asks Microsoft Graph only for what changed (delta), fetches ms-todo's own data for those tasks, and removes what's gone. If Graph drops the delta link, that list is read whole again and anything deleted meanwhile is removed. A sync never overwrites or removes a task with a change still queued, pending or unknown, and asks for a sync right after the outbox sends something. `doctor` shows each list's mode (`delta` or `enumeration`) and when its last delta ran.
 
@@ -326,6 +386,8 @@ The first command starts a small background daemon, which is the only process th
 ms-todo daemon status
 ms-todo daemon stop    # returns once the daemon's process has exited
 ms-todo daemon start
+ms-todo daemon restart
+ms-todo daemon logs --follow   # its log; --format json gives { path, lines }
 ```
 
 Its socket is private to your user (0600, in a 0700 directory), and its log is `daemon.log` in the data directory's `logs/`. A newer ms-todo restarts an older daemon by itself.

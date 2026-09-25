@@ -84,7 +84,7 @@ All paths are under `/me`:
 todo/lists                              GET POST
 todo/lists/{l}                          GET PATCH DELETE
 todo/lists/delta                        GET
-todo/lists/{l}/extensions               GET POST        (+ /{name} GET PATCH DELETE)
+todo/lists/{l}/extensions               POST            (+ /{name} GET PATCH DELETE; the collection GET is a 404 too, seen live 2026-09-25, D-058)
 todo/lists/{l}/tasks                    GET POST        ($filter $orderby $top $expand)
 todo/lists/{l}/tasks/delta              GET
 todo/lists/{l}/tasks/{t}                GET PATCH DELETE

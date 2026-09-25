@@ -55,6 +55,8 @@ Use glyphs from a Nerd Font or Unicode symbol set, with an ASCII fallback option
 
 As built (rung 8d, D-057): **Assigned** comes after All, `◔ Assigned` (`w` in ASCII) with its open count: open tasks with an assignee, under a heading per person (names that differ only in case are one person, under the spelling seen first), soonest due first. A task's row ends with a person chip, `◔ Sam`, in the `accent` role. The detail pane has an **Assignee** field after Importance (the cursor reaches it; `e` or Enter on it edits it, empty clears), and shows the status `waiting on others`. The field picker's `a` edits it too, and with a selection asks for one name for all. `W`, "Assign to…" in the palette, asks in the hint bar (`Assign 3 tasks to: Sam█ … Enter on empty: no one`) for the selection or the task under the cursor, starting from the name they share; one `ChangeTasks`, so one `u` undoes it.
 
+As built (rung 8e, D-058): the palette has "New list…", "Rename list…" and "Delete list…", for the list under the sidebar's cursor or the one shown. New and rename ask for the name in the hint bar (`New list: █`, `Rename Home to: Home█`); delete asks `Delete the list "Home" and every task in it? y/n`, and a deleted list on screen gives way to the default list. They're palette-only: no new key. A task's categories show at the end of its row as `@label` chips in `text_muted`.
+
 The **My Day view** has:
 
 - A heading with the date.

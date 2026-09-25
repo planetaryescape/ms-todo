@@ -96,11 +96,15 @@ Every command in the tour and the recipes works in it. The seed data is `demo/se
 | --- | --- |
 | See your lists, by folder | `mst lists list` |
 | See a list's tasks | `mst tasks list --list Finances` |
+| Filter and sort across lists | `mst tasks list --due overdue`, `mst tasks list --category Errands --sort due` |
+| Make, rename or delete a list | `mst lists create Garden --folder Home`, `rename`, `delete` |
 | Add a task the way you'd say it | `mst tasks add "Call mum in 2 days p1"` |
 | Plan today | `mst myday suggest`, `mst myday add <id>`, `mst myday list` |
 | Track who you're waiting on | `mst tasks edit <id> --assignee Sam`, `mst waiting` |
 | Preview how it would be read | `mst tasks parse "Call mum in 2 days p1"` |
 | Complete, reopen, edit or delete | `mst tasks complete <id>`, `reopen`, `edit`, `delete` |
+| Make a task repeat, or give it a start date | `mst tasks edit <id> --recur "every mon"`, `--start fri` |
+| Colour your categories | `mst categories create Errands --color preset3`, `recolor`, `delete` |
 | Find a task in any list | `mst search rent` |
 | See what you finished | `mst done --since mon` |
 | Move overdue tasks to today | `mst reschedule --overdue --to today --dry-run` |
@@ -175,7 +179,7 @@ In the TUI's add box, a likely list shows as `→ Finances? (Ctrl-l to accept)`.
 | `d` | delete, after a `y` / `n` confirmation |
 | `u` | undo the last change |
 | `/` | filter the view as you type |
-| `:` | the command palette: any action, list or view by name |
+| `:` | the command palette: any action, list or view by name, and "New list…", "Rename list…", "Delete list…" |
 | `D` | diagnostics: sign-in, daemon, cache, each list's sync and the outbox |
 | `o` / `y` | open or copy the task's link |
 | `r` | sync now |
@@ -347,17 +351,10 @@ mst myday list
 ### Review the morning: what's overdue or due today
 
 ```sh
-mst reschedule --due-before tomorrow --to today --dry-run
+mst tasks list --due "before tomorrow" --status open
 ```
 
-`tasks list` has no due-date filter yet, so this borrows the dry run of a reschedule: it lists every open task due today or earlier, in every list, and changes nothing. Keep `--dry-run`. For a view grouped by day, open the TUI's Planned view.
-
-```
-Would edit 9 tasks:
-  "Renew passport"  243f7f2c-5614-42dd-9698-7d61a74eb9bf
-  "Get cabinet quotes"  c872fc84-2f85-46b7-8a7c-a8ee71e8b0b2
-  …
-```
+Every open task due today or earlier, in every list, soonest first, each with its list. `--due overdue` leaves out today's, and `mst reschedule --overdue --to today` moves the overdue ones on. For a view grouped by day, open the TUI's Planned view.
 
 ### Copy yesterday's work for a standup
 
@@ -481,6 +478,9 @@ Microsoft Graph's To Do API leaves out some things the To Do apps do. ms-todo wo
 | My Day | has no My Day | Its own [My Day](#my-day), stored on each task in Microsoft To Do as an open extension, and mirrored on the phone through the due date. A task put in My Day in the app doesn't reach ms-todo's |
 | List groups | doesn't expose them | Folders, stored on each list in Microsoft To Do as an open extension. Every ms-todo you sign in to sees them; the To Do apps don't |
 | Moving a task to another list | has no move | `tasks move` copies the task with everything it holds, checks the copy, then deletes the original. The To Do apps show the moved task as created at the time of the move; ms-todo keeps the original time |
+| A start date and a repeat on one task | counts a recurrence from the start date and moves the due date with it | A repeating task's start date is its first due date: `--start` on a repeating task is refused, and a recurrence set on a task with a start date moves the start along |
+| Listing a list's or task's extensions | answers 404 | `extensions list` shows ms-todo's own; `extensions get` reads any other by name |
+| Renaming a category | ignores the new name | No `categories rename`: create the new one, re-tag with `tasks edit --category`, delete the old one |
 
 ## Status and roadmap
 

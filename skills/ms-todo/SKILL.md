@@ -1,11 +1,11 @@
 ---
 name: ms-todo
-description: Read, find, add, complete, reopen, edit, reschedule, move and delete Microsoft To Do tasks, break them into steps, attach a link or files, and plan My Day, from the terminal by driving the `ms-todo` CLI. Use when the user wants to capture a task, tick one off, change a due date or reminder, move overdue tasks, move tasks to another list, add or tick off a task's steps, attach a link or a file to a task, download a task's files, plan today (My Day), mark a task as waiting on someone and see what they're waiting on, see what's in a list, find a task by what it says, summarise what they finished (for a standup or a weekly review), or otherwise work with their Microsoft To Do lists and tasks.
+description: Read, find, filter, add, complete, reopen, edit, reschedule, move and delete Microsoft To Do tasks, make them repeat or give them a start date, break them into steps, attach a link or files, plan My Day, and make, rename or delete lists and Outlook categories, from the terminal by driving the `ms-todo` CLI. Use when the user wants to capture a task, tick one off, change a due date or reminder, move overdue tasks, move tasks to another list, add or tick off a task's steps, attach a link or a file to a task, download a task's files, plan today (My Day), mark a task as waiting on someone and see what they're waiting on, see what's in a list or what's overdue across lists, make a task repeat, create, rename or delete a list, create or recolour a category, find a task by what it says, summarise what they finished (for a standup or a weekly review), or otherwise work with their Microsoft To Do lists and tasks.
 ---
 
 # ms-todo
 
-**Skill v11, for ms-todo rung 8d** (instant reads from a local cache kept live by delta sync; search across every list; what was completed, by day; instant writes that queue offline and are never dropped; bulk reschedules and edits; moving tasks between lists without losing anything; undo; quick add, which reads a task's text for its list, dates, recurrence and importance, and which agents turn off with `--no-parse`; optional list suggestions for inbox tasks; My Day, ms-todo's plan for today, mirrored on the phone through the due date; a task's steps and its one link; its files, attached and downloaded by path; and who a task is waiting on).
+**Skill v12, for ms-todo rung 8e, the whole API** (instant reads from a local cache kept live by delta sync; search across every list; what was completed, by day; instant writes that queue offline and are never dropped; bulk reschedules and edits; moving tasks between lists without losing anything; undo; quick add, which reads a task's text for its list, dates, recurrence and importance, and which agents turn off with `--no-parse`; optional list suggestions for inbox tasks; My Day, ms-todo's plan for today, mirrored on the phone through the due date; a task's steps and its one link; its files, attached and downloaded by path; who a task is waiting on; filters across lists; start dates and recurrences; lists made, renamed and deleted; Outlook categories; and open extensions).
 
 `ms-todo tui` (`mst tui`) is a full-screen view for people at a keyboard. Don't use it: it needs a terminal, and everything it does is a command below. Always pass a subcommand: a bare `ms-todo` opens the TUI in a terminal, and elsewhere only prints help and exits 2.
 
@@ -59,6 +59,20 @@ ms-todo tasks list --list "Home" --search boiler --format json   # one list, any
 - Search reads the cache. If a task the user just made elsewhere is missing, run `ms-todo sync --wait --format json` and search again. `sync.state: "initial"` means some lists haven't synced yet, so the results may be incomplete.
 - Several matches and the user meant one? Show them the titles and lists and let them pick; never act on the first result on your own. Then use its `id`.
 
+Filter and sort instead of reading everything:
+
+```bash
+ms-todo tasks list --due overdue --format json                  # open, due before today, every list
+ms-todo tasks list --due "before tomorrow" --status open --format json
+ms-todo tasks list --category Errands --sort due --limit 10 --format json
+ms-todo tasks list --list "Work" --status waiting --format json
+ms-todo tasks show <ID> --format json                            # one task, every field
+```
+
+- `--status open|completed|all|not-started|in-progress|waiting|deferred`, `--due today|overdue|none|any|"before W"|"after W"|<day>`, `--importance`, `--category` (ignoring case), `--sort due|importance|created|modified|title`, `--limit N`.
+- A filter with no `--list` looks in every list, soonest due first, each item with `list` (its list's name). With `--list`, that list only.
+- `--fresh` before any read syncs and waits first: `ms-todo --fresh tasks list --due today --format json`.
+
 A task's links (its linked resources, then the URLs in its notes):
 
 ```bash
@@ -86,6 +100,7 @@ ms-todo tasks delete <ID> --yes --format json
 ms-todo tasks list --list "Groceries" --format ids | ms-todo tasks complete - --format json
 ```
 
+- More fields: `--start YYYY-MM-DD` (with no due date, the start becomes the due date too), `--recur "every mon"` (the `every …` of quick add; the due date becomes its first occurrence), `--category NAME` (several for several), `--body-file PATH`. On `tasks edit`: `--clear-start`, `--clear-recur`, `--clear-categories`, and `--category` replaces the task's categories. A repeating task keeps no start date of its own: `--start` on one exits 2, and setting a recurrence moves a start date to the first occurrence. On `tasks add`, a start date with a recurrence must be the first due date.
 - Due dates are dates only (`YYYY-MM-DD`). A time goes in `--reminder` (`YYYY-MM-DDTHH:MM`, local time). Both also take phrases such as `tomorrow` or `fri 17:30`, resolved on the machine running the CLI; for generated commands, pass the explicit forms. `--importance` takes `high|normal|low`, `1`–`4` or `p1`–`p4`.
 - Without `--list`, `tasks add` goes to the default "Tasks" list.
 - **Pass `--no-parse` on every `tasks add` whose text you composed** (D-018), which is nearly always. Without it, `tasks add` reads its text the way a person types it: `#List`, `@category`, `p1`–`p4`, `every …`, `!9am`, `start mon` and dates are taken out of the title and become fields, so "Email Friday's report" could lose words or gain a due date. Give the fields as flags instead; flags always win over the text.
@@ -232,6 +247,35 @@ ms-todo lists order <LIST> --after <LIST> --format json            # same folder
 
 - Folder names match ignoring case. Renaming onto another folder's name exits 2; to merge, `lists move` the lists.
 - Each change is queued like a task change: the lists come back with `sync_state: "pending"`, one `op_id` covers every list changed, `undo <op_id>` reverses it, and `--dry-run` / `--idempotency-key` work. `folders delete` needs `--yes` off a terminal.
+
+## Lists
+
+```bash
+ms-todo lists show "Garden" --format json                       # with open_count and completed_count
+ms-todo lists create "Garden" --folder "Home" --format json     # tasks can be added to it at once
+ms-todo lists rename "Garden" "Garden and shed" --format json
+ms-todo lists delete "Scratch" --dry-run --format json          # changes.tasks: how many go with it
+ms-todo lists delete "Scratch" --yes --format json
+```
+
+- "Tasks" and Flagged Emails can't be renamed or deleted, and a name another list has is refused (exit 2).
+- **Deleting a list deletes every task in it.** Only an empty list's delete can be undone; check `--dry-run`'s `changes.tasks` and ask the user before deleting a list that has tasks.
+
+## Categories and extensions
+
+```bash
+ms-todo categories list --format json
+ms-todo categories create "Errands" --color preset3 --format json   # preset0–preset24, or none
+ms-todo categories recolor "Errands" --color preset4 --format json
+ms-todo categories delete "Errands" --yes --format json              # tasks keep the name as a label
+ms-todo extensions get task <ID> com.example.app --format json
+ms-todo extensions set list <LIST> com.example.app --json '{"key": "value"}' --format json
+ms-todo extensions delete task <ID> com.example.app --yes --format json
+```
+
+- These go straight to Microsoft To Do (they need the network) and aren't cached; `undo` still reverses each while nothing changed it since.
+- Category names are unique ignoring case, and there's no rename (Graph ignores one): create the new one, re-tag tasks with `tasks edit --category`, delete the old one. The iPhone app shows no categories.
+- `extensions list` shows only ms-todo's own extension (Graph can't list the others); don't write `com.planetaryescape.mstodo` (it's refused): `myday`, folders and `--assignee` change it.
 
 ## `sync_state`: has the change reached Microsoft To Do?
 
