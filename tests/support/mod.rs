@@ -99,6 +99,19 @@ impl Env {
         self.json(&["sync", "--wait"])
     }
 
+    /// Today in the binaries' zone (Europe/London), from the CLI itself:
+    /// the day `--due today` resolves to. A test's own clock can be in
+    /// another zone (CI runs in UTC), whose date differs from London's
+    /// for an hour or more each day, so expected dates come from here.
+    pub fn today(&self) -> chrono::NaiveDate {
+        let plan = self.json(&["tasks", "add", "x", "--due", "today", "--dry-run"]);
+        plan["changes"]["dueDateTime"]["dateTime"]
+            .as_str()
+            .and_then(|at| at.get(..10))
+            .and_then(|day| chrono::NaiveDate::parse_from_str(day, "%Y-%m-%d").ok())
+            .expect("a due date in the dry run")
+    }
+
     /// The local ID of the list or task whose Graph ID is `graph_id`, in
     /// the items of `collection` (`lists list`, or `tasks list --list L`).
     pub fn local_id(&self, collection: &[&str], graph_id: &str) -> String {

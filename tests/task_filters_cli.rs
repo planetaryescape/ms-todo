@@ -4,20 +4,19 @@
 
 mod support;
 
-use chrono::{Duration, Local};
+use chrono::{Duration, NaiveDate};
 use serde_json::{Value, json};
 use support::Env;
 use support::fake_graph::{FakeGraph, list, task};
 
-/// Midnight UTC of the local day `days` from today, as Graph gives a due
-/// date written in UTC: the day itself wherever the tests run.
-fn due(days: i64) -> Value {
-    let day = Local::now().date_naive() + Duration::days(days);
-    json!({ "dateTime": format!("{}T00:00:00.0000000", day.format("%Y-%m-%d")), "timeZone": "UTC" })
+/// Midnight UTC of the London day `days` from `today`, as Graph gives a
+/// due date written in UTC: the day itself wherever the tests run.
+fn due(today: NaiveDate, days: i64) -> Value {
+    json!({ "dateTime": format!("{}T00:00:00.0000000", day(today, days)), "timeZone": "UTC" })
 }
 
-fn day(days: i64) -> String {
-    (Local::now().date_naive() + Duration::days(days))
+fn day(today: NaiveDate, days: i64) -> String {
+    (today + Duration::days(days))
         .format("%Y-%m-%d")
         .to_string()
 }
@@ -38,6 +37,7 @@ async fn graph(env: &mut Env) -> FakeGraph {
         ],
     )
     .await;
+    let today = env.today();
     graph.edit(|data| {
         data.tasks.insert(
             "L-tasks".into(),
@@ -45,13 +45,13 @@ async fn graph(env: &mut Env) -> FakeGraph {
                 with(
                     "T-late",
                     "Renew passport",
-                    json!({ "dueDateTime": due(-3), "importance": "high",
+                    json!({ "dueDateTime": due(today, -3), "importance": "high",
                     "createdDateTime": "2026-09-01T00:00:00Z" }),
                 ),
                 with(
                     "T-today",
                     "Call mum",
-                    json!({ "dueDateTime": due(0), "categories": ["Family"],
+                    json!({ "dueDateTime": due(today, 0), "categories": ["Family"],
                     "createdDateTime": "2026-09-02T00:00:00Z" }),
                 ),
                 with(
@@ -67,13 +67,13 @@ async fn graph(env: &mut Env) -> FakeGraph {
                 with(
                     "T-done",
                     "Old report",
-                    json!({ "dueDateTime": due(-5), "status": "completed",
+                    json!({ "dueDateTime": due(today, -5), "status": "completed",
                     "createdDateTime": "2026-09-04T00:00:00Z" }),
                 ),
                 with(
                     "T-wait",
                     "Quarterly plan",
-                    json!({ "dueDateTime": due(2),
+                    json!({ "dueDateTime": due(today, 2),
                     "status": "waitingOnOthers", "importance": "low", "categories": ["family "],
                     "createdDateTime": "2026-09-05T00:00:00Z" }),
                 ),
@@ -121,7 +121,12 @@ async fn filters_without_a_list_look_in_every_list_soonest_due_first() {
         ["Call mum"]
     );
     assert_eq!(
-        titles(&env.json(&["tasks", "list", "--due", &format!("after {}", day(0))])),
+        titles(&env.json(&[
+            "tasks",
+            "list",
+            "--due",
+            &format!("after {}", day(env.today(), 0))
+        ])),
         ["Quarterly plan"]
     );
     assert_eq!(
