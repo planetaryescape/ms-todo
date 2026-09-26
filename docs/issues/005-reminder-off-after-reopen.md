@@ -30,3 +30,5 @@ Graph derives `isReminderOn` and ignores a written one (S17): writing the remind
 ## Known limits
 
 - A reopen queued offline and sent after the reminder's time has passed still writes the time, so Graph shows a past reminder as on. A past reminder doesn't fire, so this is accepted.
+- "Still ahead" compares local wall-clock times, so in the repeated hour when the clocks go back, a reminder up to an hour ahead can be read as past and stay off after a reopen. It's one hour a year, so this is accepted.
+- A completed task whose reminder is on with a past time (as a move leaves it) comes back completed with the reminder off after reopen, then undo. A past reminder doesn't fire, so this is accepted.
