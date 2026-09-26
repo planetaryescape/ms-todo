@@ -155,9 +155,9 @@ pub(crate) async fn undo(
                 match op.action.as_str() {
                     "complete" => restore_reminder(&mut body, before(op)?, &row.raw),
                     // A reopen sends the reminder's own time to turn it on,
-                    // and a time written with the completion would turn it
-                    // on again (S17), so it isn't sent back.
-                    "reopen" => {
+                    // and a time written with the completion turns it on
+                    // (S17): it goes back only if the reminder was on.
+                    "reopen" if !reminder_on(before(op)?) => {
                         if let Some(fields) = body.as_object_mut() {
                             fields.remove("reminderDateTime");
                         }

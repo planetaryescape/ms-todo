@@ -24,8 +24,8 @@ use crate::handlers::{State, error_payload, store_error};
 use crate::list_resolution::resolve_list;
 use crate::outbox::op_id_for;
 use crate::task_fields::{
-    Field, edit_fields, graph_body, graph_due_date, new_task_fields, reminder_at, reminder_on,
-    resend_reminder, user_time_zone,
+    Field, edit_fields, graph_body, graph_due_date, new_task_fields, reminder_at, resend_reminder,
+    user_time_zone,
 };
 use crate::task_resolution::{Target, resolve_tasks, select_tasks};
 
@@ -443,14 +443,17 @@ pub(crate) fn new_task_raw(body: &Value) -> Entity {
     raw
 }
 
-/// A reopen of `row` turns its reminder back on when its time is still
-/// ahead (D-060): completing a task turns its reminder off and keeps the
-/// time (issue 005). A completed task's reminder counts as off even where
-/// the cache still shows it on, as it does while the completion waits to
-/// be sent. A reminder whose time has passed stays off.
+/// A reopen of a completed `row` turns its reminder back on when its time
+/// is still ahead (D-060): completing a task turns its reminder off and
+/// keeps the time (issue 005), and only writing the time turns it on
+/// (S17). It's completed as the cache has it, a completion waiting to be
+/// sent included. An open task is left alone, whatever its reminder, so
+/// undo can put it back as it was. A reminder whose time has passed stays
+/// off.
 fn turn_reminder_back_on(body: &mut Value, row: &TaskRow) {
-    let off = !reminder_on(&row.raw) || crate::my_day::completed(row);
-    if off && reminder_at(&row.raw).is_some_and(|at| at > chrono::Local::now().naive_local()) {
+    if crate::my_day::completed(row)
+        && reminder_at(&row.raw).is_some_and(|at| at > chrono::Local::now().naive_local())
+    {
         resend_reminder(body, &row.raw);
     }
 }
@@ -581,6 +584,8 @@ mod tests {
         let untouched = json!({ "status": "notStarted" });
         assert_eq!(reopened(reminder(-1, false, "completed")), untouched);
         assert_eq!(reopened(reminder(3, true, "notStarted")), untouched);
+        // An open task is left alone, its reminder off or not.
+        assert_eq!(reopened(reminder(3, false, "notStarted")), untouched);
         assert_eq!(reopened(json!({ "status": "completed" })), untouched);
     }
 

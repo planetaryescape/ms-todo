@@ -152,8 +152,7 @@ pub(crate) fn comparable(task: &Entity, extension: Option<&Value>) -> Map<String
 }
 
 /// A task field as a copy keeps it: dates as days, a reminder to the
-/// minute, whether it's on by its time, notes by content and type, the
-/// rest as they are.
+/// minute, notes by content and type, the rest as they are.
 fn field_value(task: &Entity, key: &str) -> Value {
     let day = |read| graph_date(task, key, read).map(|date| date.format(DATE_FORMAT).to_string());
     match key {
@@ -166,9 +165,6 @@ fn field_value(task: &Entity, key: &str) -> Value {
             )?;
             Some(at.format("%Y-%m-%dT%H:%M").to_string())
         })),
-        // Graph derives it from the time and ignores a written one (S17):
-        // a copy of a task whose reminder is off comes back on (D-060).
-        "isReminderOn" => json!(task.get("reminderDateTime").is_some_and(|at| !at.is_null())),
         "body" => {
             let body = task.get(key).unwrap_or(&Value::Null);
             json!([body["content"], body["contentType"]])
@@ -194,6 +190,20 @@ fn instant_to_second(value: &Value) -> Value {
                 )
             },
         )
+}
+
+/// What a copy of `source` holds, as [`comparable`] names it: the same,
+/// but a reminder that's off with its time comes back on, since Graph
+/// turns a reminder on whenever its time is written (S17, D-060).
+pub(crate) fn expected_copy(source: &Entity, extension: Option<&Value>) -> Map<String, Value> {
+    let mut fields = comparable(source, extension);
+    if source
+        .get("reminderDateTime")
+        .is_some_and(|at| !at.is_null())
+    {
+        fields.insert("isReminderOn".into(), json!(true));
+    }
+    fields
 }
 
 /// The names of the values `expected` and `actual` don't share, either

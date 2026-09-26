@@ -304,6 +304,36 @@ async fn reopen_and_undo_turn_a_reminder_still_ahead_back_on() {
 }
 
 #[tokio::test]
+async fn undoing_a_reopen_keeps_a_completed_task_s_reminder_as_it_was() {
+    let mut env = Env::new();
+    // Completed with its reminder on, as a moved completed task is (S17).
+    let mut done = reminded("T1", "Renew passport", 3);
+    done["status"] = json!("completed");
+    // Open with its reminder off, as the app's reopen can leave one.
+    let mut open = reminded("T2", "Call the bank", 3);
+    open["isReminderOn"] = json!(false);
+    let graph = graph_with(&mut env, vec![done, open]).await;
+    graph.accept_task_patches().await;
+    env.synced();
+
+    env.json(&["tasks", "reopen", "T1"]);
+    env.settled();
+    assert_eq!(reminder_on(&graph, "T1"), true);
+    env.json(&["undo"]);
+    env.settled();
+    let now = graph.task("L-tasks", "T1").expect("task");
+    assert_eq!(now["status"], "completed");
+    assert_eq!(now["isReminderOn"], true, "the time went back with it");
+
+    let plan = env.json(&["tasks", "reopen", "T2", "--dry-run"]);
+    assert_eq!(
+        plan["changes"],
+        json!({ "status": "notStarted" }),
+        "an open task is left alone"
+    );
+}
+
+#[tokio::test]
 async fn a_task_in_any_list_is_found_by_its_graph_or_local_id() {
     let mut env = Env::new();
     let graph = graph(&mut env).await;

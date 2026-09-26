@@ -34,7 +34,7 @@ use ms_todo_protocol::ErrorPayload;
 use ms_todo_store::{Entity, OutboxRow, Restore, StoreError};
 use serde_json::Value;
 
-use copy::{ORIGINAL_CREATED_AT, copy_body, original_created_at};
+use copy::{ORIGINAL_CREATED_AT, copy_body, expected_copy, original_created_at};
 pub(crate) use copy::{comparable, differences};
 use progress::{AttachmentStep, Source};
 pub(crate) use progress::{Progress, Stage, StepState, from_list};
@@ -605,7 +605,7 @@ impl Job<'_> {
         let copy_extension = copy_extension.flatten();
         let copied = self.attachment_hashes(&self.target, copy_id).await?;
         let mut wrong = differences(
-            &comparable(expected, expected_extension),
+            &expected_copy(expected, expected_extension),
             &comparable(&copy, copy_extension.as_ref()),
         );
         let original = original_created_at(expected, expected_extension);
