@@ -1,5 +1,23 @@
 # Changelog
 
+## [0.1.30](https://github.com/planetaryescape/ms-todo/compare/v0.1.29...v0.1.30) (2026-09-26)
+
+
+### Bug Fixes
+
+* reopen and undo turn a task's reminder back on; moves of reminder-off tasks succeed (issue 005) ([#69](https://github.com/planetaryescape/ms-todo/issues/69)) ([410e274](https://github.com/planetaryescape/ms-todo/commit/410e274b6df709bba4188fb0bd66eea9cba40bd2))
+
+
+### Refactoring
+
+* split the CLI's args and output schemas, and the TUI's app, by job ([#70](https://github.com/planetaryescape/ms-todo/issues/70)) ([57d843b](https://github.com/planetaryescape/ms-todo/commit/57d843b799658f4c3d3ccd1f41499228746e8bbe))
+* split the store's outbox and the protocol crate by job ([#71](https://github.com/planetaryescape/ms-todo/issues/71)) ([dcfc501](https://github.com/planetaryescape/ms-todo/commit/dcfc5017b44fb825863ee0ca774ef08c0cc09896))
+
+
+### Documentation
+
+* S4 deltaLinks still valid after 55 hours ([#67](https://github.com/planetaryescape/ms-todo/issues/67)) ([2cb9e32](https://github.com/planetaryescape/ms-todo/commit/2cb9e32b214b68a867590262a06c38f8cbf59832))
+
 ## [0.1.29](https://github.com/planetaryescape/ms-todo/compare/v0.1.28...v0.1.29) (2026-09-25)
 
 
