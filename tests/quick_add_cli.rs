@@ -6,7 +6,7 @@
 
 mod support;
 
-use chrono::{Datelike, Days, Local, Months, NaiveDate};
+use chrono::{Datelike, Days, Months, NaiveDate};
 use serde_json::{Value, json};
 use support::Env;
 use support::fake_graph::{FakeGraph, list};
@@ -67,12 +67,8 @@ async fn created(env: &Env, graph: &FakeGraph) -> (String, Value) {
     (posts[0].url.path().to_owned(), body)
 }
 
-fn today() -> NaiveDate {
-    Local::now().date_naive()
-}
-
-fn next_first() -> NaiveDate {
-    let today = today();
+fn next_first(env: &Env) -> NaiveDate {
+    let today = env.today();
     if today.day() == 1 {
         return today;
     }
@@ -96,7 +92,7 @@ async fn the_demo_files_a_recurring_task_with_its_list_importance_and_reminder()
 
     let (path, body) = created(&env, &graph).await;
     assert_eq!(path, "/v1.0/me/todo/lists/L-fin/tasks");
-    let first = day(next_first());
+    let first = day(next_first(&env));
     assert_eq!(body["title"], "Pay rent");
     assert_eq!(body["importance"], "high");
     assert_eq!(
@@ -128,7 +124,7 @@ async fn a_relative_date_is_the_due_date_and_leaves_the_title() {
         "Tasks by default"
     );
     assert_eq!(body["title"], "Call mum");
-    let due = day(today().checked_add_days(Days::new(2)).expect("a date"));
+    let due = day(env.today().checked_add_days(Days::new(2)).expect("a date"));
     assert_eq!(body["dueDateTime"]["dateTime"], format!("{due}T00:00:00"));
     assert!(body.get("reminderDateTime").is_none());
 }

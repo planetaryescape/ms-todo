@@ -50,15 +50,10 @@ fn due(id: &str, title: &str, day: &str) -> Value {
     task
 }
 
-/// Today in the CLI's zone (Europe/London), from the CLI itself: the day
-/// `--due today` resolves to. `days` later (negative: earlier).
+/// Today in the CLI's zone (Europe/London), `days` later (negative:
+/// earlier).
 fn london_day(env: &Env, days: i64) -> String {
-    let plan = env.json(&["tasks", "add", "x", "--due", "today", "--dry-run"]);
-    let today = plan["changes"]["dueDateTime"]["dateTime"]
-        .as_str()
-        .and_then(|at| chrono::NaiveDate::parse_from_str(&at[..10], "%Y-%m-%d").ok())
-        .expect("today");
-    (today + chrono::Duration::days(days))
+    (env.today() + chrono::Duration::days(days))
         .format("%Y-%m-%d")
         .to_string()
 }
@@ -233,9 +228,44 @@ async fn done_reads_since_as_a_day_looking_back_and_shows_a_completion_just_made
     let t3 = env.local_id(&["tasks", "list"], "T3");
     env.json(&["tasks", "complete", &t3]);
     env.settled();
-    let today = env.json(&["done", "--since", "today"]);
-    assert_eq!(titles(&today), ["Finish today"]);
-    assert_eq!(field(&today, "completed_on"), [london_day(&env, 0)]);
+    // Graph dates a completion with its UTC date (S12, D-048), which is
+    // London's yesterday from midnight to 01:00 BST: then `--since today`
+    // leaves it out, as documented, and `--since yesterday` has it.
+    let graph_day = graph.task("L-tasks", "T3").expect("T3")["completedDateTime"]["dateTime"]
+        .as_str()
+        .and_then(|at| at.get(..10))
+        .expect("Graph dated the completion")
+        .to_owned();
+    let today = london_day(&env, 0);
+    assert!(
+        graph_day == today || graph_day == london_day(&env, -1),
+        "{graph_day} is neither today nor yesterday in London ({today})"
+    );
+    let since_today = env.json(&["done", "--since", "today"]);
+    let expected: &[&str] = if graph_day == today {
+        &["Finish today"]
+    } else {
+        &[]
+    };
+    assert_eq!(titles(&since_today), expected, "Graph's day {graph_day}");
+    // In that hour both completions are on one day, so their order is open.
+    let since_yesterday = env.json(&["done", "--since", "yesterday"]);
+    let mut on_days: Vec<(String, String)> = titles(&since_yesterday)
+        .into_iter()
+        .zip(
+            field(&since_yesterday, "completed_on")
+                .into_iter()
+                .map(str::to_owned),
+        )
+        .collect();
+    on_days.sort_unstable();
+    assert_eq!(
+        on_days,
+        [
+            ("Finish today".to_owned(), graph_day),
+            ("Yesterday's".to_owned(), london_day(&env, -1)),
+        ]
+    );
 }
 
 #[tokio::test]
