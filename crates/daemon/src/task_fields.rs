@@ -4,7 +4,8 @@
 
 use chrono::{NaiveDate, NaiveDateTime, NaiveTime};
 use ms_todo_core::{
-    DATE_FORMAT, ErrorKind, REMINDER_FORMAT, completion_date, local_due_date, parse_graph_date_time,
+    DATE_FORMAT, ErrorKind, REMINDER_FORMAT, completion_date, local_date_time, local_due_date,
+    parse_graph_date_time,
 };
 use ms_todo_protocol::{Clearable, Entity, ErrorPayload, Importance, NewTask, TaskEdit};
 use serde_json::{Map, Value, json};
@@ -279,6 +280,20 @@ pub(crate) fn graph_date(
 ) -> Option<NaiveDate> {
     let value = task.get(key)?;
     read(
+        value.get("dateTime")?.as_str()?,
+        value.get("timeZone")?.as_str()?,
+    )
+}
+
+/// Whether a task's reminder is on.
+pub(crate) fn reminder_on(task: &Entity) -> bool {
+    task.get("isReminderOn").and_then(Value::as_bool) == Some(true)
+}
+
+/// When a task's reminder is, in local time, whether it's on or not.
+pub(crate) fn reminder_at(task: &Entity) -> Option<NaiveDateTime> {
+    let value = task.get("reminderDateTime")?;
+    local_date_time(
         value.get("dateTime")?.as_str()?,
         value.get("timeZone")?.as_str()?,
     )

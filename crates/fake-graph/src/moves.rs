@@ -1,8 +1,8 @@
 //! What a move needs from the Graph double (rung 5e, S14), mounted by
 //! [`FakeGraph::accept_moves`]: task creates that take their checklist
 //! items, their one linked resource and our extension inline, task
-//! deletes, and file attachments (`crate::attachments`). Every child
-//! change moves the task's etag, as S1 found.
+//! patches, task deletes, and file attachments (`crate::attachments`).
+//! Every child change moves the task's etag, as S1 found.
 //!
 //! Each mock sits below the default priority, so a test's own mock for the
 //! same request wins: that's how a test makes one step fail.
@@ -16,7 +16,7 @@ use wiremock::{Mock, Request, ResponseTemplate};
 
 pub use crate::attachments::{Attachment, post_attachment, put_chunk};
 use crate::attachments::{find_task, list_and_task};
-use crate::graph::{Data, FakeGraph, answer_get, lock, next_write, not_found};
+use crate::graph::{Data, FakeGraph, answer_get, lock, next_write, not_found, patch_task};
 
 /// Below the default (5), so a test's own mock wins.
 const PRIORITY: u8 = 10;
@@ -28,6 +28,16 @@ impl FakeGraph {
         Mock::given(method("POST"))
             .and(path_regex(r"^/v1\.0/me/todo/lists/[^/]+/tasks$"))
             .respond_with(move |request: &Request| create_task(&mut lock(&shared), request))
+            .with_priority(PRIORITY)
+            .mount(&self.server)
+            .await;
+
+        // A copy whose reminder is off is turned off again after its
+        // create (issue 005).
+        let shared = Arc::clone(&self.data);
+        Mock::given(method("PATCH"))
+            .and(path_regex(r"^/v1\.0/me/todo/lists/[^/]+/tasks/[^/]+$"))
+            .respond_with(move |request: &Request| patch_task(&mut lock(&shared), request))
             .with_priority(PRIORITY)
             .mount(&self.server)
             .await;
@@ -203,6 +213,11 @@ pub fn create_task(data: &mut Data, request: &Request) -> ResponseTemplate {
                 task.insert(key.clone(), value.clone());
             }
         }
+    }
+    // Graph ignores `isReminderOn: false` on a create that carries a
+    // reminder time: the task comes back with its reminder on (issue 005).
+    if task.get("reminderDateTime").is_some_and(|at| !at.is_null()) {
+        task["isReminderOn"] = json!(true);
     }
     for key in ["checklistItems", "linkedResources"] {
         if let Some(items) = task[key].as_array_mut() {

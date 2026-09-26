@@ -11,9 +11,11 @@
 //!    operation's `opId` and `originalCreatedAt` (S13, S14). The task keeps
 //!    its local ID and takes the copy's Graph ID.
 //! 3. **Attachments:** add each to the copy, one after another.
-//! 4. **Verify:** the target list answers 200 (the ghost-write check), the
-//!    copy read back matches the source field by field with the same
-//!    attachments byte for byte, and the source hasn't changed meanwhile.
+//! 4. **Verify:** a reminder that's off with a time is turned off on the
+//!    copy (Graph turns it on at the create, issue 005); then the target
+//!    list answers 200 (the ghost-write check), the copy read back matches
+//!    the source field by field with the same attachments byte for byte,
+//!    and the source hasn't changed meanwhile.
 //! 5. **Delete** the source. Only now.
 //!
 //! A step that fails for good before the delete rolls the move back: the
@@ -43,6 +45,7 @@ pub(crate) use spool::{blocking, sha256_hex};
 use super::send::{Failure, classify};
 use crate::entities::{EXTENSION_NAME, split_extension};
 use crate::handlers::{State, error_payload, store_error};
+use crate::task_fields::{reminder_at, reminder_on};
 
 /// How one attempt at a move ended. The steps taken are saved either way.
 pub(super) enum Settled {
@@ -513,6 +516,23 @@ impl Job<'_> {
             .map(|step| (step.name.clone(), step.bytes, step.sha256.clone()))
             .collect();
         expected.sort();
+        if reminder_off_with_a_time(&source.raw) {
+            // Graph turns the reminder on for a create that carries its
+            // time (issue 005), so it's turned off again. The PATCH is
+            // idempotent: a resumed check simply sends it again.
+            let off = serde_json::json!({ "isReminderOn": false });
+            let patched = self
+                .state
+                .graph
+                .update_task(&self.target, &copy_id, &off, None, true)
+                .await;
+            // A copy gone (404) is left to the check, which says so.
+            if let Err(error) = patched
+                && error.status() != Some(404)
+            {
+                return self.read_failed(progress, error).await;
+            }
+        }
         let checked = self
             .check_copy(&copy_id, &source.raw, source.extension.as_ref(), &expected)
             .await;
@@ -960,6 +980,12 @@ impl Job<'_> {
             Failure::Temporary(error) | Failure::Unknown(error) => Err(Settled::Temporary(error)),
         }
     }
+}
+
+/// A reminder that's off but keeps its time, as completing a task leaves
+/// it.
+fn reminder_off_with_a_time(task: &Entity) -> bool {
+    !reminder_on(task) && reminder_at(task).is_some()
 }
 
 fn read_failure(error: GraphError) -> Settled {

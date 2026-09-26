@@ -219,6 +219,73 @@ async fn complete_and_reopen_send_if_match_with_the_etag_last_read() {
     );
 }
 
+/// A task with its reminder on, `days` from now, as Graph gives it.
+fn reminded(id: &str, title: &str, days: i64) -> Value {
+    let at = chrono::Utc::now() + chrono::Duration::days(days);
+    let mut reminded = task(id, title, &format!("W/\"{id}\""));
+    reminded["isReminderOn"] = json!(true);
+    reminded["reminderDateTime"] = json!({
+        "dateTime": at.format("%Y-%m-%dT%H:%M:00.0000000").to_string(),
+        "timeZone": "UTC"
+    });
+    reminded
+}
+
+fn reminder_on(graph: &FakeGraph, id: &str) -> Value {
+    graph.task("L-tasks", id).expect("task")["isReminderOn"].clone()
+}
+
+#[tokio::test]
+async fn reopen_and_undo_turn_a_reminder_still_ahead_back_on() {
+    let mut env = Env::new();
+    let graph = graph_with(
+        &mut env,
+        vec![
+            reminded("T1", "Renew passport", 3),
+            reminded("T2", "Call the bank", -1),
+        ],
+    )
+    .await;
+    graph.accept_task_patches().await;
+    env.synced();
+
+    // Graph turns the reminder off when a task is completed (issue 005).
+    env.json(&["tasks", "complete", "T1", "T2"]);
+    env.settled();
+    assert_eq!(reminder_on(&graph, "T1"), false);
+    assert_eq!(reminder_on(&graph, "T2"), false);
+
+    let plan = env.json(&["tasks", "reopen", "T1", "--dry-run"]);
+    assert_eq!(
+        plan["changes"],
+        json!({ "status": "notStarted", "isReminderOn": true })
+    );
+    env.json(&["tasks", "reopen", "T1"]);
+    // A reminder whose time has passed stays off.
+    let plan = env.json(&["tasks", "reopen", "T2", "--dry-run"]);
+    assert_eq!(plan["changes"], json!({ "status": "notStarted" }));
+    env.json(&["tasks", "reopen", "T2"]);
+    env.settled();
+    assert_eq!(reminder_on(&graph, "T1"), true);
+    assert_eq!(reminder_on(&graph, "T2"), false);
+
+    // Undoing a completion puts the reminder back as it was.
+    env.json(&["tasks", "complete", "T1"]);
+    env.settled();
+    assert_eq!(reminder_on(&graph, "T1"), false);
+    let undone = env.json(&["undo"]);
+    assert_eq!(undone["action"], "undo");
+    env.settled();
+    let now = graph.task("L-tasks", "T1").expect("task");
+    assert_eq!(now["status"], "notStarted");
+    assert_eq!(now["isReminderOn"], true);
+    assert!(
+        env.outbox().iter().all(|op| op["state"] == "done"),
+        "{:?}",
+        env.outbox()
+    );
+}
+
 #[tokio::test]
 async fn a_task_in_any_list_is_found_by_its_graph_or_local_id() {
     let mut env = Env::new();

@@ -245,6 +245,28 @@ async fn a_move_copies_every_field_and_child_then_deletes_the_source() {
 }
 
 #[tokio::test]
+async fn a_task_whose_reminder_is_off_keeps_its_time_and_stays_off_when_moved() {
+    let mut env = Env::new();
+    // As completing leaves it: the reminder off, its time kept (issue 005).
+    let mut done = task("T1", "Renew passport", "W/\"t1-1\"");
+    done["status"] = json!("completed");
+    done["isReminderOn"] = json!(false);
+    done["reminderDateTime"] =
+        json!({ "dateTime": "2026-09-28T08:30:00.0000000", "timeZone": "UTC" });
+    let graph = graph_with(&mut env, vec![done.clone()]).await;
+    env.synced();
+
+    let moved = move_t1(&env);
+    env.settled();
+    env.op_in_state(&op_id(&moved), "done");
+    assert!(graph.task("L-tasks", "T1").is_none(), "the source is gone");
+    let copy = the_copy(&graph);
+    assert_eq!(copy["isReminderOn"], false);
+    assert_eq!(copy["reminderDateTime"], done["reminderDateTime"]);
+    assert_eq!(copy["status"], "completed");
+}
+
+#[tokio::test]
 async fn a_rejected_step_before_the_delete_deletes_the_partial_copy_and_keeps_the_source() {
     let mut env = Env::new();
     let graph = rich_graph(&mut env).await;

@@ -24,7 +24,8 @@ use crate::handlers::{State, error_payload, store_error};
 use crate::list_resolution::resolve_list;
 use crate::outbox::op_id_for;
 use crate::task_fields::{
-    Field, edit_fields, graph_body, graph_due_date, new_task_fields, user_time_zone,
+    Field, edit_fields, graph_body, graph_due_date, new_task_fields, reminder_at, reminder_on,
+    user_time_zone,
 };
 use crate::task_resolution::{Target, resolve_tasks, select_tasks};
 
@@ -155,7 +156,13 @@ pub(crate) async fn change_tasks(
     // task's plan shows exactly what it's sent.
     let bodies = targets
         .iter()
-        .map(|target| crate::task_dates::task_body(&changes, &target.row))
+        .map(|target| {
+            let mut body = crate::task_dates::task_body(&changes, &target.row)?;
+            if action == TaskAction::Reopen {
+                turn_reminder_back_on(&mut body, &target.row);
+            }
+            Ok(body)
+        })
         .collect::<Result<Vec<Value>, ErrorPayload>>()?;
     if let [body] = bodies.as_slice() {
         changes = body.clone();
@@ -436,6 +443,21 @@ pub(crate) fn new_task_raw(body: &Value) -> Entity {
     raw
 }
 
+/// A reopen of `task` turns its reminder back on when its time is still
+/// ahead (D-060): completing a task turns its reminder off and keeps the
+/// time (issue 005). A completed task's reminder counts as off even where
+/// the cache still shows it on, as it does while the completion waits to
+/// be sent. A reminder whose time has passed stays off.
+fn turn_reminder_back_on(body: &mut Value, row: &TaskRow) {
+    let off = !reminder_on(&row.raw) || crate::my_day::completed(row);
+    if off
+        && reminder_at(&row.raw).is_some_and(|at| at > chrono::Local::now().naive_local())
+        && let Some(fields) = body.as_object_mut()
+    {
+        fields.insert("isReminderOn".into(), json!(true));
+    }
+}
+
 fn completes_recurring(task: &Entity, action: TaskAction) -> bool {
     action == TaskAction::Complete && task.get("recurrence").is_some_and(Value::is_object)
 }
@@ -526,6 +548,34 @@ mod tests {
             TaskAction::Edit,
         );
         assert!(edit.payload.get("recurring").is_none());
+    }
+
+    #[test]
+    fn a_reopen_turns_the_reminder_back_on_only_while_it_is_ahead() {
+        let reminder = |days: i64, on: bool, status: &str| {
+            let at = chrono::Local::now().naive_local() + chrono::Duration::days(days);
+            json!({
+                "status": status,
+                "isReminderOn": on,
+                "reminderDateTime": {
+                    "dateTime": at.format("%Y-%m-%dT%H:%M:%S").to_string(),
+                    "timeZone": "Europe/London"
+                }
+            })
+        };
+        let reopened = |task: Value| {
+            let mut body = json!({ "status": "notStarted" });
+            turn_reminder_back_on(&mut body, &row(task));
+            body
+        };
+        let on = json!({ "status": "notStarted", "isReminderOn": true });
+        assert_eq!(reopened(reminder(3, false, "completed")), on);
+        // The completion hasn't been sent yet: Graph will have turned it off.
+        assert_eq!(reopened(reminder(3, true, "completed")), on);
+        let untouched = json!({ "status": "notStarted" });
+        assert_eq!(reopened(reminder(-1, false, "completed")), untouched);
+        assert_eq!(reopened(reminder(3, true, "notStarted")), untouched);
+        assert_eq!(reopened(json!({ "status": "completed" })), untouched);
     }
 
     #[test]

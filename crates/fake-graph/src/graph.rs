@@ -372,40 +372,12 @@ impl FakeGraph {
         Self { server, data }
     }
 
-    /// Answer a task's PATCH as Graph does: the fields sent, merged into
-    /// the task, with a new etag; a completion gets today's
-    /// `completedDateTime` at midnight UTC, the day and no time (S12).
+    /// Answer a task's PATCH as Graph does ([`patch_task`]).
     pub async fn accept_task_patches(&self) {
         let shared = Arc::clone(&self.data);
         Mock::given(method("PATCH"))
             .and(path_regex(r"^/v1\.0/me/todo/lists/[^/]+/tasks/[^/]+$"))
-            .respond_with(move |request: &Request| {
-                let mut data = lock(&shared);
-                let mut parts = request.url.path().split('/').skip(5);
-                let (Some(list), Some(_), Some(id)) = (parts.next(), parts.next(), parts.next())
-                else {
-                    return not_found();
-                };
-                let sent: Value = serde_json::from_slice(&request.body).unwrap_or_default();
-                let Some(task) = data
-                    .tasks
-                    .get_mut(list)
-                    .and_then(|tasks| tasks.iter_mut().find(|task| task["id"] == id))
-                else {
-                    return not_found();
-                };
-                if let (Some(task), Some(sent)) = (task.as_object_mut(), sent.as_object()) {
-                    task.extend(sent.clone());
-                }
-                if sent["status"] == "completed" {
-                    let today = chrono::Utc::now().format("%Y-%m-%dT00:00:00.0000000");
-                    task["completedDateTime"] =
-                        json!({ "dateTime": today.to_string(), "timeZone": "UTC" });
-                }
-                let etag = format!("W/\"{id}-{}\"", next_write());
-                task["@odata.etag"] = json!(etag);
-                ResponseTemplate::new(200).set_body_json(task.clone())
-            })
+            .respond_with(move |request: &Request| patch_task(&mut lock(&shared), request))
             .mount(&self.server)
             .await;
     }
@@ -730,6 +702,36 @@ pub async fn graph_with_tasks(env: &mut impl GraphUser, tasks: Vec<Value>) -> Fa
         data.tasks.insert("L-tasks".into(), tasks);
     });
     graph
+}
+
+/// A task's PATCH as Graph answers it: the fields sent, merged into the
+/// task, with a new etag. A completion gets today's `completedDateTime` at
+/// midnight UTC, the day and no time (S12), and turns the reminder off,
+/// keeping its time (seen live, issue 005).
+pub fn patch_task(data: &mut Data, request: &Request) -> ResponseTemplate {
+    let mut parts = request.url.path().split('/').skip(5);
+    let (Some(list), Some(_), Some(id)) = (parts.next(), parts.next(), parts.next()) else {
+        return not_found();
+    };
+    let sent: Value = serde_json::from_slice(&request.body).unwrap_or_default();
+    let Some(task) = data
+        .tasks
+        .get_mut(list)
+        .and_then(|tasks| tasks.iter_mut().find(|task| task["id"] == id))
+    else {
+        return not_found();
+    };
+    if let (Some(task), Some(sent)) = (task.as_object_mut(), sent.as_object()) {
+        task.extend(sent.clone());
+    }
+    if sent["status"] == "completed" {
+        let today = chrono::Utc::now().format("%Y-%m-%dT00:00:00.0000000");
+        task["completedDateTime"] = json!({ "dateTime": today.to_string(), "timeZone": "UTC" });
+        task["isReminderOn"] = json!(false);
+    }
+    let etag = format!("W/\"{id}-{}\"", next_write());
+    task["@odata.etag"] = json!(etag);
+    ResponseTemplate::new(200).set_body_json(task.clone())
 }
 
 pub fn list(id: &str, name: &str, wellknown: &str) -> Value {
