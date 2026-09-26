@@ -204,6 +204,9 @@ pub fn create_task(data: &mut Data, request: &Request) -> ResponseTemplate {
             }
         }
     }
+    // Graph derives `isReminderOn` and ignores a written one: a task
+    // created with a reminder time has its reminder on (S17).
+    task["isReminderOn"] = json!(task.get("reminderDateTime").is_some_and(|at| !at.is_null()));
     for key in ["checklistItems", "linkedResources"] {
         if let Some(items) = task[key].as_array_mut() {
             for item in items {

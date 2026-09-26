@@ -13,7 +13,8 @@
 //! 3. **Attachments:** add each to the copy, one after another.
 //! 4. **Verify:** the target list answers 200 (the ghost-write check), the
 //!    copy read back matches the source field by field with the same
-//!    attachments byte for byte, and the source hasn't changed meanwhile.
+//!    attachments byte for byte (a reminder that's off comes back on,
+//!    S17), and the source hasn't changed meanwhile.
 //! 5. **Delete** the source. Only now.
 //!
 //! A step that fails for good before the delete rolls the move back: the
@@ -33,7 +34,7 @@ use ms_todo_protocol::ErrorPayload;
 use ms_todo_store::{Entity, OutboxRow, Restore, StoreError};
 use serde_json::Value;
 
-use copy::{ORIGINAL_CREATED_AT, copy_body, original_created_at};
+use copy::{ORIGINAL_CREATED_AT, copy_body, expected_copy, original_created_at};
 pub(crate) use copy::{comparable, differences};
 use progress::{AttachmentStep, Source};
 pub(crate) use progress::{Progress, Stage, StepState, from_list};
@@ -604,7 +605,7 @@ impl Job<'_> {
         let copy_extension = copy_extension.flatten();
         let copied = self.attachment_hashes(&self.target, copy_id).await?;
         let mut wrong = differences(
-            &comparable(expected, expected_extension),
+            &expected_copy(expected, expected_extension),
             &comparable(&copy, copy_extension.as_ref()),
         );
         let original = original_created_at(expected, expected_extension);

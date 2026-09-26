@@ -33,6 +33,13 @@ async fn graph(env: &mut Env) -> FakeGraph {
         );
     });
     graph.accept_catalog().await;
+    // The fixture's My Day date must stay "today", or the daemon's rollover
+    // clears it once the real date moves past it (a debug-build hook).
+    env.cmd()
+        .env("MS_TODO_MY_DAY_TODAY", "2026-09-25")
+        .args(["--format", "json", "daemon", "start"])
+        .assert()
+        .success();
     env.synced();
     graph
 }

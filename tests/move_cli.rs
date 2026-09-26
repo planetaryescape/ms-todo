@@ -245,6 +245,56 @@ async fn a_move_copies_every_field_and_child_then_deletes_the_source() {
 }
 
 #[tokio::test]
+async fn a_task_whose_reminder_is_off_keeps_its_time_when_moved() {
+    let mut env = Env::new();
+    // As completing leaves it: the reminder off, its time kept (issue 005).
+    let mut done = task("T1", "Renew passport", "W/\"t1-1\"");
+    done["status"] = json!("completed");
+    done["isReminderOn"] = json!(false);
+    done["reminderDateTime"] =
+        json!({ "dateTime": "2026-09-28T08:30:00.0000000", "timeZone": "UTC" });
+    let graph = graph_with(&mut env, vec![done.clone()]).await;
+    env.synced();
+
+    let moved = move_t1(&env);
+    env.settled();
+    env.op_in_state(&op_id(&moved), "done");
+    assert!(graph.task("L-tasks", "T1").is_none(), "the source is gone");
+    // Graph turns the copy's reminder on, since its time is written, and
+    // no write turns it off with the time kept (S17): accepted (D-060).
+    let copy = the_copy(&graph);
+    assert_eq!(copy["isReminderOn"], true);
+    assert_eq!(copy["reminderDateTime"], done["reminderDateTime"]);
+    assert_eq!(copy["status"], "completed");
+    let cached = &tasks(&env, "Groceries")[0];
+    assert_eq!(cached["isReminderOn"], true, "the cache takes the copy's");
+}
+
+#[tokio::test]
+async fn a_copy_whose_reminder_went_off_is_never_trusted() {
+    let mut env = Env::new();
+    // A completed task whose reminder is on, as a moved one is (S17).
+    let mut done = task("T1", "Renew passport", "W/\"t1-1\"");
+    done["status"] = json!("completed");
+    done["isReminderOn"] = json!(true);
+    done["reminderDateTime"] =
+        json!({ "dateTime": "2026-09-28T08:30:00.0000000", "timeZone": "UTC" });
+    let graph = graph_with(&mut env, vec![done]).await;
+    env.synced();
+    // The copy's reminder is off by the time it's read back.
+    graph
+        .lossy_create(|created| created["isReminderOn"] = json!(false))
+        .await;
+    let moved = move_t1(&env);
+    env.settled();
+    let op = env.op_in_state(&op_id(&moved), "failed");
+    let message = op["last_error"]["message"].as_str().unwrap_or_default();
+    assert!(message.contains("isReminderOn"), "{message}");
+    assert!(graph.task("L-tasks", "T1").is_some(), "the source is kept");
+    assert!(graph.tasks_in("L-groc").is_empty(), "the copy was deleted");
+}
+
+#[tokio::test]
 async fn a_rejected_step_before_the_delete_deletes_the_partial_copy_and_keeps_the_source() {
     let mut env = Env::new();
     let graph = rich_graph(&mut env).await;

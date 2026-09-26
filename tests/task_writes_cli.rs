@@ -7,7 +7,7 @@ mod support;
 
 use serde_json::{Value, json};
 use support::Env;
-use support::fake_graph::{FakeGraph, list, task};
+use support::fake_graph::{FakeGraph, list, patch_task, task};
 use wiremock::matchers::{body_json, body_partial_json, header, method, path};
 use wiremock::{Mock, Request, ResponseTemplate};
 
@@ -217,6 +217,154 @@ async fn complete_and_reopen_send_if_match_with_the_etag_last_read() {
         "{:?}",
         env.outbox()
     );
+}
+
+/// A task with its reminder on, `days` from now, as Graph gives it.
+fn reminded(id: &str, title: &str, days: i64) -> Value {
+    let at = chrono::Utc::now() + chrono::Duration::days(days);
+    let mut reminded = task(id, title, &format!("W/\"{id}\""));
+    reminded["isReminderOn"] = json!(true);
+    reminded["reminderDateTime"] = json!({
+        "dateTime": at.format("%Y-%m-%dT%H:%M:00.0000000").to_string(),
+        "timeZone": "UTC"
+    });
+    reminded
+}
+
+fn reminder_on(graph: &FakeGraph, id: &str) -> Value {
+    graph.task("L-tasks", id).expect("task")["isReminderOn"].clone()
+}
+
+#[tokio::test]
+async fn reopen_and_undo_turn_a_reminder_still_ahead_back_on() {
+    let mut env = Env::new();
+    let graph = graph_with(
+        &mut env,
+        vec![
+            reminded("T1", "Renew passport", 3),
+            reminded("T2", "Call the bank", -1),
+        ],
+    )
+    .await;
+    graph.accept_task_patches().await;
+    env.synced();
+
+    // Graph turns the reminder off when a task is completed (issue 005).
+    env.json(&["tasks", "complete", "T1", "T2"]);
+    env.settled();
+    assert_eq!(reminder_on(&graph, "T1"), false);
+    assert_eq!(reminder_on(&graph, "T2"), false);
+
+    // Graph ignores a written `isReminderOn`; writing the time again turns
+    // the reminder on (S17).
+    let time = graph.task("L-tasks", "T1").expect("task")["reminderDateTime"].clone();
+    let plan = env.json(&["tasks", "reopen", "T1", "--dry-run"]);
+    assert_eq!(
+        plan["changes"],
+        json!({ "status": "notStarted", "isReminderOn": true, "reminderDateTime": time })
+    );
+    let reopened = env.json(&["tasks", "reopen", "T1"]);
+    assert_eq!(
+        reopened["items"][0]["isReminderOn"], true,
+        "the cache shows it on at once"
+    );
+    // A reminder whose time has passed stays off.
+    let plan = env.json(&["tasks", "reopen", "T2", "--dry-run"]);
+    assert_eq!(plan["changes"], json!({ "status": "notStarted" }));
+    env.json(&["tasks", "reopen", "T2"]);
+    env.settled();
+    assert_eq!(reminder_on(&graph, "T1"), true);
+    assert_eq!(reminder_on(&graph, "T2"), false);
+
+    // Undoing a completion puts the reminder back as it was.
+    env.json(&["tasks", "complete", "T1"]);
+    env.settled();
+    assert_eq!(reminder_on(&graph, "T1"), false);
+    let undone = env.json(&["undo"]);
+    assert_eq!(undone["action"], "undo");
+    env.settled();
+    let now = graph.task("L-tasks", "T1").expect("task");
+    assert_eq!(now["status"], "notStarted");
+    assert_eq!(now["isReminderOn"], true);
+    assert_eq!(now["reminderDateTime"], time);
+
+    // Undoing that undo completes it again, and the time isn't written
+    // with it, so the reminder is off as a completion leaves it.
+    env.json(&["undo", undone["op_id"].as_str().expect("op_id")]);
+    env.settled();
+    let now = graph.task("L-tasks", "T1").expect("task");
+    assert_eq!(now["status"], "completed");
+    assert_eq!(now["isReminderOn"], false);
+    assert_eq!(now["reminderDateTime"], time);
+    assert!(
+        env.outbox().iter().all(|op| op["state"] == "done"),
+        "{:?}",
+        env.outbox()
+    );
+}
+
+#[tokio::test]
+async fn undoing_a_reopen_keeps_a_completed_task_s_reminder_as_it_was() {
+    let mut env = Env::new();
+    // Completed with its reminder on, as a moved completed task is (S17).
+    let mut done = reminded("T1", "Renew passport", 3);
+    done["status"] = json!("completed");
+    // Open with its reminder off, as the app's reopen can leave one.
+    let mut open = reminded("T2", "Call the bank", 3);
+    open["isReminderOn"] = json!(false);
+    let graph = graph_with(&mut env, vec![done, open]).await;
+    graph.accept_task_patches().await;
+    env.synced();
+
+    env.json(&["tasks", "reopen", "T1"]);
+    env.settled();
+    assert_eq!(reminder_on(&graph, "T1"), true);
+    env.json(&["undo"]);
+    env.settled();
+    let now = graph.task("L-tasks", "T1").expect("task");
+    assert_eq!(now["status"], "completed");
+    assert_eq!(now["isReminderOn"], true, "the time went back with it");
+
+    let plan = env.json(&["tasks", "reopen", "T2", "--dry-run"]);
+    assert_eq!(
+        plan["changes"],
+        json!({ "status": "notStarted" }),
+        "an open task is left alone"
+    );
+}
+
+#[tokio::test]
+async fn complete_undo_and_redo_before_graph_answers_leaves_the_reminder_off() {
+    let mut env = Env::new();
+    let graph = graph_with(&mut env, vec![reminded("T1", "Renew passport", 3)]).await;
+    graph.accept_task_patches().await;
+    env.synced();
+    // The completion's answer is slow, so the undo and the redo are
+    // planned from the cache alone.
+    graph
+        .stall(
+            "PATCH",
+            r"^/v1\.0/me/todo/lists/L-tasks/tasks/T1$",
+            Some(patch_task),
+            std::time::Duration::from_secs(2),
+        )
+        .await;
+
+    let completed = env.json(&["tasks", "complete", "T1"]);
+    assert_eq!(
+        completed["items"][0]["isReminderOn"], false,
+        "as Graph will"
+    );
+    let undone = env.json(&["undo"]);
+    env.json(&["undo", undone["op_id"].as_str().expect("op_id")]);
+    env.settled();
+    let now = graph.task("L-tasks", "T1").expect("task");
+    assert_eq!(now["status"], "completed");
+    assert_eq!(now["isReminderOn"], false);
+    env.synced();
+    let cached = &env.json(&["tasks", "list", "--list", "Tasks", "--status", "all"])["items"][0];
+    assert_eq!(cached["status"], "completed");
+    assert_eq!(cached["isReminderOn"], false);
 }
 
 #[tokio::test]

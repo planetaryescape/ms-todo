@@ -1,6 +1,6 @@
 # 005: A reopened task's reminder stays off, and moving it then fails
 
-**Status:** open. Found by the rung 8e live smoke test on 2026-09-25; not fixed in 8e.
+**Status:** fixed in the next release (D-060). Found by the rung 8e live smoke test on 2026-09-25.
 
 ## Problem
 
@@ -12,7 +12,25 @@ A move of such a task then fails every time. The copy is POSTed with `isReminder
 
 On the `livetest` instance, a throwaway list: a task with a reminder, completed (`isReminderOn` false), undone (still false), moved (failed as above). A raw POST of `{"isReminderOn": false, "reminderDateTime": …}` came back `isReminderOn: true`.
 
-## Options
+## Options (before S17, superseded)
+
+Both guesses below were overtaken by S17: Graph ignores a written `isReminderOn`, so the fix re-sends the reminder time instead (D-060).
 
 - The move copy leaves out `reminderDateTime` when `isReminderOn` is false, and the check ignores it then.
 - Undoing a completion (and `tasks reopen`) puts `isReminderOn` back when the reminder is still ahead.
+
+## Fix
+
+Graph derives `isReminderOn` and ignores a written one (S17): writing the reminder's time turns it on, and completing turns it off.
+
+- `tasks reopen` (and the TUI's toggle) of a completed task writes the task's own `reminderDateTime` again with the status when that time is still ahead on this machine's clock, which turns the reminder on. A reminder whose time has passed stays off. `--dry-run` shows it.
+- Completing a task that isn't repeating sends `isReminderOn: false` when its reminder is on, so the cache shows it off before Graph answers and an undo planned meanwhile puts back the right state.
+- Undoing a completion does the same when the reminder was on before the completion and its time hasn't changed since. Undoing a reopen writes the time back only if the reminder was on before it.
+- A move of a task whose reminder is off keeps the time; Graph turns the copy's reminder on, and the move's check accepts that (it expects the copy's reminder on when the source's is off with a time, and compares the copy's actual flag). The cache takes the copy's value. The original is still deleted only once the copy checks out.
+- `crates/fake-graph` models the rules S17 found.
+
+## Known limits
+
+- A reopen queued offline and sent after the reminder's time has passed still writes the time, so Graph shows a past reminder as on. A past reminder doesn't fire, so this is accepted.
+- "Still ahead" compares local wall-clock times, so in the repeated hour when the clocks go back, a reminder up to an hour ahead can be read as past and stay off after a reopen. It's one hour a year, so this is accepted.
+- A completed task whose reminder is on with a past time (as a move leaves it) comes back completed with the reminder off after reopen, then undo. A past reminder doesn't fire, so this is accepted.

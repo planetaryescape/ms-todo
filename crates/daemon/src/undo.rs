@@ -6,7 +6,8 @@
 //!
 //! - An add is undone by deleting the task.
 //! - An edit, complete or reopen by setting the fields it sent back to
-//!   what they were.
+//!   what they were; a completion also turns the reminder back on if it
+//!   was on before, since completing turned it off (issue 005).
 //! - A delete by creating the task again from what it was, with a new
 //!   Graph ID; it keeps its local ID.
 //! - A recurring completion by deleting the completed copy Graph made and
@@ -44,7 +45,7 @@ use crate::assignment::PART_OF;
 use crate::handlers::{State, error_payload, store_error};
 use crate::outbox::move_job;
 use crate::outbox::{fields_not_holding, op_id_for};
-use crate::task_fields::{as_written, creatable_fields};
+use crate::task_fields::{as_written, creatable_fields, reminder_at, reminder_on, resend_reminder};
 use crate::task_writes::{
     action_name, delete_op, move_op, new_task_raw, our_extension, queue, update_op,
 };
@@ -150,7 +151,19 @@ pub(crate) async fn undo(
                     left_alone.insert(&op.op_id);
                     continue;
                 }
-                let (body, action) = inverse_update(op)?;
+                let (mut body, action) = inverse_update(op)?;
+                match op.action.as_str() {
+                    "complete" => restore_reminder(&mut body, before(op)?, &row.raw),
+                    // A reopen sends the reminder's own time to turn it on,
+                    // and a time written with the completion turns it on
+                    // (S17): it goes back only if the reminder was on.
+                    "reopen" if !reminder_on(before(op)?) => {
+                        if let Some(fields) = body.as_object_mut() {
+                            fields.remove("reminderDateTime");
+                        }
+                    }
+                    _ => {}
+                }
                 inverse.push(update_op(id(inverse.len()), &row, &body, action));
             }
             OpKind::Move => {
@@ -347,6 +360,16 @@ fn inverse_update(op: &OutboxRow) -> Result<(Value, TaskAction), ErrorPayload> {
     Ok((Value::Object(body), action))
 }
 
+/// Undoing a completion turns the reminder back on if it was on before:
+/// completing a task turns its reminder off and keeps the time (issue
+/// 005). Left alone when the reminder's time has changed since, as that
+/// change says what the reminder is now.
+fn restore_reminder(body: &mut Value, before: &Entity, now: &Entity) {
+    if reminder_on(before) && reminder_at(before) == reminder_at(now) {
+        resend_reminder(body, before);
+    }
+}
+
 /// Each field `op` sent, with its value before `op` (null where it had
 /// none, which removes it), a date written as its local day.
 pub(crate) fn inverse_fields(op: &OutboxRow) -> Result<Map<String, Value>, ErrorPayload> {
@@ -533,6 +556,10 @@ mod tests {
         }
     }
 
+    fn as_entity(value: &Value) -> &Entity {
+        value.as_object().expect("object")
+    }
+
     #[test]
     fn undoing_a_completion_reopens_and_an_edit_puts_back_only_its_fields() {
         let before = json!({ "status": "notStarted", "title": "Milk", "importance": "low" });
@@ -543,6 +570,22 @@ mod tests {
         ))
         .expect("inverse");
         assert_eq!(action, TaskAction::Reopen);
+        assert_eq!(body, json!({ "status": "notStarted" }));
+
+        let at = json!({ "dateTime": "2026-10-01T09:00:00.0000000", "timeZone": "UTC" });
+        let reminded =
+            json!({ "status": "notStarted", "isReminderOn": true, "reminderDateTime": at });
+        let now = json!({ "status": "completed", "isReminderOn": false, "reminderDateTime": at });
+        let mut body = json!({ "status": "notStarted" });
+        restore_reminder(&mut body, as_entity(&reminded), as_entity(&now));
+        assert_eq!(
+            body,
+            json!({ "status": "notStarted", "isReminderOn": true, "reminderDateTime": at })
+        );
+        // A reminder moved since is left as it is now.
+        let moved = json!({ "isReminderOn": false, "reminderDateTime": null });
+        let mut body = json!({ "status": "notStarted" });
+        restore_reminder(&mut body, as_entity(&reminded), as_entity(&moved));
         assert_eq!(body, json!({ "status": "notStarted" }));
 
         let edit = op(

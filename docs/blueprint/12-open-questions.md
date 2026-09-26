@@ -22,6 +22,7 @@ For each, record the request, the response (with private data removed), the date
 | S14 | What does a task copied to another list keep, and which requests copy it? (Rung 5e, 2026-09-25.) | Moving a task without losing anything | [05](05-custom-features.md#move-between-lists), D-051 |
 | S15 | How do step and link writes behave: which fields a link needs, whether its PATCH and DELETE honour `If-Match`, whether a field can be cleared, and whether steps can be reordered? (Rung 8a, 2026-09-25.) | Steps and links through the outbox | [07](07-cli.md), D-055 |
 | S16 | How does an upload session resume, and what does an attachment look like? (Rung 8b, 2026-09-25.) | Uploads that survive a lost answer; safe downloads | [03](03-graph-provider.md), D-056 |
+| S17 | How does Graph set `isReminderOn`? (Issue 005, 2026-09-26.) | Reopen, undo and move keeping a task's reminder | D-060 |
 | P1 | What is the default page size for task lists and delta, and does `Prefer: odata.maxpagesize` work? (Added during phase 0.) | Pagination, and rung 1's "more than 100 tasks" check | [03](03-graph-provider.md) |
 
 ### S5 result (2026-09-24)
@@ -111,6 +112,10 @@ Confidence: high. Evidence: [S11](../research/spikes/S11.md). Changed: [02](02-d
 ### S16 result (2026-09-25)
 
 **A session can't be asked where it stands; each PUT's answer says.** A GET of the upload URL, bare or with `/content`, is 404. Each PUT but the last answers `nextExpectedRanges: ["N"]` (no dash); a range the session already has is 400 `InvalidStart` and the session goes on, so a chunk whose answer was lost can be sent again; skipping ahead is refused (once as a 504 after 29 s, committing nothing). The last PUT's `Location` is the attachment's URL, ending in its ID. A listing never includes `contentBytes` (a POST's answer echoes it); `size` is the bytes plus about 240; an attachment DELETE ignores `If-Match`; Graph keeps any name, `../` included. Confidence: high. Evidence: [S16](../research/spikes/S16.md). Changed: [03](03-graph-provider.md), D-056.
+
+### S17 result (2026-09-26)
+
+**Graph derives `isReminderOn` and ignores a written one.** Writing `reminderDateTime` turns the reminder on (on a create, a PATCH, and with a completion in the same PATCH); a transition to `completed` turns it off and keeps the time; `reminderDateTime: null` turns it off and removes the time. No request turns a reminder off on an open task with its time kept. Confidence: high. Evidence: [S17](../research/spikes/S17.md). Changed: D-060.
 
 ### P1 result (2026-09-24)
 

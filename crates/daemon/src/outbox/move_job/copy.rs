@@ -192,6 +192,20 @@ fn instant_to_second(value: &Value) -> Value {
         )
 }
 
+/// What a copy of `source` holds, as [`comparable`] names it: the same,
+/// but a reminder that's off with its time comes back on, since Graph
+/// turns a reminder on whenever its time is written (S17, D-060).
+pub(crate) fn expected_copy(source: &Entity, extension: Option<&Value>) -> Map<String, Value> {
+    let mut fields = comparable(source, extension);
+    if source
+        .get("reminderDateTime")
+        .is_some_and(|at| !at.is_null())
+    {
+        fields.insert("isReminderOn".into(), json!(true));
+    }
+    fields
+}
+
 /// The names of the values `expected` and `actual` don't share, either
 /// way round (a copy with an extra step differs too).
 pub(crate) fn differences(
