@@ -12,7 +12,9 @@ A move of such a task then fails every time. The copy is POSTed with `isReminder
 
 On the `livetest` instance, a throwaway list: a task with a reminder, completed (`isReminderOn` false), undone (still false), moved (failed as above). A raw POST of `{"isReminderOn": false, "reminderDateTime": …}` came back `isReminderOn: true`.
 
-## Options
+## Options (before S17, superseded)
+
+Both guesses below were overtaken by S17: Graph ignores a written `isReminderOn`, so the fix re-sends the reminder time instead (D-060).
 
 - The move copy leaves out `reminderDateTime` when `isReminderOn` is false, and the check ignores it then.
 - Undoing a completion (and `tasks reopen`) puts `isReminderOn` back when the reminder is still ahead.
