@@ -22,6 +22,7 @@ On the `livetest` instance, a throwaway list: a task with a reminder, completed 
 Graph derives `isReminderOn` and ignores a written one (S17): writing the reminder's time turns it on, and completing turns it off.
 
 - `tasks reopen` (and the TUI's toggle) of a completed task writes the task's own `reminderDateTime` again with the status when that time is still ahead on this machine's clock, which turns the reminder on. A reminder whose time has passed stays off. `--dry-run` shows it.
+- Completing a task that isn't repeating sends `isReminderOn: false` when its reminder is on, so the cache shows it off before Graph answers and an undo planned meanwhile puts back the right state.
 - Undoing a completion does the same when the reminder was on before the completion and its time hasn't changed since. Undoing a reopen writes the time back only if the reminder was on before it.
 - A move of a task whose reminder is off keeps the time; Graph turns the copy's reminder on, and the move's check accepts that (it expects the copy's reminder on when the source's is off with a time, and compares the copy's actual flag). The cache takes the copy's value. The original is still deleted only once the copy checks out.
 - `crates/fake-graph` models the rules S17 found.

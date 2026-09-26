@@ -7,7 +7,7 @@ mod support;
 
 use serde_json::{Value, json};
 use support::Env;
-use support::fake_graph::{FakeGraph, list, task};
+use support::fake_graph::{FakeGraph, list, patch_task, task};
 use wiremock::matchers::{body_json, body_partial_json, header, method, path};
 use wiremock::{Mock, Request, ResponseTemplate};
 
@@ -331,6 +331,40 @@ async fn undoing_a_reopen_keeps_a_completed_task_s_reminder_as_it_was() {
         json!({ "status": "notStarted" }),
         "an open task is left alone"
     );
+}
+
+#[tokio::test]
+async fn complete_undo_and_redo_before_graph_answers_leaves_the_reminder_off() {
+    let mut env = Env::new();
+    let graph = graph_with(&mut env, vec![reminded("T1", "Renew passport", 3)]).await;
+    graph.accept_task_patches().await;
+    env.synced();
+    // The completion's answer is slow, so the undo and the redo are
+    // planned from the cache alone.
+    graph
+        .stall(
+            "PATCH",
+            r"^/v1\.0/me/todo/lists/L-tasks/tasks/T1$",
+            Some(patch_task),
+            std::time::Duration::from_secs(2),
+        )
+        .await;
+
+    let completed = env.json(&["tasks", "complete", "T1"]);
+    assert_eq!(
+        completed["items"][0]["isReminderOn"], false,
+        "as Graph will"
+    );
+    let undone = env.json(&["undo"]);
+    env.json(&["undo", undone["op_id"].as_str().expect("op_id")]);
+    env.settled();
+    let now = graph.task("L-tasks", "T1").expect("task");
+    assert_eq!(now["status"], "completed");
+    assert_eq!(now["isReminderOn"], false);
+    env.synced();
+    let cached = &env.json(&["tasks", "list", "--list", "Tasks", "--status", "all"])["items"][0];
+    assert_eq!(cached["status"], "completed");
+    assert_eq!(cached["isReminderOn"], false);
 }
 
 #[tokio::test]

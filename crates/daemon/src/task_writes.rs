@@ -24,8 +24,8 @@ use crate::handlers::{State, error_payload, store_error};
 use crate::list_resolution::resolve_list;
 use crate::outbox::op_id_for;
 use crate::task_fields::{
-    Field, edit_fields, graph_body, graph_due_date, new_task_fields, reminder_at, resend_reminder,
-    user_time_zone,
+    Field, edit_fields, graph_body, graph_due_date, new_task_fields, reminder_at, reminder_on,
+    resend_reminder, user_time_zone,
 };
 use crate::task_resolution::{Target, resolve_tasks, select_tasks};
 
@@ -158,8 +158,10 @@ pub(crate) async fn change_tasks(
         .iter()
         .map(|target| {
             let mut body = crate::task_dates::task_body(&changes, &target.row)?;
-            if action == TaskAction::Reopen {
-                turn_reminder_back_on(&mut body, &target.row);
+            match action {
+                TaskAction::Reopen => turn_reminder_back_on(&mut body, &target.row),
+                TaskAction::Complete => turn_reminder_off(&mut body, &target.row.raw),
+                _ => {}
             }
             Ok(body)
         })
@@ -455,6 +457,19 @@ fn turn_reminder_back_on(body: &mut Value, row: &TaskRow) {
         && reminder_at(&row.raw).is_some_and(|at| at > chrono::Local::now().naive_local())
     {
         resend_reminder(body, &row.raw);
+    }
+}
+
+/// A completion shows the reminder off at once, as Graph turns it off
+/// (S17), so the cache and every later undo record hold what Graph does.
+/// Graph ignores the written flag, so it changes nothing on the wire. A
+/// repeating task is left alone: Graph rolls it on with its reminder on.
+fn turn_reminder_off(body: &mut Value, task: &Entity) {
+    if reminder_on(task)
+        && !completes_recurring(task, TaskAction::Complete)
+        && let Some(fields) = body.as_object_mut()
+    {
+        fields.insert("isReminderOn".into(), json!(false));
     }
 }
 
