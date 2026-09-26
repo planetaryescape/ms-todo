@@ -1,7 +1,6 @@
-//! The arguments of `tasks list` and of `lists show|create|rename|delete`
-//! (rung 8e).
+//! The arguments of `tasks list` and of `lists` (rung 8e).
 
-use clap::{Args, ValueEnum};
+use clap::{ArgGroup, Args, Subcommand, ValueEnum};
 use ms_todo_protocol::{DueFilter, Importance, StatusFilter, TaskSort};
 
 use crate::args::IdempotencyArgs;
@@ -164,6 +163,66 @@ pub struct DeleteListArgs {
     /// Delete without asking
     #[arg(long)]
     pub yes: bool,
+    /// Show what would change without changing anything
+    #[arg(long)]
+    pub dry_run: bool,
+    #[command(flatten)]
+    pub idempotency: IdempotencyArgs,
+}
+
+#[derive(Debug, Subcommand)]
+pub enum ListsCommand {
+    /// Every task list, folder by folder, then those in no folder
+    List,
+    /// One list, with its open and completed task counts
+    Show(crate::list_args::ShowListArgs),
+    /// Make a new list, in a folder if --folder says so
+    Create(crate::list_args::CreateListArgs),
+    /// Rename a list. The default list (Tasks) and Flagged Emails can't be
+    Rename(crate::list_args::RenameListArgs),
+    /// Delete a list and every task in it. Asks first in a terminal;
+    /// anywhere else it needs --yes. Only an empty list's delete can be
+    /// undone
+    Delete(crate::list_args::DeleteListArgs),
+    /// Put lists in a folder (made if it's new), or take them out of theirs
+    Move(MoveListsArgs),
+    /// Put a list just before or after another list in its folder
+    Order(OrderListArgs),
+}
+
+#[derive(Debug, Args)]
+#[command(group(ArgGroup::new("to").required(true).args(["folder", "no_folder"])))]
+pub struct MoveListsArgs {
+    /// The lists, by exact name or ID; several move together. `-` reads
+    /// IDs from stdin, one per line
+    #[arg(required = true, value_name = "LIST")]
+    pub lists: Vec<String>,
+    /// The folder to put them in. A folder that exists matches ignoring
+    /// case; any other name makes a new one
+    #[arg(long, value_name = "FOLDER")]
+    pub folder: Option<String>,
+    /// Take them out of their folder
+    #[arg(long)]
+    pub no_folder: bool,
+    /// Show what would change without changing anything
+    #[arg(long)]
+    pub dry_run: bool,
+    #[command(flatten)]
+    pub idempotency: IdempotencyArgs,
+}
+
+#[derive(Debug, Args)]
+#[command(group(ArgGroup::new("place").required(true).args(["before", "after"])))]
+pub struct OrderListArgs {
+    /// The list to move, by exact name or ID
+    #[arg(value_name = "LIST")]
+    pub list: String,
+    /// Put it just before this list, in the same folder
+    #[arg(long, value_name = "LIST")]
+    pub before: Option<String>,
+    /// Put it just after this list, in the same folder
+    #[arg(long, value_name = "LIST")]
+    pub after: Option<String>,
     /// Show what would change without changing anything
     #[arg(long)]
     pub dry_run: bool,
