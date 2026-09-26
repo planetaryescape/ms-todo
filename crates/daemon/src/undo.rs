@@ -45,7 +45,7 @@ use crate::assignment::PART_OF;
 use crate::handlers::{State, error_payload, store_error};
 use crate::outbox::move_job;
 use crate::outbox::{fields_not_holding, op_id_for};
-use crate::task_fields::{as_written, creatable_fields, reminder_at, reminder_on};
+use crate::task_fields::{as_written, creatable_fields, reminder_at, reminder_on, resend_reminder};
 use crate::task_writes::{
     action_name, delete_op, move_op, new_task_raw, our_extension, queue, update_op,
 };
@@ -152,8 +152,17 @@ pub(crate) async fn undo(
                     continue;
                 }
                 let (mut body, action) = inverse_update(op)?;
-                if op.action == "complete" {
-                    restore_reminder(&mut body, before(op)?, &row.raw);
+                match op.action.as_str() {
+                    "complete" => restore_reminder(&mut body, before(op)?, &row.raw),
+                    // A reopen sends the reminder's own time to turn it on,
+                    // and a time written with the completion would turn it
+                    // on again (S17), so it isn't sent back.
+                    "reopen" => {
+                        if let Some(fields) = body.as_object_mut() {
+                            fields.remove("reminderDateTime");
+                        }
+                    }
+                    _ => {}
                 }
                 inverse.push(update_op(id(inverse.len()), &row, &body, action));
             }
@@ -356,11 +365,8 @@ fn inverse_update(op: &OutboxRow) -> Result<(Value, TaskAction), ErrorPayload> {
 /// 005). Left alone when the reminder's time has changed since, as that
 /// change says what the reminder is now.
 fn restore_reminder(body: &mut Value, before: &Entity, now: &Entity) {
-    if reminder_on(before)
-        && reminder_at(before) == reminder_at(now)
-        && let Some(fields) = body.as_object_mut()
-    {
-        fields.insert("isReminderOn".into(), json!(true));
+    if reminder_on(before) && reminder_at(before) == reminder_at(now) {
+        resend_reminder(body, before);
     }
 }
 
@@ -574,7 +580,7 @@ mod tests {
         restore_reminder(&mut body, as_entity(&reminded), as_entity(&now));
         assert_eq!(
             body,
-            json!({ "status": "notStarted", "isReminderOn": true })
+            json!({ "status": "notStarted", "isReminderOn": true, "reminderDateTime": at })
         );
         // A reminder moved since is left as it is now.
         let moved = json!({ "isReminderOn": false, "reminderDateTime": null });

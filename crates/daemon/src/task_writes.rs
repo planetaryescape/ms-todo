@@ -25,7 +25,7 @@ use crate::list_resolution::resolve_list;
 use crate::outbox::op_id_for;
 use crate::task_fields::{
     Field, edit_fields, graph_body, graph_due_date, new_task_fields, reminder_at, reminder_on,
-    user_time_zone,
+    resend_reminder, user_time_zone,
 };
 use crate::task_resolution::{Target, resolve_tasks, select_tasks};
 
@@ -443,18 +443,15 @@ pub(crate) fn new_task_raw(body: &Value) -> Entity {
     raw
 }
 
-/// A reopen of `task` turns its reminder back on when its time is still
+/// A reopen of `row` turns its reminder back on when its time is still
 /// ahead (D-060): completing a task turns its reminder off and keeps the
 /// time (issue 005). A completed task's reminder counts as off even where
 /// the cache still shows it on, as it does while the completion waits to
 /// be sent. A reminder whose time has passed stays off.
 fn turn_reminder_back_on(body: &mut Value, row: &TaskRow) {
     let off = !reminder_on(&row.raw) || crate::my_day::completed(row);
-    if off
-        && reminder_at(&row.raw).is_some_and(|at| at > chrono::Local::now().naive_local())
-        && let Some(fields) = body.as_object_mut()
-    {
-        fields.insert("isReminderOn".into(), json!(true));
+    if off && reminder_at(&row.raw).is_some_and(|at| at > chrono::Local::now().naive_local()) {
+        resend_reminder(body, &row.raw);
     }
 }
 
@@ -568,10 +565,19 @@ mod tests {
             turn_reminder_back_on(&mut body, &row(task));
             body
         };
-        let on = json!({ "status": "notStarted", "isReminderOn": true });
-        assert_eq!(reopened(reminder(3, false, "completed")), on);
+        // The time is written again: Graph turns a reminder on only then.
+        let on = |task: &Value| {
+            json!({
+                "status": "notStarted",
+                "isReminderOn": true,
+                "reminderDateTime": task["reminderDateTime"]
+            })
+        };
+        let off = reminder(3, false, "completed");
+        assert_eq!(reopened(off.clone()), on(&off));
         // The completion hasn't been sent yet: Graph will have turned it off.
-        assert_eq!(reopened(reminder(3, true, "completed")), on);
+        let stale = reminder(3, true, "completed");
+        assert_eq!(reopened(stale.clone()), on(&stale));
         let untouched = json!({ "status": "notStarted" });
         assert_eq!(reopened(reminder(-1, false, "completed")), untouched);
         assert_eq!(reopened(reminder(3, true, "notStarted")), untouched);

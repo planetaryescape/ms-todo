@@ -706,14 +706,16 @@ pub async fn graph_with_tasks(env: &mut impl GraphUser, tasks: Vec<Value>) -> Fa
 
 /// A task's PATCH as Graph answers it: the fields sent, merged into the
 /// task, with a new etag. A completion gets today's `completedDateTime` at
-/// midnight UTC, the day and no time (S12), and turns the reminder off,
-/// keeping its time (seen live, issue 005).
+/// midnight UTC, the day and no time (S12). `isReminderOn` is Graph's to
+/// derive (S17): a written one is ignored, a completion turns it off with
+/// the time kept, and a written time turns it on (after the completion,
+/// in the same PATCH), or off with a null.
 pub fn patch_task(data: &mut Data, request: &Request) -> ResponseTemplate {
     let mut parts = request.url.path().split('/').skip(5);
     let (Some(list), Some(_), Some(id)) = (parts.next(), parts.next(), parts.next()) else {
         return not_found();
     };
-    let sent: Value = serde_json::from_slice(&request.body).unwrap_or_default();
+    let mut sent: Value = serde_json::from_slice(&request.body).unwrap_or_default();
     let Some(task) = data
         .tasks
         .get_mut(list)
@@ -721,13 +723,21 @@ pub fn patch_task(data: &mut Data, request: &Request) -> ResponseTemplate {
     else {
         return not_found();
     };
-    if let (Some(task), Some(sent)) = (task.as_object_mut(), sent.as_object()) {
+    // Read before the merge: only a transition turns the reminder off.
+    let completes = sent["status"] == "completed" && task["status"] != "completed";
+    if let (Some(task), Some(sent)) = (task.as_object_mut(), sent.as_object_mut()) {
+        sent.remove("isReminderOn");
         task.extend(sent.clone());
     }
     if sent["status"] == "completed" {
         let today = chrono::Utc::now().format("%Y-%m-%dT00:00:00.0000000");
         task["completedDateTime"] = json!({ "dateTime": today.to_string(), "timeZone": "UTC" });
+    }
+    if completes {
         task["isReminderOn"] = json!(false);
+    }
+    if let Some(at) = sent.get("reminderDateTime") {
+        task["isReminderOn"] = json!(!at.is_null());
     }
     let etag = format!("W/\"{id}-{}\"", next_write());
     task["@odata.etag"] = json!(etag);

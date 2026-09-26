@@ -255,12 +255,19 @@ async fn reopen_and_undo_turn_a_reminder_still_ahead_back_on() {
     assert_eq!(reminder_on(&graph, "T1"), false);
     assert_eq!(reminder_on(&graph, "T2"), false);
 
+    // Graph ignores a written `isReminderOn`; writing the time again turns
+    // the reminder on (S17).
+    let time = graph.task("L-tasks", "T1").expect("task")["reminderDateTime"].clone();
     let plan = env.json(&["tasks", "reopen", "T1", "--dry-run"]);
     assert_eq!(
         plan["changes"],
-        json!({ "status": "notStarted", "isReminderOn": true })
+        json!({ "status": "notStarted", "isReminderOn": true, "reminderDateTime": time })
     );
-    env.json(&["tasks", "reopen", "T1"]);
+    let reopened = env.json(&["tasks", "reopen", "T1"]);
+    assert_eq!(
+        reopened["items"][0]["isReminderOn"], true,
+        "the cache shows it on at once"
+    );
     // A reminder whose time has passed stays off.
     let plan = env.json(&["tasks", "reopen", "T2", "--dry-run"]);
     assert_eq!(plan["changes"], json!({ "status": "notStarted" }));
@@ -279,6 +286,16 @@ async fn reopen_and_undo_turn_a_reminder_still_ahead_back_on() {
     let now = graph.task("L-tasks", "T1").expect("task");
     assert_eq!(now["status"], "notStarted");
     assert_eq!(now["isReminderOn"], true);
+    assert_eq!(now["reminderDateTime"], time);
+
+    // Undoing that undo completes it again, and the time isn't written
+    // with it, so the reminder is off as a completion leaves it.
+    env.json(&["undo", undone["op_id"].as_str().expect("op_id")]);
+    env.settled();
+    let now = graph.task("L-tasks", "T1").expect("task");
+    assert_eq!(now["status"], "completed");
+    assert_eq!(now["isReminderOn"], false);
+    assert_eq!(now["reminderDateTime"], time);
     assert!(
         env.outbox().iter().all(|op| op["state"] == "done"),
         "{:?}",

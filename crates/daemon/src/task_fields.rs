@@ -290,6 +290,17 @@ pub(crate) fn reminder_on(task: &Entity) -> bool {
     task.get("isReminderOn").and_then(Value::as_bool) == Some(true)
 }
 
+/// Turn `task`'s reminder back on through `body`. Graph ignores a written
+/// `isReminderOn` and turns the reminder on whenever `reminderDateTime` is
+/// written (S17), so the time goes again, as Graph stored it;
+/// `isReminderOn` goes too so the cache shows it on until Graph answers.
+pub(crate) fn resend_reminder(body: &mut Value, task: &Entity) {
+    if let (Some(fields), Some(at)) = (body.as_object_mut(), task.get("reminderDateTime")) {
+        fields.insert("isReminderOn".into(), json!(true));
+        fields.insert("reminderDateTime".into(), at.clone());
+    }
+}
+
 /// When a task's reminder is, in local time, whether it's on or not.
 pub(crate) fn reminder_at(task: &Entity) -> Option<NaiveDateTime> {
     let value = task.get("reminderDateTime")?;

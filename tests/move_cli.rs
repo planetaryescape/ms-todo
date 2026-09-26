@@ -245,7 +245,7 @@ async fn a_move_copies_every_field_and_child_then_deletes_the_source() {
 }
 
 #[tokio::test]
-async fn a_task_whose_reminder_is_off_keeps_its_time_and_stays_off_when_moved() {
+async fn a_task_whose_reminder_is_off_keeps_its_time_when_moved() {
     let mut env = Env::new();
     // As completing leaves it: the reminder off, its time kept (issue 005).
     let mut done = task("T1", "Renew passport", "W/\"t1-1\"");
@@ -260,10 +260,14 @@ async fn a_task_whose_reminder_is_off_keeps_its_time_and_stays_off_when_moved() 
     env.settled();
     env.op_in_state(&op_id(&moved), "done");
     assert!(graph.task("L-tasks", "T1").is_none(), "the source is gone");
+    // Graph turns the copy's reminder on, since its time is written, and
+    // no write turns it off with the time kept (S17): accepted (D-060).
     let copy = the_copy(&graph);
-    assert_eq!(copy["isReminderOn"], false);
+    assert_eq!(copy["isReminderOn"], true);
     assert_eq!(copy["reminderDateTime"], done["reminderDateTime"]);
     assert_eq!(copy["status"], "completed");
+    let cached = &tasks(&env, "Groceries")[0];
+    assert_eq!(cached["isReminderOn"], true, "the cache takes the copy's");
 }
 
 #[tokio::test]

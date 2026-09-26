@@ -152,7 +152,8 @@ pub(crate) fn comparable(task: &Entity, extension: Option<&Value>) -> Map<String
 }
 
 /// A task field as a copy keeps it: dates as days, a reminder to the
-/// minute, notes by content and type, the rest as they are.
+/// minute, whether it's on by its time, notes by content and type, the
+/// rest as they are.
 fn field_value(task: &Entity, key: &str) -> Value {
     let day = |read| graph_date(task, key, read).map(|date| date.format(DATE_FORMAT).to_string());
     match key {
@@ -165,6 +166,9 @@ fn field_value(task: &Entity, key: &str) -> Value {
             )?;
             Some(at.format("%Y-%m-%dT%H:%M").to_string())
         })),
+        // Graph derives it from the time and ignores a written one (S17):
+        // a copy of a task whose reminder is off comes back on (D-060).
+        "isReminderOn" => json!(task.get("reminderDateTime").is_some_and(|at| !at.is_null())),
         "body" => {
             let body = task.get(key).unwrap_or(&Value::Null);
             json!([body["content"], body["contentType"]])
