@@ -214,6 +214,33 @@ async fn a_context_narrows_the_everyday_reads_and_none_brings_everything_back() 
     // An undefined --context is refused on any command, not ignored.
     env.failure(&["--context", "play", "lists", "list"], 3);
 
+    // A bulk change by filter picks from the context's lists too, as
+    // `tasks list` shows them; an explicit --folder still wins.
+    let bulk = ["reschedule", "--due-before", "tomorrow", "--to", "+7d"];
+    let titles_of = |plan: &Value| {
+        let mut titles: Vec<String> = plan["targets"]
+            .as_array()
+            .expect("targets")
+            .iter()
+            .map(|target| target["title"].as_str().unwrap_or_default().to_owned())
+            .collect();
+        titles.sort();
+        titles
+    };
+    let plan = env.json(&[&bulk[..], &["--dry-run"]].concat());
+    assert_eq!(titles_of(&plan), ["Pay the invoice", "Ship the release"]);
+    let plan = env.json(&[&bulk[..], &["--folder", "Home", "--dry-run"]].concat());
+    assert_eq!(titles_of(&plan), ["Mow the lawn"]);
+    env.json(&[&bulk[..], &["--yes"]].concat());
+    let garden = env.json(&["tasks", "list", "--list", "Garden"]);
+    let today = env.today().format("%Y-%m-%d").to_string();
+    assert!(
+        garden["items"][0]["dueDateTime"]["dateTime"]
+            .as_str()
+            .is_some_and(|due| due.starts_with(&today)),
+        "a task outside the context kept its due date: {garden}"
+    );
+
     // A task with no list goes to the context's default list.
     let plan = env.json(&["tasks", "add", "Write the notes", "--dry-run"]);
     assert_eq!(plan["list"]["name"], "Contentful");
@@ -383,4 +410,23 @@ async fn the_tuis_seed_shows_only_the_contexts_lists_and_counts_them() {
         Some(id.as_str())
     );
     assert_eq!(names(&home.tasks), ["Ship the release"]);
+}
+
+#[tokio::test]
+async fn a_context_with_no_lists_shows_an_empty_view_not_tasks() {
+    let (env, _graph) = setup().await;
+    write_config(&env, &format!("{CONFIG}\n[contexts.empty]\n"));
+    let shown = env.json(&["ctx", "empty"]);
+    assert_eq!(shown["lists"], json!([]));
+    assert!(
+        shown["problems"]
+            .to_string()
+            .contains("names no folders or lists"),
+        "{shown}"
+    );
+    let home = seed(&env, None).await;
+    assert_eq!(home.scope, Some(Scope::All));
+    assert!(home.tasks.is_empty(), "{:?}", home.tasks);
+    assert!(home.lists.is_empty());
+    assert_eq!(home.context.as_ref().map(|context| context.lists), Some(0));
 }

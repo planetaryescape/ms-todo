@@ -43,6 +43,12 @@ pub(crate) async fn seed(
     let context = context.as_ref();
     let counts = TaskCounts::sum(by_list, context.map(|context| &context.ids));
     let activity = state.syncer.status().activity();
+    // A context with no lists has no list to open: its All view, empty,
+    // rather than a list outside it.
+    let scope = match scope {
+        None if context.is_some_and(|context| context.home().is_none()) => Some(Scope::All),
+        scope => scope,
+    };
     let (scope, rows, sync) = match scope {
         // No list resolves before the lists have synced, and no view is
         // whole: say so rather than answer with a confident nothing.

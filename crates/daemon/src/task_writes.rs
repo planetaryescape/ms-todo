@@ -104,6 +104,9 @@ pub(crate) struct Targets<'a> {
     pub names: &'a [String],
     pub list: Option<&'a str>,
     pub select: Option<&'a TaskSelect>,
+    /// `--context`; a selection with no list or folder is narrowed by it,
+    /// else by the active context, as `tasks list` is (rung 9d).
+    pub context: Option<&'a ms_todo_protocol::ContextChoice>,
 }
 
 pub(crate) async fn change_tasks(
@@ -354,7 +357,7 @@ pub(crate) async fn resolve(
             ms_todo_core::ErrorKind::InvalidInput,
             "name the tasks or select them (--overdue, --due-before), not both".into(),
         )),
-        Some(select) => select_tasks(state, select, targets.list).await,
+        Some(select) => select_tasks(state, select, targets.list, targets.context).await,
         None => resolve_tasks(state, targets.names, targets.list).await,
     }
 }

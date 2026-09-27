@@ -30,19 +30,14 @@ impl App {
     }
 
     /// The daemon's answer to a switch: read the view again in the new
-    /// context (the seed drops the rows cached for the old one). A list
-    /// on screen gives way to the context's own default list, since the
-    /// sidebar may no longer have it.
+    /// context. The seed that answers does the rest ([`App::left_context`]),
+    /// as it does for a switch made by the CLI.
     pub(super) fn context_switched(
         &mut self,
         result: Result<ResponseData, ErrorPayload>,
     ) -> Vec<Effect> {
         match result {
             Ok(ResponseData::Contexts(contexts)) => {
-                if matches!(self.wanted, Some(Scope::List { .. })) {
-                    self.wanted = None;
-                    self.sidebar_index = 0;
-                }
                 let said = match &contexts.active {
                     Some(name) => format!("Context: {name}; c for the next"),
                     None => "No context: every list".to_owned(),
@@ -58,6 +53,28 @@ impl App {
                 self.show(Level::Error, &error.message);
                 Vec::new()
             }
+        }
+    }
+}
+
+impl App {
+    /// A seed says the context changed, whoever changed it: a list on
+    /// screen that the new sidebar lacks gives way to the context's home
+    /// (its default list, else its first; the empty All view with none),
+    /// read once this seed lands, so nothing outside the context stays on
+    /// screen or takes quick add. A context with no lists says so.
+    pub(super) fn left_context(&mut self) {
+        if let Some(Scope::List { id }) = &self.wanted
+            && !self.lists.iter().any(|list| list.id == *id)
+        {
+            self.wanted = None;
+            self.seeds.again = true;
+        }
+        if let Some(context) = &self.active_context
+            && context.lists == 0
+        {
+            let said = format!("Context {} has no lists; `mst ctx` says why", context.name);
+            self.show(Level::Info, &said);
         }
     }
 }
@@ -127,7 +144,7 @@ mod tests {
     }
 
     #[test]
-    fn a_switch_reads_the_view_again_and_leaves_a_list_for_the_contexts_own() {
+    fn a_switch_reads_the_view_again_in_the_new_context() {
         let mut app = in_context(None);
         let effects = app.update(Msg::Response {
             tag: Tag::Context,
@@ -136,10 +153,7 @@ mod tests {
                 ..Contexts::default()
             })),
         });
-        assert!(matches!(
-            effects[0].request,
-            Request::Seed { scope: None, .. }
-        ));
+        assert!(matches!(effects[0].request, Request::Seed { .. }));
         assert!(
             app.banner
                 .as_ref()
@@ -157,6 +171,32 @@ mod tests {
         );
         assert_eq!(app.add_target(), "Home");
         assert_eq!(app.active_context, Some(work()));
+    }
+
+    #[test]
+    fn a_switch_made_elsewhere_leaves_a_list_the_context_lacks() {
+        let mut app = seeded();
+        assert_eq!(app.wanted, Some(Scope::List { id: "home".into() }));
+        // The CLI switched: the daemon sends ResyncNeeded, and the seed
+        // for the old list comes back in a context without it.
+        let effects = app.update(Msg::Event(ms_todo_protocol::Event::ResyncNeeded));
+        let mut answer = seed(Scope::List { id: "home".into() }, home_tasks());
+        answer.lists.retain(|list| list["id"] != "home");
+        answer.context = Some(work());
+        let effects = answer_seed(&mut app, &effects[0], answer);
+        assert_eq!(app.wanted, None);
+        assert!(matches!(
+            effects.first().map(|effect| &effect.request),
+            Some(Request::Seed { scope: None, .. })
+        ));
+
+        // A list the new context keeps stays on screen.
+        let mut app = in_context(None);
+        let effects = app.update(Msg::Event(ms_todo_protocol::Event::ResyncNeeded));
+        let mut answer = seed(Scope::List { id: "home".into() }, home_tasks());
+        answer.context = Some(work());
+        assert!(answer_seed(&mut app, &effects[0], answer).is_empty());
+        assert_eq!(app.wanted, Some(Scope::List { id: "home".into() }));
     }
 
     #[test]

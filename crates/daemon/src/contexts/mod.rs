@@ -87,6 +87,11 @@ impl Resolved {
                 problems.push(format!("context {name:?}: no list is named {wanted:?}"));
             }
         }
+        if definition.folders.is_empty() && definition.lists.is_empty() {
+            problems.push(format!(
+                "context {name:?} names no folders or lists, so it shows nothing"
+            ));
+        }
         let covered: Vec<ListRef> = crate::folders::sorted(lists)
             .into_iter()
             .filter(|list| {

@@ -217,7 +217,8 @@ impl App {
             .filter_map(SidebarList::from_entity)
             .collect();
         self.counts = seed.counts;
-        if self.active_context != seed.context {
+        let switched = self.active_context != seed.context;
+        if switched {
             // Another context's rows, read before, aren't this one's.
             self.cache.clear();
         }
@@ -230,6 +231,9 @@ impl App {
         self.seeded = true;
         if let Some(scope) = &seed.scope {
             self.wanted = Some(scope.clone());
+        }
+        if switched {
+            self.left_context();
         }
         self.place_sidebar_cursor(row.filter(|row| matches!(row, Entry::Folder { .. })));
         let changed_scope = self.shown != seed.scope;

@@ -57,15 +57,22 @@ pub(crate) async fn resolve_tasks(
 }
 
 /// The open tasks `select` matches, in `list`, in `select`'s folder, or
-/// in every list: those due before its day, soonest due first. Found when
-/// the change runs, so a dry run and the real run pick by the same rule.
+/// in every list of the context (`choice`, else the active one; every
+/// list with none): those due before its day, soonest due first. Found
+/// when the change runs, so a dry run and the real run pick by the same
+/// rule, and the same tasks `tasks list` shows in that context.
 pub(crate) async fn select_tasks(
     state: &State,
     select: &TaskSelect,
     list: Option<&str>,
+    choice: Option<&ms_todo_protocol::ContextChoice>,
 ) -> Result<Vec<Target>, ErrorPayload> {
     let before = parse_day(&select.due_before)?;
-    let scope = ready_scope(state, list, select.folder.as_deref()).await?;
+    let folder = select.folder.as_deref();
+    let scope = ready_scope(state, list, folder).await?;
+    // An explicit list or folder wins over a context.
+    let lists = state.store.lists().await.map_err(store_error)?;
+    let context = crate::contexts::applied(state, choice, list.or(folder), &lists)?;
     let open_with_due = state
         .store
         .tasks_in_view(View::Planned)
@@ -75,7 +82,8 @@ pub(crate) async fn select_tasks(
         .into_iter()
         .filter_map(|row| {
             let list = scope.lists.get(&row.list_local_id)?.clone();
-            (graph_due_date(&row.raw)? < before).then_some(Target { row, list })
+            let within = crate::contexts::within(context.as_ref(), &row.list_local_id);
+            (within && graph_due_date(&row.raw)? < before).then_some(Target { row, list })
         })
         .collect())
 }

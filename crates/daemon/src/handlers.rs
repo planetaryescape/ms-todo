@@ -262,6 +262,7 @@ async fn mutate(
                 names: &tasks,
                 list: list.as_deref(),
                 select: select.as_ref(),
+                context: choice,
             };
             let operation = change_tasks(state, targets, change, dry_run, op_id.clone());
             run_once(state, key.as_deref(), &fingerprint, &op_id, operation).await
