@@ -381,6 +381,10 @@ fn install_and_uninstall_write_and_remove_the_login_item_idempotently() {
         .expect("exe");
     assert!(written.contains(&exe.display().to_string()), "{written}");
     assert!(written.contains("--instance"), "{written}");
+    // The installing shell's paths go with it (the test's own).
+    let data = env.home.path().join("data").display().to_string();
+    assert_eq!(installed["environment"]["XDG_DATA_HOME"], data.as_str());
+    assert!(written.contains(&data), "{written}");
     if cfg!(target_os = "macos") {
         assert_eq!(mode(&file), 0o644, "launchd refuses a writable plist");
     } else {

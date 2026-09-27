@@ -2,8 +2,9 @@
 //! task row, atomically with the operation's state.
 
 use ms_todo_store::{
-    ChildVerb, Cursor, Entity, Hydration, ListsPass, LocalChange, NewOp, OpKind, OpState, Restore,
-    STEPS, SeenTask, Store, StoreError, TasksPass, UNKNOWN_LOOKUP_SECS, child_payload, tasks_scope,
+    ChildVerb, Claim, Cursor, Entity, Hydration, ListsPass, LocalChange, NewOp, OpKind, OpState,
+    Restore, STEPS, SeenTask, Store, StoreError, TasksPass, UNKNOWN_LOOKUP_SECS, child_payload,
+    tasks_scope,
 };
 use serde_json::{Value, json};
 
@@ -848,4 +849,106 @@ async fn the_lookup_window_decides_which_unknown_operations_are_flagged() {
     assert_eq!(flagged, 0);
     let (_, flagged) = store.outbox_depth(0).await.expect("depth");
     assert_eq!(flagged, 1);
+}
+
+async fn pool(dir: &tempfile::TempDir) -> sqlx::SqlitePool {
+    let url = format!("sqlite://{}", dir.path().join("ms-todo.db").display());
+    sqlx::SqlitePool::connect(&url).await.expect("connect")
+}
+
+#[tokio::test]
+async fn a_command_a_live_idempotency_key_answers_for_is_kept_then_pruned_with_its_key() {
+    let (dir, store, list) = open().await;
+    assert_eq!(
+        store.claim_key("key-1", "fp", "k").await.expect("claim"),
+        Claim::Fresh
+    );
+    store
+        .enqueue("k", None, vec![create("k", "local-k", &list, "Buy milk")])
+        .await
+        .expect("k");
+    assert!(store.mark_inflight("k").await.expect("claim"));
+    store.mark_done("k").await.expect("done");
+    store.finish_key("key-1", "{}").await.expect("finish");
+    let pool = pool(&dir).await;
+    let old = chrono::Utc::now().timestamp() - 40 * 24 * 60 * 60;
+    sqlx::query("UPDATE outbox SET finished_at = ?, created_at = ?")
+        .bind(old)
+        .bind(old)
+        .execute(&pool)
+        .await
+        .expect("age the op");
+    let cutoff = chrono::Utc::now().timestamp() - 30 * 24 * 60 * 60;
+
+    assert_eq!(
+        store.prune_outbox(cutoff).await.expect("prune"),
+        0,
+        "the key answered within a day"
+    );
+
+    sqlx::query("UPDATE idempotency_keys SET finished_at = ?")
+        .bind(chrono::Utc::now().timestamp() - 2 * 24 * 60 * 60)
+        .execute(&pool)
+        .await
+        .expect("age the key");
+    assert_eq!(store.prune_outbox(cutoff).await.expect("prune"), 1);
+    let keys: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM idempotency_keys")
+        .fetch_one(&pool)
+        .await
+        .expect("count");
+    assert_eq!(keys, 0, "the key went with its command");
+}
+
+#[tokio::test]
+async fn an_overwrite_is_recorded_whole_or_not_at_all() {
+    let (dir, store, list) = open().await;
+    store
+        .enqueue("c", None, vec![create("c", "local-c", &list, "Buy milk")])
+        .await
+        .expect("add");
+    assert!(store.mark_inflight("c").await.expect("claim"));
+    store
+        .record_sent("c", &task("T1", "Buy milk", "e1"), None, true)
+        .await
+        .expect("created");
+    store
+        .enqueue("e", None, vec![edit("e", "local-c", &list, "Oat milk")])
+        .await
+        .expect("edit");
+    assert!(store.mark_inflight("e").await.expect("claim"));
+    let ours = task("T1", "Oat milk", "e3");
+    let theirs = task("T1", "Almond milk", "e2");
+    // A write that fails part-way through changes nothing.
+    let pool = pool(&dir).await;
+    sqlx::query(
+        "CREATE TRIGGER refuse_rollback BEFORE UPDATE OF rollback_json ON outbox \
+         BEGIN SELECT RAISE(ABORT, 'refused'); END",
+    )
+    .execute(&pool)
+    .await
+    .expect("trigger");
+
+    let failed = store
+        .record_overwrite("e", &ours, None, "overwrote title", &theirs)
+        .await;
+
+    assert!(failed.is_err());
+    let op = store.outbox_op("e").await.expect("read").expect("op");
+    assert_eq!(op.state, OpState::Inflight, "not done without its rollback");
+    assert_eq!(op.note, None);
+    sqlx::query("DROP TRIGGER refuse_rollback")
+        .execute(&pool)
+        .await
+        .expect("drop");
+    store
+        .record_overwrite("e", &ours, None, "overwrote title", &theirs)
+        .await
+        .expect("record");
+    let op = store.outbox_op("e").await.expect("read").expect("op");
+    assert_eq!(op.state, OpState::Done);
+    assert_eq!(op.note.as_deref(), Some("overwrote title"));
+    assert_eq!(
+        op.rollback.and_then(|before| before.get("title").cloned()),
+        Some(json!("Almond milk"))
+    );
 }

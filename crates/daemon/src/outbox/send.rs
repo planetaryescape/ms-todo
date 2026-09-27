@@ -144,14 +144,11 @@ pub(super) async fn send_ready(state: &State) -> bool {
                     note,
                     theirs,
                 }) => {
-                    if record(state, &op, &task, extension, true).await {
-                        if let Err(error) = state
-                            .store
-                            .record_overwrite(&op.op_id, &note, &theirs)
-                            .await
-                        {
-                            log_store(&error);
-                        }
+                    let recorded = state
+                        .store
+                        .record_overwrite(&op.op_id, &task, extension, &note, &theirs)
+                        .await;
+                    if check_recorded(state, &op, recorded).await {
                         state.events.conflict_overwritten(
                             &op.op_id,
                             &op.entity_local_id,
@@ -675,11 +672,21 @@ async fn record(
     extension: Option<Option<Value>>,
     done: bool,
 ) -> bool {
-    match state
+    let recorded = state
         .store
         .record_sent(&op.op_id, task, extension, done)
-        .await
-    {
+        .await;
+    check_recorded(state, op, recorded).await
+}
+
+/// Whether `recorded` went in (true when it did). If it didn't, Graph has the change, so
+/// the operation mustn't look safe to resend: it goes to `unknown`.
+async fn check_recorded(
+    state: &State,
+    op: &OutboxRow,
+    recorded: Result<(), ms_todo_store::StoreError>,
+) -> bool {
+    match recorded {
         Ok(()) => true,
         Err(error) => {
             log_store(&error);

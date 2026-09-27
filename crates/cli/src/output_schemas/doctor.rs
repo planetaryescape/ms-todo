@@ -178,7 +178,8 @@ pub(super) fn service() -> Value {
             "manager": { "type": "string", "description": "launchd (macOS) or systemd (Linux)" },
             "path": { "type": "string", "description": "The file that starts it" },
             "changed": { "type": "boolean", "description": "install and uninstall only: whether anything changed" },
-            "now": { "type": "string", "description": "install and uninstall only: how to start or stop it now rather than at the next login" }
+            "now": { "type": "string", "description": "install and uninstall only: how to start or stop it now rather than at the next login" },
+            "environment": { "type": "object", "additionalProperties": { "type": "string" }, "description": "install only: MS_TODO_CONFIG_DIR and the XDG directories the installing shell had set, written into the service's environment" }
         },
         "required": ["installed", "manager", "path"]
     })

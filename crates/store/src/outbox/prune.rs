@@ -12,10 +12,15 @@
 //! - A command and the undo of it go together or not at all. With the
 //!   undo gone and the command kept, `undo` would offer it again; with the
 //!   command gone, the undo would refer to nothing.
+//! - A command an `--idempotency-key` still answers for stays until the
+//!   key expires (24 hours after its command finished), and the key's
+//!   record goes with the command, so a repeat never finds a key whose
+//!   command is gone.
 
 use std::collections::{HashMap, HashSet};
 
-use crate::{Store, StoreError};
+use crate::idempotency::IDEMPOTENCY_WINDOW_SECS;
+use crate::{Store, StoreError, now};
 
 impl Store {
     /// Delete the commands whose operations are all `done` and finished at
@@ -30,9 +35,12 @@ impl Store {
              HAVING SUM(o.state != 'done') = 0 \
              AND MAX(COALESCE(o.finished_at, o.created_at)) <= ? \
              AND NOT EXISTS (SELECT 1 FROM outbox w JOIN outbox d ON d.op_id = w.depends_on_op_id \
-             WHERE d.command_id = o.command_id AND w.state != 'done')",
+             WHERE d.command_id = o.command_id AND w.state != 'done') \
+             AND NOT EXISTS (SELECT 1 FROM idempotency_keys k WHERE k.op_id = o.command_id \
+             AND (k.finished_at IS NULL OR k.finished_at > ?))",
         )
         .bind(cutoff)
+        .bind(now() - IDEMPOTENCY_WINDOW_SECS)
         .fetch_all(&mut *tx)
         .await?;
         if old.is_empty() {
@@ -53,6 +61,10 @@ impl Store {
         let prunable = together(old.into_iter().collect(), &undos, &present);
         let mut removed = 0;
         for command in &prunable {
+            sqlx::query("DELETE FROM idempotency_keys WHERE op_id = ?")
+                .bind(command)
+                .execute(&mut *tx)
+                .await?;
             removed += sqlx::query("DELETE FROM outbox WHERE command_id = ?")
                 .bind(command)
                 .execute(&mut *tx)

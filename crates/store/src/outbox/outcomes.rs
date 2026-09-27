@@ -91,22 +91,30 @@ impl Store {
         Ok(())
     }
 
-    /// Operation `op_id` overwrote a change another device made (last
-    /// write wins, D-065): `note` says what, and `theirs`, Graph's copy
-    /// just before ours landed, becomes what `undo` puts back, so undoing
-    /// the edit restores the other device's change, not the older value.
+    /// [`Store::record_sent`] for an operation that overwrote a change
+    /// another device made (last write wins, D-065), done, in the same
+    /// transaction as `note`, which says what it overwrote, and `theirs`,
+    /// Graph's copy just before ours landed, which becomes what `undo`
+    /// puts back: undoing the edit restores the other device's change, and
+    /// no crash between two writes can leave it restoring the older value.
     pub async fn record_overwrite(
         &self,
         op_id: &str,
+        raw: &Entity,
+        extension: Option<Option<Value>>,
         note: &str,
         theirs: &Entity,
     ) -> Result<(), StoreError> {
+        let mut tx = self.writer().begin().await?;
+        record_in(&mut tx, op_id, raw, extension).await?;
+        finish(&mut tx, op_id, OpState::Done, None).await?;
         sqlx::query("UPDATE outbox SET note = ?, rollback_json = ? WHERE op_id = ?")
             .bind(note)
             .bind(to_json(theirs)?)
             .bind(op_id)
-            .execute(self.writer())
+            .execute(&mut *tx)
             .await?;
+        tx.commit().await?;
         Ok(())
     }
 

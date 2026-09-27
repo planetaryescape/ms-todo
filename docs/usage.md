@@ -551,7 +551,7 @@ ms-todo daemon install     # a launchd agent on macOS, a systemd user unit on Li
 ms-todo daemon uninstall   # remove it
 ```
 
-`install` writes `~/Library/LaunchAgents/com.planetaryescape.ms-todo.plist` (macOS) or `~/.config/systemd/user/ms-todo.service`, enabled (Linux). It runs the installed ms-todo's daemon, and starts it again if it crashes, but not after `daemon stop`. It only writes the file, which takes effect at your next login; to start it now, run the command it prints (`launchctl bootstrap gui/$(id -u) …`, or `systemctl --user daemon-reload && systemctl --user start ms-todo`). Running either again changes nothing. It's for the installed copy: from a development build, pass `--instance default`. `doctor` has a Login line saying whether it's set up.
+`install` writes `~/Library/LaunchAgents/com.planetaryescape.ms-todo.plist` (macOS) or `~/.config/systemd/user/ms-todo.service`, enabled (Linux). It runs the installed ms-todo's daemon, and starts it again if it crashes, but not after `daemon stop`. If your shell sets `MS_TODO_CONFIG_DIR`, `XDG_CONFIG_HOME`, `XDG_DATA_HOME` or `XDG_RUNTIME_DIR`, they're written into the service too (and shown), so the daemon at login uses the same config and data. It only writes the file, which takes effect at your next login; to start it now, run the command it prints (`launchctl bootstrap gui/$(id -u) …`, or `systemctl --user daemon-reload && systemctl --user start ms-todo`). Running either again changes nothing. It's for the installed copy: from a development build, pass `--instance default`. `doctor` has a Login line saying whether it's set up.
 
 ## Files
 

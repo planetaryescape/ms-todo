@@ -11,6 +11,7 @@
 //! nothing changes in the running session, and a test with its own HOME
 //! touches nothing else. The answer says how to start it now.
 
+use std::collections::BTreeMap;
 use std::io::ErrorKind as IoErrorKind;
 use std::os::unix::fs::OpenOptionsExt;
 use std::path::{Component, Path, PathBuf};
@@ -23,6 +24,16 @@ use crate::output::Render;
 
 pub const LAUNCHD_LABEL: &str = "com.planetaryescape.ms-todo";
 const SYSTEMD_UNIT: &str = "ms-todo.service";
+
+/// Where ms-todo's files are, as the installing shell has them: carried
+/// into the service, so the daemon at login reads the same config and
+/// data (`ms_todo_core::Paths` reads each).
+const PATH_ENV: [&str; 4] = [
+    ms_todo_core::CONFIG_DIR_ENV,
+    "XDG_CONFIG_HOME",
+    "XDG_DATA_HOME",
+    "XDG_RUNTIME_DIR",
+];
 
 /// Where the login item is, and whether it's there.
 #[derive(Serialize)]
@@ -40,6 +51,10 @@ pub struct ServiceState {
     /// in `doctor`.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub now: Option<String>,
+    /// install only: the variables written into the service's
+    /// environment, from the installing shell's.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub environment: Option<BTreeMap<String, String>>,
 }
 
 impl Render for ServiceState {
@@ -55,6 +70,13 @@ impl Render for ServiceState {
             ("Manager", self.manager.to_owned()),
             ("File", self.path.clone()),
         ];
+        if let Some(environment) = self.environment.as_ref().filter(|env| !env.is_empty()) {
+            let pairs: Vec<String> = environment
+                .iter()
+                .map(|(key, value)| format!("{key}={value}"))
+                .collect();
+            rows.push(("Environment", pairs.join(" ")));
+        }
         if let Some(now) = &self.now {
             rows.push(("Now", now.clone()));
         }
@@ -114,6 +136,7 @@ impl Manager {
             path: self.file.display().to_string(),
             changed,
             now,
+            environment: None,
         }
     }
 }
@@ -151,9 +174,16 @@ pub fn install(paths: &Paths) -> Result<ServiceState, CliError> {
     let program = program()?;
     let log = paths.daemon_log_file();
     prepare_log(&log)?;
+    let environment: BTreeMap<String, String> = PATH_ENV
+        .iter()
+        .filter_map(|name| {
+            let value = std::env::var(name).ok().filter(|value| !value.is_empty())?;
+            Some(((*name).to_owned(), value))
+        })
+        .collect();
     let contents = match manager.name {
-        "launchd" => launchd_plist(&program, &log),
-        _ => systemd_unit(&program, &log),
+        "launchd" => launchd_plist(&program, &log, &environment),
+        _ => systemd_unit(&program, &log, &environment),
     };
     let mut changed = write_if_different(&manager.file, &contents)?;
     if let Some(link) = &manager.enabled_by {
@@ -167,7 +197,10 @@ pub fn install(paths: &Paths) -> Result<ServiceState, CliError> {
         _ => "to start it now: systemctl --user daemon-reload && systemctl --user start ms-todo"
             .to_owned(),
     };
-    Ok(manager.state(Some(changed), Some(now)))
+    Ok(ServiceState {
+        environment: Some(environment),
+        ..manager.state(Some(changed), Some(now))
+    })
 }
 
 /// `daemon uninstall`: remove the login item, if it's there.
@@ -219,9 +252,24 @@ fn prepare_log(log: &Path) -> Result<(), CliError> {
     crate::daemon_client::open_log(log).map(drop)
 }
 
-fn launchd_plist(program: &Path, log: &Path) -> String {
+fn launchd_plist(program: &Path, log: &Path, environment: &BTreeMap<String, String>) -> String {
     let program = xml_escaped(&program.display().to_string());
     let log = xml_escaped(&log.display().to_string());
+    let environment = if environment.is_empty() {
+        String::new()
+    } else {
+        let pairs: String = environment
+            .iter()
+            .map(|(key, value)| {
+                format!(
+                    "\t\t<key>{}</key>\n\t\t<string>{}</string>\n",
+                    xml_escaped(key),
+                    xml_escaped(value)
+                )
+            })
+            .collect();
+        format!("\t<key>EnvironmentVariables</key>\n\t<dict>\n{pairs}\t</dict>\n")
+    };
     format!(
         r#"<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -249,15 +297,24 @@ fn launchd_plist(program: &Path, log: &Path) -> String {
 	<string>{log}</string>
 	<key>StandardErrorPath</key>
 	<string>{log}</string>
-</dict>
+{environment}</dict>
 </plist>
 "#
     )
 }
 
-fn systemd_unit(program: &Path, log: &Path) -> String {
+fn systemd_unit(program: &Path, log: &Path, environment: &BTreeMap<String, String>) -> String {
     let program = systemd_quoted(&program.display().to_string());
     let log = log.display().to_string().replace('%', "%%");
+    let environment: String = environment
+        .iter()
+        .map(|(key, value)| {
+            format!(
+                "Environment={}\n",
+                systemd_quoted(&format!("{key}={value}"))
+            )
+        })
+        .collect();
     format!(
         "# Written by `ms-todo daemon install`; `ms-todo daemon uninstall` removes it.\n\
          [Unit]\n\
@@ -265,6 +322,7 @@ fn systemd_unit(program: &Path, log: &Path) -> String {
          \n\
          [Service]\n\
          ExecStart={program} daemon run --instance default\n\
+         {environment}\
          Restart=on-failure\n\
          StandardOutput=append:{log}\n\
          StandardError=append:{log}\n\
@@ -372,10 +430,25 @@ mod tests {
 
     #[test]
     fn the_plist_runs_the_default_instance_and_restarts_only_after_a_crash() {
+        let environment =
+            BTreeMap::from([("MS_TODO_CONFIG_DIR".to_owned(), "/cfg & co".to_owned())]);
         let plist = launchd_plist(
             Path::new("/Apps & Tools/ms-todo"),
             Path::new("/Users/bk/Library/Application Support/ms-todo/logs/daemon.log"),
+            &environment,
         );
+        assert!(
+            plist.contains(
+                "<key>EnvironmentVariables</key>\n\t<dict>\n\t\t<key>MS_TODO_CONFIG_DIR</key>\n\t\t<string>/cfg &amp; co</string>"
+            ),
+            "{plist}"
+        );
+        let bare = launchd_plist(
+            Path::new("/bin/ms-todo"),
+            Path::new("/log"),
+            &BTreeMap::new(),
+        );
+        assert!(!bare.contains("EnvironmentVariables"));
         assert!(plist.contains("<string>/Apps &amp; Tools/ms-todo</string>"));
         assert!(plist.contains("<string>--instance</string>\n\t\t<string>default</string>"));
         assert!(plist.contains("<key>SuccessfulExit</key>\n\t\t<false/>"));
@@ -387,6 +460,11 @@ mod tests {
         let unit = systemd_unit(
             Path::new("/home/bk/my bin/ms-todo"),
             Path::new("/home/bk/.local/share/ms-todo/logs/daemon.log"),
+            &BTreeMap::from([("XDG_DATA_HOME".to_owned(), "/home/bk/my data".to_owned())]),
+        );
+        assert!(
+            unit.contains("Environment=\"XDG_DATA_HOME=/home/bk/my data\"\n"),
+            "{unit}"
         );
         assert!(
             unit.contains("ExecStart=\"/home/bk/my bin/ms-todo\" daemon run --instance default"),

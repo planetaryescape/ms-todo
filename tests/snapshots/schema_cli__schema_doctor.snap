@@ -447,6 +447,13 @@ expression: pretty
             "description": "install and uninstall only: whether anything changed",
             "type": "boolean"
           },
+          "environment": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "description": "install only: MS_TODO_CONFIG_DIR and the XDG directories the installing shell had set, written into the service's environment",
+            "type": "object"
+          },
           "installed": {
             "type": "boolean"
           },
