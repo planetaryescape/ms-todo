@@ -1024,3 +1024,28 @@ fn z_shows_deferred_tasks_in_every_view_and_reads_the_view_again() {
         }
     ));
 }
+
+#[test]
+fn a_new_day_reads_the_view_again_and_a_tick_within_the_day_does_not() {
+    let mut app = seeded();
+    let later = Clock {
+        now: chrono::DateTime::parse_from_rfc3339("2026-09-24T23:59:00+01:00").expect("now"),
+    };
+    let same_day = app.update(Msg::Tick(later));
+    assert!(
+        !same_day
+            .iter()
+            .any(|effect| matches!(effect.request, Request::Seed { .. }))
+    );
+    let midnight = Clock {
+        now: chrono::DateTime::parse_from_rfc3339("2026-09-25T00:00:01+01:00").expect("now"),
+    };
+    let next_day = app.update(Msg::Tick(midnight));
+    assert!(
+        next_day.iter().any(|effect| matches!(
+            &effect.request,
+            Request::Seed { scope, .. } if *scope == app.wanted
+        )),
+        "{next_day:?}"
+    );
+}

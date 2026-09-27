@@ -44,6 +44,7 @@ impl App {
             Msg::Response { tag, result } => self.answered(tag, result),
             Msg::Event(event) => self.event(event),
             Msg::Tick(clock) => {
+                let new_day = clock.today() != self.clock.today();
                 self.clock = clock;
                 self.reread_quick_add();
                 if let Some(banner) = &mut self.banner {
@@ -52,7 +53,14 @@ impl App {
                         self.banner = None;
                     }
                 }
-                self.tick_list_hint()
+                let mut effects = self.tick_list_hint();
+                // A deferred task's day may have come, and Next, Upcoming
+                // and the counts move with the date: read the views again.
+                if new_day && self.seeded {
+                    self.cache.clear();
+                    effects.extend(self.reseed());
+                }
+                effects
             }
         }
     }
