@@ -93,7 +93,7 @@ Ties go to the oldest task (Graph's `createdDateTime`). Completed, deferred and 
 
 ## Contexts
 
-Rung 9d (D-063). A context is a named set of lists, defined in config.toml, and at most one is active. The promise: "`mst ctx work` narrows everything to my work lists, and `mst ctx none` brings back everything."
+Rung 9d (D-064). A context is a named set of lists, defined in config.toml, and at most one is active. The promise: "`mst ctx work` narrows everything to my work lists, and `mst ctx none` brings back everything."
 
 ```toml
 [contexts.work]

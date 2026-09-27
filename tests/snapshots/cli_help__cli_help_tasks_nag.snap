@@ -45,6 +45,9 @@ Options:
       --yes
           Change several tasks without asking. Off a terminal, changing more than one needs it
 
+      --context <NAME|none>
+          Read this command in this context (from config.toml) rather than the active one; `none` for every list
+
       --idempotency-key <KEY>
           Run this change at most once: repeating the command with the same key returns the first result for 24 hours, and the same key with a different change exits 2
 
