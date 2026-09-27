@@ -117,6 +117,7 @@ pub(crate) async fn serve(paths: Paths) -> Result<(), Fatal> {
         settle_unfinished(&state).await;
         // Before anything is sent, so nothing new is mistaken for left over.
         outbox::recover(&state).await;
+        outbox::prune::prune(&state).await;
         crate::attachments::kept::sweep(&state.kept_dir).await;
         eprintln!(
             "ms-todo daemon {} (pid {}) listening on {}",
@@ -176,7 +177,7 @@ async fn build_state(paths: &Paths) -> Result<State, Fatal> {
         graph: Arc::new(graph),
         store: Arc::new(store),
         syncer: Syncer::new(),
-        outbox: Outbox::new(),
+        outbox: Outbox::load(&paths.config_file),
         events: Events::new(),
         instance: paths.instance.label().to_owned(),
         started_at: chrono::Utc::now().timestamp(),
@@ -216,6 +217,7 @@ async fn accept_until_shutdown(listener: UnixListener, state: Arc<State>) -> Res
         syncing.syncer.run(context).await;
     });
     connections.spawn(outbox::run(Arc::clone(&state)));
+    connections.spawn(outbox::prune::run(Arc::clone(&state)));
     connections.spawn(crate::my_day::run(Arc::clone(&state)));
     connections.spawn(crate::semantic::run(Arc::clone(&state)));
     connections.spawn(crate::nag::run(Arc::clone(&state)));

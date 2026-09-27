@@ -24,6 +24,7 @@ For each, record the request, the response (with private data removed), the date
 | S16 | How does an upload session resume, and what does an attachment look like? (Rung 8b, 2026-09-25.) | Uploads that survive a lost answer; safe downloads | [03](03-graph-provider.md), D-056 |
 | S17 | How does Graph set `isReminderOn`? (Issue 005, 2026-09-26.) | Reopen, undo and move keeping a task's reminder | D-060 |
 | S18 | Can a detached daemon show a macOS notification, and with what? (Rung 9b, 2026-09-27.) | Nag reminders | [05](05-custom-features.md#nag-reminders), D-063 |
+| S20 | What does a due-date PATCH do to a recurring task? (Found checking undo live, 2026-09-27.) | Undo of a recurring completion; due-date edits of recurring tasks | [issue 007](../issues/007-recurring-due-date-patch-splits.md), D-065 |
 | P1 | What is the default page size for task lists and delta, and does `Prefer: odata.maxpagesize` work? (Added during phase 0.) | Pagination, and rung 1's "more than 100 tasks" check | [03](03-graph-provider.md) |
 
 ### S5 result (2026-09-24)
@@ -118,6 +119,10 @@ Confidence: high. Evidence: [S11](../research/spikes/S11.md). Changed: [02](02-d
 
 **Graph derives `isReminderOn` and ignores a written one.** Writing `reminderDateTime` turns the reminder on (on a create, a PATCH, and with a completion in the same PATCH); a transition to `completed` turns it off and keeps the time; `reminderDateTime: null` turns it off and removes the time. No request turns a reminder off on an open task with its time kept. Confidence: high. Evidence: [S17](../research/spikes/S17.md). Changed: D-060.
 
+### S20 result (2026-09-27)
+
+**It splits the task.** A PATCH of `dueDateTime` on a recurring task moves the series on to its next occurrence and creates a new open recurring task with the date asked for, to an earlier day or a later one. So undoing a recurring completion leaves two tasks. Also seen: a new recurring task's etag moves and its due date is written back in UTC within a second of the 201. Confidence: high for what happens, not why. Evidence: [S20](../research/spikes/S20.md). Changed: D-065; open in [issue 007](../issues/007-recurring-due-date-patch-splits.md).
+
 ### S18 result (2026-09-27)
 
 **`osascript` can; `notify-rust` can't.** On macOS 27, `notify-rust` 4.18 returns `Ok(())` and `usernoted` denies what it sends ("Legacy client com.apple.finder connecting to modern client"), from a terminal and from a detached `setsid` process alike. `/usr/bin/osascript`'s `display notification`, with the text as argv, is delivered and presented as a banner from both, attributed to Script Editor. Confidence: high (read from `usernoted`'s log). Evidence: [S18](../research/spikes/S18.md). Changed: D-063.
@@ -132,7 +137,7 @@ Answered on 2026-09-24:
 
 - **Q1. Answered (D-022).** Quick add with no list goes to the built-in "Tasks" list (`defaultList`). `#List` or `--list` picks a specific one.
 - **Q2. Answered (D-023).** No locations. BK has never needed them. The parser doesn't recognise them, and there's no location field.
-- **Q3. Open.** Keep the original Todoist p1–p4 level in the extension, to avoid losing p2 versus p3 (D-017)? The default until BK decides is no.
+- **Q3. Answered (BK, 2026-09-27): no.** Three levels, as Graph has them: the original Todoist p1–p4 level isn't kept in the extension (D-017), so p2 and p3 both become normal.
 - **Q4. Answered (D-024).** The My Day rollover runs at midnight by default. It's configurable with `my_day.rollover_time` in config.toml.
 - **Q5. Answered (D-025).** Release builds include BK's client ID, so ms-todo works as soon as it's installed. The docs and `auth login` encourage users to register their own app.
 
@@ -144,5 +149,5 @@ Opened on 2026-09-24 by phase 0 (S4, S7, S8) and its review. The placeholders in
 - **Q9. Open.** Does lowercase `tom` mean tomorrow? It clashes with the name Tom. (Placeholder: yes, lowercase only, so `Ask Tom` stays in the title. Quick add applies it to `tod` and `sat` too, so `Sat nav` stays whole; D-052.)
 - **Q10. Open.** BK supplies ten of his own phrases for the corpus. They go in [S8-corpus-bk.tsv](../research/spikes/S8-corpus-bk.tsv), one tab-separated row each in S8's columns (its header says how); `crates/nlp`'s corpus test reads it with [S8-corpus.tsv](../research/spikes/S8-corpus.tsv), so a phrase that doesn't read as written fails the test until it's fixed or listed as a known miss.
 - **Q11. Moot (D-037).** My Day colour: `preset3` (Yellow) or `preset4` (Green)? The iOS app shows no categories (S7), and My Day no longer uses one.
-- **Q13. Built with the placeholder (D-054), still BK's to confirm.** A task added to My Day with no due date gets today as its due date (D-037). If it's taken out of My Day by hand before the rollover, should ms-todo clear that due date straight away? Rung 7 does: yes, by the same rule as the rollover (the task is open, `myDayDueSet`, and the due date is still My Day's day).
-- **Q12. Open.** A task created into a list that turns out to have been deleted on another device is kept as a `failed` outbox entry ([04](04-sync-cache.md#instant-local-writes)). Should it move to "Tasks" automatically instead? (Placeholder: no, keep it as failed.)
+- **Q13. Answered (BK, 2026-09-27): yes,** as built in rung 7 (D-054). A task added to My Day with no due date gets today as its due date (D-037); taken out of My Day by hand before the rollover, that due date is cleared straight away, by the same rule as the rollover (the task is open, `myDayDueSet`, and the due date is still My Day's day).
+- **Q12. Answered (BK, 2026-09-27): keep it as failed.** A task created into a list that turns out to have been deleted on another device stays a `failed` outbox entry ([04](04-sync-cache.md#instant-local-writes)), with its content, for the user to add again; it isn't moved to "Tasks". As built since rung 4.

@@ -14,6 +14,11 @@ pub enum Event {
     /// Graph rejected an outbox operation for good: it's `failed`, and its
     /// local change was rolled back.
     WriteRejected(WriteRejected),
+    /// An edit was made over a change another device made to the same
+    /// fields since ms-todo last read the task: last write wins (04,
+    /// D-065). The operation is `done`, and its note in `outbox list`
+    /// says what it overwrote.
+    ConflictOverwritten(ConflictOverwritten),
     /// These lists or tasks (local IDs) changed in the cache: a write, an
     /// outbox operation settling, or a sync. At most [`MAX_CHANGED_IDS`](crate::MAX_CHANGED_IDS).
     EntityChanged(EntityChanged),
@@ -43,4 +48,14 @@ pub struct WriteRejected {
     pub op_id: String,
     pub task_id: String,
     pub error: OpError,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ConflictOverwritten {
+    pub op_id: String,
+    pub task_id: String,
+    /// Graph's names of the fields both changed (`title`, `dueDateTime`).
+    pub fields: Vec<String>,
+    /// For people: what was overwritten, as the operation's note has it.
+    pub message: String,
 }

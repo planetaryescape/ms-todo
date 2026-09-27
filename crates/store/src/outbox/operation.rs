@@ -5,7 +5,7 @@ use serde_json::Value;
 use sqlx::AssertSqlSafe;
 use sqlx::{FromRow, SqliteConnection};
 
-use super::{SKIPPED_NOTE, UNKNOWN_LOOKUP_SECS};
+use super::SKIPPED_NOTE;
 use crate::{Entity, StoreError, parse_object, parse_optional};
 
 // An operation on a list (a folder change) is titled by the list's name.
@@ -180,14 +180,15 @@ impl OutboxRow {
         self.payload["recurring"] == Value::Bool(true)
     }
 
-    /// `unknown` for longer than the lookup window, or with nothing that
-    /// could settle it but the user: a move paused so, or a child write,
-    /// which carries no marker to find it by (04). The user decides.
-    pub fn is_flagged(&self, now: i64) -> bool {
+    /// `unknown` for longer than the lookup window (`lookup_secs`, from
+    /// `[outbox] unknown_lookup_hours`), or with nothing that could settle
+    /// it but the user: a move paused so, or a child write, which carries
+    /// no marker to find it by (04). The user decides.
+    pub fn is_flagged(&self, now: i64, lookup_secs: i64) -> bool {
         self.state == OpState::Unknown
             && (self
                 .unknown_since
-                .is_some_and(|since| since <= now - UNKNOWN_LOOKUP_SECS)
+                .is_some_and(|since| since <= now - lookup_secs)
                 || self.needs_user()
                 || matches!(self.op, OpKind::Child | OpKind::ListCreate))
     }

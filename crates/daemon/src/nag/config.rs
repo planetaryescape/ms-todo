@@ -58,7 +58,8 @@ pub(crate) fn notify_file() -> Option<PathBuf> {
     debug_env(NOTIFY_FILE_ENV).map(PathBuf::from)
 }
 
-/// Debug builds only: behave as a system with no notifier, as Linux is
+/// Debug builds only: behave as a system with no notifier, as Linux with
+/// no D-Bus session bus is
 /// ([`NO_NOTIFIER_ENV`]).
 pub(crate) fn no_notifier() -> bool {
     debug_env(NO_NOTIFIER_ENV).is_some()

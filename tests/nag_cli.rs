@@ -353,7 +353,7 @@ async fn without_a_notifier_doctor_complains_only_once_a_task_nags() {
     let mut env = Env::new();
     graph_with(&mut env, vec![reminded("T1", "Call mum")], Vec::new()).await;
     env.json(&["daemon", "stop"]);
-    // As on Linux, which has no notifier yet.
+    // As on Linux with no D-Bus session bus.
     env.cmd()
         .env("MS_TODO_NAG_NO_NOTIFIER", "1")
         .args(["--format", "json", "daemon", "start"])
@@ -369,7 +369,7 @@ async fn without_a_notifier_doctor_complains_only_once_a_task_nags() {
     env.json(&["tasks", "nag", &id, "--every", "15m"]);
     let doctor = env.json(&["doctor"]);
     let problem = doctor["nag"]["problem"].as_str().unwrap_or_default();
-    assert!(problem.contains("only built for macOS"), "{doctor}");
+    assert!(problem.contains("nothing nags here"), "{doctor}");
     let failed = env.failure(&["doctor", "--notify-test"], 7);
     assert_eq!(failed["error"]["kind"], "unsupported");
 }

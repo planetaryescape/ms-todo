@@ -33,7 +33,7 @@ fn start_status_stop_and_the_pid_is_gone() {
     let started = env.json(&["daemon", "start"]);
     assert_eq!(started["running"], true);
     assert_eq!(started["ready"], true);
-    assert_eq!(started["protocol_version"], 21);
+    assert_eq!(started["protocol_version"], 22);
     assert_eq!(started["instance"], "dev");
     let pid = started["pid"].as_u64().expect("pid");
     assert!(pid_exists(pid));
@@ -343,4 +343,67 @@ async fn raw_get_and_bearer_go_through_the_daemon() {
         .args(["raw", "GET", "https://attacker.example/me"])
         .assert()
         .code(2);
+}
+
+/// The login item's file under the test's own HOME, as `daemon install`
+/// writes it on this system.
+fn service_file(env: &Env) -> std::path::PathBuf {
+    if cfg!(target_os = "macos") {
+        env.home
+            .path()
+            .join("Library/LaunchAgents/com.planetaryescape.ms-todo.plist")
+    } else {
+        env.home.path().join(".config/systemd/user/ms-todo.service")
+    }
+}
+
+#[test]
+fn install_and_uninstall_write_and_remove_the_login_item_idempotently() {
+    let env = Env::new();
+    // A target/ build is the dev instance: the login item is the default's.
+    let refused = env.failure(&["daemon", "install"], 2);
+    assert!(
+        refused["error"]["message"]
+            .as_str()
+            .is_some_and(|message| message.contains("--instance default")),
+        "{refused}"
+    );
+    assert!(!service_file(&env).exists());
+
+    let installed = env.json(&["--instance", "default", "daemon", "install"]);
+    assert_eq!(installed["installed"], true, "{installed}");
+    assert_eq!(installed["changed"], true);
+    let file = service_file(&env);
+    assert_eq!(installed["path"], file.display().to_string());
+    let written = std::fs::read_to_string(&file).expect("the login item");
+    let exe = assert_cmd::cargo::cargo_bin("ms-todo")
+        .canonicalize()
+        .expect("exe");
+    assert!(written.contains(&exe.display().to_string()), "{written}");
+    assert!(written.contains("--instance"), "{written}");
+    // The installing shell's paths go with it (the test's own).
+    let data = env.home.path().join("data").display().to_string();
+    assert_eq!(installed["environment"]["XDG_DATA_HOME"], data.as_str());
+    assert!(written.contains(&data), "{written}");
+    if cfg!(target_os = "macos") {
+        assert_eq!(mode(&file), 0o644, "launchd refuses a writable plist");
+    } else {
+        let wants = env
+            .home
+            .path()
+            .join(".config/systemd/user/default.target.wants/ms-todo.service");
+        assert_eq!(std::fs::read_link(&wants).expect("enabled"), file);
+    }
+    let again = env.json(&["--instance", "default", "daemon", "install"]);
+    assert_eq!(again["changed"], false, "nothing to change");
+    let doctor = env.json(&["doctor"]);
+    assert_eq!(doctor["service"]["installed"], true, "{doctor}");
+
+    let removed = env.json(&["daemon", "uninstall"]);
+    assert_eq!(removed["installed"], false);
+    assert_eq!(removed["changed"], true);
+    assert!(!file.exists());
+    let again = env.json(&["daemon", "uninstall"]);
+    assert_eq!(again["changed"], false);
+    assert_eq!(env.json(&["doctor"])["service"]["installed"], false);
 }

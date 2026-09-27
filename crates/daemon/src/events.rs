@@ -5,7 +5,9 @@
 //! and a rejected operation stays `failed` in `ms-todo outbox list`, so
 //! nothing is lost for want of a listener.
 
-use ms_todo_protocol::{EntityChanged, Event, MAX_CHANGED_IDS, OpError, WriteRejected};
+use ms_todo_protocol::{
+    ConflictOverwritten, EntityChanged, Event, MAX_CHANGED_IDS, OpError, WriteRejected,
+};
 use tokio::sync::broadcast;
 
 /// Events kept for a subscriber that falls behind.
@@ -35,6 +37,27 @@ impl Events {
                 message: message.to_owned(),
             },
         }));
+    }
+
+    /// `op_id`, an edit of task `task_id`, landed over a change another
+    /// device made to the same `fields` (last write wins, 04).
+    pub fn conflict_overwritten(
+        &self,
+        op_id: &str,
+        task_id: &str,
+        fields: Vec<String>,
+        note: &str,
+    ) {
+        eprintln!("ms-todo daemon: ConflictOverwritten: operation {op_id}: {note}");
+        // With no subscriber there's nobody to tell; the note keeps it.
+        let _ = self
+            .sender
+            .send(Event::ConflictOverwritten(ConflictOverwritten {
+                op_id: op_id.to_owned(),
+                task_id: task_id.to_owned(),
+                fields,
+                message: note.to_owned(),
+            }));
     }
 
     /// These tasks changed in the cache.

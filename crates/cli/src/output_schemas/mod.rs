@@ -15,7 +15,7 @@ use serde_json::{Value, json};
 
 use crate::output::SCHEMA_VERSION;
 use builders::{collection, live_collection, nullable, object, timestamp, versioned};
-use doctor::{daemon_state, doctor};
+use doctor::{daemon_state, doctor, service};
 use entities::{
     attachment, candidate, category, extension, folder, link, linked_resource, list_entity,
     outbox_op, step, task_entity,
@@ -194,6 +194,13 @@ pub fn output_schema(command: &str) -> Option<Value> {
         "daemon start" | "daemon status" => {
             let (properties, required) = daemon_state();
             versioned(properties, required)
+        }
+        "daemon install" | "daemon uninstall" => {
+            let service = service();
+            versioned(
+                service["properties"].clone(),
+                &["installed", "manager", "path", "changed", "now"],
+            )
         }
         "daemon stop" => versioned(
             json!({

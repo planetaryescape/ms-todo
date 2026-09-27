@@ -29,10 +29,10 @@ mod views;
 pub use catalog::{CategoryChange, ExtensionChange, ExtensionOwner, OwnerKind};
 pub use codec::{Codec, FrameTooLarge, MAX_FRAME_BYTES};
 pub use contexts::{AppliedContext, ContextChoice, ContextInfo, Contexts};
-pub use events::{EntityChanged, Event, WriteRejected};
+pub use events::{ConflictOverwritten, EntityChanged, Event, WriteRejected};
 pub use list_change::{Anchor, Folder, ListChange};
 pub use mutation::{Applied, Plan, PlannedList, PlannedTask, Refused, Rolled, TaskAction};
-pub use outbox::{OpError, OutboxDepth, OutboxOp, OutboxState};
+pub use outbox::{OpError, OutboxDepth, OutboxOp, OutboxState, OutboxUpkeep};
 pub use request::{RawWriteMethod, Request, SearchStatus};
 pub use response::{
     Candidate, DownloadedFile, ErrorPayload, ListSuggestion, Response, ResponseData, SemanticIndex,
@@ -99,8 +99,12 @@ pub use views::{Counts, MyDay, MyDaySeed, Scope, Seed};
 /// narrows, so an older daemon never answers `--context` as if everything
 /// were asked for. 21: quick add's steps and search's reach (D-068):
 /// `NewTask.steps`, and `matched` on each keyword search result, so an
-/// older daemon never adds a task without the steps typed with it.
-pub const PROTOCOL_VERSION: u32 = 21;
+/// older daemon never adds a task without the steps typed with it. 22:
+/// the daemon's placed-later gaps (D-065): `Focus`, the
+/// `ConflictOverwritten` event and `DoctorReport.outbox_upkeep`, so the
+/// TUI's focus hint never reaches a daemon that would answer it with an
+/// error.
+pub const PROTOCOL_VERSION: u32 = 22;
 
 /// The socket buffer both ends ask for: room for a large list's `Seed` in
 /// one write. macOS gives a Unix socket 8 KiB, so a 350 KiB seed crossed

@@ -2,7 +2,8 @@
 //! sync state, with its last error.
 
 use ms_todo_protocol::{
-    DoctorReport, ErrorPayload, OutboxDepth, ResponseData, ScopeError, ScopeStatus, SyncMode,
+    DoctorReport, ErrorPayload, OutboxDepth, OutboxUpkeep, ResponseData, ScopeError, ScopeStatus,
+    SyncMode,
 };
 use ms_todo_store::{OpState, scope_list};
 
@@ -44,12 +45,14 @@ pub(crate) async fn doctor(state: &State) -> Result<ResponseData, ErrorPayload> 
             }
         })
         .collect();
+    let outbox = outbox_depth(state).await?;
     Ok(ResponseData::Doctor(Box::new(DoctorReport {
         database_path: state.store.path().display().to_string(),
         database_bytes: state.store.size_bytes(),
         syncing: state.syncer.status().running(),
         scopes,
-        outbox: outbox_depth(state).await?,
+        outbox_upkeep: Some(outbox_upkeep(state, &outbox)),
+        outbox,
         suggest: Some(state.suggest.status()),
         my_day: Some(crate::my_day::status(state).await?),
         semantic: Some(state.semantic.status(&state.store).await?),
@@ -60,7 +63,11 @@ pub(crate) async fn doctor(state: &State) -> Result<ResponseData, ErrorPayload> 
 
 /// How many outbox operations are in each state.
 pub(crate) async fn outbox_depth(state: &State) -> Result<OutboxDepth, ErrorPayload> {
-    let (counts, flagged) = state.store.outbox_depth().await.map_err(store_error)?;
+    let (counts, flagged) = state
+        .store
+        .outbox_depth(state.outbox.config.unknown_lookup_secs())
+        .await
+        .map_err(store_error)?;
     let mut outbox = OutboxDepth {
         flagged: u64::try_from(flagged).unwrap_or(0),
         ..OutboxDepth::default()
@@ -76,4 +83,18 @@ pub(crate) async fn outbox_depth(state: &State) -> Result<OutboxDepth, ErrorPayl
         }
     }
     Ok(outbox)
+}
+
+/// The outbox's size and `[outbox]` settings, and the last prune.
+fn outbox_upkeep(state: &State, depth: &OutboxDepth) -> OutboxUpkeep {
+    let config = &state.outbox.config;
+    let last = state.outbox.last_prune();
+    OutboxUpkeep {
+        rows: depth.pending + depth.inflight + depth.unknown + depth.failed + depth.done,
+        retention_days: config.retention_days,
+        unknown_lookup_hours: config.unknown_lookup_hours,
+        last_pruned_at: last.map(|(at, _)| at),
+        last_pruned: last.map(|(_, removed)| removed),
+        problem: config.problem.clone(),
+    }
 }

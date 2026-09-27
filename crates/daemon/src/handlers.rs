@@ -134,6 +134,7 @@ pub(crate) async fn handle(state: &State, request: Request) -> Response {
             sync_outcome(state, &outcome).await
         }
         Request::Doctor => doctor(state).await,
+        Request::Focus { list } => focus(state, list.as_deref()).await,
         Request::NotifyTest => crate::nag::notify_test(state).await,
         Request::RawGet { path } => state
             .graph
@@ -224,6 +225,26 @@ pub(crate) async fn handle(state: &State, request: Request) -> Response {
         )),
     };
     result.into()
+}
+
+/// The TUI's focus hint. It's only a hint: a list that isn't cached
+/// (deleted meanwhile, say) clears the focus rather than failing.
+async fn focus(state: &State, list: Option<&str>) -> Result<ResponseData, ErrorPayload> {
+    let focus = match list {
+        // The same list again (paging past it): nothing to look up.
+        Some(list) if state.syncer.focused().as_deref() == Some(list) => {
+            return Ok(ResponseData::Ack);
+        }
+        Some(list) => {
+            let lists = state.store.lists().await.map_err(store_error)?;
+            crate::list_resolution::resolve_list(&lists, Some(list))
+                .ok()
+                .map(|list| list.local_id)
+        }
+        None => None,
+    };
+    state.syncer.focus(focus);
+    Ok(ResponseData::Ack)
 }
 
 /// `tasks add|complete|reopen|edit|delete`, the folder changes and

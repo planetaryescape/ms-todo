@@ -38,6 +38,7 @@ use tokio::sync::{mpsc, oneshot};
 pub use app::attachments::Places;
 /// A recurrence in a few words, as the detail pane and `tasks show` put it.
 pub use app::task::describe_recurrence;
+pub use ipc::Restart;
 pub use runner::RunError;
 
 pub struct Options {
@@ -64,6 +65,8 @@ pub struct Options {
     /// Write tracing spans and events, the latency measurements among
     /// them, to this file.
     pub trace: Option<PathBuf>,
+    /// Starts the daemon again when it goes away and stays away.
+    pub restart: Option<Restart>,
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -103,7 +106,7 @@ pub async fn run(options: Options) -> Result<Option<String>, TuiError> {
     // now, off the render path, not in the first frame of a date editor.
     let now = app.parse_context();
     std::thread::spawn(move || ms_todo_nlp::read_when("today", &now));
-    let (link, daemon) = ipc::connect(options.socket.clone());
+    let (link, daemon) = ipc::connect(options.socket.clone(), options.restart.clone());
     // Restores the terminal on a panic too.
     let mut terminal = ratatui::init();
     // With --bench-startup, scripted keys stand in for the keyboard.

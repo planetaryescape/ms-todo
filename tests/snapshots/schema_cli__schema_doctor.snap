@@ -218,7 +218,7 @@ expression: pretty
         ]
       },
       "outbox": {
-        "description": "How many writes are in each state; flagged are unknown for over 24 hours",
+        "description": "How many writes are in each state; flagged are unknown for over [outbox] unknown_lookup_hours (24 by default), or can't be attributed",
         "properties": {
           "done": {
             "type": "integer"
@@ -236,6 +236,48 @@ expression: pretty
             "type": "integer"
           },
           "unknown": {
+            "type": "integer"
+          }
+        },
+        "type": [
+          "object",
+          "null"
+        ]
+      },
+      "outbox_upkeep": {
+        "description": "The outbox's size and [outbox] settings (D-065); null when the daemon didn't report",
+        "properties": {
+          "last_pruned": {
+            "description": "How many operations that prune removed",
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "last_pruned_at": {
+            "description": "Unix seconds: when finished writes were last pruned, since the daemon started",
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "problem": {
+            "description": "Why an [outbox] setting wasn't used",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "retention_days": {
+            "description": "Finished writes are kept, and undoable, this long",
+            "type": "integer"
+          },
+          "rows": {
+            "description": "Operations stored, in every state",
+            "type": "integer"
+          },
+          "unknown_lookup_hours": {
+            "description": "How long an unknown write is looked for before it's flagged",
             "type": "integer"
           }
         },
@@ -393,6 +435,46 @@ expression: pretty
             ]
           }
         },
+        "type": [
+          "object",
+          "null"
+        ]
+      },
+      "service": {
+        "description": "Whether the daemon starts at login (`daemon install`); null where that isn't built",
+        "properties": {
+          "changed": {
+            "description": "install and uninstall only: whether anything changed",
+            "type": "boolean"
+          },
+          "environment": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "description": "install only: MS_TODO_CONFIG_DIR and the XDG directories the installing shell had set, written into the service's environment",
+            "type": "object"
+          },
+          "installed": {
+            "type": "boolean"
+          },
+          "manager": {
+            "description": "launchd (macOS) or systemd (Linux)",
+            "type": "string"
+          },
+          "now": {
+            "description": "install and uninstall only: how to start or stop it now rather than at the next login",
+            "type": "string"
+          },
+          "path": {
+            "description": "The file that starts it",
+            "type": "string"
+          }
+        },
+        "required": [
+          "installed",
+          "manager",
+          "path"
+        ],
         "type": [
           "object",
           "null"

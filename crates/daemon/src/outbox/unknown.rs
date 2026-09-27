@@ -37,7 +37,8 @@ pub(super) async fn resolve(state: &State) -> bool {
         }
     };
     let mut resolved = false;
-    for op in ops.iter().filter(|op| !op.is_flagged(now())) {
+    let (now, lookup) = (now(), state.outbox.config.unknown_lookup_secs());
+    for op in ops.iter().filter(|op| !op.is_flagged(now, lookup)) {
         let outcome = match op.op {
             OpKind::Create => attribute_create(state, op).await,
             OpKind::Move => attribute_move(state, op).await,

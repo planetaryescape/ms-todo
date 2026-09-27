@@ -2,8 +2,10 @@
 //! notification`: `notify-rust` reports success from a process with no
 //! app bundle and macOS 27 drops what it sends. The title and body are
 //! passed as argv to the script's `on run`, never spliced into it, and no
-//! shell is involved, so a title is only ever text. Elsewhere there's no
-//! notifier yet, and `doctor` says so.
+//! shell is involved, so a title is only ever text. On Linux, `notify-rust`
+//! over the D-Bus session bus, when there is one (D-065); a failure to
+//! reach a notification server shows in `doctor`. Elsewhere there's no
+//! notifier, and `doctor` says so.
 
 use std::io::Write;
 use std::path::PathBuf;
@@ -15,6 +17,8 @@ use ms_todo_core::one_line_safe;
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) enum Notifier {
     Osascript,
+    /// The freedesktop notification service, over the D-Bus session bus.
+    DBus,
     /// Debug builds' tests: one line per notification, `title\tbody`.
     File(PathBuf),
     /// Why there's no way to notify here.
@@ -32,14 +36,19 @@ const SCRIPT: [&str; 3] = [
 ];
 
 impl Notifier {
-    /// `macos` is whether this system can: tests pass false to stand in
-    /// for Linux on a Mac.
-    pub fn for_this_system(notify_file: Option<PathBuf>, macos: bool) -> Self {
+    /// `macos` is whether this system can with `osascript`, and `dbus`
+    /// whether it has a D-Bus session bus to send to: tests pass false for
+    /// both to stand in for a system with neither.
+    pub fn for_this_system(notify_file: Option<PathBuf>, macos: bool, dbus: bool) -> Self {
         match notify_file {
             Some(path) => Self::File(path),
             None if macos => Self::Osascript,
+            None if dbus => Self::DBus,
+            None if cfg!(target_os = "linux") => Self::Unavailable(
+                "there's no D-Bus session bus (DBUS_SESSION_BUS_ADDRESS), so nothing nags here",
+            ),
             None => Self::Unavailable(
-                "notifications are only built for macOS so far (S18), so nothing nags here",
+                "notifications are built for macOS and Linux only, so nothing nags here",
             ),
         }
     }
@@ -48,6 +57,7 @@ impl Notifier {
     pub fn name(&self) -> Option<&'static str> {
         match self {
             Self::Osascript => Some("osascript"),
+            Self::DBus => Some("dbus"),
             Self::File(_) => Some("file"),
             Self::Unavailable(_) => None,
         }
@@ -88,6 +98,7 @@ impl Notifier {
                     ))
                 }
             }
+            Self::DBus => show_over_dbus(&title, &body).await,
             Self::File(path) => std::fs::OpenOptions::new()
                 .create(true)
                 .append(true)
@@ -97,4 +108,29 @@ impl Notifier {
             Self::Unavailable(why) => Err((*why).to_owned()),
         }
     }
+}
+
+/// Whether this session has a D-Bus session bus, where zbus looks for one:
+/// `DBUS_SESSION_BUS_ADDRESS`, else `$XDG_RUNTIME_DIR/bus`.
+pub(crate) fn session_bus() -> bool {
+    std::env::var_os("DBUS_SESSION_BUS_ADDRESS").is_some_and(|address| !address.is_empty())
+        || std::env::var_os("XDG_RUNTIME_DIR")
+            .is_some_and(|dir| std::path::Path::new(&dir).join("bus").exists())
+}
+
+#[cfg(target_os = "linux")]
+async fn show_over_dbus(title: &str, body: &str) -> Result<(), String> {
+    notify_rust::Notification::new()
+        .appname("ms-todo")
+        .summary(title)
+        .body(body)
+        .show_async()
+        .await
+        .map(|_| ())
+        .map_err(|error| format!("cannot notify over D-Bus: {error}"))
+}
+
+#[cfg(not(target_os = "linux"))]
+async fn show_over_dbus(_title: &str, _body: &str) -> Result<(), String> {
+    Err("D-Bus notifications are built for Linux only".to_owned())
 }

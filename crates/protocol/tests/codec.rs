@@ -1,15 +1,15 @@
 use bytes::BytesMut;
 use ms_todo_protocol::{
-    Anchor, Applied, AppliedContext, Candidate, CategoryChange, Clearable, Codec, ContextChoice,
-    ContextInfo, Contexts, ContextsStatus, Counts, DaemonStatus, DeferredFilter, DoctorReport,
-    DueFilter, EntityChanged, ErrorPayload, Event, ExtensionChange, ExtensionOwner, Folder,
-    Importance, ListChange, ListSuggestion, Message, ModelState, MyDay, MyDaySeed, MyDayStatus,
-    NagStatus, NewTask, OpError, OutboxDepth, OutboxOp, OutboxState, OwnerKind, PROTOCOL_VERSION,
-    Payload, Plan, PlannedList, PlannedTask, RawWriteMethod, Refused, Request, Response,
-    ResponseData, Rolled, Scope, ScopeError, ScopeStatus, SearchStatus, Seed, SemanticIndex,
-    SemanticStatus, StatusFilter, SuggestStatus, SyncActivity, SyncInfo, SyncMode, SyncProgress,
-    SyncReport, SyncState, TaskAction, TaskChange, TaskEdit, TaskFilter, TaskSelect, TaskSort,
-    WriteRejected,
+    Anchor, Applied, AppliedContext, Candidate, CategoryChange, Clearable, Codec,
+    ConflictOverwritten, ContextChoice, ContextInfo, Contexts, ContextsStatus, Counts,
+    DaemonStatus, DeferredFilter, DoctorReport, DueFilter, EntityChanged, ErrorPayload, Event,
+    ExtensionChange, ExtensionOwner, Folder, Importance, ListChange, ListSuggestion, Message,
+    ModelState, MyDay, MyDaySeed, MyDayStatus, NagStatus, NewTask, OpError, OutboxDepth, OutboxOp,
+    OutboxState, OutboxUpkeep, OwnerKind, PROTOCOL_VERSION, Payload, Plan, PlannedList,
+    PlannedTask, RawWriteMethod, Refused, Request, Response, ResponseData, Rolled, Scope,
+    ScopeError, ScopeStatus, SearchStatus, Seed, SemanticIndex, SemanticStatus, StatusFilter,
+    SuggestStatus, SyncActivity, SyncInfo, SyncMode, SyncProgress, SyncReport, SyncState,
+    TaskAction, TaskChange, TaskEdit, TaskFilter, TaskSelect, TaskSort, WriteRejected,
 };
 use serde_json::json;
 use tokio_util::codec::{Decoder, Encoder};
@@ -294,9 +294,21 @@ fn every_request_and_response_round_trips() {
                     defined: 2,
                     problems: Vec::new(),
                 }),
+                outbox_upkeep: Some(OutboxUpkeep {
+                    rows: 41,
+                    retention_days: 30,
+                    unknown_lookup_hours: 24,
+                    last_pruned_at: Some(1_790_000_000),
+                    last_pruned: Some(3),
+                    problem: None,
+                }),
             })),
         }),
         Payload::Request(Request::NotifyTest),
+        Payload::Request(Request::Focus {
+            list: Some("Groceries".into()),
+        }),
+        Payload::Request(Request::Focus { list: None }),
         Payload::Request(Request::MyDay),
         Payload::Request(Request::MyDayRollover {
             dry_run: true,
@@ -578,6 +590,12 @@ fn every_request_and_response_round_trips() {
                 kind: "rejected".into(),
                 message: "no".into(),
             },
+        })),
+        Payload::Event(Event::ConflictOverwritten(ConflictOverwritten {
+            op_id: "op-2".into(),
+            task_id: "t1".into(),
+            fields: vec!["title".into()],
+            message: "overwrote title".into(),
         })),
         Payload::Request(Request::Seed {
             scope: None,

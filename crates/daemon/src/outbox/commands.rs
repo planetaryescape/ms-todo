@@ -35,9 +35,9 @@ pub(crate) async fn list(
         Some(wanted) => Some(store_state(wanted)?),
     };
     let ops = state.store.outbox(wanted).await.map_err(store_error)?;
-    let now = now();
+    let (now, lookup) = (now(), state.outbox.config.unknown_lookup_secs());
     Ok(ResponseData::Outbox {
-        items: ops.iter().map(|op| outbox_op(op, now)).collect(),
+        items: ops.iter().map(|op| outbox_op(op, now, lookup)).collect(),
     })
 }
 
@@ -142,7 +142,11 @@ pub(crate) async fn discard(state: &State, op_id: &str) -> Result<ResponseData, 
             .events
             .write_rejected(waiter, &op.entity_local_id, "rejected", &cause);
     }
-    Ok(ResponseData::OutboxOp(outbox_op(&op, now())))
+    Ok(ResponseData::OutboxOp(outbox_op(
+        &op,
+        now(),
+        state.outbox.config.unknown_lookup_secs(),
+    )))
 }
 
 /// A `failed` operation's local change, made again for a retry.
@@ -207,7 +211,11 @@ async fn find(state: &State, op_id: &str) -> Result<OutboxRow, ErrorPayload> {
 
 async fn current(state: &State, op_id: &str) -> Result<ResponseData, ErrorPayload> {
     let op = find(state, op_id).await?;
-    Ok(ResponseData::OutboxOp(outbox_op(&op, now())))
+    Ok(ResponseData::OutboxOp(outbox_op(
+        &op,
+        now(),
+        state.outbox.config.unknown_lookup_secs(),
+    )))
 }
 
 fn being_sent(op: &OutboxRow) -> ErrorPayload {
@@ -259,8 +267,9 @@ fn store_state(state: OutboxState) -> Result<OpState, ErrorPayload> {
     })
 }
 
-/// An operation as clients see it.
-pub(super) fn outbox_op(op: &OutboxRow, now: i64) -> OutboxOp {
+/// An operation as clients see it. `lookup` is `[outbox]
+/// unknown_lookup_hours` in seconds.
+pub(super) fn outbox_op(op: &OutboxRow, now: i64, lookup: i64) -> OutboxOp {
     OutboxOp {
         op_id: op.op_id.clone(),
         command_id: op.command_id.clone(),
@@ -288,7 +297,7 @@ pub(super) fn outbox_op(op: &OutboxRow, now: i64) -> OutboxOp {
             .clone()
             .map(|(kind, message)| OpError { kind, message }),
         note: op.note.clone(),
-        flagged: op.is_flagged(now),
+        flagged: op.is_flagged(now, lookup),
         changes: op.body().clone(),
     }
 }

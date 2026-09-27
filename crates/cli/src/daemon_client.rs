@@ -485,7 +485,7 @@ pub(crate) fn launch(paths: &Paths) -> ExitCode {
     ExitCode::SUCCESS
 }
 
-fn open_log(path: &Path) -> Result<File, CliError> {
+pub(crate) fn open_log(path: &Path) -> Result<File, CliError> {
     if let Some(dir) = path.parent() {
         std::fs::DirBuilder::new()
             .recursive(true)

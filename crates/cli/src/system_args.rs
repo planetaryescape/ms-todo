@@ -59,6 +59,21 @@ pub enum DaemonCommand {
     Status,
     /// Stop the daemon if it's running, then start it again
     Restart,
+    /// Start the daemon at login, so nags fire without opening ms-todo
+    ///
+    /// Writes a launchd agent on macOS
+    /// (~/Library/LaunchAgents/com.planetaryescape.ms-todo.plist) or a
+    /// systemd user unit on Linux (~/.config/systemd/user/ms-todo.service,
+    /// enabled), running this binary's daemon for the default instance and
+    /// starting it again after a crash. Only the file is written: it takes
+    /// effect at the next login, and the answer says how to start it now.
+    /// Running it again changes nothing.
+    Install,
+    /// Stop starting the daemon at login: remove what `install` wrote
+    ///
+    /// A daemon already running keeps running; the answer says how to stop
+    /// the one launchd or systemd started. Running it again changes nothing.
+    Uninstall,
     /// Print the daemon's log
     Logs {
         /// Keep printing what's added to it, until interrupted

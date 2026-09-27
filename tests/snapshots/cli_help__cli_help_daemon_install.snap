@@ -1,0 +1,36 @@
+---
+source: tests/cli_help.rs
+expression: help_output(args)
+---
+Start the daemon at login, so nags fire without opening ms-todo
+
+Writes a launchd agent on macOS (~/Library/LaunchAgents/com.planetaryescape.ms-todo.plist) or a systemd user unit on Linux (~/.config/systemd/user/ms-todo.service, enabled), running this binary's daemon for the default instance and starting it again after a crash. Only the file is written: it takes effect at the next login, and the answer says how to start it now. Running it again changes nothing.
+
+Usage: ms-todo daemon install [OPTIONS]
+
+Options:
+      --format <FORMAT>
+          Output format: jsonl is one object per line, ids one ID per line, csv has a header row [default: table in a terminal, json when piped]
+
+          [possible values: table, json, jsonl, ids, csv]
+
+      --instance <NAME>
+          Use a separate copy of ms-todo's data (also MS_TODO_INSTANCE). Builds run from Cargo's target/ directory default to "dev"; "default" is the installed copy
+
+      --fresh
+          Before reading, sync and wait, so the answer is as fresh as Microsoft To Do's (a read is otherwise answered from the cache)
+
+      --quiet
+          Print nothing on stderr but errors: no notes and no progress
+
+      --no-color
+          No colour or bold in tables (also NO_COLOR)
+
+      --context <NAME|none>
+          Read this command in this context (from config.toml) rather than the active one; `none` for every list
+
+  -h, --help
+          Print help (see a summary with '-h')
+
+  -V, --version
+          Print version

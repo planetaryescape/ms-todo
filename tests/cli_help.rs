@@ -172,6 +172,11 @@ fn cli_help_snapshots_cover_all_commands() {
         ("cli_help_daemon_stop", &["daemon", "stop", "--help"]),
         ("cli_help_daemon_status", &["daemon", "status", "--help"]),
         ("cli_help_daemon_restart", &["daemon", "restart", "--help"]),
+        ("cli_help_daemon_install", &["daemon", "install", "--help"]),
+        (
+            "cli_help_daemon_uninstall",
+            &["daemon", "uninstall", "--help"],
+        ),
         ("cli_help_daemon_logs", &["daemon", "logs", "--help"]),
     ];
     for (name, args) in cases {

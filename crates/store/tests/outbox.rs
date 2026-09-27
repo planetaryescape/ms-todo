@@ -2,8 +2,9 @@
 //! task row, atomically with the operation's state.
 
 use ms_todo_store::{
-    ChildVerb, Cursor, Entity, Hydration, ListsPass, LocalChange, NewOp, OpKind, OpState, Restore,
-    STEPS, SeenTask, Store, StoreError, TasksPass, child_payload, tasks_scope,
+    ChildVerb, Claim, Cursor, Entity, Hydration, ListsPass, LocalChange, NewOp, OpKind, OpState,
+    Restore, STEPS, SeenTask, Store, StoreError, TasksPass, UNKNOWN_LOOKUP_SECS, child_payload,
+    tasks_scope,
 };
 use serde_json::{Value, json};
 
@@ -618,7 +619,10 @@ async fn a_created_step_takes_graphs_id_everywhere_a_queued_change_names_it() {
     };
     assert_eq!(state("op-2").await, OpState::Pending, "a PATCH is resent");
     assert_eq!(state("op-3").await, OpState::Unknown, "a POST isn't");
-    let (_, flagged) = store.outbox_depth().await.expect("depth");
+    let (_, flagged) = store
+        .outbox_depth(UNKNOWN_LOOKUP_SECS)
+        .await
+        .expect("depth");
     assert_eq!(flagged, 1, "no marker can find a step, so the user decides");
 }
 
@@ -738,4 +742,213 @@ async fn a_task_delete_skips_its_unsent_child_writes_only_once_it_is_done() {
     store.mark_done("op-3").await.expect("done");
     let step = store.outbox_op("op-1").await.expect("read").expect("op");
     assert!(step.was_skipped(), "{step:?}");
+}
+
+/// Set every operation's `finished_at` but `except`'s to 40 days ago.
+async fn age(dir: &tempfile::TempDir, except: &[&str]) {
+    let url = format!("sqlite://{}", dir.path().join("ms-todo.db").display());
+    let pool = sqlx::SqlitePool::connect(&url).await.expect("connect");
+    let old = chrono::Utc::now().timestamp() - 40 * 24 * 60 * 60;
+    for op in ["a", "e", "u", "b", "f"] {
+        if !except.contains(&op) {
+            sqlx::query("UPDATE outbox SET finished_at = ?, created_at = ? WHERE op_id = ?")
+                .bind(old)
+                .bind(old)
+                .bind(op)
+                .execute(&pool)
+                .await
+                .expect("age");
+        }
+    }
+    pool.close().await;
+}
+
+#[tokio::test]
+async fn pruning_takes_old_finished_commands_but_not_an_undo_pair_split_or_a_dependency() {
+    let (dir, store, list) = open().await;
+    let done = |op: &'static str| {
+        let store = &store;
+        async move {
+            assert!(store.mark_inflight(op).await.expect("claim"));
+            store.mark_done(op).await.expect("done");
+        }
+    };
+    store
+        .enqueue("a", None, vec![create("a", "local-a", &list, "Buy milk")])
+        .await
+        .expect("a");
+    done("a").await;
+    store
+        .enqueue("e", None, vec![edit("e", "local-a", &list, "Oat milk")])
+        .await
+        .expect("e");
+    done("e").await;
+    store
+        .enqueue(
+            "u",
+            Some("e"),
+            vec![edit("u", "local-a", &list, "Buy milk")],
+        )
+        .await
+        .expect("u");
+    done("u").await;
+    // f waits on b, and fails after b is done: a retry needs b there.
+    store
+        .enqueue("b", None, vec![create("b", "local-b", &list, "Bread")])
+        .await
+        .expect("b");
+    store
+        .enqueue("f", None, vec![edit("f", "local-b", &list, "Rye bread")])
+        .await
+        .expect("f");
+    done("b").await;
+    assert!(store.mark_inflight("f").await.expect("claim"));
+    store
+        .fail_op("f", ("rejected", "no"), &Restore::Nothing)
+        .await
+        .expect("fail");
+    age(&dir, &["u"]).await;
+    let cutoff = chrono::Utc::now().timestamp() - 30 * 24 * 60 * 60;
+
+    assert_eq!(store.prune_outbox(cutoff).await.expect("prune"), 1);
+
+    let left: Vec<String> = store
+        .outbox(None)
+        .await
+        .expect("outbox")
+        .into_iter()
+        .map(|op| op.op_id)
+        .collect();
+    assert_eq!(left, ["f", "b", "u", "e"], "only a went");
+    // With its undo old too, the pair goes together.
+    age(&dir, &[]).await;
+    assert_eq!(store.prune_outbox(cutoff).await.expect("prune"), 2);
+    assert_eq!(store.prune_outbox(cutoff).await.expect("prune"), 0);
+}
+
+#[tokio::test]
+async fn the_lookup_window_decides_which_unknown_operations_are_flagged() {
+    let (_dir, store, list) = open().await;
+    store
+        .enqueue("c", None, vec![create("c", "local-c", &list, "Buy milk")])
+        .await
+        .expect("add");
+    assert!(store.mark_inflight("c").await.expect("claim"));
+    store
+        .mark_unknown("c", ("outcome_unknown", "timed out"), None)
+        .await
+        .expect("unknown");
+    let op = store.outbox_op("c").await.expect("read").expect("op");
+    let since = op.unknown_since.expect("since");
+    assert!(!op.is_flagged(since + 3599, 3600));
+    assert!(op.is_flagged(since + 3600, 3600));
+    let (_, flagged) = store
+        .outbox_depth(UNKNOWN_LOOKUP_SECS)
+        .await
+        .expect("depth");
+    assert_eq!(flagged, 0);
+    let (_, flagged) = store.outbox_depth(0).await.expect("depth");
+    assert_eq!(flagged, 1);
+}
+
+async fn pool(dir: &tempfile::TempDir) -> sqlx::SqlitePool {
+    let url = format!("sqlite://{}", dir.path().join("ms-todo.db").display());
+    sqlx::SqlitePool::connect(&url).await.expect("connect")
+}
+
+#[tokio::test]
+async fn a_command_a_live_idempotency_key_answers_for_is_kept_then_pruned_with_its_key() {
+    let (dir, store, list) = open().await;
+    assert_eq!(
+        store.claim_key("key-1", "fp", "k").await.expect("claim"),
+        Claim::Fresh
+    );
+    store
+        .enqueue("k", None, vec![create("k", "local-k", &list, "Buy milk")])
+        .await
+        .expect("k");
+    assert!(store.mark_inflight("k").await.expect("claim"));
+    store.mark_done("k").await.expect("done");
+    store.finish_key("key-1", "{}").await.expect("finish");
+    let pool = pool(&dir).await;
+    let old = chrono::Utc::now().timestamp() - 40 * 24 * 60 * 60;
+    sqlx::query("UPDATE outbox SET finished_at = ?, created_at = ?")
+        .bind(old)
+        .bind(old)
+        .execute(&pool)
+        .await
+        .expect("age the op");
+    let cutoff = chrono::Utc::now().timestamp() - 30 * 24 * 60 * 60;
+
+    assert_eq!(
+        store.prune_outbox(cutoff).await.expect("prune"),
+        0,
+        "the key answered within a day"
+    );
+
+    sqlx::query("UPDATE idempotency_keys SET finished_at = ?")
+        .bind(chrono::Utc::now().timestamp() - 2 * 24 * 60 * 60)
+        .execute(&pool)
+        .await
+        .expect("age the key");
+    assert_eq!(store.prune_outbox(cutoff).await.expect("prune"), 1);
+    let keys: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM idempotency_keys")
+        .fetch_one(&pool)
+        .await
+        .expect("count");
+    assert_eq!(keys, 0, "the key went with its command");
+}
+
+#[tokio::test]
+async fn an_overwrite_is_recorded_whole_or_not_at_all() {
+    let (dir, store, list) = open().await;
+    store
+        .enqueue("c", None, vec![create("c", "local-c", &list, "Buy milk")])
+        .await
+        .expect("add");
+    assert!(store.mark_inflight("c").await.expect("claim"));
+    store
+        .record_sent("c", &task("T1", "Buy milk", "e1"), None, true)
+        .await
+        .expect("created");
+    store
+        .enqueue("e", None, vec![edit("e", "local-c", &list, "Oat milk")])
+        .await
+        .expect("edit");
+    assert!(store.mark_inflight("e").await.expect("claim"));
+    let ours = task("T1", "Oat milk", "e3");
+    let theirs = task("T1", "Almond milk", "e2");
+    // A write that fails part-way through changes nothing.
+    let pool = pool(&dir).await;
+    sqlx::query(
+        "CREATE TRIGGER refuse_rollback BEFORE UPDATE OF rollback_json ON outbox \
+         BEGIN SELECT RAISE(ABORT, 'refused'); END",
+    )
+    .execute(&pool)
+    .await
+    .expect("trigger");
+
+    let failed = store
+        .record_overwrite("e", &ours, None, "overwrote title", &theirs)
+        .await;
+
+    assert!(failed.is_err());
+    let op = store.outbox_op("e").await.expect("read").expect("op");
+    assert_eq!(op.state, OpState::Inflight, "not done without its rollback");
+    assert_eq!(op.note, None);
+    sqlx::query("DROP TRIGGER refuse_rollback")
+        .execute(&pool)
+        .await
+        .expect("drop");
+    store
+        .record_overwrite("e", &ours, None, "overwrote title", &theirs)
+        .await
+        .expect("record");
+    let op = store.outbox_op("e").await.expect("read").expect("op");
+    assert_eq!(op.state, OpState::Done);
+    assert_eq!(op.note.as_deref(), Some("overwrote title"));
+    assert_eq!(
+        op.rollback.and_then(|before| before.get("title").cloned()),
+        Some(json!("Almond milk"))
+    );
 }

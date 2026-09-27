@@ -153,7 +153,7 @@ async fn keys_drive_the_daemon_and_the_screen_follows() {
     let requests = Arc::new(Mutex::new(Vec::new()));
     let daemon = tokio::spawn(fake_daemon(listener, Arc::clone(&requests)));
 
-    let (link, messages) = connect(socket);
+    let (link, messages) = connect(socket, None);
     let (keys, scripted) = mpsc::unbounded_channel();
     let input = Box::pin(futures_util::stream::unfold(
         scripted,
@@ -251,7 +251,7 @@ async fn a_daemon_that_does_not_know_subscribe_is_reported_as_incompatible() {
                 .expect("send");
         }
     });
-    let (_link, mut messages) = connect(socket);
+    let (_link, mut messages) = connect(socket, None);
     let first = tokio::time::timeout(Duration::from_secs(5), messages.recv())
         .await
         .expect("a message")
@@ -300,7 +300,7 @@ async fn benchmark_exits_with_login_guidance_when_the_first_seed_needs_auth() {
                 .expect("send");
         }
     });
-    let (link, messages) = connect(socket);
+    let (link, messages) = connect(socket, None);
     let input = Box::pin(futures_util::stream::pending::<std::io::Result<TermEvent>>());
     let (painted, _) = oneshot::channel();
     let mut terminal = Terminal::new(TestBackend::new(100, 16)).expect("terminal");
@@ -325,4 +325,69 @@ async fn benchmark_exits_with_login_guidance_when_the_first_seed_needs_auth() {
     assert!(matches!(error, RunError::SignInRequired(found) if found == command));
     assert!(terminal.backend().to_string().contains(command));
     daemon.abort();
+}
+
+/// A daemon that went away and stays away is started again, once per
+/// outage (D-065): the restart binds the socket, as a started daemon
+/// would, and the TUI connects to it.
+#[tokio::test]
+async fn a_daemon_that_stays_away_is_started_again_once() {
+    let dir = tempfile::Builder::new()
+        .prefix("mt")
+        .tempdir_in("/tmp")
+        .expect("tempdir");
+    let socket = dir.path().join("daemon.sock");
+    let started = Arc::new(Mutex::new(0_u32));
+    let restart: ms_todo_tui::Restart = {
+        let (socket, started) = (socket.clone(), Arc::clone(&started));
+        Arc::new(move || {
+            let (socket, started) = (socket.clone(), Arc::clone(&started));
+            Box::pin(async move {
+                *started.lock().expect("count") += 1;
+                let listener = UnixListener::bind(&socket).map_err(|error| error.to_string())?;
+                tokio::spawn(async move {
+                    let (stream, _) = listener.accept().await.expect("accept");
+                    let mut framed = Framed::new(stream, Codec::new());
+                    while let Some(Ok(message)) = framed.next().await {
+                        if message.payload == Payload::Request(Request::Subscribe) {
+                            let ack = Response::Ok {
+                                data: ResponseData::Ack,
+                            };
+                            framed
+                                .send(Message {
+                                    id: message.id,
+                                    payload: Payload::Response(ack),
+                                })
+                                .await
+                                .expect("send");
+                        }
+                    }
+                });
+                Ok(())
+            })
+        })
+    };
+    let begun = Instant::now();
+    let (_link, mut messages) = connect(socket, Some(restart));
+    let mut said = Vec::new();
+    loop {
+        let message = tokio::time::timeout(Duration::from_secs(10), messages.recv())
+            .await
+            .expect("a message")
+            .expect("open");
+        match message {
+            ms_todo_tui::testing::Msg::Connected => break,
+            ms_todo_tui::testing::Msg::Disconnected(why) => said.push(why),
+            other => unreachable!("{other:?}"),
+        }
+    }
+    assert_eq!(*started.lock().expect("count"), 1);
+    assert!(
+        begun.elapsed() >= Duration::from_secs(3),
+        "not before it's been away a while"
+    );
+    assert!(
+        said.iter().any(|why| why.contains("starting it again")),
+        "{said:?}"
+    );
 }

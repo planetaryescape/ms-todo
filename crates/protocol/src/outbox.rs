@@ -17,6 +17,29 @@ pub struct OutboxDepth {
     pub flagged: u64,
 }
 
+/// How the outbox is kept, for `doctor` (D-065).
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct OutboxUpkeep {
+    /// Operations stored, in every state.
+    pub rows: u64,
+    /// `[outbox] retention_days`: finished commands are kept this long,
+    /// and `undo` reaches this far back.
+    pub retention_days: u32,
+    /// `[outbox] unknown_lookup_hours`: how long an `unknown` operation is
+    /// looked for before it's flagged.
+    pub unknown_lookup_hours: u32,
+    /// Unix seconds: when finished operations were last pruned, since the
+    /// daemon started.
+    #[serde(default)]
+    pub last_pruned_at: Option<i64>,
+    /// How many that prune removed.
+    #[serde(default)]
+    pub last_pruned: Option<u64>,
+    /// Why an `[outbox]` setting wasn't used.
+    #[serde(default)]
+    pub problem: Option<String>,
+}
+
 /// An outbox operation's state (docs/blueprint/02-data-model.md#outbox-semantics).
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]

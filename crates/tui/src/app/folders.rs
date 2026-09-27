@@ -300,9 +300,9 @@ pub(crate) mod tests {
 
         act(&mut app, Action::Open);
         assert_eq!(rows(&app).len(), VIEWS.len() + 6);
-        // Down onto a list opens it.
+        // Down onto a list opens it: its seed, and the focus hint.
         let effects = act(&mut app, Action::MoveDown);
-        assert_eq!(effects.len(), 1);
+        assert_eq!(effects.len(), 2);
         assert_eq!(app.wanted, Some(scope_home()));
     }
 

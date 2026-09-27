@@ -11,7 +11,7 @@
 pub const SKIPPED_NOTE: &str = "skipped:";
 
 /// How long an `unknown` operation is looked for before it's flagged for
-/// the user (`outbox.unknown_lookup_hours`, 04).
+/// the user, unless `[outbox] unknown_lookup_hours` says otherwise (04).
 pub const UNKNOWN_LOOKUP_SECS: i64 = 24 * 60 * 60;
 
 /// The states of an operation not resolved yet, as an SQL list. Its task
@@ -60,6 +60,7 @@ pub(crate) const LIST_SYNC_STATE: &str = sync_state!("lists");
 mod enqueue;
 mod operation;
 mod outcomes;
+mod prune;
 mod reads;
 mod rollback;
 mod task_rows;

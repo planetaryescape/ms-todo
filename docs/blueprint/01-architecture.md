@@ -39,7 +39,7 @@ mxr and spotuify already handle the known costs: auto-starting the daemon, stale
 - `ms-todo daemon start|stop|status|restart`. A stop only counts as done when the socket is unreachable and the daemon's own PID has exited. That's spotuify's rule, which exists because of stray daemons.
 - Auto-start fully detaches the daemon (through `ms-todo daemon launch`, so no client is ever its parent), and a zombie counts as exited (D-046).
 - Clients and the daemon exchange a protocol version when they connect. If they don't match, the client restarts the daemon (after an upgrade) or reports a clear error.
-- Optional service files for launchd and systemd, like spotuify's `install/`.
+- Optional service files for launchd and systemd, like spotuify's `install/`. As built (D-065): `ms-todo daemon install|uninstall` writes or removes a launchd agent or a systemd user unit that runs the default instance's daemon at login and after a crash; the TUI also starts a daemon that went away.
 - Dev and installed builds are kept apart with an instance name, like spotuify's `SPOTUIFY_INSTANCE`: `MS_TODO_INSTANCE`. Binaries under `target/` default to `ms-todo-dev`. This matters because agents build and run dev daemons.
 
 ## Crates

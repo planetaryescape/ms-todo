@@ -327,7 +327,7 @@ mst next                                   # the 5 open tasks to do now, each wi
 
 ### Nag me until it's done
 
-Set a task to nag, and once its reminder time passes your Mac notifies you every so often until you complete it:
+Set a task to nag, and once its reminder time passes your Mac (or Linux desktop, over D-Bus) notifies you every so often until you complete it:
 
 ```sh
 mst tasks nag <id> --every 15m       # 5m to 24h; the task needs a reminder
@@ -335,6 +335,7 @@ mst tasks add "Call mum !6pm +nag15m"
 mst tasks list --nagging
 mst tasks nag <id> --off
 mst doctor --notify-test             # check notifications reach you
+mst daemon install                   # start the daemon at login, so nags fire without opening ms-todo
 ```
 
 The setting syncs with the task; the notifications come from the ms-todo daemon on each machine that runs one, so only those machines nag. Nothing is shown in quiet hours (22:00-07:00 unless `[nag] quiet_hours` says otherwise). [Nag reminders](docs/usage.md#nag-reminders) has the rest.
@@ -396,6 +397,7 @@ JSON is `{ "schema_version": 2, "sync": {…}, "items": [...] }`, each item carr
 | `[my_day] rollover_time` | when the day's [My Day](#my-day) is emptied, `"HH:MM"` local; `"00:00"` by default |
 | `[contexts.<name>]` | a [context](#contexts): its `folders`, `lists` and `default_list` |
 | `[dates]` | `date_order = "dmy"` or `"mdy"` (is `12/10` 12 October or 10 December?) and `week_start = "monday"` or `"sunday"` ([How dates are written](docs/usage.md#how-dates-are-written)) |
+| `[outbox]` | how long finished changes are kept and undoable (`retention_days`, 30) and an unknown one is looked for (`unknown_lookup_hours`, 24) ([Offline](docs/usage.md#offline-and-never-lose-a-write)) |
 
 Environment variables (`MS_TODO_INSTANCE`, `MS_TODO_CLIENT_ID`, `MS_TODO_CONFIG_DIR`, `NO_COLOR`, `COLORTERM` and more) and where ms-todo keeps its data are in [docs/usage.md](docs/usage.md#environment-variables).
 
@@ -532,7 +534,7 @@ An unknown theme, role or colour stops the TUI with an error naming it, so a typ
                                   └────────────────────────────────┘
 ```
 
-The first command starts a small daemon, the only process that talks to Microsoft Graph. It keeps every list and task in a SQLite cache, reading only what changed since the last sync (Graph's delta queries), every 20 seconds while you're using ms-todo and every 5 minutes otherwise. The CLI and the TUI ask the daemon over a private Unix socket and answer from the cache. A change goes into the cache and an outbox together, and the daemon sends the outbox in order, backing off while the network is down. The design is in [docs/blueprint/](docs/blueprint/README.md).
+The first command starts a small daemon, the only process that talks to Microsoft Graph. It keeps every list and task in a SQLite cache, reading only what changed since the last sync (Graph's delta queries), every 20 seconds while you're using ms-todo and every 5 minutes otherwise. The CLI and the TUI ask the daemon over a private Unix socket and answer from the cache. A change goes into the cache and an outbox together, and the daemon sends the outbox in order, backing off while the network is down. If another device changed the same field meanwhile, your change wins and `mst outbox list` notes what it overwrote. `mst daemon install` starts the daemon at login. The design is in [docs/blueprint/](docs/blueprint/README.md).
 
 ## What the To Do API can't do
 

@@ -862,6 +862,24 @@ fn a_rejected_write_shows_a_banner_and_the_row_rolls_back() {
 }
 
 #[test]
+fn an_edit_that_overwrote_another_device_s_shows_a_banner() {
+    let mut app = seeded();
+    let effects = app.update(Msg::Event(Event::ConflictOverwritten(
+        ms_todo_protocol::ConflictOverwritten {
+            op_id: "op-1".into(),
+            task_id: "t4".into(),
+            fields: vec!["title".into()],
+            message: "overwrote title".into(),
+        },
+    )));
+    let banner = app.banner.clone().expect("banner");
+    assert_eq!(banner.level, Level::Info);
+    assert!(banner.text.contains("overwrote title"), "{}", banner.text);
+    assert!(app.rejections.is_empty(), "it went through");
+    assert!(matches!(effects[0].request, Request::Seed { .. }));
+}
+
+#[test]
 fn before_the_first_sync_the_list_is_syncing_not_empty() {
     let mut app = App::new(UNICODE, clock());
     let effects = app.update(Msg::Connected);
