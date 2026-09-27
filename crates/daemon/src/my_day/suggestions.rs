@@ -39,21 +39,26 @@ impl Reason {
     }
 }
 
-/// My Day's suggestions for `today`; `lists` names each task's list.
+/// My Day's suggestions for `today`, only from `context`'s lists when
+/// there is one; `lists` names each task's list.
 pub(crate) async fn suggestions(
     state: &State,
     today: NaiveDate,
     lists: &[ListRow],
+    context: Option<&crate::contexts::Resolved>,
 ) -> Result<Vec<Entity>, ErrorPayload> {
     let due = state
         .store
         .due_by_not_in_my_day(today)
         .await
         .map_err(store_error)?;
+    let due = crate::contexts::keep(context, due);
     let (from, left_ids) = left_over(state).await?;
     let mut left = Vec::new();
     for id in &left_ids {
-        if let Some(row) = state.store.task(id).await.map_err(store_error)? {
+        if let Some(row) = state.store.task(id).await.map_err(store_error)?
+            && crate::contexts::within(context, &row.list_local_id)
+        {
             left.push(row);
         }
     }

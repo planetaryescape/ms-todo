@@ -3,7 +3,7 @@
 
 use serde::{Deserialize, Serialize};
 
-use crate::{Entity, OutboxDepth, SyncActivity, SyncInfo};
+use crate::{AppliedContext, Entity, OutboxDepth, SyncActivity, SyncInfo};
 
 /// My Day: today's tasks and what's suggested for it.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -22,6 +22,9 @@ pub struct MyDay {
     /// The day the last rollover ran for, `YYYY-MM-DD`.
     #[serde(default)]
     pub last_rollover: Option<String>,
+    /// The context that narrowed the suggestions (never My Day itself).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub context: Option<AppliedContext>,
 }
 
 /// What a client shows: a smart view over every list, or one list.
@@ -89,6 +92,13 @@ pub struct Seed {
     /// scope.
     #[serde(default)]
     pub my_day: Option<MyDaySeed>,
+    /// The active context: `lists` and `counts` are only its lists', and
+    /// the views only their tasks. My Day itself isn't narrowed.
+    #[serde(default)]
+    pub context: Option<AppliedContext>,
+    /// Every context config.toml defines, by name, to switch to.
+    #[serde(default)]
+    pub contexts: Vec<String>,
 }
 
 /// What the My Day view shows besides its tasks.

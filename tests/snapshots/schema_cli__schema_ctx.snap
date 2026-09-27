@@ -1,0 +1,77 @@
+---
+source: tests/schema_cli.rs
+expression: pretty
+---
+{
+  "input": {
+    "additionalProperties": false,
+    "properties": {
+      "name": {
+        "description": "Make this context active (as named in config.toml), or `none` to show everything again",
+        "type": "string",
+        "x-cli": "<NAME>"
+      }
+    },
+    "required": [],
+    "type": "object"
+  },
+  "output": {
+    "properties": {
+      "active": {
+        "description": "The active context's name; null when every list is shown",
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "default_list": {
+        "description": "Where a task added with no list goes, as configured; \"Tasks\" when null",
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "folders": {
+        "description": "The folders it takes every list of, as configured",
+        "items": {
+          "type": "string"
+        },
+        "type": "array"
+      },
+      "list_ids": {
+        "description": "Their local IDs, in the same order",
+        "items": {
+          "type": "string"
+        },
+        "type": "array"
+      },
+      "lists": {
+        "description": "The names of the lists it covers, in the sidebar's order",
+        "items": {
+          "type": "string"
+        },
+        "type": "array"
+      },
+      "problems": {
+        "description": "What doesn't resolve: a folder or list no longer there, config.toml unreadable, an active context it no longer defines",
+        "items": {
+          "type": "string"
+        },
+        "type": "array"
+      },
+      "schema_version": {
+        "const": 2
+      }
+    },
+    "required": [
+      "schema_version",
+      "active",
+      "lists",
+      "list_ids",
+      "folders",
+      "default_list",
+      "problems"
+    ],
+    "type": "object"
+  }
+}

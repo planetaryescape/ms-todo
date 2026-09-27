@@ -17,6 +17,33 @@ expression: pretty
   },
   "output": {
     "properties": {
+      "contexts": {
+        "description": "Contexts (rung 9d); null when the daemon didn't report",
+        "properties": {
+          "active": {
+            "description": "The active context's name",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "defined": {
+            "description": "How many config.toml defines",
+            "type": "integer"
+          },
+          "problems": {
+            "description": "Each also in `problems`, prefixed `contexts:`",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          }
+        },
+        "type": [
+          "object",
+          "null"
+        ]
+      },
       "daemon": {
         "properties": {
           "instance": {

@@ -108,4 +108,6 @@ pub enum Action {
     /// `z`: show deferred and Someday tasks in every view, or hide them
     /// again.
     ToggleDeferred,
+    /// `c`: the next context from config.toml, then none (rung 9d).
+    NextContext,
 }

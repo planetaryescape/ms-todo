@@ -5,9 +5,10 @@
 use chrono::NaiveDate;
 use ms_todo_core::{DATE_FORMAT, ErrorKind};
 use ms_todo_protocol::{
-    Counts, DeferredFilter, ErrorPayload, MyDaySeed, ResponseData, Scope, Seed, SyncState,
+    ContextChoice, Counts, DeferredFilter, ErrorPayload, MyDaySeed, ResponseData, Scope, Seed,
+    SyncState,
 };
-use ms_todo_store::{LISTS_SCOPE, StatusFilter, TaskScope, TaskSearch, View};
+use ms_todo_store::{LISTS_SCOPE, StatusFilter, TaskCounts, TaskScope, TaskSearch, View};
 
 use crate::doctor::outbox_depth;
 use crate::entities::{list_entity, task_entity};
@@ -16,9 +17,13 @@ use crate::handlers::{State, error_payload, store_error};
 use crate::reads::list_rows;
 
 /// With `include_deferred`, the views and lists that leave out deferred
-/// and Someday tasks show them; a search always finds them.
+/// and Someday tasks show them; a search always finds them. A context
+/// (`choice`, else the active one) narrows the lists, the counts and the
+/// views but My Day to its lists, and the default list is its
+/// `default_list`, else its first list.
 pub(crate) async fn seed(
     state: &State,
+    choice: Option<&ContextChoice>,
     scope: Option<Scope>,
     search: Option<&str>,
     include_deferred: bool,
@@ -26,13 +31,17 @@ pub(crate) async fn seed(
 ) -> Result<ResponseData, ErrorPayload> {
     let today = state.my_day.today();
     let local = crate::deferral::today();
-    let (lists_sync, outbox, counts, my_day_count, lists) = tokio::try_join!(
+    let (lists_sync, outbox, by_list, my_day_count, lists) = tokio::try_join!(
         read_state(state, LISTS_SCOPE),
         outbox_depth(state),
-        async { state.store.task_counts(local).await.map_err(store_error) },
+        async { state.store.counts_by_list(local).await.map_err(store_error) },
         async { state.store.my_day_count(today).await.map_err(store_error) },
         async { state.store.lists().await.map_err(store_error) },
     )?;
+    let config = crate::contexts::Config::load(&state.config_file);
+    let context = crate::contexts::applied_in(state, choice, None, &lists, Some(&config))?;
+    let context = context.as_ref();
+    let counts = TaskCounts::sum(by_list, context.map(|context| &context.ids));
     let activity = state.syncer.status().activity();
     let (scope, rows, sync) = match scope {
         // No list resolves before the lists have synced, and no view is
@@ -45,7 +54,9 @@ pub(crate) async fn seed(
         None | Some(Scope::List { .. }) => {
             let wanted = match &scope {
                 Some(Scope::List { id }) => Some(id.as_str()),
-                _ => None,
+                _ => context
+                    .and_then(crate::contexts::Resolved::home)
+                    .map(|list| list.local_id.as_str()),
             };
             let (list, rows, sync) = list_rows(state, &lists, wanted, search, semantic).await?;
             (Some(Scope::List { id: list.local_id }), rows, sync)
@@ -111,6 +122,11 @@ pub(crate) async fn seed(
         DeferredFilter::Include
     };
     let (rows, _) = crate::deferral::keep(rows, crate::deferral::searched(filter, search), local);
+    // A list on screen is its own, and My Day is what was chosen for today.
+    let rows = match &scope {
+        Some(Scope::List { .. } | Scope::MyDay) | None => rows,
+        Some(_) => crate::contexts::keep(context, rows),
+    };
     let tasks = if scope == Some(Scope::Next) {
         let days = crate::next::days(state);
         crate::next::pick(rows, days, crate::next::DEFAULT_LIMIT)
@@ -123,14 +139,15 @@ pub(crate) async fn seed(
     let my_day = match &scope {
         Some(Scope::MyDay) => Some(MyDaySeed {
             date: today.format(DATE_FORMAT).to_string(),
-            suggestions: crate::my_day::suggestions(state, today, &lists).await?,
+            suggestions: crate::my_day::suggestions(state, today, &lists, context).await?,
         }),
         _ => None,
     };
-    Ok(ResponseData::Seed(Seed {
+    Ok(ResponseData::Seed(Box::new(Seed {
         scope,
         lists: crate::folders::sorted(&lists)
             .into_iter()
+            .filter(|list| crate::contexts::within(context, &list.local_id))
             .map(list_entity)
             .collect(),
         lists_sync,
@@ -150,7 +167,9 @@ pub(crate) async fn seed(
         activity,
         outbox,
         my_day,
-    }))
+        context: context.map(crate::contexts::Resolved::applied),
+        contexts: config.names(),
+    })))
 }
 
 /// The store's view for `scope`: `today` is My Day's day, `local` the

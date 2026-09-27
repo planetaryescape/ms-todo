@@ -1,0 +1,84 @@
+---
+source: tests/schema_cli.rs
+expression: pretty
+---
+{
+  "input": {
+    "additionalProperties": false,
+    "properties": {},
+    "required": [],
+    "type": "object"
+  },
+  "output": {
+    "properties": {
+      "items": {
+        "items": {
+          "properties": {
+            "active": {
+              "type": "boolean"
+            },
+            "default_list": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "folders": {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            "list_count": {
+              "description": "How many lists it covers now",
+              "type": "integer"
+            },
+            "lists": {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            "name": {
+              "type": "string"
+            },
+            "problems": {
+              "description": "A folder or list it names that isn't there, or a default_list not among its lists",
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            "resolved": {
+              "description": "The names of the lists it covers now, in the sidebar's order",
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            }
+          },
+          "required": [
+            "name",
+            "active",
+            "folders",
+            "lists",
+            "default_list",
+            "list_count",
+            "resolved",
+            "problems"
+          ],
+          "type": "object"
+        },
+        "type": "array"
+      },
+      "schema_version": {
+        "const": 2
+      }
+    },
+    "required": [
+      "schema_version",
+      "items"
+    ],
+    "type": "object"
+  }
+}

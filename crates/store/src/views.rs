@@ -2,7 +2,7 @@
 //! live list's tasks, and the counts the TUI's sidebar shows.
 
 use std::borrow::Cow;
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashSet};
 
 use chrono::NaiveDate;
 use sqlx::AssertSqlSafe;
@@ -115,6 +115,19 @@ pub struct TaskCounts {
     pub open_by_list: BTreeMap<String, u64>,
 }
 
+/// One list's row of [`Store::counts_by_list`].
+#[derive(Clone, Debug, sqlx::FromRow)]
+pub struct ListCounts {
+    list: String,
+    important: i64,
+    planned: i64,
+    all_open: i64,
+    completed: i64,
+    assigned: i64,
+    upcoming: i64,
+    someday: i64,
+}
+
 /// A task's My Day date, `YYYY-MM-DD` or null: the expression
 /// `tasks_by_my_day` indexes.
 pub(crate) const MY_DAY: &str = "json_extract(tasks.extension_json, '$.myDay')";
@@ -166,19 +179,20 @@ impl Store {
     /// everyday views and the lists leave out what's deferred or Someday
     /// on `today`, as they show it.
     pub async fn task_counts(&self, today: NaiveDate) -> Result<TaskCounts, StoreError> {
+        Ok(TaskCounts::sum(self.counts_by_list(today).await?, None))
+    }
+
+    /// Each list's view counts, for [`TaskCounts::sum`]: by list, so a
+    /// context's counts are its lists' sums with no list IDs spliced into
+    /// the SQL (rung 9d).
+    pub async fn counts_by_list(&self, today: NaiveDate) -> Result<Vec<ListCounts>, StoreError> {
         let hidden = hidden(today);
         let sum = |view: View| format!("COALESCE(SUM({}), 0)", view.condition());
         let shown = |view: View| format!("COALESCE(SUM({} AND NOT {hidden}), 0)", view.condition());
-        let (important, planned, all, completed, assigned, upcoming, someday): (
-            i64,
-            i64,
-            i64,
-            i64,
-            i64,
-            i64,
-            i64,
-        ) = sqlx::query_as(AssertSqlSafe(format!(
-            "SELECT {}, {}, {}, {}, {}, {}, {} {LIVE}",
+        Ok(sqlx::query_as(AssertSqlSafe(format!(
+            "SELECT tasks.list_local_id AS list, {} AS important, {} AS planned, {} AS all_open, \
+             {} AS completed, {} AS assigned, {} AS upcoming, {} AS someday {LIVE} \
+             GROUP BY tasks.list_local_id",
             shown(View::Important),
             shown(View::Planned),
             shown(View::All),
@@ -187,28 +201,32 @@ impl Store {
             sum(View::Upcoming(today)),
             sum(View::Someday)
         )))
-        .fetch_one(self.reader())
-        .await?;
-        let by_list: Vec<(String, i64)> = sqlx::query_as(AssertSqlSafe(format!(
-            "SELECT tasks.list_local_id, COUNT(*) {LIVE} AND {} AND NOT {hidden} \
-             GROUP BY tasks.list_local_id",
-            View::All.condition()
-        )))
         .fetch_all(self.reader())
-        .await?;
+        .await?)
+    }
+}
+
+impl TaskCounts {
+    /// The counts over `rows`, only the lists in `lists` (local IDs) when
+    /// given: a context's.
+    pub fn sum(rows: Vec<ListCounts>, lists: Option<&HashSet<String>>) -> Self {
         let count = |value: i64| u64::try_from(value).unwrap_or(0);
-        Ok(TaskCounts {
-            important: count(important),
-            planned: count(planned),
-            all: count(all),
-            completed: count(completed),
-            assigned: count(assigned),
-            upcoming: count(upcoming),
-            someday: count(someday),
-            open_by_list: by_list
-                .into_iter()
-                .map(|(list, open)| (list, count(open)))
-                .collect(),
-        })
+        let mut counts = Self::default();
+        for row in rows {
+            if lists.is_some_and(|lists| !lists.contains(&row.list)) {
+                continue;
+            }
+            counts.important += count(row.important);
+            counts.planned += count(row.planned);
+            counts.all += count(row.all_open);
+            counts.completed += count(row.completed);
+            counts.assigned += count(row.assigned);
+            counts.upcoming += count(row.upcoming);
+            counts.someday += count(row.someday);
+            if row.all_open > 0 {
+                counts.open_by_list.insert(row.list, count(row.all_open));
+            }
+        }
+        counts
     }
 }

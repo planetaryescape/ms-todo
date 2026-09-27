@@ -10,13 +10,21 @@ use crate::app::App;
 pub fn draw(frame: &mut Frame, area: Rect, app: &App) {
     let theme = &app.theme;
     frame.buffer_mut().set_style(area, theme.header_bar);
-    let left = Line::from(vec![
+    let mut left = vec![
         Span::styled(" ms-todo", theme.title),
         Span::styled(
             format!(" {} \u{b7} {}", app.version, app.view_name()),
             theme.text_dim,
         ),
-    ]);
+    ];
+    if let Some(context) = &app.active_context {
+        // Named in config.toml: kept to one safe line, as a list's name is.
+        left.push(Span::styled(
+            ms_todo_core::one_line_safe(&format!(" \u{b7} context: {}", context.name)),
+            theme.accent,
+        ));
+    }
+    let left = Line::from(left);
     let glyphs = &app.glyphs;
     let (dot, state, style) = if app.sign_in_required {
         (glyphs.disconnected, "sign in", theme.warning)

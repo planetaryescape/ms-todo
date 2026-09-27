@@ -4,7 +4,8 @@
 
 use ms_todo_core::{ErrorKind, Paths};
 use ms_todo_protocol::{
-    Entity, Request, ResponseData, SearchStatus, SemanticIndex, SyncInfo, TaskFilter,
+    AppliedContext, Entity, Request, ResponseData, SearchStatus, SemanticIndex, SyncInfo,
+    TaskFilter,
 };
 use serde::Serialize;
 use serde_json::Value;
@@ -193,6 +194,17 @@ pub async fn lists(paths: &Paths) -> Result<(Vec<Entity>, SyncInfo), CliError> {
     }
 }
 
+/// What a read the context narrows found: the tasks, their sync state,
+/// how many deferred and Someday tasks it left out, the context, and for
+/// a semantic search how complete the index was.
+pub struct Found {
+    pub items: Vec<Entity>,
+    pub sync: SyncInfo,
+    pub deferred_hidden: Option<u64>,
+    pub context: Option<AppliedContext>,
+    pub semantic: Option<SemanticIndex>,
+}
+
 /// Tasks `tasks list` asks for, and how many deferred and Someday tasks
 /// the daemon left out.
 pub async fn tasks(
@@ -201,7 +213,7 @@ pub async fn tasks(
     search: Option<String>,
     assignee: Option<String>,
     filter: TaskFilter,
-) -> Result<(Vec<Entity>, SyncInfo, Option<u64>), CliError> {
+) -> Result<Found, CliError> {
     if assignee
         .as_deref()
         .is_some_and(|name| name.trim().is_empty())
@@ -217,36 +229,47 @@ pub async fn tasks(
         assignee,
         filter,
     };
+    found(paths, request).await
+}
+
+/// Ask for `request` in `--context`'s context, and take its tasks.
+async fn found(paths: &Paths, request: Request) -> Result<Found, CliError> {
     match daemon_client::ask(paths, request).await? {
         ResponseData::Tasks {
             items,
             sync,
             deferred_hidden,
-        } => Ok((items, sync, deferred_hidden)),
+            context,
+        } => Ok(Found {
+            items,
+            sync,
+            deferred_hidden,
+            context,
+            semantic: None,
+        }),
+        ResponseData::SearchResults {
+            items,
+            sync,
+            semantic,
+            context,
+        } => Ok(Found {
+            items,
+            sync,
+            deferred_hidden: None,
+            context,
+            semantic,
+        }),
         _ => Err(crate::unexpected_response()),
     }
 }
 
 /// `next`: the tasks to do now, each with `why` and `list`.
-pub async fn next(
-    paths: &Paths,
-    args: crate::args::NextArgs,
-) -> Result<(Vec<Entity>, SyncInfo), CliError> {
+pub async fn next(paths: &Paths, args: crate::args::NextArgs) -> Result<Found, CliError> {
     let request = Request::NextTasks {
         list: args.list,
         limit: Some(args.limit),
     };
-    match daemon_client::ask(paths, request).await? {
-        ResponseData::Tasks { items, sync, .. } => Ok((items, sync)),
-        _ => Err(crate::unexpected_response()),
-    }
-}
-
-/// What a search found, and for a semantic one how complete the index was.
-pub struct Found {
-    pub items: Vec<Entity>,
-    pub sync: SyncInfo,
-    pub semantic: Option<SemanticIndex>,
+    found(paths, request).await
 }
 
 pub async fn search(paths: &Paths, args: SearchArgs) -> Result<Found, CliError> {
@@ -261,18 +284,7 @@ pub async fn search(paths: &Paths, args: SearchArgs) -> Result<Found, CliError> 
         limit: Some(args.limit),
         semantic: args.semantic,
     };
-    match daemon_client::ask(paths, request).await? {
-        ResponseData::SearchResults {
-            items,
-            sync,
-            semantic,
-        } => Ok(Found {
-            items,
-            sync,
-            semantic,
-        }),
-        _ => Err(crate::unexpected_response()),
-    }
+    found(paths, request).await
 }
 
 pub async fn raw_get(paths: &Paths, path: String) -> Result<Value, CliError> {

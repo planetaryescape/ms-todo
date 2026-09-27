@@ -51,6 +51,9 @@ Options:
       --completed
           Only completed tasks, as --status completed
 
+      --context <NAME|none>
+          Read this command in this context (from config.toml) rather than the active one; `none` for every list
+
       --due <WHEN>
           Only tasks due: today, overdue (open and due before today), none, any, "before fri", "after 12 oct", or on a day (tomorrow, 2026-10-02)
 

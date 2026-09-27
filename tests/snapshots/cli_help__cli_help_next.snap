@@ -7,12 +7,13 @@ What to do now: the few open tasks that matter most, each with why. Overdue firs
 Usage: ms-todo next [OPTIONS]
 
 Options:
-      --format <FORMAT>  Output format: jsonl is one object per line, ids one ID per line, csv has a header row [default: table in a terminal, json when piped] [possible values: table, json, jsonl, ids, csv]
-      --limit <N>        At most this many [default: 5]
-      --instance <NAME>  Use a separate copy of ms-todo's data (also MS_TODO_INSTANCE). Builds run from Cargo's target/ directory default to "dev"; "default" is the installed copy
-      --list <NAME|ID>   Only this list (exact name or ID) [default: every list]
-      --fresh            Before reading, sync and wait, so the answer is as fresh as Microsoft To Do's (a read is otherwise answered from the cache)
-      --quiet            Print nothing on stderr but errors: no notes and no progress
-      --no-color         No colour or bold in tables (also NO_COLOR)
-  -h, --help             Print help
-  -V, --version          Print version
+      --format <FORMAT>      Output format: jsonl is one object per line, ids one ID per line, csv has a header row [default: table in a terminal, json when piped] [possible values: table, json, jsonl, ids, csv]
+      --limit <N>            At most this many [default: 5]
+      --instance <NAME>      Use a separate copy of ms-todo's data (also MS_TODO_INSTANCE). Builds run from Cargo's target/ directory default to "dev"; "default" is the installed copy
+      --list <NAME|ID>       Only this list (exact name or ID) [default: every list]
+      --fresh                Before reading, sync and wait, so the answer is as fresh as Microsoft To Do's (a read is otherwise answered from the cache)
+      --quiet                Print nothing on stderr but errors: no notes and no progress
+      --no-color             No colour or bold in tables (also NO_COLOR)
+      --context <NAME|none>  Read this command in this context (from config.toml) rather than the active one; `none` for every list
+  -h, --help                 Print help
+  -V, --version              Print version

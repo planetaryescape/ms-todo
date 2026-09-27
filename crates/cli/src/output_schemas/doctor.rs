@@ -139,6 +139,15 @@ pub(super) fn doctor() -> Value {
                     "problem": nullable("string", "Why nagging is off or failing")
                 }
             },
+            "contexts": {
+                "type": ["object", "null"],
+                "description": "Contexts (rung 9d); null when the daemon didn't report",
+                "properties": {
+                    "active": { "type": ["string", "null"], "description": "The active context's name" },
+                    "defined": { "type": "integer", "description": "How many config.toml defines" },
+                    "problems": { "type": "array", "items": { "type": "string" }, "description": "Each also in `problems`, prefixed `contexts:`" }
+                }
+            },
             "problems": { "type": "array", "items": { "type": "string" } }
         }),
         &["sign_in", "daemon", "database", "scopes", "problems"],

@@ -148,7 +148,7 @@ impl App {
             }
             Part::Doctor => {
                 page.report = Some(answer(result, |data| match data {
-                    ResponseData::Doctor(report) => Some(report),
+                    ResponseData::Doctor(report) => Some(*report),
                     _ => None,
                 }));
             }
@@ -236,6 +236,7 @@ pub(crate) mod tests {
             my_day: None,
             semantic: None,
             nag: None,
+            contexts: None,
         }
     }
 
@@ -257,7 +258,7 @@ pub(crate) mod tests {
             };
             let data = match part {
                 Part::Status => ResponseData::Status(status()),
-                Part::Doctor => ResponseData::Doctor(report()),
+                Part::Doctor => ResponseData::Doctor(Box::new(report())),
                 Part::Unknown => ResponseData::Outbox {
                     items: vec![flagged_op()],
                 },

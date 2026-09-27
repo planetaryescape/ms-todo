@@ -44,7 +44,7 @@ pub use pool::Store;
 pub use search::{SearchHit, StatusFilter, TaskSearch};
 pub use sync_state::{Cursor, LISTS_SCOPE, ScopeRow, scope_list, tasks_scope};
 pub use tasks::{Hydration, SeenTask, TaskRow, TasksPass};
-pub use views::{TaskCounts, View};
+pub use views::{ListCounts, TaskCounts, View};
 
 /// A JSON object from Graph.
 pub type Entity = Map<String, Value>;

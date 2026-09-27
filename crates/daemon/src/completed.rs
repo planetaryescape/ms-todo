@@ -67,6 +67,7 @@ pub(crate) async fn completed_tasks(
             items: Vec::new(),
             sync: lists_sync,
             deferred_hidden: None,
+            context: None,
         });
     }
     let lists = state.store.lists().await.map_err(store_error)?;
@@ -97,6 +98,7 @@ pub(crate) async fn completed_tasks(
         items,
         sync,
         deferred_hidden: None,
+        context: None,
     })
 }
 

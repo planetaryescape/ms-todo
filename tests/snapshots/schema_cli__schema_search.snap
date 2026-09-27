@@ -46,6 +46,30 @@ expression: pretty
   },
   "output": {
     "properties": {
+      "context": {
+        "description": "The context that narrowed the read (the active one, or --context); null when none did, as with an explicit --list",
+        "properties": {
+          "default_list": {
+            "description": "Where a task added with no list goes, when the context names one of its lists",
+            "type": "string"
+          },
+          "lists": {
+            "description": "How many lists it covers",
+            "type": "integer"
+          },
+          "name": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "lists"
+        ],
+        "type": [
+          "object",
+          "null"
+        ]
+      },
       "items": {
         "items": {
           "description": "A task that matched, best match first: the task as `tasks list` gives it, with `list`, and `snippet` (by words) or `score` (--semantic)",
@@ -211,7 +235,8 @@ expression: pretty
     "required": [
       "schema_version",
       "sync",
-      "items"
+      "items",
+      "context"
     ],
     "type": "object"
   }

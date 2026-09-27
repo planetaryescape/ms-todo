@@ -76,9 +76,11 @@ async fn fake_daemon(listener: UnixListener, requests: Arc<Mutex<Vec<Request>>>)
                     activity: SyncActivity::default(),
                     outbox: OutboxDepth::default(),
                     my_day: None,
+                    context: None,
+                    contexts: Vec::new(),
                 };
                 framed
-                    .send(reply(ResponseData::Seed(seed)))
+                    .send(reply(ResponseData::Seed(Box::new(seed))))
                     .await
                     .expect("send");
             }

@@ -279,6 +279,36 @@ ms-todo doctor --notify-test                   # show one notification, then the
 - **`doctor`** has a Nag line: on or off, how notifications are shown, how many tasks nag, and the quiet hours.
 - **In the TUI**, `n` sets the task under the cursor, or the selection, to nag every 15 minutes, or stops them when they all nag already; `u` undoes it. A nagging task shows `◉` (`N` in ASCII) where the reminder's `◷` would be. Another interval is `tasks nag --every`.
 
+## Contexts
+
+A context is a named set of lists, defined in config.toml. While one is active, the everyday reads show only its lists:
+
+```toml
+[contexts.work]
+folders = ["Areas"]            # every list in these folders
+lists = ["Contentful"]         # and these lists
+default_list = "Contentful"    # where a task goes when you name no list
+
+[contexts.home]
+lists = ["Groceries", "Garden"]
+```
+
+```sh
+ms-todo ctx work                    # make it active
+ms-todo ctx                         # the active context and its lists (also `ctx show`)
+ms-todo ctx list                    # every context, the lists each covers now, and any warning
+ms-todo ctx none                    # no context: everything again
+ms-todo --context home waiting      # one command in another context
+ms-todo --context none next         # one command outside any
+```
+
+- **What it narrows:** `tasks list` without `--list` (the context's open tasks from every one of its lists, each with its list; `--status` and the other filters still apply), `search`, `next`, `waiting`, `tasks list --deferred only`, My Day's suggestions, and in the TUI the sidebar (only the context's lists) and every view but My Day, with their counts. A task added with no list goes to `default_list`, or to "Tasks" when there's none.
+- **What it doesn't:** an explicit `--list` always wins, even for a list outside the context. My Day itself is what you chose for today, so it shows every task in it. `done`, `lists list` and `folders list` show everything.
+- **Saying so.** A narrowed table ends with `context: work (2 lists)`, and JSON has `context` in its envelope: `{ "name": "work", "lists": 2, "default_list": "Contentful" }`, or null when nothing was narrowed. `ctx --format ids` prints the active context's list IDs.
+- **Names match exactly**, list and folder alike. A context is its folders' lists and its named lists together. One that matches nothing is a warning in `ctx`, `ctx list` and `doctor`, never an error; so is a `default_list` that isn't one of the context's lists (a task then goes to "Tasks"). `none`, `list` and `show` can't name a context, since `ctx` reads them as its own words.
+- **Held by the daemon.** The CLI and the TUI share the active context, and it survives a daemon restart. config.toml is read again on each request, so an edit counts at once; if the active context is no longer defined, nothing is narrowed and `doctor` says so. It's this machine's: another device doesn't follow it.
+- **In the TUI**, the title bar names the context (`· context: work`), `c` switches to the next one in name order and then to none, and the palette (`:`) has "Context: …" for each. A list on screen gives way to the context's default list (or its first list).
+
 ## Move tasks between lists
 
 ```sh
@@ -421,7 +451,7 @@ mst tui --theme nord # draw with a theme (mst tui --list-themes names them)
 
 A title bar with the version and the view you're in, a sidebar of smart views (My Day, Next, Important, Planned, All, Assigned, Upcoming, Someday, Completed), then your folders, each with its lists under it and their total, then the lists in no folder, all with their counts, the task list, and a detail pane. The focused task list shows the cursor's position and its task count in the top border (`3/42`). It opens from the local cache, and changes made anywhere, the phone included, show up as the daemon syncs them. A change you make shows at once, marked pending (dim) until it reaches Microsoft To Do; unknown outcomes are amber and rejected changes red, with a banner saying why.
 
-The keys are in the README's [TUI keys](../README.md#tui-keys) table; `?` inside the TUI lists them all. The palette (`:`) also has "New list…", "Rename list…" and "Delete list…" (the list under the sidebar's cursor, or the one shown), and a task's categories show on its row as `@label`.
+The keys are in the README's [TUI keys](../README.md#tui-keys) table; `?` inside the TUI lists them all. The palette (`:`) also has "New list…", "Rename list…", "Delete list…" (the list under the sidebar's cursor, or the one shown) and "Context: …" for each [context](#contexts), and a task's categories show on its row as `@label`.
 
 In the editor, a due date or a reminder takes what `--due` and `--reminder` take (`tomorrow`, `fri 17:30`, `+2w`, `12 oct`), and shows what it resolves to as you type (`→ Fri 2 Oct`, or `, in the past`); empty or `-` clears it, and input it can't read says why and sends nothing. Importance is picked by level: `1` high, `2` or `3` normal, `4` low (or `h`, `n`, `l`), saved at once. Notes are plain text on several lines: notes written as html on another device are shown as text, and only rewritten as text if you change them. A selection holds only tasks in the view on screen: switching views clears it, and a task that leaves the view drops out of it. The Completed view is grouped by the day each task was completed: Today, Yesterday, then `Mon 21 Sep` and so on. My Day's title has its day (`My Day · Fri 25 Sep`); its tasks come first, then Suggestions. `t` on a suggestion adds it; `t` on the task or the selection puts it in My Day, or takes it out when it's all there already. `a` from My Day adds the new task to it.
 

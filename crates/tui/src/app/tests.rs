@@ -67,6 +67,8 @@ pub(crate) fn seed(scope: Scope, tasks: Vec<ms_todo_protocol::Entity>) -> Seed {
         },
         outbox: OutboxDepth::default(),
         my_day: None,
+        context: None,
+        contexts: Vec::new(),
     }
 }
 
@@ -144,7 +146,7 @@ pub(crate) fn answer_seed(app: &mut App, effect: &Effect, seed: Seed) -> Vec<Eff
     assert!(matches!(effect.request, Request::Seed { .. }), "{effect:?}");
     app.update(Msg::Response {
         tag: effect.tag,
-        result: Ok(ResponseData::Seed(seed)),
+        result: Ok(ResponseData::Seed(Box::new(seed))),
     })
 }
 
@@ -976,7 +978,7 @@ fn the_views_are_read_ahead_and_a_scope_seen_before_paints_at_once() {
     )];
     app.update(Msg::Response {
         tag: prefetches[5].tag,
-        result: Ok(ResponseData::Seed(seed(Scope::Completed, done))),
+        result: Ok(ResponseData::Seed(Box::new(seed(Scope::Completed, done)))),
     });
     // Read ahead, not drawn.
     assert_eq!(app.shown, Some(scope_home()));

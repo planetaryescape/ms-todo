@@ -22,6 +22,8 @@ pub enum Command {
     Go(Scope),
     /// Open the theme picker.
     Themes,
+    /// Make this context active, or none (rung 9d).
+    Context(Option<String>),
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -67,11 +69,24 @@ impl App {
             keys: String::new(),
             command: Command::Run(action),
         });
+        let active = self.active_context.as_ref().map(|context| &context.name);
+        let contexts = self
+            .context_names
+            .iter()
+            .filter(|name| Some(*name) != active)
+            .map(|name| Some(name.clone()))
+            .chain(active.map(|_| None))
+            .map(|name| Item {
+                label: format!("Context: {}", name.as_deref().unwrap_or("none")),
+                keys: String::new(),
+                command: Command::Context(name),
+            });
         let query = query.trim().to_lowercase();
         rank(
             actions
                 .chain(std::iter::once(themes))
                 .chain(lists)
+                .chain(contexts)
                 .chain(places),
             |item| score(item, &query),
         )
@@ -115,6 +130,7 @@ impl App {
                 self.open_themes();
                 Vec::new()
             }
+            Command::Context(name) => vec![super::contexts::switch_context(name)],
             Command::Go(scope) => {
                 self.focus = Pane::Tasks;
                 // A list in a collapsed folder: open the folder to show it.

@@ -1,14 +1,15 @@
 use bytes::BytesMut;
 use ms_todo_protocol::{
-    Anchor, Applied, Candidate, CategoryChange, Clearable, Codec, Counts, DaemonStatus,
-    DeferredFilter, DoctorReport, DueFilter, EntityChanged, ErrorPayload, Event, ExtensionChange,
-    ExtensionOwner, Folder, Importance, ListChange, ListSuggestion, Message, ModelState, MyDay,
-    MyDaySeed, MyDayStatus, NagStatus, NewTask, OpError, OutboxDepth, OutboxOp, OutboxState,
-    OwnerKind, PROTOCOL_VERSION, Payload, Plan, PlannedList, PlannedTask, RawWriteMethod, Refused,
-    Request, Response, ResponseData, Rolled, Scope, ScopeError, ScopeStatus, SearchStatus, Seed,
-    SemanticIndex, SemanticStatus, StatusFilter, SuggestStatus, SyncActivity, SyncInfo, SyncMode,
-    SyncProgress, SyncReport, SyncState, TaskAction, TaskChange, TaskEdit, TaskFilter, TaskSelect,
-    TaskSort, WriteRejected,
+    Anchor, Applied, AppliedContext, Candidate, CategoryChange, Clearable, Codec, ContextChoice,
+    ContextInfo, Contexts, ContextsStatus, Counts, DaemonStatus, DeferredFilter, DoctorReport,
+    DueFilter, EntityChanged, ErrorPayload, Event, ExtensionChange, ExtensionOwner, Folder,
+    Importance, ListChange, ListSuggestion, Message, ModelState, MyDay, MyDaySeed, MyDayStatus,
+    NagStatus, NewTask, OpError, OutboxDepth, OutboxOp, OutboxState, OwnerKind, PROTOCOL_VERSION,
+    Payload, Plan, PlannedList, PlannedTask, RawWriteMethod, Refused, Request, Response,
+    ResponseData, Rolled, Scope, ScopeError, ScopeStatus, SearchStatus, Seed, SemanticIndex,
+    SemanticStatus, StatusFilter, SuggestStatus, SyncActivity, SyncInfo, SyncMode, SyncProgress,
+    SyncReport, SyncState, TaskAction, TaskChange, TaskEdit, TaskFilter, TaskSelect, TaskSort,
+    WriteRejected,
 };
 use serde_json::json;
 use tokio_util::codec::{Decoder, Encoder};
@@ -147,6 +148,11 @@ fn every_request_and_response_round_trips() {
                     generation: 3,
                 },
                 deferred_hidden: Some(2),
+                context: Some(AppliedContext {
+                    name: "work".into(),
+                    lists: 7,
+                    default_list: Some("Contentful".into()),
+                }),
             },
         }),
         Payload::Response(Response::Ok {
@@ -157,6 +163,7 @@ fn every_request_and_response_round_trips() {
                     generation: 3,
                 },
                 semantic: None,
+                context: None,
             },
         }),
         Payload::Response(Response::Ok {
@@ -170,7 +177,45 @@ fn every_request_and_response_round_trips() {
                     model: "potion-base-8M@bf8b056".into(),
                     pending: 2,
                 }),
+                context: None,
             },
+        }),
+        Payload::Request(Request::Contexts),
+        Payload::Request(Request::SetContext {
+            name: Some("work".into()),
+        }),
+        Payload::Request(Request::SetContext { name: None }),
+        Payload::Request(Request::InContext {
+            context: ContextChoice::Named {
+                name: "home".into(),
+            },
+            request: Box::new(Request::NextTasks {
+                list: None,
+                limit: Some(3),
+            }),
+        }),
+        Payload::Request(Request::InContext {
+            context: ContextChoice::None,
+            request: Box::new(Request::MyDay),
+        }),
+        Payload::Response(Response::Ok {
+            data: ResponseData::Contexts(Contexts {
+                active: Some("work".into()),
+                items: vec![ContextInfo {
+                    name: "work".into(),
+                    active: true,
+                    folders: vec!["Areas".into()],
+                    lists: vec!["Contentful".into()],
+                    default_list: Some("Contentful".into()),
+                    resolved: vec![Candidate {
+                        id: "l1".into(),
+                        name: "Contentful".into(),
+                        ..Candidate::default()
+                    }],
+                    problems: vec!["context \"work\": no list is named \"Gone\"".into()],
+                }],
+                problems: Vec::new(),
+            }),
         }),
         Payload::Request(Request::Sync { wait: true }),
         Payload::Request(Request::Doctor),
@@ -188,7 +233,7 @@ fn every_request_and_response_round_trips() {
             }),
         }),
         Payload::Response(Response::Ok {
-            data: ResponseData::Doctor(DoctorReport {
+            data: ResponseData::Doctor(Box::new(DoctorReport {
                 database_path: "/tmp/ms-todo.db".into(),
                 database_bytes: 4096,
                 syncing: false,
@@ -244,7 +289,12 @@ fn every_request_and_response_round_trips() {
                     count: 1,
                     problem: None,
                 })),
-            }),
+                contexts: Some(ContextsStatus {
+                    active: Some("work".into()),
+                    defined: 2,
+                    problems: Vec::new(),
+                }),
+            })),
         }),
         Payload::Request(Request::NotifyTest),
         Payload::Request(Request::MyDay),
@@ -267,6 +317,7 @@ fn every_request_and_response_round_trips() {
                     generation: 3,
                 },
                 last_rollover: None,
+                context: None,
             }),
         }),
         Payload::Request(Request::ChangeTasks {
@@ -565,7 +616,7 @@ fn every_request_and_response_round_trips() {
         }),
         Payload::Request(Request::Subscribe),
         Payload::Response(Response::Ok {
-            data: ResponseData::Seed(Seed {
+            data: ResponseData::Seed(Box::new(Seed {
                 scope: Some(Scope::Important),
                 lists: vec![entity.clone()],
                 lists_sync: SyncInfo {
@@ -602,7 +653,13 @@ fn every_request_and_response_round_trips() {
                     date: "2026-09-25".into(),
                     suggestions: vec![entity.clone()],
                 }),
-            }),
+                context: Some(AppliedContext {
+                    name: "home".into(),
+                    lists: 1,
+                    default_list: None,
+                }),
+                contexts: vec!["home".into(), "work".into()],
+            })),
         }),
         Payload::Event(Event::EntityChanged(EntityChanged {
             lists: vec!["l1".into()],

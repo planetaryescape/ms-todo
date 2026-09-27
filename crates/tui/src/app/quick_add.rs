@@ -4,7 +4,8 @@
 //! literally instead; Tab completes a `#List` or an `@label`.
 //!
 //! Where the task goes: a `#List` typed, else the list on screen, else
-//! "Tasks" (D-022); from a smart view, with what puts it in the view
+//! the active context's default list, else "Tasks" (D-022; the daemon
+//! decides, rung 9d); from a smart view, with what puts it in the view
 //! unless the text says otherwise.
 
 use ms_todo_nlp::{DeterministicParser, ListRef, ParsedTask, QuickAddContext, QuickAddParser};
@@ -125,9 +126,16 @@ impl App {
             } => parsed.list.as_ref().map(|list| list.name.clone()),
             _ => None,
         };
+        // A view adds to the default list: the context's, else "Tasks".
+        let default = || {
+            self.active_context
+                .as_ref()
+                .and_then(|context| context.default_list.clone())
+                .unwrap_or_else(|| "Tasks".to_owned())
+        };
         typed.unwrap_or_else(|| match &self.shown {
-            Some(Scope::List { id }) => self.list_name(id).unwrap_or("Tasks").to_owned(),
-            _ => "Tasks".to_owned(),
+            Some(Scope::List { id }) => self.list_name(id).map_or_else(default, str::to_owned),
+            _ => default(),
         })
     }
 

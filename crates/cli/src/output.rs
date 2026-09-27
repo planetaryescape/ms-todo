@@ -9,10 +9,11 @@ use std::io::{IsTerminal, Write};
 use std::sync::LazyLock;
 
 use ms_todo_core::{ErrorKind, display_safe};
-use ms_todo_protocol::{Entity, SemanticIndex, SyncInfo, SyncState};
+use ms_todo_protocol::{AppliedContext, Entity, SemanticIndex, SyncInfo, SyncState};
 use serde::Serialize;
 use serde_json::Value;
 
+use crate::data_commands::Found;
 use crate::error::CliError;
 
 /// Bumped when an output shape changes incompatibly. 2 since rung 3a, where
@@ -145,6 +146,9 @@ struct CollectionEnvelope<'a> {
     /// left out.
     #[serde(skip_serializing_if = "Option::is_none")]
     deferred_hidden: Option<u64>,
+    /// For a read a context narrows: the context, or null when none did.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    context: Option<Option<&'a AppliedContext>>,
 }
 
 /// A collection from the cache. JSON carries the scope's sync state in its
@@ -156,47 +160,63 @@ pub fn print_collection(
     sync: SyncInfo,
     table: &Table,
 ) -> Result<(), CliError> {
-    print_items(format, items, Some(sync), None, None, table)
+    print_items(format, items, Some(sync), Extras::default(), table)
 }
 
-/// Tasks `tasks list` found, and how many deferred and Someday tasks it
-/// left out: in JSON's envelope, and a note under a table.
+/// What a collection's envelope carries besides its items.
+#[derive(Default)]
+struct Extras<'a> {
+    deferred_hidden: Option<u64>,
+    context: Option<Option<&'a AppliedContext>>,
+    semantic: Option<&'a SemanticIndex>,
+}
+
+/// Tasks a read the context narrows found (`tasks list`, `search`,
+/// `next`, `waiting`): how many deferred and Someday tasks it left out
+/// and the context, in JSON's envelope; under a table, a note, and a last
+/// line naming the context.
 pub fn print_task_collection(
     format: OutputFormat,
-    items: &[Entity],
-    sync: SyncInfo,
-    deferred_hidden: Option<u64>,
+    found: &Found,
     table: &Table,
 ) -> Result<(), CliError> {
-    print_items(format, items, Some(sync), deferred_hidden, None, table)?;
-    if format == OutputFormat::Table
-        && let Some(hidden @ 1..) = deferred_hidden
+    if let Some(index) = &found.semantic
+        && index.pending > 0
+        && format != OutputFormat::Json
+        && !crate::terminal::quiet()
     {
-        crate::terminal::note(&format!(
-            "{hidden} deferred hidden, --deferred include to show"
-        ));
-    }
-    Ok(())
-}
-
-/// A semantic search's results. JSON carries how complete the index was
-/// in its envelope; the other formats say on stderr when tasks are still
-/// waiting to be embedded, since they're missing from the results.
-pub fn print_semantic_results(
-    format: OutputFormat,
-    items: &[Entity],
-    sync: SyncInfo,
-    index: &SemanticIndex,
-    table: &Table,
-) -> Result<(), CliError> {
-    if index.pending > 0 && format != OutputFormat::Json && !crate::terminal::quiet() {
+        // The tasks not yet embedded may be missing from the results.
         eprintln!(
             "{} task(s) aren't indexed for semantic search yet, so they may be missing; \
              the daemon is embedding them",
             index.pending
         );
     }
-    print_items(format, items, Some(sync), None, Some(index), table)
+    let extras = Extras {
+        deferred_hidden: found.deferred_hidden,
+        context: Some(found.context.as_ref()),
+        semantic: found.semantic.as_ref(),
+    };
+    print_items(format, &found.items, Some(found.sync), extras, table)?;
+    if format != OutputFormat::Table {
+        return Ok(());
+    }
+    if let Some(hidden @ 1..) = found.deferred_hidden {
+        crate::terminal::note(&format!(
+            "{hidden} deferred hidden, --deferred include to show"
+        ));
+    }
+    print_context_line(found.context.as_ref())
+}
+
+/// A table's last line when a context narrowed it: `context: work (7 lists)`.
+pub fn print_context_line(context: Option<&AppliedContext>) -> Result<(), CliError> {
+    if let Some(context) = context {
+        let lists = if context.lists == 1 { "list" } else { "lists" };
+        let line = format!("context: {} ({} {lists})", context.name, context.lists);
+        writeln!(std::io::stdout().lock(), "{}", display_safe(&line))?;
+    }
+    Ok(())
 }
 
 /// A collection read from Graph as it is now, not from the cache: it has
@@ -206,15 +226,14 @@ pub fn print_live_collection(
     items: &[Entity],
     table: &Table,
 ) -> Result<(), CliError> {
-    print_items(format, items, None, None, None, table)
+    print_items(format, items, None, Extras::default(), table)
 }
 
 fn print_items(
     format: OutputFormat,
     items: &[Entity],
     sync: Option<SyncInfo>,
-    deferred_hidden: Option<u64>,
-    semantic: Option<&SemanticIndex>,
+    extras: Extras<'_>,
     table: &Table,
 ) -> Result<(), CliError> {
     let initial = sync.is_some_and(|sync| sync.state == SyncState::Initial);
@@ -231,9 +250,10 @@ fn print_items(
             &CollectionEnvelope {
                 schema_version: SCHEMA_VERSION,
                 sync,
-                semantic,
+                semantic: extras.semantic,
                 items,
-                deferred_hidden,
+                deferred_hidden: extras.deferred_hidden,
+                context: extras.context,
             },
         ),
         OutputFormat::Jsonl => {

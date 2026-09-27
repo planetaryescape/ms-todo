@@ -44,7 +44,7 @@ pub(crate) async fn doctor(state: &State) -> Result<ResponseData, ErrorPayload> 
             }
         })
         .collect();
-    Ok(ResponseData::Doctor(DoctorReport {
+    Ok(ResponseData::Doctor(Box::new(DoctorReport {
         database_path: state.store.path().display().to_string(),
         database_bytes: state.store.size_bytes(),
         syncing: state.syncer.status().running(),
@@ -54,7 +54,8 @@ pub(crate) async fn doctor(state: &State) -> Result<ResponseData, ErrorPayload> 
         my_day: Some(crate::my_day::status(state).await?),
         semantic: Some(state.semantic.status(&state.store).await?),
         nag: Some(Box::new(crate::nag::status(state).await?)),
-    }))
+        contexts: Some(crate::contexts::status(state).await?),
+    })))
 }
 
 /// How many outbox operations are in each state.

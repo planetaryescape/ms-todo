@@ -168,6 +168,9 @@ async fn build_state(paths: &Paths) -> Result<State, Fatal> {
         .clear_in_progress()
         .await
         .map_err(|error| describe_store(&paths.database_file(), &error))?;
+    let context = crate::contexts::Active::load(&store)
+        .await
+        .map_err(|error| describe_store(&paths.database_file(), &error))?;
     Ok(State {
         auth,
         graph: Arc::new(graph),
@@ -183,6 +186,8 @@ async fn build_state(paths: &Paths) -> Result<State, Fatal> {
         my_day: crate::my_day::Config::load(&paths.config_file),
         semantic: crate::semantic::Semantic::load(&paths.config_file, &paths.data_dir),
         nag: crate::nag::Nagger::load(&paths.config_file),
+        config_file: paths.config_file.clone(),
+        context,
     })
 }
 

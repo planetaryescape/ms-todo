@@ -178,6 +178,7 @@ In the TUI's add box, a likely list shows as `→ Finances? (Ctrl-l to accept)`.
 | `W` | assign the task or the selection to someone; empty clears it |
 | `z` | show deferred and Someday tasks in every view, or hide them again |
 | `n` | nag about the task or the selection every 15 minutes once its reminder is due, or stop; a nagging task shows `◉` (`N` in ASCII) in its reminder's place |
+| `c` | switch to the next [context](#contexts), then none; `:` then "Context: …" picks one |
 | `m` | move the task or the selection to another list |
 | `M` | move the current list into a folder |
 | `S` | set one due date on the selection |
@@ -335,6 +336,28 @@ mst doctor --notify-test             # check notifications reach you
 
 The setting syncs with the task; the notifications come from the ms-todo daemon on each machine that runs one, so only those machines nag. Nothing is shown in quiet hours (22:00-07:00 unless `[nag] quiet_hours` says otherwise). [Nag reminders](docs/usage.md#nag-reminders) has the rest.
 
+### Contexts
+
+Narrow everything to one area of your life, then bring it all back:
+
+```toml
+# ~/.config/ms-todo/config.toml
+[contexts.work]
+folders = ["Areas"]            # every list in these folders
+lists = ["Contentful"]         # and these lists
+default_list = "Contentful"    # where a task goes when you name no list
+```
+
+```sh
+mst ctx work      # tasks list, search, next, waiting and My Day's suggestions show only work's lists
+mst ctx           # the active context and its lists
+mst ctx list      # every context in config.toml
+mst ctx none      # everything again
+mst --context none search invoice   # one command outside the context
+```
+
+The daemon holds the active context, so the TUI follows it (its title bar names it, and `c` switches), and it survives a restart. An explicit `--list` always wins, and My Day itself is never narrowed. Names match exactly; one that matches nothing is a warning in `mst ctx` and `mst doctor`. [Contexts](docs/usage.md#contexts) has the rest.
+
 ### Undo and the outbox
 
 Every change is queued, sent in the background, and can be undone:
@@ -368,6 +391,7 @@ JSON is `{ "schema_version": 2, "sync": {…}, "items": [...] }`, each item carr
 | `[tui.colors]` | single colour roles over the theme |
 | `[suggest]` | optional list suggestions from TypeSafe, off by default ([List suggestions](docs/usage.md#list-suggestions)) |
 | `[my_day] rollover_time` | when the day's [My Day](#my-day) is emptied, `"HH:MM"` local; `"00:00"` by default |
+| `[contexts.<name>]` | a [context](#contexts): its `folders`, `lists` and `default_list` |
 
 Environment variables (`MS_TODO_INSTANCE`, `MS_TODO_CLIENT_ID`, `MS_TODO_CONFIG_DIR`, `NO_COLOR`, `COLORTERM` and more) and where ms-todo keeps its data are in [docs/usage.md](docs/usage.md#environment-variables).
 

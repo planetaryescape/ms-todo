@@ -255,10 +255,17 @@ pub(crate) fn command_ops(
 }
 
 /// `Request::MyDay`: today's My Day, and what could go in it.
-pub(crate) async fn my_day(state: &State) -> Result<ResponseData, ErrorPayload> {
+/// My Day's tasks, whatever the context (they were chosen for today),
+/// and its suggestions, narrowed by a context (`choice`, else the active
+/// one).
+pub(crate) async fn my_day(
+    state: &State,
+    choice: Option<&ms_todo_protocol::ContextChoice>,
+) -> Result<ResponseData, ErrorPayload> {
     let lists_sync = read_state(state, LISTS_SCOPE).await?;
     let today = state.my_day.today();
     let lists = state.store.lists().await.map_err(store_error)?;
+    let context = crate::contexts::applied(state, choice, None, &lists)?;
     let (rows, suggestions, sync, last_rollover) = tokio::try_join!(
         async {
             state
@@ -267,7 +274,7 @@ pub(crate) async fn my_day(state: &State) -> Result<ResponseData, ErrorPayload> 
                 .await
                 .map_err(store_error)
         },
-        suggestions(state, today, &lists),
+        suggestions(state, today, &lists, context.as_ref()),
         all_lists_state(state, lists_sync),
         rollover::last_rollover(state),
     )?;
@@ -277,6 +284,7 @@ pub(crate) async fn my_day(state: &State) -> Result<ResponseData, ErrorPayload> 
         suggestions,
         sync,
         last_rollover: last_rollover.map(|day| day.format(DATE_FORMAT).to_string()),
+        context: context.as_ref().map(crate::contexts::Resolved::applied),
     }))
 }
 

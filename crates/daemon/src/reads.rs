@@ -2,8 +2,8 @@
 //! (D-034) with the scope's sync state beside the items.
 
 use ms_todo_protocol::{
-    DeferredFilter, ErrorPayload, ResponseData, SearchStatus, SemanticIndex, SyncInfo, SyncState,
-    TaskFilter, TaskSort,
+    ContextChoice, DeferredFilter, ErrorPayload, ResponseData, SearchStatus, SemanticIndex,
+    SyncInfo, SyncState, TaskFilter, TaskSort,
 };
 use ms_todo_store::{LISTS_SCOPE, ListRow, StatusFilter, TaskRow, TaskScope, TaskSearch, View};
 use std::collections::HashMap;
@@ -33,9 +33,13 @@ pub(crate) async fn list_lists(state: &State) -> Result<ResponseData, ErrorPaylo
 /// to that person (anyone for `*`), and with no `list`, the open ones in
 /// every list, as the Assigned view has them. `filter` narrows and orders
 /// what's left; one that narrows, with no `list`, looks in every list,
-/// soonest due first unless it sorts.
+/// soonest due first unless it sorts. With no `list` and a context
+/// (`choice`, else the active one), it's the context's lists' tasks, open
+/// ones unless `filter` or `search` says otherwise, as the All view has
+/// them.
 pub(crate) async fn list_tasks(
     state: &State,
+    choice: Option<&ContextChoice>,
     wanted: Option<&str>,
     search: Option<&str>,
     assignee: Option<&str>,
@@ -48,12 +52,21 @@ pub(crate) async fn list_tasks(
             items: Vec::new(),
             sync: lists_sync,
             deferred_hidden: Some(0),
+            context: None,
         });
     }
     let lists = state.store.lists().await.map_err(store_error)?;
-    let every_list = wanted.is_none() && (assignee.is_some() || filter.narrows());
+    // An explicit list always wins over a context.
+    let context = crate::contexts::applied(state, choice, wanted, &lists)?;
+    let every_list =
+        wanted.is_none() && (context.is_some() || assignee.is_some() || filter.narrows());
     let mut filter = filter.clone();
     filter.deferred = crate::deferral::searched(filter.deferred, search);
+    if context.is_some() && search.is_none() {
+        filter
+            .status
+            .get_or_insert(ms_todo_protocol::StatusFilter::Open);
+    }
     let (rows, sync) = if !every_list {
         let (_, rows, sync) = list_rows(state, &lists, wanted, search, false).await?;
         (rows, sync)
@@ -72,6 +85,7 @@ pub(crate) async fn list_tasks(
         .map_err(store_error)?;
         (rows, all_lists_state(state, lists_sync).await?)
     };
+    let rows = crate::contexts::keep(context.as_ref(), rows);
     let rows = match assignee {
         Some(assignee) => {
             let wanted = assignee.trim().to_lowercase();
@@ -88,6 +102,7 @@ pub(crate) async fn list_tasks(
             items: rows.iter().map(task_entity).collect(),
             sync,
             deferred_hidden,
+            context: None,
         });
     }
     let names: HashMap<&str, &str> = lists
@@ -105,6 +120,7 @@ pub(crate) async fn list_tasks(
             .collect(),
         sync,
         deferred_hidden,
+        context: context.as_ref().map(crate::contexts::Resolved::applied),
     })
 }
 
@@ -159,6 +175,7 @@ pub(crate) async fn get_tasks(
             .collect(),
         sync: read_state(state, LISTS_SCOPE).await?,
         deferred_hidden: None,
+        context: None,
     })
 }
 
@@ -205,9 +222,11 @@ pub(crate) async fn list_rows(
 /// `search`: every list's tasks, or one list's, matching `query`, or
 /// with `semantic` closest to it in meaning. Across lists the answer is
 /// `ready` only once every list has synced; before that it has what's
-/// cached so far.
+/// cached so far. With no list, a context (`choice`, else the active one)
+/// narrows it to the context's lists.
 pub(crate) async fn search_tasks(
     state: &State,
+    choice: Option<&ContextChoice>,
     query: &str,
     wanted: Option<&str>,
     status: SearchStatus,
@@ -224,11 +243,13 @@ pub(crate) async fn search_tasks(
             items: Vec::new(),
             sync: lists_sync,
             semantic: None,
+            context: None,
         });
     }
+    let lists = state.store.lists().await.map_err(store_error)?;
+    let context = crate::contexts::applied(state, choice, wanted, &lists)?;
     let (list, sync) = match wanted {
         Some(wanted) => {
-            let lists = state.store.lists().await.map_err(store_error)?;
             let list = resolve_list(&lists, Some(wanted))?;
             let sync = crate::freshness::list_read_state(state, &list).await?;
             (Some(list.local_id), sync)
@@ -246,15 +267,25 @@ pub(crate) async fn search_tasks(
             status,
             view: None,
         };
+        // A context narrows after the search, so the limit waits for it.
+        let unlimited = limit.filter(|_| context.is_none());
         let (hits, pending) =
-            crate::semantic::query::search(state, query, &scope, limit, true).await?;
+            crate::semantic::query::search(state, query, &scope, unlimited, true).await?;
         return Ok(ResponseData::SearchResults {
-            items: hits.iter().map(semantic_entity).collect(),
+            items: hits
+                .iter()
+                .filter(|hit| {
+                    crate::contexts::within(context.as_ref(), &hit.candidate.task.list_local_id)
+                })
+                .take(as_count(limit))
+                .map(semantic_entity)
+                .collect(),
             sync,
             semantic: Some(SemanticIndex {
                 model: crate::semantic::model::MODEL_ID.into(),
                 pending,
             }),
+            context: context.as_ref().map(crate::contexts::Resolved::applied),
         });
     }
     let hits = state
@@ -264,13 +295,27 @@ pub(crate) async fn search_tasks(
             list_local_id: list.as_deref(),
             status,
             view: None,
-            limit,
+            // A context narrows after the search, so the limit waits for it.
+            limit: limit.filter(|_| context.is_none()),
         })
         .await
         .map_err(store_error)?;
     Ok(ResponseData::SearchResults {
-        items: hits.iter().map(search_entity).collect(),
+        items: hits
+            .iter()
+            .filter(|hit| crate::contexts::within(context.as_ref(), &hit.task.list_local_id))
+            .take(as_count(limit))
+            .map(search_entity)
+            .collect(),
         sync,
         semantic: None,
+        context: context.as_ref().map(crate::contexts::Resolved::applied),
+    })
+}
+
+/// A search's `limit` as a count to take; every hit when there's none.
+fn as_count(limit: Option<u32>) -> usize {
+    limit.map_or(usize::MAX, |limit| {
+        usize::try_from(limit).unwrap_or(usize::MAX)
     })
 }

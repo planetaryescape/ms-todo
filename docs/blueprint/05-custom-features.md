@@ -89,7 +89,26 @@ Rung 9a (D-061). `next` answers "what should I do now?" with a few open tasks in
 5. Due within the next 3 days, soonest first.
 6. Everything else.
 
-Ties go to the oldest task (Graph's `createdDateTime`). Completed, deferred and Someday tasks are never next. Due dates are read against today's local date, My Day against My Day's day. Each task comes with `why`: every reason that applies, in the order above (`overdue 2d, in My Day, high`), or `added 12d ago` when none does. `next` gives 5 by default (`--limit`), from every list or one (`--list`); the TUI's Next view gives the same 5. Contexts, a later rung, will narrow it by one more predicate beside the defer rule.
+Ties go to the oldest task (Graph's `createdDateTime`). Completed, deferred and Someday tasks are never next. Due dates are read against today's local date, My Day against My Day's day. Each task comes with `why`: every reason that applies, in the order above (`overdue 2d, in My Day, high`), or `added 12d ago` when none does. `next` gives 5 by default (`--limit`), from every list or one (`--list`); the TUI's Next view gives the same 5. A [context](#contexts) narrows it by one more predicate beside the defer rule.
+
+## Contexts
+
+Rung 9d (D-063). A context is a named set of lists, defined in config.toml, and at most one is active. The promise: "`mst ctx work` narrows everything to my work lists, and `mst ctx none` brings back everything."
+
+```toml
+[contexts.work]
+folders = ["Areas"]          # every list in these folders (D-047)
+lists = ["Contentful"]       # and these lists
+default_list = "Contentful"  # where a task goes when no list is named
+```
+
+- **Membership** is the union of the folders' lists and the named lists, each name matched exactly (a folder by the name its lists carry). It's resolved against the cache on each request, so a list moved into a folder joins at once, and config.toml is read again each time, so an edit counts without a restart. A name that matches nothing, a `default_list` that isn't one of the context's lists (or names two), an unreadable config.toml, and an active context no longer defined are warnings in `ctx`, `ctx list` and `doctor`, never errors; such a context narrows by what does resolve, and an undefined active one narrows nothing. `none`, `list` and `show` can't name a context.
+- **The daemon holds the active one**, in the store's settings (`context.active`), and in memory, so a read with none active costs nothing more. The CLI and the TUI share it; a switch sends every subscriber `ResyncNeeded`. It isn't synced to other devices.
+- **What it narrows**, with no explicit list: `tasks list` (every one of the context's lists, open tasks unless a filter or search says otherwise, each with its list), `search`, `next`, `waiting`, `tasks list --deferred only`, My Day's suggestions, and the TUI's `Seed`: its lists, its counts and every view's tasks but My Day's. A new task with no list goes to `default_list`, else "Tasks". The TUI's default scope is `default_list`, else the context's first list.
+- **What it doesn't:** an explicit `--list` (or a list the TUI asks for by ID) always wins, even outside the context. My Day itself: it's what you chose for today. `done`, `lists list`, `folders list`, the outbox and undo.
+- **One predicate.** `contexts::within(context, list_id)` in the daemon is the only test; the reads filter rows with it in memory (a search waits to apply its limit until after), and the sidebar's counts are summed per list in SQL, so a context needs no list IDs spliced into a query.
+- **Visibility.** Every narrowed answer carries `context` (`name`, `lists`, `default_list`); a table ends with `context: work (7 lists)`, and JSON's envelope has `context` (null when nothing was narrowed). The TUI's title bar names it.
+- **Not built:** contexts by category or tag, per-context themes, syncing the active context between devices.
 
 ## Nag reminders
 

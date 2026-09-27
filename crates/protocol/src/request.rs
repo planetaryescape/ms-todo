@@ -5,8 +5,8 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 use crate::{
-    CategoryChange, ExtensionChange, ExtensionOwner, ListChange, NewTask, OutboxState, Scope,
-    TaskChange, TaskFilter, TaskSelect,
+    CategoryChange, ContextChoice, ExtensionChange, ExtensionOwner, ListChange, NewTask,
+    OutboxState, Scope, TaskChange, TaskFilter, TaskSelect,
 };
 
 /// What a client can ask the daemon for.
@@ -298,6 +298,23 @@ pub enum Request {
     },
     /// A valid access token, for `auth bearer --reveal-secret`.
     Bearer,
+    /// Every context in config.toml and which is active, answered
+    /// `Contexts`.
+    Contexts,
+    /// Make the context `name` active (`None` for none), kept across
+    /// daemon restarts; answered `Contexts`. Every subscriber is sent
+    /// `ResyncNeeded`, since what it shows has changed.
+    SetContext {
+        #[serde(default)]
+        name: Option<String>,
+    },
+    /// `request` read in `context` rather than the active context
+    /// (`--context`). Only the reads a context narrows, and `AddTask`'s
+    /// default list, look at it.
+    InContext {
+        context: ContextChoice,
+        request: Box<Request>,
+    },
     /// Stop the daemon. It answers `Ack`, then exits.
     Shutdown,
     #[serde(other)]
@@ -308,10 +325,13 @@ impl Request {
     /// Whether the daemon may answer this after requests sent later on
     /// the same connection: slow, read-only, and needing nothing in order.
     pub fn answered_out_of_order(&self) -> bool {
-        matches!(
-            self,
-            Self::SuggestList { .. } | Self::DownloadAttachments { .. }
-        )
+        match self {
+            Self::InContext { request, .. } => request.answered_out_of_order(),
+            _ => matches!(
+                self,
+                Self::SuggestList { .. } | Self::DownloadAttachments { .. }
+            ),
+        }
     }
 }
 
