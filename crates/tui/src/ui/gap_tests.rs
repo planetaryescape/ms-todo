@@ -11,7 +11,7 @@ use crate::app::edit::Field;
 use crate::app::folders::tests::foldered;
 use crate::app::steps::DetailRow;
 use crate::app::tests::{act, seeded};
-use crate::app::triage::tests::triaging;
+use crate::app::triage::tests::{suggested, triaging};
 use crate::app::{App, Msg, Pane, Tag};
 
 fn render(app: &App) -> String {
@@ -120,27 +120,27 @@ fn the_palette_puts_recent_commands_first() {
 fn the_inbox_triage() {
     let mut app = triaging();
     let asking = render(&app);
-    app.update(Msg::Response {
-        tag: Tag::TriageSuggest,
-        result: Ok(ResponseData::ListSuggestion {
+    suggested(
+        &mut app,
+        Ok(ResponseData::ListSuggestion {
             suggestion: Some(ListSuggestion {
                 list_id: "home".into(),
                 list_name: "Home".into(),
                 confidence: 0.82,
             }),
         }),
-    });
+    );
     let found = render(&app);
     act(&mut app, Action::Skip);
-    app.update(Msg::Response {
-        tag: Tag::TriageSuggest,
-        result: Ok(ResponseData::ListSuggestion { suggestion: None }),
-    });
+    suggested(
+        &mut app,
+        Ok(ResponseData::ListSuggestion { suggestion: None }),
+    );
     let nothing = render(&app);
     act(&mut app, Action::Skip);
-    app.update(Msg::Response {
-        tag: Tag::TriageSuggest,
-        result: Err(ErrorPayload {
+    suggested(
+        &mut app,
+        Err(ErrorPayload {
             kind: "invalid_input".into(),
             message: "list suggestions are off; to turn them on, set `enabled = true` under \
                       [suggest] in ~/.config/ms-todo/config.toml, then restart the daemon with \
@@ -148,7 +148,7 @@ fn the_inbox_triage() {
                 .into(),
             ..ErrorPayload::default()
         }),
-    });
+    );
     insta::assert_snapshot!(format!("{asking}\n{found}\n{nothing}\n{}", render(&app)));
 }
 

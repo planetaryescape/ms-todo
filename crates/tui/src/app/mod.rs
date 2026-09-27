@@ -229,6 +229,13 @@ pub struct App {
     /// A command was run from the palette since they were last saved:
     /// the runner saves them after the frame.
     pub recent_unsaved: bool,
+    /// The last number given to a triage request (D-066).
+    triage_requests: u64,
+    /// The sidebar's order as `K` and `J` left it, by list ID, while
+    /// their changes are unanswered: a seed read before them would put
+    /// the old order back.
+    pub(super) order_pending: Option<Vec<String>>,
+    orders_in_flight: u32,
 }
 
 impl App {
@@ -283,6 +290,9 @@ impl App {
             recent_commands: Vec::new(),
             recent_file: None,
             recent_unsaved: false,
+            triage_requests: 0,
+            order_pending: None,
+            orders_in_flight: 0,
         }
     }
 

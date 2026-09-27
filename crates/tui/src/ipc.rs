@@ -185,8 +185,8 @@ fn lost(tag: Tag, why: &str) -> Msg {
         | Tag::ListHint
         | Tag::Download
         | Tag::Context
-        | Tag::TriageInbox
-        | Tag::TriageSuggest => why.to_owned(),
+        | Tag::TriageInbox(_)
+        | Tag::TriageSuggest(_) => why.to_owned(),
     };
     Msg::Response {
         tag,

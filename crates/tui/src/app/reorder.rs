@@ -36,6 +36,8 @@ impl App {
             return Vec::new();
         };
         self.place_sidebar_cursor(row);
+        self.order_pending = Some(self.lists.iter().map(|list| list.id.clone()).collect());
+        self.orders_in_flight += 1;
         vec![Effect {
             tag: Tag::Order,
             request: Request::ChangeLists {
@@ -45,6 +47,31 @@ impl App {
                 idempotency_key: None,
             },
         }]
+    }
+
+    /// A seed's lists in the order `K` and `J` left them, while their
+    /// changes are unanswered; a list the order doesn't know goes last.
+    pub(super) fn keep_pending_order(&mut self) {
+        let Some(order) = &self.order_pending else {
+            return;
+        };
+        self.lists.sort_by_key(|list| {
+            order
+                .iter()
+                .position(|id| *id == list.id)
+                .unwrap_or(usize::MAX)
+        });
+    }
+
+    /// One reorder answered. True when it was the last in flight: the
+    /// daemon's order is the one to show again.
+    pub(super) fn order_answered(&mut self) -> bool {
+        self.orders_in_flight = self.orders_in_flight.saturating_sub(1);
+        if self.orders_in_flight > 0 {
+            return false;
+        }
+        self.order_pending = None;
+        true
     }
 
     /// Swap the list `id` with its neighbour in the same folder (or in
@@ -220,6 +247,39 @@ mod tests {
             }
         );
         assert_eq!(names(&app), ["Home", "Finances", "Launch", "Tasks"]);
+    }
+
+    #[test]
+    fn a_seed_read_before_the_moves_were_answered_keeps_them_on_screen() {
+        use crate::app::folders::tests::foldered_seed;
+        use crate::app::tests::answer_seed;
+        use ms_todo_protocol::{Event, ResponseData};
+
+        let mut app = foldered();
+        cursor_on(&mut app, &list("fin"));
+        act(&mut app, Action::ReorderUp);
+        act(&mut app, Action::ReorderDown);
+        assert_eq!(names(&app), ["Home", "Finances", "Launch", "Tasks"]);
+        // The first move's seed: the daemon has done only that one.
+        let effects = app.update(Msg::Event(Event::ResyncNeeded));
+        let mut first = foldered_seed();
+        first.lists.swap(0, 1);
+        answer_seed(&mut app, &effects[0], first);
+        assert_eq!(names(&app), ["Home", "Finances", "Launch", "Tasks"]);
+        let answered = |app: &mut App| {
+            app.update(Msg::Response {
+                tag: Tag::Order,
+                result: Ok(ResponseData::Ack),
+            })
+        };
+        assert!(answered(&mut app).is_empty(), "one still in flight");
+        // The last answer hands the order back to the daemon.
+        let effects = answered(&mut app);
+        assert!(matches!(effects[0].request, Request::Seed { .. }));
+        let mut daemon = foldered_seed();
+        daemon.lists.swap(0, 1);
+        answer_seed(&mut app, &effects[0], daemon);
+        assert_eq!(names(&app), ["Finances", "Home", "Launch", "Tasks"]);
     }
 
     #[test]

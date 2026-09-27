@@ -38,10 +38,13 @@ pub struct Triage {
     /// Which of `tasks` is on screen.
     pub at: usize,
     pub suggestion: Suggestion,
-    /// The task whose suggestion is on its way, while one is: an answer
-    /// for a task already skipped is dropped, and the one on screen asked
-    /// about instead.
-    asked: Option<usize>,
+    /// The number of this session's inbox read: its answer is taken only
+    /// while this session is on.
+    session: u64,
+    /// The request whose suggestion is on its way, while one is, and the
+    /// task it's for: only its answer is taken, and one for a task already
+    /// skipped is dropped and the one on screen asked about instead.
+    asked: Option<(u64, String)>,
     pub moved: usize,
     pub skipped: usize,
 }
@@ -68,17 +71,19 @@ impl App {
             return Vec::new();
         };
         let inbox = inbox.id.clone();
+        let session = self.next_triage_request();
         self.mode = Mode::Triage(Triage {
             inbox: inbox.clone(),
             tasks: Vec::new(),
             at: 0,
             suggestion: Suggestion::Loading,
+            session,
             asked: None,
             moved: 0,
             skipped: 0,
         });
         vec![Effect {
-            tag: Tag::TriageInbox,
+            tag: Tag::TriageInbox(session),
             request: Request::Seed {
                 scope: Some(Scope::List { id: inbox }),
                 search: None,
@@ -91,11 +96,15 @@ impl App {
     /// The inbox's tasks: its open ones are the queue.
     pub(super) fn triage_inbox(
         &mut self,
+        number: u64,
         result: Result<ResponseData, ErrorPayload>,
     ) -> Vec<Effect> {
         let Mode::Triage(triage) = &mut self.mode else {
             return Vec::new();
         };
+        if triage.session != number {
+            return Vec::new();
+        }
         let seed = match result {
             Ok(ResponseData::Seed(seed)) => seed,
             Ok(_) => return self.end_triage("The daemon sent an unexpected answer"),
@@ -119,6 +128,7 @@ impl App {
 
     /// Ask about the task on screen, unless an answer is on its way.
     fn ask_triage(&mut self) -> Vec<Effect> {
+        let number = self.triage_requests + 1;
         let Mode::Triage(triage) = &mut self.mode else {
             return Vec::new();
         };
@@ -129,22 +139,33 @@ impl App {
         let Some(task) = triage.current() else {
             return Vec::new();
         };
-        let title = task.title.clone();
-        triage.asked = Some(triage.at);
+        let (id, title) = (task.id.clone(), task.title.clone());
+        triage.asked = Some((number, id));
+        self.triage_requests = number;
         vec![Effect {
-            tag: Tag::TriageSuggest,
+            tag: Tag::TriageSuggest(number),
             request: Request::SuggestList { title },
         }]
     }
 
+    fn next_triage_request(&mut self) -> u64 {
+        self.triage_requests += 1;
+        self.triage_requests
+    }
+
     pub(super) fn triage_suggested(
         &mut self,
+        number: u64,
         result: Result<ResponseData, ErrorPayload>,
     ) -> Vec<Effect> {
         let Mode::Triage(triage) = &mut self.mode else {
             return Vec::new();
         };
-        if triage.asked.take() != Some(triage.at) {
+        // Another session's, or a request this one no longer waits on.
+        let Some((_, id)) = triage.asked.take_if(|(asked, _)| *asked == number) else {
+            return Vec::new();
+        };
+        if triage.current().is_none_or(|task| task.id != id) {
             return self.ask_triage();
         }
         triage.suggestion = match result {

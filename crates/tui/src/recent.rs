@@ -5,6 +5,7 @@
 
 use std::io::ErrorKind;
 use std::path::Path;
+use std::sync::atomic::{AtomicU64, Ordering};
 
 /// How many recent commands are kept and offered.
 pub const KEPT: usize = 10;
@@ -33,16 +34,26 @@ pub fn load(path: &Path) -> Vec<String> {
 }
 
 /// Write `labels` to `path`, beside it and renamed over it, so a crash
-/// can't leave half a file.
+/// can't leave half a file. The staged file's name is this process's and
+/// this save's, so two TUIs of one instance never write the same one; if
+/// the rename fails while another's save is in place, that one stands.
 pub fn save(path: &Path, labels: &[String]) -> std::io::Result<()> {
+    static SAVES: AtomicU64 = AtomicU64::new(0);
     if let Some(dir) = path.parent() {
         std::fs::create_dir_all(dir)?;
     }
     let mut text = labels.join("\n");
     text.push('\n');
-    let staged = path.with_extension("tmp");
+    let save = SAVES.fetch_add(1, Ordering::Relaxed);
+    let staged = path.with_extension(format!("{}.{save}.tmp", std::process::id()));
     std::fs::write(&staged, text)?;
-    std::fs::rename(&staged, path)
+    match std::fs::rename(&staged, path) {
+        Ok(()) => Ok(()),
+        Err(error) => {
+            let _ = std::fs::remove_file(&staged);
+            if path.exists() { Ok(()) } else { Err(error) }
+        }
+    }
 }
 
 /// `labels` with `label` first, once, and at most [`KEPT`] of them.
@@ -77,5 +88,12 @@ mod tests {
         let labels = vec!["Sync".to_owned(), "Go to Home".to_owned()];
         save(&path, &labels).expect("saved");
         assert_eq!(load(&path), labels);
+        // Saved again, with nothing staged left behind.
+        save(&path, &labels[..1]).expect("saved again");
+        assert_eq!(load(&path), labels[..1]);
+        let left: Vec<_> = std::fs::read_dir(path.parent().expect("dir"))
+            .expect("read")
+            .collect();
+        assert_eq!(left.len(), 1, "{left:?}");
     }
 }

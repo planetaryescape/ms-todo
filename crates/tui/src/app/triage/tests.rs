@@ -21,11 +21,28 @@ fn answer(app: &mut App, tag: Tag, result: Result<ResponseData, ErrorPayload>) -
     app.update(Msg::Response { tag, result })
 }
 
+/// The suggestion the triage waits on answered with `result`.
+pub(crate) fn suggested(app: &mut App, result: Result<ResponseData, ErrorPayload>) -> Vec<Effect> {
+    let tag = pending(app);
+    answer(app, tag, result)
+}
+
+/// The tag of the suggestion the triage waits on.
+fn pending(app: &App) -> Tag {
+    match &app.mode {
+        Mode::Triage(Triage {
+            asked: Some((number, _)),
+            ..
+        }) => Tag::TriageSuggest(*number),
+        other => unreachable!("nothing asked: {other:?}"),
+    }
+}
+
 fn asked_about(effects: &[Effect]) -> &str {
     match effects {
         [
             Effect {
-                tag: Tag::TriageSuggest,
+                tag: Tag::TriageSuggest(_),
                 request: Request::SuggestList { title },
             },
         ] => title,
@@ -45,7 +62,7 @@ pub(crate) fn triaging() -> App {
     assert_eq!(
         effects,
         [Effect {
-            tag: Tag::TriageInbox,
+            tag: Tag::TriageInbox(1),
             request: Request::Seed {
                 scope: Some(Scope::List { id: "tasks".into() }),
                 search: None,
@@ -68,7 +85,7 @@ pub(crate) fn triaging() -> App {
     let seed = seed(Scope::List { id: "tasks".into() }, inbox);
     let effects = answer(
         &mut app,
-        Tag::TriageInbox,
+        Tag::TriageInbox(1),
         Ok(ResponseData::Seed(Box::new(seed))),
     );
     assert_eq!(asked_about(&effects), "Buy paint");
@@ -89,7 +106,7 @@ fn each_open_inbox_task_is_suggested_a_list_and_moved_with_one_key() {
     assert_eq!(triage(&app).suggestion, Suggestion::Asking);
     // Nothing to move until a list is suggested.
     assert!(act(&mut app, Action::Submit).is_empty());
-    answer(&mut app, Tag::TriageSuggest, Ok(suggestion("home", "Home")));
+    suggested(&mut app, Ok(suggestion("home", "Home")));
     assert!(
         matches!(&triage(&app).suggestion, Suggestion::Found(list) if list.list_name == "Home")
     );
@@ -110,20 +127,15 @@ fn each_open_inbox_task_is_suggested_a_list_and_moved_with_one_key() {
     assert_eq!(effects[0].tag, Tag::Write(Write::Move));
     assert_eq!(asked_about(&effects[1..]), "Fix the gate");
     // No likely list: nothing to move; s leaves it.
-    answer(
+    suggested(
         &mut app,
-        Tag::TriageSuggest,
         Ok(ResponseData::ListSuggestion { suggestion: None }),
     );
     assert_eq!(triage(&app).suggestion, Suggestion::Nothing);
     assert!(act(&mut app, Action::Submit).is_empty());
     assert_eq!(asked_about(&act(&mut app, Action::Skip)), "Call the bank");
     // The inbox itself is no suggestion.
-    answer(
-        &mut app,
-        Tag::TriageSuggest,
-        Ok(suggestion("tasks", "Tasks")),
-    );
+    suggested(&mut app, Ok(suggestion("tasks", "Tasks")));
     assert_eq!(triage(&app).suggestion, Suggestion::Nothing);
     assert!(act(&mut app, Action::Skip).is_empty());
     assert_eq!(app.mode, Mode::Normal);
@@ -136,10 +148,11 @@ fn each_open_inbox_task_is_suggested_a_list_and_moved_with_one_key() {
 #[test]
 fn an_answer_for_a_skipped_task_is_dropped_and_the_next_asked_about() {
     let mut app = triaging();
+    let first = pending(&app);
     // Skipped before its answer came: no second question in flight.
     assert!(act(&mut app, Action::Skip).is_empty());
     assert_eq!(triage(&app).at, 1);
-    let effects = answer(&mut app, Tag::TriageSuggest, Ok(suggestion("home", "Home")));
+    let effects = answer(&mut app, first, Ok(suggestion("home", "Home")));
     assert_eq!(asked_about(&effects), "Fix the gate");
     assert_eq!(triage(&app).suggestion, Suggestion::Asking);
 }
@@ -148,9 +161,8 @@ fn an_answer_for_a_skipped_task_is_dropped_and_the_next_asked_about() {
 fn suggestions_off_says_how_to_turn_them_on_and_esc_stops() {
     let mut app = triaging();
     let off = "list suggestions are off; to turn them on, set `enabled = true` under [suggest]";
-    answer(
+    suggested(
         &mut app,
-        Tag::TriageSuggest,
         Err(ErrorPayload {
             kind: "invalid_input".into(),
             message: off.into(),
@@ -185,4 +197,38 @@ fn an_empty_inbox_ends_at_once() {
             .as_ref()
             .is_some_and(|banner| banner.text.contains("no open tasks"))
     );
+}
+
+#[test]
+fn an_answer_from_an_earlier_session_is_dropped() {
+    let mut app = triaging();
+    let old = pending(&app);
+    act(&mut app, Action::Cancel);
+    act(&mut app, Action::TriageInbox);
+    let session = triage(&app).session;
+    let inbox = seed(
+        Scope::List { id: "tasks".into() },
+        vec![task("i9", "Renew passport", json!({ "list_id": "tasks" }))],
+    );
+    let effects = answer(
+        &mut app,
+        Tag::TriageInbox(session),
+        Ok(ResponseData::Seed(Box::new(inbox))),
+    );
+    assert_eq!(asked_about(&effects), "Renew passport");
+    // The old session's answer arrives now: it's not this task's list.
+    assert!(answer(&mut app, old, Ok(suggestion("home", "Home"))).is_empty());
+    assert_eq!(triage(&app).suggestion, Suggestion::Asking);
+    assert!(act(&mut app, Action::Submit).is_empty(), "nothing to move");
+    // And the old session's inbox read is dropped too.
+    let stale = seed(Scope::List { id: "tasks".into() }, Vec::new());
+    assert!(
+        answer(
+            &mut app,
+            Tag::TriageInbox(1),
+            Ok(ResponseData::Seed(Box::new(stale)))
+        )
+        .is_empty()
+    );
+    assert_eq!(triage(&app).tasks.len(), 1);
 }
