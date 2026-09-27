@@ -111,19 +111,20 @@ pub const WAITING_TABLE: Table = Table {
 };
 
 pub const SEARCH_TABLE: Table = Table {
-    headings: &["DONE", "DUE", "LIST", "TITLE", "MATCH"],
+    headings: &["DONE", "DUE", "LIST", "TITLE", "IN", "MATCH"],
     row: |task| {
         vec![
             done(task),
             csv_columns::local_due(task),
             text(task, "list").to_owned(),
             marked_title(task),
+            csv_columns::matched(task),
             text(task, "snippet").to_owned(),
         ]
     },
     csv_headings: csv_columns::SEARCH_COLUMNS,
     csv_row: csv_columns::search_row,
-    bold_matches: Some(4),
+    bold_matches: Some(5),
 };
 
 /// What `next` gives: each task with why it's there, most urgent first.

@@ -10,7 +10,7 @@ Usage: ms-todo tasks add [OPTIONS] <TEXT>
 
 Arguments:
   <TEXT>
-          The task, as you'd say it. Read out of it: #List or #"Two words" (its name or a prefix only it has), @category, p1–p4, every … (a recurrence), !time-or-date (a reminder), ^date (hidden until then), +someday, +myday, start <date>, and a date and time (the due date; a time also sets a reminder then). "Quoted text" and \# \@ \! \^ stay as typed. What's left is the title
+          The task, as you'd say it. Read out of it: #List or #"Two words" (its name or a prefix only it has), @category, p1–p4, every … (a recurrence), !time-or-date (a reminder), ^date (hidden until then), +someday, +myday, start <date>, and a date and time (the due date, `due` before it or not; a time also sets a reminder then; eod is 17:00, and morning 09:00 and evening 19:00 beside a day). Steps go last, after " :: ", split on ";": `Pack :: passport; charger`. "Quoted text" and \# \@ \! \^ stay as typed. What's left is the title
 
 Options:
       --format <FORMAT>
@@ -86,6 +86,9 @@ Options:
 
       --nag <EVERY>
           Once its reminder is due, notify me on this machine every so often until it's done, as +nag15m in the text does: 15m, 1h, 1h30m (5m to 24h). Needs a reminder
+
+      --step <TEXT>
+          A step to add with it; repeat for several, in order. Over any steps after " :: " in the text
 
       --dry-run
           Show what would be sent without changing anything

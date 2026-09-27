@@ -37,17 +37,20 @@ fn date(value: &str) -> NaiveDate {
 
 /// The rows of S8's corpus whose phrase is a whole date field's worth,
 /// read as the corpus expects. Left out: phrases this build doesn't read
-/// (`27th`, `mid January`, `someday`, `in 2 hours`, `eod`, `morning`,
+/// (`27th`, `mid January`, `someday`, `in 2 hours`, `in the morning`,
 /// `friday week`, `3rd friday jan`, US and dotted dates, `at 1900`,
 /// `today at 10`) and T06, where S8 guessed `next month` is the same day
-/// next month; this build reads it as the 1st, as asked.
+/// next month; this build reads it as the 1st, as asked. Quick add's
+/// `due` is in some phrases (D-068); a field doesn't take it, so it's
+/// left off here.
 const CORPUS_ROWS: &[&str] = &[
     "T01", "T02", "T03", "T04", "T05", "T07", "T08", "T09", "T13", "T16", "T18", "T19", "T20",
     "T22", "T23", "T24", "T25", "T26", "T30", "T31", "R01", "R02", "R03", "R04", "R05", "R06",
     "R07", "R08", "R09", "R10", "R11", "R12", "R13", "R14", "A01", "A02", "A03", "A04", "A05",
     "A06", "A07", "A08", "A09", "A10", "A11", "A12", "M01", "M02", "M03", "M04", "M05", "M08",
     "M09", "M10", "M11", "C01", "C02", "C03", "C04", "C05", "C06", "C07", "C08", "C09", "C10",
-    "C11", "C12", "C13", "D01", "D02", "D03",
+    "C11", "C12", "C13", "D01", "D02", "D03", "T36", "T37", "M06", "G01", "G04", "G05", "G06",
+    "G09",
 ];
 
 #[test]
@@ -60,6 +63,7 @@ fn the_s8_corpus_phrases_read_as_graded() {
             continue;
         };
         if CORPUS_ROWS.contains(id) {
+            let phrase = phrase.strip_prefix("due ").unwrap_or(phrase);
             assert_eq!(when(phrase), *expected, "{id} {phrase:?}");
             checked += 1;
         }

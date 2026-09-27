@@ -58,7 +58,7 @@ settings(key PK, value)          -- migration 0006: my_day.last_rollover, my_day
 
 ## Indexes
 
-Index what the TUI views need to be instant: `tasks(list_local_id, status, deleted_at)`, `tasks(due_date)`, `tasks(json_extract(extension_json, '$.myDay'))` (`tasks_by_my_day`, migration `0006`; My Day has no column of its own, D-054), `tasks(importance)`, plus an FTS5 table over each live task's title and its notes as plain text (`tasks_fts`, migration `0004`, kept current by triggers) for search. FTS5 is enough at To Do's scale; we're not using Tantivy (D-011, D-041). Semantic search keeps one vector per live task in `task_embeddings` (migration `0008`: the vector as f32 bytes, the model's ID and the SHA-256 of the embedded text, so only changed tasks are embedded again), ranked by brute-force cosine without a vector index (D-062).
+Index what the TUI views need to be instant: `tasks(list_local_id, status, deleted_at)`, `tasks(due_date)`, `tasks(json_extract(extension_json, '$.myDay'))` (`tasks_by_my_day`, migration `0006`; My Day has no column of its own, D-054), `tasks(importance)`, plus an FTS5 table over each live task's title, its notes as plain text, and (since migration `0009`, D-068) its step texts, category names and attachment names (`tasks_fts`, migration `0004`, kept current by triggers) for search. FTS5 is enough at To Do's scale; we're not using Tantivy (D-011, D-041). Semantic search keeps one vector per live task in `task_embeddings` (migration `0008`: the vector as f32 bytes, the model's ID and the SHA-256 of the embedded text, so only changed tasks are embedded again), ranked by brute-force cosine without a vector index (D-062).
 
 ## Outbox semantics
 

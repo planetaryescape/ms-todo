@@ -1,0 +1,5 @@
+# id	category	input	expected_phrase	expected_uk	expected_us(=same)
+# Q10: BK's own phrases, read by the same test as S8-corpus.tsv (crates/nlp/src/quick_add/tests.rs), with the same now:
+# 2026-09-24T14:00 Europe/London (Thursday). One row per phrase, tab-separated, ids BK01 on. expected_phrase is the date
+# phrase quick add should take out of the title ("-" for none); expected_uk its value, YYYY-MM-DD or YYYY-MM-DD HH:MM.
+# A row that doesn't read as written fails the test until it's fixed or listed in KNOWN_MISSES with the reason.

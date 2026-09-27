@@ -47,7 +47,7 @@ pub const EVERY_LIST_COLUMNS: &[&str] = &[
 ];
 
 /// A search result: enough to recognise the task and where it matched.
-pub const SEARCH_COLUMNS: &[&str] = &["id", "title", "list", "status", "due", "snippet"];
+pub const SEARCH_COLUMNS: &[&str] = &["id", "title", "list", "status", "due", "snippet", "matched"];
 
 /// A semantic search result: the search's columns, with the score for
 /// the snippet.
@@ -162,7 +162,23 @@ pub fn search_row(task: &Entity) -> Vec<String> {
         text(task, "status").to_owned(),
         local_due(task),
         text(task, "snippet").to_owned(),
+        matched(task),
     ]
+}
+
+/// Where a search's words were found (`title`, `notes`, `step`,
+/// `category`, `attachment`), joined by commas.
+pub fn matched(task: &Entity) -> String {
+    task.get("matched")
+        .and_then(Value::as_array)
+        .map(|places| {
+            places
+                .iter()
+                .filter_map(Value::as_str)
+                .collect::<Vec<_>>()
+                .join(",")
+        })
+        .unwrap_or_default()
 }
 
 pub fn semantic_row(task: &Entity) -> Vec<String> {

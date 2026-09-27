@@ -254,7 +254,7 @@ fn clearable(value: Option<String>) -> Clearable<String> {
 impl App {
     /// What typed dates are read against.
     pub fn parse_context(&self) -> ParseContext {
-        ParseContext::new(self.clock.now)
+        ParseContext::new(self.clock.now).with_locale(self.locale)
     }
 
     /// What the date being typed resolves to, for the line under it:

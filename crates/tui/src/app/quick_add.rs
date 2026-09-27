@@ -292,6 +292,7 @@ impl App {
             my_day: parsed.my_day || my_day,
             defer_until: parsed.defer.map(date),
             someday: parsed.someday || someday,
+            steps: parsed.steps.clone(),
             ..NewTask::default()
         }
     }

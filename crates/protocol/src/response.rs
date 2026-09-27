@@ -55,8 +55,10 @@ pub enum ResponseData {
         context: Option<AppliedContext>,
     },
     /// Tasks a search matched, best first: each task entity with `list`,
-    /// its list's name, and `snippet`, the passage that matched on one
-    /// line with each match between `**`s. A semantic search's have
+    /// its list's name, `snippet`, the passage that matched on one line
+    /// with each match between `**`s, and `matched`, where the words were
+    /// found: any of `title`, `notes`, `step`, `category` and
+    /// `attachment`. A semantic search's have
     /// `score` instead, their cosine similarity to the query, and
     /// `semantic` says how complete the index was.
     SearchResults {

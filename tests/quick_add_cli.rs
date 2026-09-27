@@ -364,3 +364,64 @@ async fn a_list_name_two_lists_share_files_nowhere_it_names() {
     let plan = env.json(&["tasks", "add", "Fix tap #Home", "--dry-run"]);
     assert_eq!(plan["list"]["name"], "Tasks", "the default list");
 }
+
+fn write_config(env: &Env, contents: &str) {
+    let dir = env.home.path().join("config").join("ms-todo");
+    std::fs::create_dir_all(&dir).expect("config dir");
+    std::fs::write(dir.join("config.toml"), contents).expect("config");
+}
+
+/// The next `month`/`day` on or after today.
+fn next_day_of_year(env: &Env, month: u32, day_of_month: u32) -> NaiveDate {
+    let today = env.today();
+    NaiveDate::from_ymd_opt(today.year(), month, day_of_month)
+        .filter(|date| *date >= today)
+        .or_else(|| NaiveDate::from_ymd_opt(today.year() + 1, month, day_of_month))
+        .expect("a date")
+}
+
+#[tokio::test]
+async fn dates_in_config_toml_order_slashed_dates_and_start_weeks() {
+    let mut env = Env::new();
+    let _graph = graph(&mut env).await;
+    // Day first by default.
+    let parsed = env.json(&["tasks", "parse", "Mot 12/10"]);
+    assert_eq!(parsed["due"], day(next_day_of_year(&env, 10, 12)));
+
+    write_config(
+        &env,
+        "[dates]\ndate_order = \"mdy\"\nweek_start = \"sunday\"\n",
+    );
+    let parsed = env.json(&["tasks", "parse", "Mot 12/10 every other week"]);
+    assert_eq!(
+        parsed["recurrence"]["pattern"]["firstDayOfWeek"], "sunday",
+        "{parsed}"
+    );
+    let parsed = env.json(&["tasks", "parse", "Mot 12/10"]);
+    assert_eq!(parsed["due"], day(next_day_of_year(&env, 12, 10)));
+    // The flags read the same way.
+    let plan = env.json(&["tasks", "add", "Mot", "--due", "12/10", "--dry-run"]);
+    assert_eq!(
+        plan["changes"]["dueDateTime"]["dateTime"],
+        format!("{}T00:00:00", day(next_day_of_year(&env, 12, 10)))
+    );
+    // Next week starts on the Sunday after today.
+    let today = env.today();
+    let sunday = today
+        .checked_add_days(Days::new(u64::from(
+            7 - today.weekday().num_days_from_sunday(),
+        )))
+        .expect("a date");
+    let parsed = env.json(&["tasks", "parse", "Plan next week"]);
+    assert_eq!(parsed["due"], day(sunday));
+
+    // A typo is refused where a phrase is read, naming the setting.
+    write_config(&env, "[dates]\ndate_order = \"ymd\"\n");
+    let error = env.failure(&["tasks", "parse", "Mot 12/10"], 2);
+    let message = error["error"]["message"].as_str().expect("message");
+    assert!(message.contains("dates.date_order"), "{message}");
+    env.cmd()
+        .args(["tasks", "add", "Mot", "--due", "fri", "--dry-run"])
+        .assert()
+        .code(2);
+}

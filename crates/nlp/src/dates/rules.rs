@@ -14,6 +14,7 @@ use regex::{Captures, Regex};
 
 use super::words::{MONTHS, RELATIVE_DAYS, WEEKDAYS, alternation, lookup, number};
 use super::{Lean, NotUnderstood, ParseContext};
+use crate::locale::DateOrder;
 
 /// What one rule reads.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -65,7 +66,7 @@ pub(super) static DATE_RULES: LazyLock<Vec<Rule>> = LazyLock::new(|| {
             &format!(r"({month}) (\d{{1,2}}){ordinal}(?:,? (\d{{4}}))?"),
             month_day,
         ),
-        rule(r"(\d{1,2})/(\d{1,2})", day_slash_month),
+        rule(r"(\d{1,2})/(\d{1,2})", slashed),
     ]
 });
 
@@ -74,7 +75,7 @@ pub(super) static TIME_RULES: LazyLock<Vec<Rule>> = LazyLock::new(|| {
     vec![
         rule(r"(\d{1,2})(?:[:.](\d{2}))? ?(am|pm)", twelve_hour),
         rule(r"(\d{1,2}):(\d{2})", twenty_four_hour),
-        rule("noon|midday|midnight", named_time),
+        rule("noon|midday|midnight|eod|morning|evening", named_time),
     ]
 });
 
@@ -177,41 +178,42 @@ fn this_weekday(captures: &Captures, ctx: &ParseContext) -> Option<Value> {
 }
 
 /// That day in next week, the British reading S8 graded: on Thursday 24
-/// September, `next fri` is 2 October, not the next day. Weeks start on
-/// Monday.
+/// September, `next fri` is 2 October, not the next day. Next week starts
+/// on the locale's first day (D-068): with weeks from Sunday, `next sun`
+/// is 27 September, and from Monday, 4 October.
 fn next_weekday(captures: &Captures, ctx: &ParseContext) -> Option<Value> {
-    let monday = next_monday(ctx.today())?;
-    monday
-        .checked_add_days(Days::new(u64::from(
-            weekday(captures)?.num_days_from_monday(),
-        )))
+    let start = ctx.locale.week_start;
+    let into = weekday(captures)?.days_since(start.weekday());
+    next_week(ctx)?
+        .checked_add_days(Days::new(u64::from(into)))
         .map(Value::Date)
 }
 
-fn next_monday(today: NaiveDate) -> Option<NaiveDate> {
-    today.checked_add_days(Days::new(u64::from(
-        7 - today.weekday().num_days_from_monday(),
-    )))
+/// The first day of next week.
+fn next_week(ctx: &ParseContext) -> Option<NaiveDate> {
+    let this_week = ctx.locale.week_start.week_of(ctx.today());
+    this_week.checked_add_days(Days::new(7))
 }
 
 fn first_of_next_month(today: NaiveDate) -> Option<NaiveDate> {
     today.with_day(1)?.checked_add_months(Months::new(1))
 }
 
-/// `next week` is its Monday; `end of week` the Friday on or after today;
-/// `next month` its 1st (S8 graded it as the same day next month, as a
-/// guess it flagged; the brief for this build chose the 1st). `this week`
-/// and `last week` are their Mondays, and `this month` and `last month`
+/// `next week` is its first day (Monday, or Sunday by the locale); `end
+/// of week` the Friday on or after today, the end of the working week,
+/// which is the same Friday whichever day weeks start on; `next month`
+/// its 1st (S8 graded it as the same day next month, as a guess it
+/// flagged; the brief for this build chose the 1st). `this week` and
+/// `last week` are their first days, and `this month` and `last month`
 /// their 1sts, for "since" (rung 5d).
 fn period(captures: &Captures, ctx: &ParseContext) -> Option<Value> {
     let today = ctx.today();
-    let this_monday =
-        today.checked_sub_days(Days::new(u64::from(today.weekday().num_days_from_monday())))?;
+    let this_week = ctx.locale.week_start.week_of(today);
     let date = match text(captures, 0) {
-        "next week" => next_monday(today)?,
+        "next week" => next_week(ctx)?,
         "next month" => first_of_next_month(today)?,
-        "this week" => this_monday,
-        "last week" => this_monday.checked_sub_days(Days::new(7))?,
+        "this week" => this_week,
+        "last week" => this_week.checked_sub_days(Days::new(7))?,
         "this month" => today.with_day(1)?,
         "last month" => today.with_day(1)?.checked_sub_months(Months::new(1))?,
         "end of week" | "eow" => {
@@ -292,9 +294,14 @@ fn month_day(captures: &Captures, ctx: &ParseContext) -> Option<Value> {
     day_of_year(int(captures, 2)?, month, year, ctx)
 }
 
-/// Day first: `12/10` is 12 October (Q8's placeholder, UK order).
-fn day_slash_month(captures: &Captures, ctx: &ParseContext) -> Option<Value> {
-    day_of_year(int(captures, 1)?, int(captures, 2)?, None, ctx)
+/// Day first by default: `12/10` is 12 October (Q8, settled by D-068);
+/// month first with `date_order = "mdy"`.
+fn slashed(captures: &Captures, ctx: &ParseContext) -> Option<Value> {
+    let (first, second) = (int(captures, 1)?, int(captures, 2)?);
+    match ctx.locale.date_order {
+        DateOrder::DayMonth => day_of_year(first, second, None, ctx),
+        DateOrder::MonthDay => day_of_year(second, first, None, ctx),
+    }
 }
 
 fn twelve_hour(captures: &Captures, _: &ParseContext) -> Option<Value> {
@@ -317,11 +324,15 @@ fn twenty_four_hour(captures: &Captures, _: &ParseContext) -> Option<Value> {
     NaiveTime::from_hms_opt(int(captures, 1)?, int(captures, 2)?, 0).map(Value::Time)
 }
 
+/// The hours BK gave for Q7 (D-068): `eod` 17:00, `morning` 09:00,
+/// `evening` 19:00. `tonight` is a day, not a time (words.rs).
 fn named_time(captures: &Captures, _: &ParseContext) -> Option<Value> {
-    let hour = if text(captures, 0) == "midnight" {
-        0
-    } else {
-        12
+    let hour = match text(captures, 0) {
+        "midnight" => 0,
+        "morning" => 9,
+        "eod" => 17,
+        "evening" => 19,
+        _ => 12,
     };
     NaiveTime::from_hms_opt(hour, 0, 0).map(Value::Time)
 }

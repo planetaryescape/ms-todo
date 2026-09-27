@@ -2,6 +2,6 @@
 source: tests/search_cli.rs
 expression: "run(\"table\")"
 ---
-DONE  DUE         LIST   TITLE                MATCH
-      2026-09-26  Home   Renew car insurance  Renew car **insurance**
-                  Tasks  Call the broker      Ask about the **insurance**, "fully" comp
+DONE  DUE         LIST   TITLE                IN     MATCH
+      2026-09-26  Home   Renew car insurance  title  Renew car **insurance**
+                  Tasks  Call the broker      notes  Ask about the **insurance**, "fully" comp

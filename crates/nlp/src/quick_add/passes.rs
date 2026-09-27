@@ -1,15 +1,16 @@
 //! The deterministic reader: ordered passes over the input, each masking
-//! the bytes it claims so later passes can't read them again (06). Quotes
-//! and escapes first, then `#List`, `@label`, `p1`–`p4`, `+myday`,
-//! `+someday`, `+nag15m`, `every …`, `^defer`, `!reminder`, `start <date>`,
-//! and last the bare date and time phrases. That order is what stops `every mon` or `!9am` from also
-//! being the due date.
+//! the bytes it claims so later passes can't read them again (06). Steps
+//! after ` :: ` first, then quotes and escapes, `#List`, `@label`,
+//! `p1`–`p4`, `+myday`, `+someday`, `+nag15m`, `every …`, `^defer`,
+//! `!reminder`, `start <date>`, and last the bare date and time phrases
+//! (`due <date>` among them). That order is what stops `every mon` or
+//! `!9am` from also being the due date.
 
 use std::ops::Range;
 
 use chrono::{NaiveDate, NaiveDateTime, NaiveTime};
 
-use super::{ListRef, ParsedTask, QuickAddContext, QuickAddParser, Span, SpanKind};
+use super::{ListRef, ParsedTask, QuickAddContext, QuickAddParser, Span, SpanKind, steps};
 use crate::dates::span::{LITERAL, MASK, When, ends_word, phrase_at};
 use crate::dates::{DEFAULT_REMINDER_TIME, DueSpec, ParseContext, preview};
 use crate::importance::read_importance;
@@ -23,6 +24,7 @@ impl QuickAddParser for DeterministicParser {
     fn parse(&self, input: &str, ctx: &QuickAddContext) -> ParsedTask {
         let mut scan = Scan::new(input);
         let mut task = ParsedTask::default();
+        scan.steps(&mut task);
         scan.quotes_and_escapes();
         scan.list(ctx, &mut task);
         scan.labels(ctx, &mut task);
@@ -47,12 +49,21 @@ impl QuickAddParser for DeterministicParser {
 /// stay titles (Q9's placeholder).
 const LOWERCASE_ONLY: &[&str] = &["tom", "tod", "sat"];
 
+/// Times that count in a title only beside a day (`tomorrow morning`,
+/// `fri evening`), or after `!`: alone they're too often the title's own
+/// words (`Morning run`, `Evening class`). `eod` isn't one: nobody's
+/// title says it for anything else (D-068).
+const NEEDS_A_DAY: &[&str] = &["morning", "evening"];
+
 struct Scan<'i> {
     input: &'i str,
     /// `input` lowercased (ASCII only, so offsets match), with each
     /// claimed byte replaced by `MASK`.
     scan: String,
     spans: Vec<Span>,
+    /// Where the steps start (` :: `), else the input's end: what's
+    /// after it is the steps' text, which no other pass reads.
+    text_end: usize,
 }
 
 impl<'i> Scan<'i> {
@@ -61,6 +72,7 @@ impl<'i> Scan<'i> {
             input,
             scan: input.to_ascii_lowercase(),
             spans: Vec::new(),
+            text_end: input.len(),
         }
     }
 
@@ -98,8 +110,18 @@ impl<'i> Scan<'i> {
     /// untouched. `\#`, `\@`, `\!`, `\*`, `\+`, `\"` and `\\` are the
     /// character itself. A quote right after `#` or `@` is a name's, for
     /// those passes; an unclosed one is an ordinary character.
+    /// ` :: ` and the steps after it (`steps.rs`), taken out whole.
+    fn steps(&mut self, task: &mut ParsedTask) {
+        if let Some((at, steps)) = steps::split(self.input) {
+            task.steps = steps;
+            self.text_end = at;
+            self.claim(at..self.input.len(), SpanKind::Steps);
+        }
+    }
+
     fn quotes_and_escapes(&mut self) {
-        let bytes = self.input.as_bytes();
+        let text = &self.input[..self.text_end];
+        let bytes = text.as_bytes();
         let mut at = 0;
         while at < bytes.len() {
             match bytes[at] {
@@ -114,7 +136,7 @@ impl<'i> Scan<'i> {
                     at += 2;
                 }
                 b'"' if at == 0 || !matches!(bytes[at - 1], b'#' | b'@') => {
-                    let Some(close) = self.input[at + 1..].find('"').map(|to| at + 1 + to) else {
+                    let Some(close) = text[at + 1..].find('"').map(|to| at + 1 + to) else {
                         break;
                     };
                     self.claim(at..at + 1, SpanKind::Syntax);
@@ -124,7 +146,7 @@ impl<'i> Scan<'i> {
                 }
                 b'"' => {
                     // A name's quote: skip past its close, if any.
-                    at = self.input[at + 1..]
+                    at = text[at + 1..]
                         .find('"')
                         .map_or(bytes.len(), |to| at + to + 2);
                 }
@@ -429,13 +451,13 @@ impl<'i> Scan<'i> {
             if at < past {
                 continue;
             }
-            let Some((when, end)) = phrase_at(&self.scan, at, &ctx.when) else {
+            let Some((from, when, end)) = self.due_phrase(at, ctx).or_else(|| {
+                let (when, end) = phrase_at(&self.scan, at, &ctx.when)?;
+                (!self.guarded(at, end)).then_some((at, when, end))
+            }) else {
                 continue;
             };
-            if self.guarded(at, end) {
-                continue;
-            }
-            found.push((when, at..end));
+            found.push((when, from..end));
             past = end;
         }
         // The first phrase with a date is the due date; a time on its own
@@ -463,10 +485,23 @@ impl<'i> Scan<'i> {
         used
     }
 
+    /// `due <date>` at `at` (`Pay rent due fri`): the phrase, with the
+    /// word `due` taken out with it. Only when a phrase the title keeps
+    /// no claim on follows, so `due diligence` and `Pay the dues` stay
+    /// whole.
+    fn due_phrase(&self, at: usize, ctx: &QuickAddContext) -> Option<(usize, When, usize)> {
+        if !self.scan[at..].starts_with("due ") {
+            return None;
+        }
+        let (when, end) = phrase_at(&self.scan, at + 4, &ctx.when)?;
+        (!self.guarded(at + 4, end)).then_some((at, when, end))
+    }
+
     /// A phrase at `start..end` that belongs to the title after all:
     /// `Tom`, `tod` and `sat` other than in lower case; a capitalised
     /// one-word phrase before another capitalised word (`Mark Wednesday
-    /// Addams`); and one after `the` (`the 9am standup`).
+    /// Addams`); one after `the` (`the 9am standup`); and `morning` or
+    /// `evening` with no day beside it (`Morning pages`).
     fn guarded(&self, start: usize, end: usize) -> bool {
         let original = &self.input[start..end];
         let shouted = original
@@ -486,7 +521,9 @@ impl<'i> Scan<'i> {
             .rsplit(char::is_whitespace)
             .next()
             .is_some_and(|word| word == "the");
-        shouted || named || after_the
+        let spoken = &self.scan[start..end];
+        let dayless = NEEDS_A_DAY.contains(&spoken.strip_prefix("at ").unwrap_or(spoken));
+        shouted || named || after_the || dayless
     }
 
     /// The input less every span (sorted by start), with runs of spaces
@@ -609,6 +646,7 @@ fn settle(
             pattern: repeats.pattern,
             end,
             start: due,
+            week_start: now.locale.week_start,
         });
     }
     task.reminder = match (reminder, time) {

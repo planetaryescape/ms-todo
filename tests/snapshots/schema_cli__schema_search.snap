@@ -143,6 +143,19 @@ expression: pretty
               "description": "The local ID of the task's list",
               "type": "string"
             },
+            "matched": {
+              "description": "Without --semantic: where the query's words were found",
+              "items": {
+                "enum": [
+                  "title",
+                  "notes",
+                  "step",
+                  "category",
+                  "attachment"
+                ]
+              },
+              "type": "array"
+            },
             "recurrence": {
               "type": "object"
             },
@@ -154,7 +167,7 @@ expression: pretty
               "type": "number"
             },
             "snippet": {
-              "description": "Without --semantic: the part of the title or notes that matched, on one line: each match between ** and **, … where it was cut",
+              "description": "Without --semantic: the part of the title, notes, steps, categories or attachment names that matched, on one line: each match between ** and **, … where it was cut",
               "type": "string"
             },
             "someday": {

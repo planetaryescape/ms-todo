@@ -115,6 +115,7 @@ fn literal_task(args: &AddArgs, format: OutputFormat) -> Result<NewTask, CliErro
         defer_until: args.defer.clone(),
         someday: args.someday,
         nag: args.nag,
+        steps: args.steps.clone(),
     })
 }
 

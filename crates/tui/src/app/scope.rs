@@ -4,6 +4,7 @@
 use std::collections::{BTreeMap, HashMap, HashSet};
 
 use chrono::{Datelike, Duration, NaiveDate};
+use ms_todo_nlp::WeekStart;
 use ms_todo_protocol::{Entity, Scope};
 use serde_json::Value;
 
@@ -220,13 +221,14 @@ pub fn task_groups(
     filtered: bool,
     tasks: &[Task],
     today: NaiveDate,
+    week_start: WeekStart,
 ) -> Option<Vec<(String, Vec<usize>)>> {
     if filtered {
         return None;
     }
     match scope? {
         Scope::Planned => Some(
-            planned_groups(tasks, today)
+            planned_groups(tasks, today, week_start)
                 .into_iter()
                 .map(|(group, members)| (group.name().to_owned(), members))
                 .collect(),
@@ -245,19 +247,19 @@ pub enum DueGroup {
     Overdue,
     Today,
     Tomorrow,
-    /// After tomorrow, up to Sunday.
+    /// After tomorrow, to the week's last day (Sunday, or Saturday when
+    /// weeks start on Sunday).
     ThisWeek,
     Later,
 }
 
 impl DueGroup {
-    pub fn of(due: NaiveDate, today: NaiveDate) -> Self {
-        let days_left_in_week = i64::from(6 - today.weekday().num_days_from_monday());
+    pub fn of(due: NaiveDate, today: NaiveDate, week_start: WeekStart) -> Self {
         match due {
             due if due < today => Self::Overdue,
             due if due == today => Self::Today,
             due if due == today + Duration::days(1) => Self::Tomorrow,
-            due if due <= today + Duration::days(days_left_in_week) => Self::ThisWeek,
+            due if due <= week_start.end_of_week(today) => Self::ThisWeek,
             _ => Self::Later,
         }
     }
@@ -275,13 +277,17 @@ impl DueGroup {
 
 /// The Planned view's groups: each group with the tasks in it, soonest
 /// first, as indexes into `tasks` (which the daemon sorts by due date).
-pub fn planned_groups(tasks: &[Task], today: NaiveDate) -> Vec<(DueGroup, Vec<usize>)> {
+pub fn planned_groups(
+    tasks: &[Task],
+    today: NaiveDate,
+    week_start: WeekStart,
+) -> Vec<(DueGroup, Vec<usize>)> {
     let mut groups: Vec<(DueGroup, Vec<usize>)> = Vec::new();
     for (index, task) in tasks.iter().enumerate() {
         let Some(due) = task.due else {
             continue;
         };
-        let group = DueGroup::of(due, today);
+        let group = DueGroup::of(due, today, week_start);
         match groups.iter_mut().find(|(existing, _)| *existing == group) {
             Some((_, members)) => members.push(index),
             None => groups.push((group, vec![index])),
@@ -386,12 +392,16 @@ mod tests {
     fn due_dates_group_by_how_soon_they_are() {
         // Thursday 24 September 2026.
         let today = date("2026-09-24");
-        let group = |due: &str| DueGroup::of(date(due), today);
+        let group = |due: &str| DueGroup::of(date(due), today, WeekStart::Monday);
         assert_eq!(group("2026-09-23"), DueGroup::Overdue);
         assert_eq!(group("2026-09-24"), DueGroup::Today);
         assert_eq!(group("2026-09-25"), DueGroup::Tomorrow);
         assert_eq!(group("2026-09-27"), DueGroup::ThisWeek, "Sunday");
         assert_eq!(group("2026-09-28"), DueGroup::Later, "next Monday");
+        // With weeks from Sunday, this week ends on Saturday.
+        let sunday_first = |due: &str| DueGroup::of(date(due), today, WeekStart::Sunday);
+        assert_eq!(sunday_first("2026-09-26"), DueGroup::ThisWeek, "Saturday");
+        assert_eq!(sunday_first("2026-09-27"), DueGroup::Later, "next Sunday");
     }
 
     fn completed(id: &str, day: Option<&str>) -> Task {

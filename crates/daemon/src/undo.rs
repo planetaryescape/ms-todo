@@ -96,6 +96,9 @@ pub(crate) async fn undo(
     let mut refused: Vec<Refused> = Vec::new();
     // Operations left alone, by ID, for those that pair with them.
     let mut left_alone: HashSet<&str> = HashSet::new();
+    // Tasks this command created: deleting one undoes everything else
+    // the command did to it, such as the steps added with it (D-068).
+    let mut created: HashSet<&str> = HashSet::new();
     let id = |queued: usize| op_id_for(&op_id, queued);
     for op in &ops {
         // Rejected or skipped, it changed nothing.
@@ -121,11 +124,17 @@ pub(crate) async fn undo(
                     format!("task {} isn't cached any more", op.entity_local_id),
                 )
             })?;
+        if created.contains(op.entity_local_id.as_str()) {
+            continue;
+        }
         match op.op {
             OpKind::Delete if !deleted => return Err(changed_since(op)),
             OpKind::Delete => inverse.push(recreate(id(inverse.len()), &row, op)?),
             _ if deleted => return Err(changed_since(op)),
-            OpKind::Create => inverse.push(delete_op(id(inverse.len()), &row, TaskAction::Delete)),
+            OpKind::Create => {
+                created.insert(&op.entity_local_id);
+                inverse.push(delete_op(id(inverse.len()), &row, TaskAction::Delete));
+            }
             OpKind::Update if op.is_recurring_completion() => {
                 let copy = pick_copy(state, op, &row, copy).await?;
                 inverse.push(delete_op(id(inverse.len()), &copy, TaskAction::Delete));

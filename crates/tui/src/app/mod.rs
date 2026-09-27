@@ -51,6 +51,7 @@ use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
 
 use chrono::{DateTime, FixedOffset, Local, NaiveDate};
+use ms_todo_nlp::Locale;
 use ms_todo_protocol::{
     AppliedContext, Counts, OutboxDepth, Request, Scope, SyncActivity, TaskChange,
 };
@@ -236,6 +237,9 @@ pub struct App {
     /// the old order back.
     pub(super) order_pending: Option<Vec<String>>,
     orders_in_flight: u32,
+    /// `[dates]` from config.toml: how typed dates read, and where
+    /// Planned's "This week" ends (D-068).
+    pub locale: Locale,
 }
 
 impl App {
@@ -293,6 +297,7 @@ impl App {
             triage_requests: 0,
             order_pending: None,
             orders_in_flight: 0,
+            locale: Locale::default(),
         }
     }
 
@@ -300,6 +305,11 @@ impl App {
     pub fn with_recent_commands(mut self, file: Option<PathBuf>) -> Self {
         self.recent_commands = file.as_deref().map(crate::recent::load).unwrap_or_default();
         self.recent_file = file;
+        self
+    }
+
+    pub fn with_locale(mut self, locale: Locale) -> Self {
+        self.locale = locale;
         self
     }
 

@@ -1,6 +1,7 @@
 # id	category	input	expected_phrase	expected_uk	expected_us(=same)
 # now = 2026-09-24T14:00 Europe/London (Thursday). Values are local. Date-only = YYYY-MM-DD, timed = YYYY-MM-DD HH:MM, "-" = no date expected.
 # Todoist semantics: bare time already past today rolls to tomorrow; past day-month rolls to next year; "next <weekday>" = UK/Todoist "of next week".
+# D-068: quick add's `due <date>` takes the word `due` into the phrase (A rows, G01, G04); `eod` 17:00, and `morning` 09:00 and `evening` 19:00 beside a day (Q7). G rows added then.
 T01	todoist	Call mum today	today	2026-09-24	=
 T02	todoist	Call mum tod	tod	2026-09-24	=
 T03	todoist	Call mum tomorrow	tomorrow	2026-09-25	=
@@ -53,20 +54,20 @@ R11	relative	Pay rent in 1 month	in 1 month	2026-10-24	=
 R12	relative	Renew insurance 3 days from now	3 days from now	2026-09-27	=
 R13	relative	Sort garage next monday	next monday	2026-09-28	=
 R14	relative	Plan party next sat	next sat	2026-10-03	=
-A01	absolute	Mot due 12 oct	12 oct	2026-10-12	=
-A02	absolute	Mot due oct 12	oct 12	2026-10-12	=
-A03	absolute	Mot due on 12 oct	on 12 oct	2026-10-12	=
-A04	absolute	Mot due 12/10	12/10	2026-10-12	2026-12-10
-A05	absolute	Mot due 10/12	10/12	2026-12-10	2026-10-12
-A06	absolute	Mot due 2026-10-12	2026-10-12	2026-10-12	=
-A07	absolute	Mot due 12 October 2026	12 October 2026	2026-10-12	=
-A08	absolute	Mot due October 12, 2026	October 12, 2026	2026-10-12	=
-A09	absolute	Mot due 12th oct	12th oct	2026-10-12	=
-A10	absolute	Mot due oct 12th	oct 12th	2026-10-12	=
+A01	absolute	Mot due 12 oct	due 12 oct	2026-10-12	=
+A02	absolute	Mot due oct 12	due oct 12	2026-10-12	=
+A03	absolute	Mot due on 12 oct	due on 12 oct	2026-10-12	=
+A04	absolute	Mot due 12/10	due 12/10	2026-10-12	2026-12-10
+A05	absolute	Mot due 10/12	due 10/12	2026-12-10	2026-10-12
+A06	absolute	Mot due 2026-10-12	due 2026-10-12	2026-10-12	=
+A07	absolute	Mot due 12 October 2026	due 12 October 2026	2026-10-12	=
+A08	absolute	Mot due October 12, 2026	due October 12, 2026	2026-10-12	=
+A09	absolute	Mot due 12th oct	due 12th oct	2026-10-12	=
+A10	absolute	Mot due oct 12th	due oct 12th	2026-10-12	=
 A11	absolute	Send cards 1 jan	1 jan	2027-01-01	=
 A12	absolute	Renew visa 15 sep	15 sep	2027-09-15	=
-A13	absolute	Mot due 12/10/26	12/10/26	2026-10-12	2026-12-10
-A14	absolute	Mot due 12.10.2026	12.10.2026	2026-10-12	=
+A13	absolute	Mot due 12/10/26	due 12/10/26	2026-10-12	2026-12-10
+A14	absolute	Mot due 12.10.2026	due 12.10.2026	2026-10-12	=
 M01	time	Standup 9am	9am	2026-09-25 09:00	=
 M02	time	Call supplier 17:30	17:30	2026-09-24 17:30	=
 M03	time	Call supplier at 5pm	at 5pm	2026-09-24 17:00	=
@@ -128,3 +129,14 @@ L08	leave-alone	Pay rent every month on the 1st	-	-	=
 L09	leave-alone	Call @mum p1 friday	friday	2026-09-25	=
 L10	leave-alone	Budget review every last friday	-	-	=
 L11	leave-alone	Tax return #"Admin stuff" 31 jan	31 jan	2027-01-31	=
+G01	gaps	Pay rent due fri	due fri	2026-09-25	=
+G02	gaps	Pay the dues	-	-	=
+G03	gaps	Write due diligence notes	-	-	=
+G04	gaps	Report due tomorrow 5pm	due tomorrow 5pm	2026-09-25 17:00	=
+G05	gaps	Call mum tomorrow morning	tomorrow morning	2026-09-25 09:00	=
+G06	gaps	Drinks fri evening	fri evening	2026-09-25 19:00	=
+G07	gaps	Morning pages	-	-	=
+G08	gaps	Evening class tomorrow	tomorrow	2026-09-25	=
+G09	gaps	Send invoice by eod	eod	2026-09-24 17:00	=
+G10	gaps	Due to rain, move picnic	-	-	=
+G11	gaps	Book the evening flight	-	-	=

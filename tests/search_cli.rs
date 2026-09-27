@@ -183,3 +183,64 @@ async fn every_output_format() {
     let json: Value = serde_json::from_str(&run("json")).expect("json");
     assert_eq!(json["items"].as_array().expect("items").len(), 2);
 }
+
+#[tokio::test]
+async fn steps_categories_and_attachment_names_are_found_and_say_where() {
+    let mut env = Env::new();
+    let graph = FakeGraph::start(&mut env, vec![list("L-tasks", "Tasks", "defaultList")]).await;
+    let mut packing = task("T1", "Pack for the trip", "W/\"T1\"");
+    packing["checklistItems"] = json!([
+        { "id": "c1", "displayName": "Passport", "isChecked": false },
+        { "id": "c2", "displayName": "Phone charger", "isChecked": false }
+    ]);
+    packing["categories"] = json!(["Travel"]);
+    graph.edit(|data| {
+        data.tasks.insert(
+            "L-tasks".into(),
+            vec![packing, task("T2", "Travel insurance", "W/\"T2\"")],
+        );
+    });
+    env.synced();
+
+    let found = env.json(&["search", "charger"]);
+    assert_eq!(graph_ids(&found), ["T1"]);
+    assert_eq!(found["items"][0]["matched"], json!(["step"]));
+    assert_eq!(found["items"][0]["snippet"], "Passport; Phone **charger**");
+    let found = env.json(&["search", "travel"]);
+    assert_eq!(graph_ids(&found), ["T2", "T1"], "the title first");
+    assert_eq!(found["items"][0]["matched"], json!(["title"]));
+    assert_eq!(found["items"][1]["matched"], json!(["category"]));
+
+    let table = env
+        .cmd()
+        .args(["--format", "table", "search", "charger"])
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+    let table = String::from_utf8(table).expect("utf8");
+    assert!(table.contains("IN") && table.contains("step"), "{table}");
+    let csv = env
+        .cmd()
+        .args(["--format", "csv", "search", "passport", "pack"])
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+    let csv = String::from_utf8(csv).expect("utf8");
+    let mut lines = csv.lines();
+    assert!(
+        lines
+            .next()
+            .is_some_and(|header| header.ends_with(",matched")),
+        "{csv}"
+    );
+    assert!(
+        lines
+            .next()
+            .is_some_and(|row| row.ends_with(",\"title,step\"")),
+        "{csv}"
+    );
+}

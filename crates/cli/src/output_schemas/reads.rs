@@ -193,7 +193,12 @@ pub(super) fn search_result() -> Value {
         json!({ "type": "string", "description": "The name of the task's list" });
     schema["properties"]["snippet"] = json!({
         "type": "string",
-        "description": "Without --semantic: the part of the title or notes that matched, on one line: each match between ** and **, … where it was cut"
+        "description": "Without --semantic: the part of the title, notes, steps, categories or attachment names that matched, on one line: each match between ** and **, … where it was cut"
+    });
+    schema["properties"]["matched"] = json!({
+        "type": "array",
+        "items": { "enum": ["title", "notes", "step", "category", "attachment"] },
+        "description": "Without --semantic: where the query's words were found"
     });
     schema["properties"]["score"] = json!({
         "type": "number",

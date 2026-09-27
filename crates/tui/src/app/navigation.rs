@@ -45,6 +45,7 @@ impl App {
             self.filter.is_some(),
             &self.tasks,
             self.clock.today(),
+            self.locale.week_start,
         ) else {
             return if down {
                 self.task_index

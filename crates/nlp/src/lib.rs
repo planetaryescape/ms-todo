@@ -7,6 +7,7 @@
 mod dates;
 mod importance;
 mod interval;
+mod locale;
 mod quick_add;
 mod recurrence;
 mod recurrence_phrase;
@@ -17,6 +18,7 @@ pub use dates::{
 };
 pub use importance::{Importance, read_importance};
 pub use interval::{interval_label, read_interval};
+pub use locale::{DateOrder, Locale, WeekStart};
 pub use quick_add::{
     DeterministicParser, ListRef, ParsedTask, QuickAddContext, QuickAddParser, Span, SpanKind,
     list_token,

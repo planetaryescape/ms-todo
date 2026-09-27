@@ -52,8 +52,8 @@ pub(crate) const MONTHS: &[(&str, u32)] = &[
     ("dec", 12),
 ];
 
-/// Days from today. `tonight` is today with no time (Q7's placeholder in
-/// docs/blueprint/12-open-questions.md). `tom` is tomorrow; Q9's rule
+/// Days from today. `tonight` is today with no time (Q7, answered by BK
+/// in D-068; `eod`, `morning` and `evening` are times, in rules.rs). `tom` is tomorrow; Q9's rule
 /// that only lowercase `tom` counts, so "Ask Tom" stays a title, is for
 /// rung 6's scanner inside titles, not a field that holds a date alone.
 pub(crate) const RELATIVE_DAYS: &[(&str, i64)] = &[

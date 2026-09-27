@@ -38,7 +38,8 @@ ms-todo tasks list --list Work --status waiting --sort modified
 
 ```sh
 ms-todo search insurance                       # open tasks in every list, best match first
-ms-todo search car insurance                   # every word must appear, in the title or the notes
+ms-todo search car insurance                   # every word must appear, anywhere in the task
+ms-todo search charger                         # steps, categories and attachment names too
 ms-todo search '"car insurance"' --status all  # an exact phrase, completed tasks too
 ms-todo search 'insur* NOT renew' --list Tasks --format csv
 ms-todo tasks list --list Home --search boiler # one list's matches, in the `tasks list` shape
@@ -53,7 +54,7 @@ ms-todo tasks open <TASK> --index 2     # in the browser or mail app; http, http
 
 `tasks links` numbers them from 1 (every format; CSV is `url,text,source`). `tasks open` with one link opens it; with several and no `--index` it lists them and exits 2, so a script never waits on a choice.
 
-Search looks through every task's title and notes (html notes as text), ignoring case and accents, and ranks title matches first. Words can end in `*` to match a prefix; `OR`, `NOT` and parentheses work too, in capitals. It shows open tasks by default (`--status completed|all` for the rest) and at most 50 (`--limit`). Each JSON item is the task plus `list`, its list's name, and `snippet`, the passage that matched with each match between `**`; CSV has `id,title,list,status,due,snippet`. A query ms-todo can't read, like `OR milk` or an unclosed quote, exits 2. It answers from the local cache, in a few milliseconds.
+Search looks through every task's title, notes (html notes as text), steps, categories and attachment names, ignoring case and accents, and ranks title matches first. Words can end in `*` to match a prefix; `OR`, `NOT` and parentheses work too, in capitals. It shows open tasks by default (`--status completed|all` for the rest) and at most 50 (`--limit`). Each JSON item is the task plus `list`, its list's name, `snippet`, the passage that matched with each match between `**`, and `matched`, where the words were found: any of `title`, `notes`, `step`, `category` and `attachment`. The table shows that as `IN`; CSV has `id,title,list,status,due,snippet,matched`. A query ms-todo can't read, like `OR milk` or an unclosed quote, exits 2. It answers from the local cache, in a few milliseconds.
 
 ### Search by meaning
 
@@ -94,6 +95,9 @@ mst tasks add "Pay rent every 1st #Finances p1 9am"
 mst tasks add "Call mum in 2 days"          # "Call mum", due the day after tomorrow
 mst tasks add "Dentist fri 3pm @errands"    # due Friday, reminder at 15:00, category errands
 mst tasks add "Stand-up every weekday 9:30" # weekly Monday to Friday, reminder at 09:30
+mst tasks add "Pay rent due fri"            # "Pay rent", due Friday
+mst tasks add "Gym tomorrow morning"        # due tomorrow, reminder at 09:00
+mst tasks add "Pack for trip :: passport; charger; socks"   # with three steps
 mst tasks parse "Tax return #\"Admin stuff\" 31 jan start mon"   # shows the reading, adds nothing
 mst tasks add "Email Friday's report" --no-parse   # the text as the title, exactly as given
 ```
@@ -103,14 +107,16 @@ mst tasks add "Email Friday's report" --no-parse   # the text as the title, exac
 | `#Home`, `#"Two words"` | the list: its name or the start of it, when only one list starts that way. With none, "Tasks" |
 | `@errands` | a category (Outlook's). One you don't have yet is still put on the task; `--create-categories` creates it |
 | `p1` `p2` `p3` `p4` | importance: p1 high, p2 and p3 normal, p4 low. Lower case only, so `P1 incident` stays a title |
-| `tomorrow`, `fri 5pm`, `in 3 days`, `on 12 oct`, `9am` | the due date. A time also sets a reminder then (Microsoft To Do keeps no time on a due date); a time alone is its next one |
+| `tomorrow`, `fri 5pm`, `in 3 days`, `on 12 oct`, `due fri`, `9am` | the due date; `due` before it goes with it. A time also sets a reminder then (Microsoft To Do keeps no time on a due date); a time alone is its next one |
+| `eod`, `tomorrow morning`, `fri evening` | times: `eod` 17:00, `morning` 09:00, `evening` 19:00. `eod` alone is today's, or tomorrow's after 17:00; `morning` and `evening` count only beside a day, so `Morning run` stays a title. `tonight` is today, with no time |
+| `:: passport; charger` | steps, after ` :: ` at the end, split on `;`. Taken as typed: a date or `#` in a step is its text. `--step TEXT` (repeatable) does the same for `--no-parse` |
 | `!9am`, `!tomorrow 8:30` | a reminder only; a day alone is 09:00 on it |
 | `start mon` | the start date. With no due date, Microsoft To Do makes it the due date too, and ms-todo says so |
 | `every day`, `daily`, `every 3 days`, `every weekday`, `every mon, wed`, `every other week`, `every 2 weeks on fri`, `every 1st`, `every month on the 15th`, `every last friday`, `every year`, `every 12 oct` | a recurrence, due first on its next day (or the date you typed). `until 31 dec`, `for 10 times` and a time (`every mon 9am`) can follow |
 | `"quoted text"`, `\#`, `\@`, `\!` | kept as typed |
 | `+myday`, `*` | today's [My Day](#my-day); with no due date of its own, the task is due today too (`--my-day` does the same) |
 
-What isn't recognised stays in the title. The date words are whole words only, so `Monitor the build`, `Sat nav update`, `Ask Tom about invoice`, `Call May about the lease`, `Email Friday's report` and `Fix the 9am standup bot` keep their titles; `tom`, `tod` and `sat` count only in lower case. Only the first date counts; others stay in the title with a warning. Flags always win over the text: `--list`, `--due`, `--reminder` and `--importance` replace what it says, and `--due -` or `--reminder -` clears it (a recurrence or a start date needs its due date, so `--due -` with one is refused). A `#List` that two lists share by name is a warning, not a guess. Anything typed but not used (an unknown `#List`, a second date) is a `note:` on stderr, and in `tasks parse`'s `warnings`. An agent's or a script's text should use `--no-parse` with flags, so a title is never read as a date.
+What isn't recognised stays in the title. `due` is taken only with a date after it, so `Pay the dues` and `due diligence notes` keep their titles. The date words are whole words only, so `Monitor the build`, `Sat nav update`, `Ask Tom about invoice`, `Call May about the lease`, `Email Friday's report` and `Fix the 9am standup bot` keep their titles; `tom`, `tod` and `sat` count only in lower case. Only the first date counts; others stay in the title with a warning. Flags always win over the text: `--list`, `--due`, `--reminder` and `--importance` replace what it says, and `--due -` or `--reminder -` clears it (a recurrence or a start date needs its due date, so `--due -` with one is refused). A `#List` that two lists share by name is a warning, not a guess. Anything typed but not used (an unknown `#List`, a second date) is a `note:` on stderr, and in `tasks parse`'s `warnings`. An agent's or a script's text should use `--no-parse` with flags, so a title is never read as a date.
 
 ## List suggestions
 
@@ -158,7 +164,7 @@ ms-todo tasks list --format ids | ms-todo tasks complete -   # `-` reads IDs fro
 - `tasks add` reads its text for dates and more ([Quick add](#quick-add)); `--no-parse` takes it as the title, exactly as given. With no `--list` or `#List`, it goes to "Tasks".
 - Due dates are dates only; put a time in `--reminder`. Dates are written in your local time zone (`TZ`, or the system's).
 - Completing a task turns its reminder off in Microsoft To Do and keeps its time. `tasks reopen` turns it back on while that time is still ahead; one whose time has passed stays off.
-- `--due` takes `2026-10-02` or a phrase: `today`, `tomorrow` (`tom`), `yesterday`, `fri` (the next one, never today), `this fri`, `next fri` (next week's), `in 3 days`, `three days from today`, `+2w`, `-1d`, `2 days ago`, `next week` (its Monday), `next month` (the 1st), `eow`, `eom`, `12 oct`, `oct 12`, `12/10` (day first). A day and month already past means next year's. `--reminder` takes the same with a time: `17:30` alone (today's, or tomorrow's once it's past), `tomorrow 9am`, `fri 5:30pm`, `noon`, `2026-10-02 09:30`. On `tasks edit`, an empty value or `-` clears either. A phrase ms-todo can't read exits 2 and names the part it didn't understand.
+- `--due` takes `2026-10-02` or a phrase: `today`, `tomorrow` (`tom`), `yesterday`, `fri` (the next one, never today), `this fri`, `next fri` (next week's), `in 3 days`, `three days from today`, `+2w`, `-1d`, `2 days ago`, `next week` (its first day, Monday unless [set otherwise](#how-dates-are-written)), `next month` (the 1st), `eow`, `eom`, `12 oct`, `oct 12`, `12/10` (day first unless set otherwise). A day and month already past means next year's. `--reminder` takes the same with a time: `17:30` alone (today's, or tomorrow's once it's past), `tomorrow 9am`, `fri 5:30pm`, `noon`, `eod` (17:00), `tomorrow morning` (09:00), `fri evening` (19:00), `2026-10-02 09:30`. On `tasks edit`, an empty value or `-` clears either. A phrase ms-todo can't read exits 2 and names the part it didn't understand.
 - `--start W` sets a start date. With no due date, Microsoft To Do makes it the due date too, and says so in a note; on `tasks edit`, the task's own due date is sent with it, so it stays. `--clear-start` (or `--start -`) removes it.
 - In the TUI, the detail pane's Start and Repeat fields (`e` then `s` or `p`) take the same phrases, and empty (or `-`) clears them; a start date on a repeating task is refused there too.
 - `--recur "every mon"` makes it repeat: the `every …` of [Quick add](#quick-add), with or without the `every` (`weekday`, `every 2 weeks on tue, thu`, `every month on the 1st until dec`, `daily`). It's first due on the first day it falls on, from `--due` or from today, and that becomes the due date. `--clear-recur` stops it; the due date stays. The zone is always sent with it (S12). A repeating task keeps no start date of its own: Microsoft To Do counts the recurrence from the start date and moves the due date with it, so `--start` on a repeating task is refused, a recurrence set on a task with a start date moves the start to the first occurrence too, and on `tasks add` a start date with a recurrence must be the first due date.
@@ -323,6 +329,19 @@ ms-todo undo                                       # moves them back
 
 Microsoft To Do has no move, so ms-todo copies the task into the other list with every field, its steps (ticked or not), its link, its attachments byte for byte and ms-todo's own data, reads the copy back to check it matches, and only then deletes the original. The task keeps its ID in ms-todo and shows in the new list at once, `pending` until the move is done. If a step fails before the delete, the half-made copy is deleted and the original is untouched; if Microsoft To Do doesn't answer a step, the move pauses in `ms-todo outbox list` and deletes nothing until it's found or you decide (`outbox retry` or `outbox discard`). The To Do apps show the moved task as created at the time of the move; ms-todo keeps the original time as `originalCreatedAt` in its own data. A task that has changed or moved again since isn't moved back by `undo`. One field can differ: a reminder that's off but keeps its time (as completing leaves it) comes back on in the copy, because Microsoft To Do turns a reminder on whenever its time is written.
 
+### How dates are written
+
+`12/10` is 12 October and weeks start on Monday, unless `[dates]` in config.toml says otherwise:
+
+```toml
+# ~/.config/ms-todo/config.toml
+[dates]
+date_order = "mdy"      # 12/10 is 10 December; "dmy" is the default
+week_start = "sunday"   # "monday" is the default
+```
+
+`week_start` moves `next week` (its first day), `next fri` (that day in the week after this one, so with weeks from Sunday, `next sun` on a Thursday is three days away), `this week` and `last week`, a weekly recurrence's first day of the week, and the end of the TUI's Planned "This week". `end of week` is the Friday on or after today either way. Quick add, the date flags and the TUI's fields all read with these settings. A value ms-todo doesn't know, or a key it doesn't have, fails whatever reads a date, naming it.
+
 ## Steps and links
 
 ```sh
@@ -337,6 +356,8 @@ ms-todo links edit <TASK> --url https://example.com/spec-v2
 ms-todo links list <TASK>
 ms-todo links delete <TASK> --yes
 ```
+
+Steps can also come with a new task: `tasks add "Pack :: passport; charger"` or `--step` ([Quick add](#quick-add)); `undo` of that add deletes the task with its steps.
 
 TASK is an ID, or an exact title with `--list`. A step is named by its number from 1 (as `steps list` shows it), its ID, or its exact text; a text two steps share is refused, listing their numbers, and a number is always a number. Every change shows at once, is sent in the background, and `ms-todo undo` reverses it, unless the step has changed since (checked on the phone, say), when that step is left alone. A step checked on the phone shows as checked after the next sync. `--dry-run` shows the plan; writes take `--idempotency-key`.
 

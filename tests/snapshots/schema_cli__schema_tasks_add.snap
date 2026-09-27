@@ -104,13 +104,21 @@ expression: pretty
         "type": "string",
         "x-cli": "--start"
       },
+      "steps": {
+        "description": "A step to add with it; repeat for several, in order. Over any steps after \" :: \" in the text",
+        "items": {
+          "type": "string"
+        },
+        "type": "array",
+        "x-cli": "--step"
+      },
       "strict": {
         "description": "Refuse (exit 2) text the parser warns about, such as an unknown #List, instead of adding the task with a note",
         "type": "boolean",
         "x-cli": "--strict"
       },
       "text": {
-        "description": "The task, as you'd say it. Read out of it: #List or #\"Two words\" (its name or a prefix only it has), @category, p1–p4, every … (a recurrence), !time-or-date (a reminder), ^date (hidden until then), +someday, +myday, start <date>, and a date and time (the due date; a time also sets a reminder then). \"Quoted text\" and \\# \\@ \\! \\^ stay as typed. What's left is the title",
+        "description": "The task, as you'd say it. Read out of it: #List or #\"Two words\" (its name or a prefix only it has), @category, p1–p4, every … (a recurrence), !time-or-date (a reminder), ^date (hidden until then), +someday, +myday, start <date>, and a date and time (the due date, `due` before it or not; a time also sets a reminder then; eod is 17:00, and morning 09:00 and evening 19:00 beside a day). Steps go last, after \" :: \", split on \";\": `Pack :: passport; charger`. \"Quoted text\" and \\# \\@ \\! \\^ stay as typed. What's left is the title",
         "type": "string",
         "x-cli": "<TEXT>"
       }

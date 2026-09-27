@@ -83,28 +83,34 @@ const KNOWN_MISSES: &[(&str, &str)] = &[
     ("T17", "at 10 with no am/pm isn't a time"),
     ("T21", "at 1900 isn't a time"),
     ("T27", "in 2 hours: due dates have no time (D-027)"),
-    ("T28", "in the morning isn't a rule (Q7)"),
+    (
+        "T28",
+        "in the morning: morning counts only beside a day, and after the it's the title's",
+    ),
     ("T29", "someday isn't a rule"),
     ("T32", "next weekend isn't a rule"),
     ("T33", "this weekend isn't a rule"),
     ("T34", "next year isn't a rule"),
     ("T35", "3rd friday jan isn't a rule"),
-    ("T36", "tom morning: morning isn't a rule (Q7)"),
-    ("T37", "tom evening: evening isn't a rule (Q7)"),
     ("T38", "6 weeks before 21 Jul isn't a rule"),
     ("A13", "D/M/YY isn't a rule"),
     ("A14", "dotted dates aren't a rule"),
-    ("M06", "eod isn't a rule (Q7)"),
     ("D04", "friday week isn't a rule"),
+];
+
+/// S8's corpus, with the rows D-068 added, then BK's own phrases (Q10).
+const CORPUS: [&str; 2] = [
+    include_str!("../../../../docs/research/spikes/S8-corpus.tsv"),
+    include_str!("../../../../docs/research/spikes/S8-corpus-bk.tsv"),
 ];
 
 #[test]
 fn the_s8_corpus_reads_as_graded_inside_titles() {
-    let corpus = include_str!("../../../../docs/research/spikes/S8-corpus.tsv");
     let mut passed = 0;
     let mut total = 0;
     let mut failures = Vec::new();
-    for line in corpus.lines().filter(|line| !line.starts_with('#')) {
+    let rows = CORPUS.iter().flat_map(|corpus| corpus.lines());
+    for line in rows.filter(|line| !line.starts_with('#')) {
         let columns: Vec<&str> = line.split('\t').collect();
         let [id, _, input, phrase, expected, ..] = columns.as_slice() else {
             continue;
@@ -122,7 +128,7 @@ fn the_s8_corpus_reads_as_graded_inside_titles() {
         }
     }
     assert!(failures.is_empty(), "{}", failures.join("\n"));
-    assert_eq!(total, 127);
+    assert!(total >= 138, "{total} rows");
     assert_eq!(passed, total - KNOWN_MISSES.len());
 }
 
@@ -166,6 +172,9 @@ fn render(input: &str) -> String {
     }
     if parsed.someday {
         out.push_str("  someday: true\n");
+    }
+    if !parsed.steps.is_empty() {
+        out.push_str(&format!("  steps: {:?}\n", parsed.steps));
     }
     let spans: Vec<String> = parsed
         .spans
@@ -230,6 +239,15 @@ fn representative_inputs() {
         "!",
         "every",
         "p1 #Home",
+        "Pay rent due fri",
+        "Pay the dues",
+        "Write due diligence notes",
+        "Gym tomorrow morning",
+        "Morning pages",
+        "Ship it eod",
+        "Pack for trip :: passport; charger; socks",
+        "Pack #Home tomorrow :: book taxi fri; \"#Work\" badge",
+        "Read std::fs docs",
     ];
     let rendered: Vec<String> = inputs.iter().map(|input| render(input)).collect();
     insta::assert_snapshot!(rendered.join("\n"));
@@ -737,8 +755,164 @@ proptest! {
     // Dense in what the passes read, and in spaces wider than a byte.
     #[test]
     fn sigils_quotes_and_wide_spaces_never_overlap(
-        input in "(@\"|#\"|#home|#w|@x|\"| |\u{a0}|\u{3000}|x|é|\\\\|!9am|p1){0,8}"
+        input in "(@\"|#\"|#home|#w|@x|\"| |\u{a0}|\u{3000}|x|é|\\\\|!9am|p1| :: |;|due fri){0,8}"
     ) {
         covers(&input)?;
     }
+}
+
+#[test]
+fn time_words_are_bks_hours_on_the_day_given() {
+    let reminder = |input: &str| {
+        parse(input)
+            .reminder
+            .map(|at| at.format("%Y-%m-%d %H:%M").to_string())
+    };
+    assert_eq!(
+        reminder("Gym tom morning").as_deref(),
+        Some("2026-09-25 09:00")
+    );
+    assert_eq!(
+        reminder("Drinks fri evening").as_deref(),
+        Some("2026-09-25 19:00")
+    );
+    assert_eq!(reminder("Report eod").as_deref(), Some("2026-09-24 17:00"));
+    assert_eq!(
+        reminder("Report fri eod").as_deref(),
+        Some("2026-09-25 17:00")
+    );
+    assert_eq!(
+        reminder("Stretch !morning").as_deref(),
+        Some("2026-09-25 09:00")
+    );
+    // `tonight` is still a day with no time.
+    let tonight = parse("Clean flat tonight");
+    assert_eq!(
+        tonight.due.map(|due| due.to_string()).as_deref(),
+        Some("2026-09-24")
+    );
+    assert_eq!(tonight.reminder, None);
+    // Alone, morning and evening are the title's.
+    for title in ["Morning run", "Evening class", "Book the evening flight"] {
+        let parsed = parse(title);
+        assert_eq!(parsed.title, title);
+        assert_eq!(parsed.reminder, None, "{title}");
+    }
+}
+
+#[test]
+fn bare_eod_after_five_is_tomorrows() {
+    let lists = lists();
+    let evening =
+        ParseContext::new(DateTime::parse_from_rfc3339("2026-09-24T18:30:00+01:00").expect("now"));
+    let ctx = QuickAddContext {
+        when: evening,
+        lists: &lists,
+        categories: None,
+        due: None,
+    };
+    let parsed = DeterministicParser.parse("Finish report eod", &ctx);
+    assert_eq!(
+        parsed.reminder.map(|at| at.to_string()).as_deref(),
+        Some("2026-09-25 17:00:00")
+    );
+    assert_eq!(parsed.title, "Finish report");
+}
+
+#[test]
+fn due_takes_its_date_and_leaves_other_dues_alone() {
+    let parsed = parse("Pay rent due fri");
+    assert_eq!(parsed.title, "Pay rent");
+    assert_eq!(
+        parsed.due.map(|due| due.to_string()).as_deref(),
+        Some("2026-09-25")
+    );
+    for title in [
+        "Pay the dues",
+        "due diligence notes",
+        "Due to rain, move picnic",
+        "Report due",
+        "Pay dues fri",
+    ] {
+        let parsed = parse(title);
+        assert!(
+            parsed.title.contains("due") || parsed.title.contains("Due"),
+            "{title}: {parsed:?}"
+        );
+    }
+    assert_eq!(parse("Pay dues fri").title, "Pay dues");
+}
+
+#[test]
+fn steps_come_after_the_marker_and_stay_literal() {
+    let parsed = parse("Pack for trip tomorrow :: passport; charger fri; #Work badge");
+    assert_eq!(parsed.title, "Pack for trip");
+    assert_eq!(parsed.steps, ["passport", "charger fri", "#Work badge"]);
+    assert_eq!(
+        parsed.due.map(|due| due.to_string()).as_deref(),
+        Some("2026-09-25")
+    );
+    assert_eq!(parsed.list, None, "a # in a step is its text");
+    assert_eq!(
+        parsed.summary(&now()).last().map(String::as_str),
+        Some("3 steps")
+    );
+    assert_eq!(parsed.to_json("x")["steps"][1], "charger fri");
+    let quoted = parse("\"Ratio a :: b\" today");
+    assert!(quoted.steps.is_empty());
+    assert_eq!(quoted.title, "Ratio a :: b");
+}
+
+#[test]
+fn the_locale_orders_slashed_dates_and_starts_weeks() {
+    use crate::{DateOrder, Locale, WeekStart};
+    let lists = lists();
+    let read = |input: &str, locale: Locale| {
+        let ctx = QuickAddContext {
+            when: now().with_locale(locale),
+            lists: &lists,
+            categories: None,
+            due: None,
+        };
+        DeterministicParser
+            .parse(input, &ctx)
+            .due
+            .map(|due| due.to_string())
+    };
+    let us = Locale {
+        date_order: DateOrder::MonthDay,
+        week_start: WeekStart::Sunday,
+    };
+    // S8's A04 and A05, read both ways.
+    assert_eq!(
+        read("Mot 12/10", Locale::default()).as_deref(),
+        Some("2026-10-12")
+    );
+    assert_eq!(read("Mot 12/10", us).as_deref(), Some("2026-12-10"));
+    assert_eq!(read("Mot 10/12", us).as_deref(), Some("2026-10-12"));
+    // On Thursday 24 September, next week starts on Sunday the 27th.
+    assert_eq!(read("Plan next week", us).as_deref(), Some("2026-09-27"));
+    assert_eq!(
+        read("Plan next week", Locale::default()).as_deref(),
+        Some("2026-09-28")
+    );
+    assert_eq!(read("Plan next sun", us).as_deref(), Some("2026-09-27"));
+    assert_eq!(
+        read("Plan next sun", Locale::default()).as_deref(),
+        Some("2026-10-04")
+    );
+    assert_eq!(read("Plan next fri", us).as_deref(), Some("2026-10-02"));
+    // The working week's end is the same Friday either way.
+    assert_eq!(read("Plan end of week", us).as_deref(), Some("2026-09-25"));
+    let ctx = QuickAddContext {
+        when: now().with_locale(us),
+        lists: &lists,
+        categories: None,
+        due: None,
+    };
+    let recurrence = DeterministicParser
+        .parse("Gym every other week", &ctx)
+        .recurrence
+        .expect("a recurrence");
+    assert_eq!(recurrence.to_graph()["pattern"]["firstDayOfWeek"], "sunday");
 }

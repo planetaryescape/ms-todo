@@ -22,6 +22,7 @@ mod csv_columns;
 mod daemon_client;
 mod daemon_commands;
 mod data_commands;
+mod dates_config;
 mod doctor_commands;
 mod done_command;
 mod error;

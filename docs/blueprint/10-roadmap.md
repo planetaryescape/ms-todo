@@ -445,6 +445,18 @@ Promise: "Everything I reach for in the TUI is there, not only in the CLI." **Do
 
 **As built (2026-09-27, D-066):** Start and Repeat fields in the detail pane (`e` `s`, `e` `p`); `S` with nothing typed clears the selection's due dates after a `y`; `K`/`J` (`Alt-Up`/`Alt-Down`) in the sidebar send `OrderList` and `OrderFolder`; `Tab` in the link's editor reaches its name, app and external ID; recent commands kept in `tui-recent-commands` in the instance's data directory; "Suggest lists for inbox" in the palette. No protocol change and no migration. Tests: each as an `App::update` test (the requests sent, the refusals, stale suggestions dropped) and a snapshot of each new screen and state (`ui/gap_tests.rs`). **Not driven live:** TUI captures of BK's account are ruled out, and every request it sends is one the CLI's live tests already cover.
 
+## Rung 9f: closing the quick-add, search and locale gaps
+
+**Previously:** quick add without steps or BK's time words, search over titles and notes, and dates read the UK way only. **Now:** the same, plus the gaps BK listed after rung 9d.
+
+**Promise:** "`mst tasks add "Pack for trip due fri :: passport; charger"` makes the task with its steps, `mst search charger` finds it and says it matched a step, and `[dates]` reads `12/10` and `next week` my way."
+
+**Build:** `eod`, `morning` and `evening` (Q7's hours), `due <date>`, steps after ` :: ` and `tasks add --step`, `[dates] date_order` and `week_start`, and search through steps, categories and attachment names with `matched` (migration `0009`).
+
+**Done when:** on the live account, a task added with `due`, a time word and steps shows them all on Graph, a search for a step's word finds it with `matched: step`, and `[dates]` changes how `12/10` and `next week` read.
+
+**As built (2026-09-27, D-068):** as above. Protocol 21, migration `0009`. Tests: the parser's time words, `due`, steps and locale (unit, the S8 corpus with G01–G11, a proptest alphabet with ` :: `, `;` and `due fri`), `[dates]` parsing, the store's index and `matched` against a real SQLite file (and 0009's backfill on upgrade), the TUI's Planned week, and the CLI end to end against the fake Graph (quick add with steps and its dry run, `--step`, undo of the add, search through a step and a category in every format, and `[dates]` in `tasks parse`, `--due` and a broken config).
+
 ## Deferred (not in v1)
 
 - An optional local-LLM parser behind `QuickAddParser` (D-016).

@@ -11,6 +11,8 @@ pub(crate) mod words;
 
 use chrono::{DateTime, Datelike, FixedOffset, NaiveDate, NaiveDateTime, NaiveTime};
 
+use crate::locale::Locale;
+
 /// What a phrase is read against.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct ParseContext {
@@ -19,6 +21,8 @@ pub struct ParseContext {
     pub now: DateTime<FixedOffset>,
     /// Which way a weekday, or a day and month with no year, points.
     pub lean: Lean,
+    /// `12/10`'s order and the day weeks start on (D-068).
+    pub locale: Locale,
 }
 
 /// Which way a phrase that names no week or year points: ahead for a due
@@ -37,7 +41,12 @@ impl ParseContext {
         Self {
             now,
             lean: Lean::Ahead,
+            locale: Locale::default(),
         }
+    }
+
+    pub fn with_locale(self, locale: Locale) -> Self {
+        Self { locale, ..self }
     }
 
     pub(crate) fn today(&self) -> NaiveDate {

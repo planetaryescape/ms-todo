@@ -49,6 +49,7 @@ pub fn read_recurrence(
         pattern: read.pattern,
         end: read.end,
         start,
+        week_start: ctx.locale.week_start,
     })
 }
 

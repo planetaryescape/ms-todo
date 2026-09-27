@@ -142,8 +142,11 @@ pub struct AddArgs {
     /// (its name or a prefix only it has), @category, p1–p4, every …
     /// (a recurrence), !time-or-date (a reminder), ^date (hidden until
     /// then), +someday, +myday, start <date>, and a date and time (the due
-    /// date; a time also sets a reminder then). "Quoted text" and \# \@
-    /// \! \^ stay as typed. What's left is the title
+    /// date, `due` before it or not; a time also sets a reminder then;
+    /// eod is 17:00, and morning 09:00 and evening 19:00 beside a day).
+    /// Steps go last, after " :: ", split on ";": `Pack :: passport;
+    /// charger`. "Quoted text" and \# \@ \! \^ stay as typed. What's left
+    /// is the title
     pub text: String,
     /// Take the text as the title, exactly as given: for text you didn't
     /// type yourself, such as an agent's, with flags for the fields
@@ -221,6 +224,10 @@ pub struct AddArgs {
     /// to 24h). Needs a reminder
     #[arg(long, value_name = "EVERY", value_parser = phrases::nag_every)]
     pub nag: Option<u32>,
+    /// A step to add with it; repeat for several, in order. Over any
+    /// steps after " :: " in the text
+    #[arg(long = "step", value_name = "TEXT")]
+    pub steps: Vec<String>,
     /// Show what would be sent without changing anything
     #[arg(long)]
     pub dry_run: bool,

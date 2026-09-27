@@ -50,7 +50,7 @@ The active task pane shows the cursor's position and the number of tasks (`3/42`
 
 - My Day
 - Important (`importance = high`)
-- Planned (has a due date, grouped into Overdue, Today, Tomorrow, This week, Later)
+- Planned (has a due date, grouped into Overdue, Today, Tomorrow, This week, Later; the week ends on Sunday, or Saturday with `[dates] week_start = "sunday"`, D-068)
 - All
 - Assigned (has an assignee)
 - Completed (grouped by the day each task was completed: Today, Yesterday, `Mon 21 Sep`…; rung 5d)
@@ -96,7 +96,7 @@ As built (D-050). `o` on a task opens its link, and `y` copies it (OSC 52, so it
 
 ## Quick add
 
-Press `a` and type. The **parse highlights live as you type**: spans from `crates/nlp` are coloured by kind (date, list, label, priority, recurrence). A preview line shows the resulting fields. Enter commits and Esc cancels. Two extra keys:
+Press `a` and type. The **parse highlights live as you type**: spans from `crates/nlp` are coloured by kind (date, list, label, priority, recurrence; steps after ` :: ` in the dim field colour, D-068). A preview line shows the resulting fields (`3 steps` among them), and Enter adds the task with its steps. Enter commits and Esc cancels. Two extra keys:
 
 - Tab accepts a completion for `#List` or `@label`.
 - `ctrl+r` switches parsing off for this entry (the `--no-parse` equivalent).

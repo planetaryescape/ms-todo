@@ -4,21 +4,37 @@
 //! read fails as a usage error (exit 2) naming what wasn't understood,
 //! and the daemon only ever sees the canonical forms.
 
+use std::sync::LazyLock;
+
 use chrono::Local;
-use ms_todo_core::{DATE_FORMAT, REMINDER_FORMAT};
+use ms_todo_core::{DATE_FORMAT, Instance, Paths, REMINDER_FORMAT};
 use ms_todo_nlp::{
-    NotUnderstood, ParseContext, Reading, interval_label, read_due, read_importance, read_interval,
-    read_past_date, read_reminder,
+    Locale, NotUnderstood, ParseContext, Reading, interval_label, read_due, read_importance,
+    read_interval, read_past_date, read_reminder,
 };
 use ms_todo_protocol::{Clearable, DueFilter, Importance, NAG_MAX_MINUTES, NAG_MIN_MINUTES};
 
-pub(crate) fn now() -> ParseContext {
-    ParseContext::new(Local::now().fixed_offset())
+/// `[dates]` from config.toml, read once, when a phrase is first read:
+/// clap reads the flags before anything else runs. config.toml is the
+/// same for every instance, so no instance is needed to find it.
+static LOCALE: LazyLock<Result<Locale, String>> = LazyLock::new(|| {
+    Paths::resolve(Instance::Default).map_or_else(
+        |_| Ok(Locale::default()),
+        |paths| crate::dates_config::read(&paths.config_file),
+    )
+});
+
+/// Now, with the user's `[dates]`. A broken `[dates]` fails whatever
+/// reads a phrase, naming the setting, rather than reading `12/10` the
+/// wrong way.
+pub(crate) fn now() -> Result<ParseContext, NotUnderstood> {
+    let locale = LOCALE.as_ref().map_err(|why| NotUnderstood(why.clone()))?;
+    Ok(ParseContext::new(Local::now().fixed_offset()).with_locale(*locale))
 }
 
 /// `--due`: a date, or empty or `-` to clear it.
 pub fn due(value: &str) -> Result<Clearable<String>, NotUnderstood> {
-    Ok(match read_due(value, &now())? {
+    Ok(match read_due(value, &now()?)? {
         Reading::Clear => Clearable::Clear,
         Reading::Set { value, .. } => Clearable::Set(value.format(DATE_FORMAT).to_string()),
     })
@@ -38,7 +54,7 @@ pub fn day(value: &str) -> Result<String, NotUnderstood> {
 /// `--since` and `--until`: a day read looking back, so `mon` is the
 /// latest Monday and `12 sep` the latest 12 September.
 pub fn past_day(value: &str) -> Result<String, NotUnderstood> {
-    read_past_date(value, &now()).map(|day| day.format(DATE_FORMAT).to_string())
+    read_past_date(value, &now()?).map(|day| day.format(DATE_FORMAT).to_string())
 }
 
 /// `tasks list --due`: `today`, `overdue`, `none`, `any`, `before W`,
@@ -82,7 +98,7 @@ pub fn days_from_today(days: i64) -> String {
 /// `--reminder`: a date and time, or a time alone, or empty or `-` to
 /// turn it off.
 pub fn reminder(value: &str) -> Result<Clearable<String>, NotUnderstood> {
-    Ok(match read_reminder(value, &now())? {
+    Ok(match read_reminder(value, &now()?)? {
         Reading::Clear => Clearable::Clear,
         Reading::Set { value, .. } => Clearable::Set(value.format(REMINDER_FORMAT).to_string()),
     })

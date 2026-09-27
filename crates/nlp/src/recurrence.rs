@@ -17,6 +17,7 @@ use serde_json::{Value, json};
 use crate::dates::ParseContext;
 use crate::dates::span::{date_at, ends_word, time_at};
 use crate::dates::words::{MONTHS, NUMBERS, WEEKDAYS, alternation, lookup, number};
+use crate::locale::WeekStart;
 
 /// A recurrence as read, anchored to its first due date, `start`.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -25,6 +26,9 @@ pub struct Recurrence {
     pub end: RecurrenceEnd,
     /// `range.startDate`, and the task's first due date.
     pub start: NaiveDate,
+    /// A weekly pattern's `firstDayOfWeek`, from the locale (D-068): it
+    /// decides which weeks `every other week` skips.
+    pub week_start: WeekStart,
 }
 
 /// Graph's pattern types. A day left out (`every week`, `every month`,
@@ -135,8 +139,7 @@ impl Recurrence {
                         .map(|day| weekday_name(*day))
                         .collect::<Vec<_>>()
                 );
-                // Q8's UK placeholder: weeks start on Monday.
-                pattern["firstDayOfWeek"] = json!("monday");
+                pattern["firstDayOfWeek"] = json!(self.week_start.name());
             }
             Pattern::AbsoluteMonthly { day, .. } => {
                 pattern["dayOfMonth"] = json!(day.unwrap_or(self.start.day()));

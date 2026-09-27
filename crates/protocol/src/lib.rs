@@ -97,8 +97,10 @@ pub use views::{Counts, MyDay, MyDaySeed, Scope, Seed};
 /// (rung 9d): `Contexts`, `SetContext`, `InContext`,
 /// `ResponseData::Contexts`, and `context` on the answers a context
 /// narrows, so an older daemon never answers `--context` as if everything
-/// were asked for.
-pub const PROTOCOL_VERSION: u32 = 20;
+/// were asked for. 21: quick add's steps and search's reach (D-068):
+/// `NewTask.steps`, and `matched` on each keyword search result, so an
+/// older daemon never adds a task without the steps typed with it.
+pub const PROTOCOL_VERSION: u32 = 21;
 
 /// The socket buffer both ends ask for: room for a large list's `Seed` in
 /// one write. macOS gives a Unix socket 8 KiB, so a 350 KiB seed crossed
