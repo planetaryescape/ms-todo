@@ -21,6 +21,7 @@ mod ipc;
 mod keybindings;
 mod latency;
 pub mod open;
+pub mod recent;
 mod runner;
 pub mod theme;
 mod ui;
@@ -50,6 +51,9 @@ pub struct Options {
     pub theme: theme::ThemeChoice,
     /// Where attachments are saved, from [`downloads::places`].
     pub places: Places,
+    /// Where the palette keeps its recent commands: [`recent::FILE_NAME`]
+    /// in the instance's data directory. `None` keeps them in memory.
+    pub recent_commands: Option<PathBuf>,
     /// Measure the start and a scripted run of keys, then quit and print
     /// the numbers.
     pub bench_startup: bool,
@@ -90,6 +94,7 @@ pub async fn run(options: Options) -> Result<Option<String>, TuiError> {
     let app = app::App::new(glyphs, app::Clock::now())
         .with_theme(options.theme)
         .with_places(options.places)
+        .with_recent_commands(options.recent_commands)
         .with_sign_in_command(options.sign_in_command);
     // The date rules' regexes compile on first use, about 3 ms: do it
     // now, off the render path, not in the first frame of a date editor.

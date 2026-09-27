@@ -106,6 +106,9 @@ impl App {
                 self.pick_link(action == Action::CopyLink);
                 Vec::new()
             }
+            (Mode::Triage(_), Action::Submit) => self.triage_move(),
+            (Mode::Triage(_), Action::Skip) => self.triage_skip(),
+            (Mode::Triage(_), Action::Cancel) => self.stop_triage(),
             (Mode::Themes { .. }, Action::Cancel) => {
                 self.revert_theme();
                 Vec::new()
@@ -146,9 +149,14 @@ impl App {
             (Mode::Diagnostics, Action::Refresh) => self.refresh_diagnostics(),
             (Mode::Editing { .. }, Action::Submit) => self.submit_edit(),
             (Mode::EditingChild { .. }, Action::Submit) => self.submit_child(),
+            (Mode::EditingChild { .. }, Action::Complete) => {
+                self.next_link_part();
+                Vec::new()
+            }
             (Mode::Attaching { .. }, Action::Submit) => self.submit_attach(),
             (Mode::ConfirmDeleteChild { .. }, Action::Confirm) => self.confirm_child_delete(),
             (Mode::SettingDue { .. }, Action::Submit) => self.submit_set_due(),
+            (Mode::ConfirmClearDue { .. }, Action::Confirm) => self.confirm_clear_due(),
             (Mode::Assigning { .. }, Action::Submit) => self.submit_assign(),
             (Mode::NamingList { .. }, Action::Submit) => self.submit_list_name(),
             (Mode::ConfirmDeleteList { .. }, Action::Confirm) => self.confirm_delete_list(),
@@ -321,6 +329,7 @@ impl App {
                 self.start_move();
                 Vec::new()
             }
+            Action::ReorderUp | Action::ReorderDown => self.reorder(action == Action::ReorderDown),
             Action::NewList => {
                 self.start_new_list();
                 Vec::new()
@@ -336,6 +345,7 @@ impl App {
             Action::Diagnostics => self.open_diagnostics(),
             Action::ToggleDeferred => self.toggle_deferred(),
             Action::NextContext => self.next_context(),
+            Action::TriageInbox => self.start_triage(),
             Action::Undo => vec![Effect {
                 tag: Tag::Undo,
                 request: Request::Undo {

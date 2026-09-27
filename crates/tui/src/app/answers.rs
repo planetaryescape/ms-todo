@@ -121,6 +121,8 @@ impl App {
                 Vec::new()
             }
             (Tag::Context, result) => self.context_switched(result),
+            (Tag::TriageInbox, result) => self.triage_inbox(result),
+            (Tag::TriageSuggest, result) => self.triage_suggested(result),
             (Tag::Write(write), Ok(ResponseData::Applied(applied))) => {
                 self.apply_write(write, &applied.items);
                 if write == Write::Move {
@@ -146,6 +148,12 @@ impl App {
                 Vec::new()
             }
             (Tag::Lists, Ok(ResponseData::Applied(applied))) => self.list_changed(&applied),
+            // The sidebar moved when the key was pressed: read the order
+            // back from the daemon.
+            (Tag::Order, Err(error)) => {
+                self.show(Level::Error, &error.message);
+                self.reseed()
+            }
             (Tag::Undo, Ok(ResponseData::Applied(applied))) => {
                 let text = match applied.refused.as_slice() {
                     [] => "Undone".to_owned(),

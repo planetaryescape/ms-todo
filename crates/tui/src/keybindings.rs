@@ -36,6 +36,8 @@ pub enum Context {
     Notes,
     /// Typing the folder to move a list into, with suggestions.
     Folder,
+    /// Typing a link's URL, name, app or external ID, Tab between them.
+    LinkForm,
     /// Picking which field of a task to edit.
     Fields,
     /// Picking an importance level.
@@ -52,6 +54,8 @@ pub enum Context {
     Themes,
     /// A task's links, to open or copy one.
     Links,
+    /// "Suggest lists for inbox": moving or skipping each inbox task.
+    Triage,
     /// Picking the list to move tasks to. Other printable keys are its
     /// query.
     MoveTo,
@@ -100,7 +104,9 @@ const PROMPTS: &[Context] = &[
     Context::Adding,
     Context::Notes,
     Context::Folder,
+    Context::LinkForm,
 ];
+const LINK_FORM: &[Context] = &[Context::LinkForm];
 const ADDING: &[Context] = &[Context::Adding];
 const NOTES: &[Context] = &[Context::Notes];
 const FIELDS: &[Context] = &[Context::Fields];
@@ -109,6 +115,7 @@ const LEVELS: &[Context] = &[Context::Importance];
 const DIAGNOSTICS: &[Context] = &[Context::Diagnostics];
 const MOVE_TO: &[Context] = &[Context::MoveTo];
 const HELP: &[Context] = &[Context::Help];
+const TRIAGE: &[Context] = &[Context::Triage];
 
 /// Every binding, in the order help shows them.
 pub const BINDINGS: &[Binding] = &[
@@ -169,6 +176,34 @@ pub const BINDINGS: &[Binding] = &[
         "Move list to folder\u{2026}",
         false,
     ),
+    bind(
+        SIDEBAR,
+        "K",
+        Action::ReorderUp,
+        "Move up in the sidebar",
+        false,
+    ),
+    bind(
+        SIDEBAR,
+        "Alt-Up",
+        Action::ReorderUp,
+        "Move up in the sidebar",
+        false,
+    ),
+    bind(
+        SIDEBAR,
+        "J",
+        Action::ReorderDown,
+        "Move down in the sidebar",
+        false,
+    ),
+    bind(
+        SIDEBAR,
+        "Alt-Down",
+        Action::ReorderDown,
+        "Move down in the sidebar",
+        false,
+    ),
     bind(BROWSE, "?", Action::Help, "Help", true),
     bind(BROWSE, "q", Action::Quit, "Quit", true),
     bind(BROWSE, "Ctrl-c", Action::Quit, "Quit", false),
@@ -207,6 +242,8 @@ pub const BINDINGS: &[Binding] = &[
     bind(NOTES, "Alt-Enter", Action::Submit, "Save", false),
     bind(NOTES, "Enter", Action::Newline, "New line", true),
     bind(FOLDER, "Enter", Action::Submit, "Move", true),
+    bind(LINK_FORM, "Enter", Action::Submit, "Save", true),
+    bind(LINK_FORM, "Tab", Action::Complete, "Next field", true),
     bind(FOLDER, "Tab", Action::Complete, "Complete", true),
     bind(PROMPTS, "Esc", Action::Cancel, "Cancel", true),
     bind(PROMPTS, "Backspace", Action::Backspace, "Erase", false),
@@ -223,6 +260,13 @@ pub const BINDINGS: &[Binding] = &[
         "d",
         Action::EditField(Field::Due),
         "Edit due date",
+        false,
+    ),
+    bind(
+        FIELDS,
+        "s",
+        Action::EditField(Field::Start),
+        "Edit start date",
         false,
     ),
     bind(
@@ -251,6 +295,13 @@ pub const BINDINGS: &[Binding] = &[
         "f",
         Action::EditField(Field::Defer),
         "Edit defer (or someday)",
+        false,
+    ),
+    bind(
+        FIELDS,
+        "p",
+        Action::EditField(Field::Repeat),
+        "Edit repeat",
         false,
     ),
     bind(
@@ -294,6 +345,12 @@ pub const BINDINGS: &[Binding] = &[
     bind(&[Context::Links], "y", Action::CopyLink, "Copy", true),
     bind(&[Context::Links], "Esc", Action::Cancel, "Cancel", true),
     bind(&[Context::Links], "Ctrl-c", Action::Cancel, "Cancel", false),
+    bind(TRIAGE, "Enter", Action::Submit, "Move there", true),
+    bind(TRIAGE, "m", Action::Submit, "Move there", false),
+    bind(TRIAGE, "s", Action::Skip, "Skip", true),
+    bind(TRIAGE, "Esc", Action::Cancel, "Stop", true),
+    bind(TRIAGE, "q", Action::Cancel, "Stop", false),
+    bind(TRIAGE, "Ctrl-c", Action::Cancel, "Stop", false),
     bind(&[Context::Themes], "Enter", Action::Submit, "Keep", true),
     bind(&[Context::Themes], "Esc", Action::Cancel, "Revert", true),
     bind(

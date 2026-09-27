@@ -144,6 +144,22 @@ pub fn draw(frame: &mut Frame, area: Rect, app: &App) {
             };
             spans.push(under);
             spans.extend(hint_spans(Context::Prompt));
+            spans.push(Span::styled(" Enter on empty: clear ", theme.text_dim));
+            Line::from(spans)
+        }
+        // Its own words, since the confirmation's keys say "Delete".
+        Mode::ConfirmClearDue { ids, what } => {
+            let dates = if ids.len() == 1 { "date" } else { "dates" };
+            let mut spans = vec![Span::styled(
+                format!(" Clear the due {dates} of {what}? "),
+                theme.banner_error,
+            )];
+            for (action, label) in [(Action::Confirm, "Clear"), (Action::Cancel, "Keep")] {
+                if let Some(bound) = key_for(Context::Confirm, action) {
+                    spans.push(key(&format!(" {bound} ")));
+                    spans.push(Span::styled(format!("{label} "), theme.text_dim));
+                }
+            }
             Line::from(spans)
         }
         // Who several tasks wait on: what's typed, then what empty does.

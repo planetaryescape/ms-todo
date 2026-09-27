@@ -1,0 +1,6 @@
+---
+source: crates/tui/src/ui/gap_tests.rs
+expression: "format!(\"{prompt}\\n{}\", last(&render(&app)))"
+---
+" Due date for 4 tasks: █ Enter Done  Esc Cancel  Enter on empty: clear                                        "
+" Clear the due dates of 4 tasks?  y Clear  n Keep                                                             "

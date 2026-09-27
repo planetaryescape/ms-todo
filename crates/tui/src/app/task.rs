@@ -60,6 +60,8 @@ pub struct Task {
     pub importance: Importance,
     /// Local date (S11).
     pub due: Option<NaiveDate>,
+    /// Graph's `startDateTime`, a local date as the due date is.
+    pub start: Option<NaiveDate>,
     /// Local time, when the reminder is on.
     pub reminder: Option<NaiveDateTime>,
     /// "every 2 weeks on Mon", for a recurring task.
@@ -70,6 +72,10 @@ pub struct Task {
     pub linked: Vec<(String, Option<String>)>,
     /// The link's ID, to change or delete it: Graph allows one (S14).
     pub link_id: Option<String>,
+    /// The link's `applicationName` and `externalId`, which its editor
+    /// starts from.
+    pub link_app: Option<String>,
+    pub link_external_id: Option<String>,
     /// Graph's `checklistItems`, in its order.
     pub steps: Vec<Step>,
     /// Its attachments, in Graph's order, once a sync has fetched them.
@@ -145,10 +151,12 @@ impl Task {
                 })
             })
             .collect();
-        let link_id = entity
-            .get("linkedResources")
-            .and_then(|links| links.get(0)?.get("id")?.as_str())
-            .map(str::to_owned);
+        let link_field = |key: &str| {
+            entity
+                .get("linkedResources")
+                .and_then(|links| links.get(0)?.get(key)?.as_str())
+                .map(str::to_owned)
+        };
         Some(Self {
             id: text("id")?.to_owned(),
             list_id: text("list_id").unwrap_or_default().to_owned(),
@@ -161,13 +169,16 @@ impl Task {
                 _ => Importance::Normal,
             },
             due: date_time("dueDateTime").and_then(|(at, zone)| local_due_date(at, zone)),
+            start: date_time("startDateTime").and_then(|(at, zone)| local_due_date(at, zone)),
             reminder: date_time("reminderDateTime")
                 .filter(|_| entity.get("isReminderOn").and_then(Value::as_bool) == Some(true))
                 .and_then(|(at, zone)| local_date_time(at, zone)),
             recurrence: entity.get("recurrence").and_then(describe_recurrence),
             body: entity.get("body").and_then(Body::of),
             linked: ms_todo_core::links::linked_resources(entity),
-            link_id,
+            link_id: link_field("id"),
+            link_app: link_field("applicationName"),
+            link_external_id: link_field("externalId"),
             steps,
             has_attachments: !attachments.is_empty()
                 || entity.get("hasAttachments").and_then(Value::as_bool) == Some(true),

@@ -107,6 +107,10 @@ where
                             local(&mut app, effect);
                             paint(terminal, &app)?;
                         }
+                        if std::mem::take(&mut app.recent_unsaved) {
+                            save_recent(&mut app);
+                            paint(terminal, &app)?;
+                        }
                         if std::mem::take(&mut app.painted_from_cache) {
                             tracing::info!(micros = took.as_micros(), "view switch rendered");
                             latency.view_switch.push(took);
@@ -203,6 +207,7 @@ fn key_msg(app: &App, key: &KeyEvent) -> Option<Msg> {
             | Context::Notes
             | Context::Palette
             | Context::Folder
+            | Context::LinkForm
             | Context::MoveTo
     ) {
         return None;
@@ -240,6 +245,23 @@ fn local(app: &mut App, effect: LocalEffect) {
                 app.show(Level::Error, &format!("Couldn't copy the link: {error}"));
             }
         }
+    }
+}
+
+/// Write the palette's recent commands. A failure costs only their
+/// order next time, so it's a banner, not an error.
+fn save_recent(app: &mut App) {
+    let Some(path) = app.recent_file.clone() else {
+        return;
+    };
+    if let Err(error) = crate::recent::save(&path, &app.recent_commands) {
+        app.show(
+            Level::Error,
+            &format!(
+                "Couldn't save the recent commands to {}: {error}",
+                path.display()
+            ),
+        );
     }
 }
 

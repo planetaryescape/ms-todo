@@ -3,7 +3,8 @@
 // substring, then the shortcut). Changes: the commands are read from the
 // keybinding registry plus a "Go to" for each sidebar row, rather than a
 // hand-kept list; a last tier matches the query's letters in order, so
-// "gtgr" finds "Go to Groceries"; no categories or recent commands.
+// "gtgr" finds "Go to Groceries"; no categories. Recent commands (D-066)
+// come first while nothing is typed.
 
 //! The command palette (`:`): every action in the keybinding registry and
 //! every list and view, even one in a collapsed folder, found by typing
@@ -62,6 +63,7 @@ impl App {
             ("New list\u{2026}", Action::NewList),
             ("Rename list\u{2026}", Action::RenameList),
             ("Delete list\u{2026}", Action::DeleteList),
+            ("Suggest lists for inbox", Action::TriageInbox),
         ]
         .into_iter()
         .map(|(label, action)| Item {
@@ -82,14 +84,25 @@ impl App {
                 command: Command::Context(name),
             });
         let query = query.trim().to_lowercase();
-        rank(
+        let mut items = rank(
             actions
                 .chain(std::iter::once(themes))
                 .chain(lists)
                 .chain(contexts)
                 .chain(places),
             |item| score(item, &query),
-        )
+        );
+        if query.is_empty() {
+            // Stable, so the rest keep their order; a recent command
+            // that's gone (a deleted list) just isn't there.
+            items.sort_by_key(|item| {
+                self.recent_commands
+                    .iter()
+                    .position(|label| *label == item.label)
+                    .unwrap_or(usize::MAX)
+            });
+        }
+        items
     }
 
     pub(super) fn open_palette(&mut self) {
@@ -119,6 +132,8 @@ impl App {
         let Some(item) = self.palette_items(&query.text()).into_iter().nth(index) else {
             return Vec::new();
         };
+        crate::recent::remember(&mut self.recent_commands, &item.label);
+        self.recent_unsaved = self.recent_file.is_some();
         match item.command {
             Command::Run(action) => {
                 if self.focus == Pane::Sidebar {
@@ -294,6 +309,31 @@ mod tests {
         );
         assert_eq!(app.wanted, Some(Scope::All));
         assert_eq!(app.sidebar_index, 4);
+    }
+
+    #[test]
+    fn commands_run_from_it_come_first_until_something_is_typed() {
+        let mut app = seeded();
+        app.recent_file = Some("recent".into());
+        for query in ["sync", "diag"] {
+            act(&mut app, Action::Palette);
+            for ch in query.chars() {
+                app.update(Msg::Char(ch));
+            }
+            act(&mut app, Action::Submit);
+            assert!(std::mem::take(&mut app.recent_unsaved), "saved after each");
+            app.mode = Mode::Normal;
+        }
+        assert_eq!(app.recent_commands, ["Diagnostics", "Sync"]);
+        assert_eq!(labels(&app, "")[..3], ["Diagnostics", "Sync", "Add"]);
+        // Typing ranks by the match alone.
+        assert_eq!(labels(&app, "del")[0], "Delete");
+        // With nowhere to save them, they're kept for the session.
+        let mut app = seeded();
+        act(&mut app, Action::Palette);
+        act(&mut app, Action::Submit);
+        assert!(!app.recent_unsaved);
+        assert_eq!(app.recent_commands.len(), 1);
     }
 
     #[test]

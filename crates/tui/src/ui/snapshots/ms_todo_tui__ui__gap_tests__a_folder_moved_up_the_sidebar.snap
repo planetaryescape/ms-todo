@@ -1,0 +1,28 @@
+---
+source: crates/tui/src/ui/gap_tests.rs
+expression: render(&app)
+---
+" ms-todo 9.9.9 · Home                                                                                ● synced "
+"╭ Lists ───────────────╮╭ Home ────────────────────────────────────────────╮╭ Detail ────────────────────────╮"
+"│☼ My Day              ││○ Pay rent                         Oct 1 ★ ↻      ││Title      Pay rent             │"
+"│» Next                ││○ Call Sam                                      ◌ ││                                │"
+"│★ Important          1││○ Water plants                                  ✗ ││Status     open                 │"
+"│▦ Planned            2││✓ Ship blueprint                                  ││List       Home                 │"
+"│∞ All                3││                                                  ││Due        Thu 1 Oct 2026       │"
+"│◔ Assigned            ││                                                  ││Start      none                 │"
+"│⧖ Upcoming            ││                                                  ││Reminder   none                 │"
+"│… Someday             ││                                                  ││Importance high                 │"
+"│✓ Completed          1││                                                  ││Assignee   none                 │"
+"│▾ Projects           4││                                                  ││Defer      none                 │"
+"│  ≡ Launch           4││                                                  ││Repeat     monthly on day 1     │"
+"│▾ Areas              5││                                                  ││Steps      none                 │"
+"│  ≡ Home             3││                                                  ││Link       none                 │"
+"│  ≡ Finances         2││                                                  ││Files      none                 │"
+"│≡ Tasks               ││                                                  ││Sync       synced               │"
+"│                      ││                                                  ││                                │"
+"│                      ││                                                  ││Notes      none                 │"
+"│                      ││                                                  ││                                │"
+"│                      ││                                                  ││                                │"
+"╰──────────────────────╯╰──────────────────────────────────────────────────╯╰────────────────────────────────╯"
+" ● daemon  ·  synced 12s ago  ·  all changes sent                                                             "
+" Enter Open or fold  a Add  u Undo  / Filter  : Palette  r Sync  ? Help  q Quit                               "

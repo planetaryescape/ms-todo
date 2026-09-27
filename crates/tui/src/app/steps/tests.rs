@@ -1,7 +1,7 @@
 //! Steps and the link in the detail pane: the cursor, the keys, and the
 //! writes they send. No daemon, no terminal.
 
-use ms_todo_protocol::{Request, TaskAction};
+use ms_todo_protocol::{LinkEdit, NewLink, Request, TaskAction};
 use serde_json::json;
 
 use super::*;
@@ -55,7 +55,7 @@ fn the_cursor_runs_through_the_steps_and_the_link_before_the_notes() {
     let mut app = painted();
     act(&mut app, Action::JumpTop);
     let mut seen = vec![app.detail_row_now().expect("row")];
-    for _ in 0..11 {
+    for _ in 0..13 {
         act(&mut app, Action::MoveDown);
         seen.push(app.detail_row_now().expect("row"));
     }
@@ -65,10 +65,12 @@ fn the_cursor_runs_through_the_steps_and_the_link_before_the_notes() {
         [
             DetailRow::Field(Field::Title),
             DetailRow::Field(Field::Due),
+            DetailRow::Field(Field::Start),
             DetailRow::Field(Field::Reminder),
             DetailRow::Field(Field::Importance),
             DetailRow::Field(Field::Assignee),
             DetailRow::Field(Field::Defer),
+            DetailRow::Field(Field::Repeat),
             DetailRow::Steps,
             DetailRow::Step(0),
             DetailRow::Step(1),

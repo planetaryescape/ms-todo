@@ -139,6 +139,7 @@ mst tasks add "pay council tax"                   # adds to Tasks, then a note: 
 
 - `tasks add` prints the note on stderr only in table, CSV and ids formats; in JSON it doesn't ask. A dry run's note says to add it with `--list` or `#List`; a real add's says how to move it.
 - In the TUI's add box, the suggestion comes a moment after you stop typing, as `→ Finances? (Ctrl-l to accept)`. `Ctrl-l` adds `#Finances` to the text, which you can still edit.
+- To sort the inbox in the TUI, `:` then "Suggest lists for inbox" shows each open task in "Tasks" in turn with the list suggested for it: `Enter` (or `m`) moves it there, `s` leaves it, `Esc` stops. Each move is a normal move, so `u` moves the last one back. With suggestions off it shows how to turn them on.
 - What it sends: the task's title, and for each list that isn't built in or in an excluded folder, its folder, name and up to five open task titles. Only the daemon sends it. `ms-todo doctor` shows whether it's on and what it sends.
 - Anything going wrong (no key, no network, TypeSafe slow past 3 seconds or answering with an error) means no suggestion, never a failed command. The daemon log notes it once, and `doctor` lists it as a `suggest: …` problem until a suggestion works again. With it off, `tasks suggest-list` exits 2 and says how to turn it on.
 
@@ -159,6 +160,7 @@ ms-todo tasks list --format ids | ms-todo tasks complete -   # `-` reads IDs fro
 - Completing a task turns its reminder off in Microsoft To Do and keeps its time. `tasks reopen` turns it back on while that time is still ahead; one whose time has passed stays off.
 - `--due` takes `2026-10-02` or a phrase: `today`, `tomorrow` (`tom`), `yesterday`, `fri` (the next one, never today), `this fri`, `next fri` (next week's), `in 3 days`, `three days from today`, `+2w`, `-1d`, `2 days ago`, `next week` (its Monday), `next month` (the 1st), `eow`, `eom`, `12 oct`, `oct 12`, `12/10` (day first). A day and month already past means next year's. `--reminder` takes the same with a time: `17:30` alone (today's, or tomorrow's once it's past), `tomorrow 9am`, `fri 5:30pm`, `noon`, `2026-10-02 09:30`. On `tasks edit`, an empty value or `-` clears either. A phrase ms-todo can't read exits 2 and names the part it didn't understand.
 - `--start W` sets a start date. With no due date, Microsoft To Do makes it the due date too, and says so in a note; on `tasks edit`, the task's own due date is sent with it, so it stays. `--clear-start` (or `--start -`) removes it.
+- In the TUI, the detail pane's Start and Repeat fields (`e` then `s` or `p`) take the same phrases, and empty (or `-`) clears them; a start date on a repeating task is refused there too.
 - `--recur "every mon"` makes it repeat: the `every …` of [Quick add](#quick-add), with or without the `every` (`weekday`, `every 2 weeks on tue, thu`, `every month on the 1st until dec`, `daily`). It's first due on the first day it falls on, from `--due` or from today, and that becomes the due date. `--clear-recur` stops it; the due date stays. The zone is always sent with it (S12). A repeating task keeps no start date of its own: Microsoft To Do counts the recurrence from the start date and moves the due date with it, so `--start` on a repeating task is refused, a recurrence set on a task with a start date moves the start to the first occurrence too, and on `tasks add` a start date with a recurrence must be the first due date.
 - `--category NAME` (several times for several) sets the task's categories, over any `@label` in the text; on `tasks edit` they replace the task's, and `--clear-categories` removes them. `categories list` shows your Outlook categories.
 - `--body-file FILE` reads the notes from a file (`-` is stdin), in place of `--body`.
@@ -186,6 +188,7 @@ ms-todo undo                                            # puts the whole batch b
 - Microsoft To Do keeps the day a task was completed, not the time: a UTC date (midnight UTC), which is the day `done` shows. Just after midnight, while your local date is ahead of UTC's, a completion lands on the UTC date, the day before. A completion that hasn't reached Microsoft To Do yet has no day: it's listed first as "Not synced yet", with `completed_on` null.
 - `reschedule --to DAY` moves the due date of open tasks: `--overdue` (due before today), `--due-before DAY`, or the tasks named (`-` reads IDs from stdin), in `--list` or `--folder` or every list. `tasks edit` takes the same `--overdue`, `--due-before` and several task IDs for `--due`, `--importance` and `--reminder`; a title or notes change one task at a time.
 - A change that may reach more than one task shows the tasks and asks first in a terminal; anywhere else it needs `--yes` (exit 2 otherwise). `--dry-run` shows the plan. What runs after a yes is the tasks you were shown.
+- In the TUI, `S` sets one due date for the selection; empty (or `-`) clears their due dates, after a `y` / `n`.
 - However many tasks it moves, it's one change with one `op_id`, so one `ms-todo undo` puts them all back. A task whose due date has changed again since is left alone and listed under `refused`; only when every task changed is the undo refused (exit 5).
 
 ## My Day
@@ -340,7 +343,7 @@ TASK is an ID, or an exact title with `--list`. A step is named by its number fr
 - **Order.** Steps stay in the order they were added: Microsoft To Do has no way to reorder them, so there's no `steps order`.
 - **One link per task**, as the To Do apps allow: `links add` on a task that has one exits 2 and points at `links edit`. `--app` is the app the link belongs to (Microsoft To Do requires one; `ms-todo` without it), and `--external-id` the item's ID there. `links edit` can set a field but not empty one: Microsoft To Do ignores that. Any URL is kept, but only http, https and mailto open from `tasks open` or the TUI, and ms-todo notes it when yours won't. `tasks links` lists the link and the URLs in the notes together.
 - **A step or link whose add got no answer** stays `unknown` in `ms-todo outbox list`, flagged for you: Microsoft To Do may have it, and nothing can tell which step is which, so it's never sent twice by itself. Look at the task, then `outbox retry` to send it again or `outbox discard` if it's there.
-- **In the TUI**, the detail pane shows Steps with each step's checkbox, then the link, and a task's row shows `2/5`. Move the cursor onto them with `j`/`k`: `Space` checks or unchecks a step, `a` adds steps (Enter adds one and opens the next; Esc stops), `e` or Enter edits a step or the link's URL (or adds a link), and `d` deletes either after asking.
+- **In the TUI**, the detail pane shows Steps with each step's checkbox, then the link, and a task's row shows `2/5`. Move the cursor onto them with `j`/`k`: `Space` checks or unchecks a step, `a` adds steps (Enter adds one and opens the next; Esc stops), `e` or Enter edits a step or the link's URL (or adds a link), and `d` deletes either after asking. In the link's editor, `Tab` moves on to its name, app and external ID; Enter sends every field that changed, and emptying one that has a value is refused, as `links edit` can't clear it.
 
 ## Attachments
 
@@ -376,6 +379,8 @@ ms-todo folders delete Someday --yes                # the lists stay, in no fold
 ms-todo folders order Projects --before Areas
 ms-todo lists order Health --before Finances        # within a folder
 ```
+
+In the TUI, `K` and `J` (or `Alt-Up` and `Alt-Down`) in the sidebar move the list under the cursor up or down within its folder, or on a folder's heading, the folder; each move is `lists order` or `folders order`.
 
 Folders work like the To Do app's list groups, one level deep, and exist only as a name on each list: a folder with no lists is gone. They're kept in ms-todo's own data on each list in Microsoft To Do, so every ms-todo you sign in to shows them after its next sync, while the To Do apps don't see them. A folder name that exists matches ignoring case. `lists list` gives each list's `folder` (null for none) and lists them folder by folder, then those in no folder; lists without an order go last, in the order ms-todo first saw them. Every folder change is a change like any other: queued, sent in the background, shown `pending` until then, undone with `ms-todo undo`, and it takes `--dry-run` and `--idempotency-key`. One command that moves or renames several lists is one change, so one `undo` reverses all of it.
 
@@ -451,7 +456,7 @@ mst tui --theme nord # draw with a theme (mst tui --list-themes names them)
 
 A title bar with the version and the view you're in, a sidebar of smart views (My Day, Next, Important, Planned, All, Assigned, Upcoming, Someday, Completed), then your folders, each with its lists under it and their total, then the lists in no folder, all with their counts, the task list, and a detail pane. The focused task list shows the cursor's position and its task count in the top border (`3/42`). It opens from the local cache, and changes made anywhere, the phone included, show up as the daemon syncs them. A change you make shows at once, marked pending (dim) until it reaches Microsoft To Do; unknown outcomes are amber and rejected changes red, with a banner saying why.
 
-The keys are in the README's [TUI keys](../README.md#tui-keys) table; `?` inside the TUI lists them all. The palette (`:`) also has "New list…", "Rename list…", "Delete list…" (the list under the sidebar's cursor, or the one shown) and "Context: …" for each [context](#contexts), and a task's categories show on its row as `@label`.
+The keys are in the README's [TUI keys](../README.md#tui-keys) table; `?` inside the TUI lists them all. The palette (`:`) also has "New list…", "Rename list…", "Delete list…" (the list under the sidebar's cursor, or the one shown), "Context: …" for each [context](#contexts), and "Suggest lists for inbox" ([List suggestions](#list-suggestions)); with nothing typed, the last ten commands run from it come first. A task's categories show on its row as `@label`.
 
 In the editor, a due date or a reminder takes what `--due` and `--reminder` take (`tomorrow`, `fri 17:30`, `+2w`, `12 oct`), and shows what it resolves to as you type (`→ Fri 2 Oct`, or `, in the past`); empty or `-` clears it, and input it can't read says why and sends nothing. Importance is picked by level: `1` high, `2` or `3` normal, `4` low (or `h`, `n`, `l`), saved at once. Notes are plain text on several lines: notes written as html on another device are shown as text, and only rewritten as text if you change them. A selection holds only tasks in the view on screen: switching views clears it, and a task that leaves the view drops out of it. The Completed view is grouped by the day each task was completed: Today, Yesterday, then `Mon 21 Sep` and so on. My Day's title has its day (`My Day · Fri 25 Sep`); its tasks come first, then Suggestions. `t` on a suggestion adds it; `t` on the task or the selection puts it in My Day, or takes it out when it's all there already. `a` from My Day adds the new task to it.
 
@@ -514,6 +519,7 @@ Its socket is private to your user (0600, in a 0700 directory), and its log is `
 | Semantic search's model | `models/` in the data directory, once [search by meaning](#search-by-meaning) is on |
 | Sign-in | `auth/token.json` in the data directory, mode 0600 |
 | Daemon log | `logs/daemon.log` in the data directory |
+| The TUI palette's recent commands | `tui-recent-commands` in the data directory |
 | Daemon socket | `$XDG_RUNTIME_DIR/ms-todo/` where there is one, else `run/` in the data directory |
 
 An instance other than the default adds its name: `ms-todo-work` for `--instance work`. `ms-todo auth status` prints the token and config paths; `ms-todo doctor` prints the database's.

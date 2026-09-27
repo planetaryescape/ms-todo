@@ -133,7 +133,7 @@ mod tests {
     fn e_on_the_assignee_field_edits_it_directly() {
         let mut app = seeded();
         app.focus = Pane::Detail;
-        for _ in 0..4 {
+        for _ in 0..5 {
             act(&mut app, Action::MoveDown);
         }
         assert_eq!(

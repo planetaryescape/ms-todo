@@ -37,6 +37,7 @@ pub async fn tui(paths: &Paths, args: TuiArgs, started: Instant) -> Result<(), C
         ascii: args.ascii,
         theme,
         places,
+        recent_commands: Some(paths.data_dir.join(ms_todo_tui::recent::FILE_NAME)),
         bench_startup: args.bench_startup,
         started,
         trace: std::env::var_os(TRACE_ENV).map(Into::into),
