@@ -89,7 +89,7 @@ pub(crate) async fn change_extension(
         let body = data.clone().map_or(Value::Null, Value::Object);
         return Ok(plan(action, target, body));
     }
-    let before = current.as_ref().map(data_of).unwrap_or_default();
+    let before = current.as_ref().map(snapshot_of).unwrap_or_default();
     write_extension(state, &path, name, data.as_ref(), current.is_some()).await?;
     let after = match &data {
         Some(data) => document(name, data),
@@ -146,9 +146,9 @@ pub(super) async fn undo(
         "kind": "extension",
         "path": path,
         "name": name,
-        "after": restore.cloned().map_or(Value::Null, Value::Object),
+        "after": restore.map_or(Value::Null, |data| Value::Object(data_of(data))),
     });
-    let rollback = current.as_ref().map(data_of).unwrap_or_default();
+    let rollback = current.as_ref().map(snapshot_of).unwrap_or_default();
     let entity = format!("{}/{name}", path.join("/"));
     record(
         state,
@@ -303,6 +303,20 @@ fn data_of(extension: &Entity) -> Map<String, Value> {
     extension
         .iter()
         .filter(|(key, _)| !is_reserved(key))
+        .map(|(key, value)| (key.clone(), value.clone()))
+        .collect()
+}
+
+/// An extension as undo keeps it: its fields with their own type
+/// annotations (`scores@odata.type`), which Graph needs sent back to take
+/// a typed array (S21); not Graph's `id`, `extensionName` or `@odata.*`.
+fn snapshot_of(extension: &Entity) -> Map<String, Value> {
+    extension
+        .iter()
+        .filter(|(key, _)| match key.split_once('@') {
+            Some((field, _)) => !field.is_empty() && extension.contains_key(field),
+            None => !matches!(key.as_str(), "id" | "extensionName"),
+        })
         .map(|(key, value)| (key.clone(), value.clone()))
         .collect()
 }

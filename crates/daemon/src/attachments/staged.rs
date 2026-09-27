@@ -94,40 +94,61 @@ pub(crate) fn name_of(url: &Url) -> String {
         .unwrap_or_else(|| "attachment".to_owned())
 }
 
+/// The client for one leg of a download: redirects followed by hand, no
+/// proxy (a proxy would resolve the name itself, past [`PublicOnly`]),
+/// and the resolver [`PublicOnly`], `trusted` for the first request.
+fn download_client(trusted: bool) -> Result<reqwest::Client, String> {
+    crate::semantic::model::http_client_builder()
+        .no_proxy()
+        .dns_resolver(PublicOnly { trusted })
+        .redirect(reqwest::redirect::Policy::none())
+        .build()
+        .map_err(|error| format!("can't make an HTTP client: {error}"))
+}
+
 /// Download `url` into `root`: 25 MB at most, and every redirect to
 /// `https` too.
 pub(crate) async fn download(root: &Path, url: Url) -> Result<Downloaded, String> {
-    let typed = url.host_str().unwrap_or_default().to_ascii_lowercase();
-    let resolver = PublicOnly {
-        typed: typed.clone(),
-    };
-    let client = crate::semantic::model::http_client_builder()
-        .dns_resolver(resolver)
-        .redirect(reqwest::redirect::Policy::custom(move |attempt| {
-            if attempt.previous().len() >= MAX_REDIRECTS {
-                attempt.error("too many redirects")
-            } else if !allowed(attempt.url()) {
-                attempt.error("it redirects to a URL that isn't https")
-            } else if !redirect_allowed(attempt.url(), &typed) {
-                attempt.error("it redirects to this machine or its network")
-            } else {
-                attempt.follow()
-            }
-        }))
-        .build()
-        .map_err(|error| format!("can't make an HTTP client: {error}"))?;
     let failed = |error: reqwest::Error| {
         format!(
             "downloading {url} failed: {}",
             ms_todo_core::message_with_causes(&error)
         )
     };
-    let mut response = client
-        .get(url.clone())
-        .send()
-        .await
-        .and_then(reqwest::Response::error_for_status)
-        .map_err(failed)?;
+    // The first request may reach the host typed; each redirect is
+    // requested by a client that reaches only public addresses (D-067).
+    let first = download_client(true)?;
+    let redirects = download_client(false)?;
+    let mut at = url.clone();
+    let mut response = first.get(at.clone()).send().await.map_err(failed)?;
+    let mut hops = 0;
+    while response.status().is_redirection() {
+        let Some(next) = response
+            .headers()
+            .get(reqwest::header::LOCATION)
+            .and_then(|location| location.to_str().ok())
+            .and_then(|location| at.join(location).ok())
+        else {
+            break;
+        };
+        hops += 1;
+        if hops > MAX_REDIRECTS {
+            return Err(format!("downloading {url} failed: too many redirects"));
+        }
+        if !allowed(&next) {
+            return Err(format!(
+                "downloading {url} failed: it redirects to a URL that isn't https"
+            ));
+        }
+        if !redirect_allowed(&next) {
+            return Err(format!(
+                "downloading {url} failed: it redirects to this machine or its network"
+            ));
+        }
+        response = redirects.get(next.clone()).send().await.map_err(failed)?;
+        at = next;
+    }
+    let mut response = response.error_for_status().map_err(failed)?;
     let too_big = || {
         format!(
             "{url} is over 25 MB ({MAX_ATTACHMENT_BYTES} bytes), the most Microsoft To Do takes"

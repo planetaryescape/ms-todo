@@ -256,12 +256,79 @@ async fn a_url_is_downloaded_by_the_daemon_and_attached() {
             .is_some_and(|message| message.contains("this machine or its network")),
         "{inward}"
     );
+    // Nor back to the typed host itself: only the first request may reach
+    // it.
+    Mock::given(method("GET"))
+        .and(path("/again"))
+        .respond_with(ResponseTemplate::new(302).insert_header(
+            "Location",
+            format!("{}/files/Q3%20report.pdf", files.uri()).as_str(),
+        ))
+        .mount(&files)
+        .await;
+    let again = env.failure(
+        &[
+            "attachments",
+            "add",
+            &task,
+            &format!("{}/again", files.uri()),
+        ],
+        2,
+    );
+    assert!(
+        again["error"]["message"]
+            .as_str()
+            .is_some_and(|message| message.contains("this machine or its network")),
+        "{again}"
+    );
     // A URL goes on its own.
     env.cmd()
         .args(["attachments", "add", &task, &url, "/tmp/other.pdf"])
         .assert()
         .code(2);
     assert_eq!(graph.attachments_of("T1").len(), 2);
+}
+
+#[tokio::test]
+async fn a_download_never_goes_through_a_proxy() {
+    // A proxy would resolve names itself, past the check that keeps
+    // redirects off this machine; this one answers everything.
+    let proxy = MockServer::start().await;
+    Mock::given(method("GET"))
+        .respond_with(ResponseTemplate::new(200).set_body_bytes(b"from the proxy".to_vec()))
+        .mount(&proxy)
+        .await;
+    let mut env = Env::new();
+    let graph = FakeGraph::start(&mut env, vec![list("L-tasks", "Tasks", "defaultList")]).await;
+    graph.edit(|data| {
+        data.tasks
+            .insert("L-tasks".into(), vec![task("T1", "File taxes", "W/\"e1\"")]);
+    });
+    graph.accept_attachments().await;
+    env.cmd()
+        .env(LOOPBACK_HTTP, "1")
+        .env("HTTP_PROXY", proxy.uri())
+        .env("http_proxy", proxy.uri())
+        // Graph, the fake at 127.0.0.1, is reached directly either way.
+        .env("NO_PROXY", "127.0.0.1")
+        .env("no_proxy", "127.0.0.1")
+        .args(["daemon", "start"])
+        .assert()
+        .success();
+    env.synced();
+    let files = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/notes.txt"))
+        .respond_with(ResponseTemplate::new(200).set_body_bytes(b"direct".to_vec()))
+        .mount(&files)
+        .await;
+    let url = format!("http://localhost:{}/notes.txt", files.address().port());
+    let added = env.json(&["attachments", "add", &taxes(&env), &url]);
+    env.op_in_state(&op_id(&added), "done");
+    assert_eq!(
+        graph.attachments_of("T1"),
+        [("notes.txt".to_owned(), b"direct".to_vec())]
+    );
 }
 
 #[tokio::test]

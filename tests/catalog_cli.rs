@@ -187,6 +187,43 @@ async fn open_extensions_are_read_set_and_deleted_on_lists_and_tasks() {
         (json!(3), json!("clay"))
     );
 
+    // A typed numeric array, set on another device, survives a delete and
+    // its undo: the type is kept and sent back (S21).
+    graph.edit(|data| {
+        data.named_extensions
+            .entry("L-home".into())
+            .or_default()
+            .insert(
+                "com.example.scores".into(),
+                json!({
+                    "@odata.type": "#microsoft.graph.openTypeExtension",
+                    "id": "com.example.scores",
+                    "extensionName": "com.example.scores",
+                    "scores": [3, 5],
+                    "scores@odata.type": "#Collection(Int64)"
+                }),
+            );
+    });
+    env.json(&[
+        "extensions",
+        "delete",
+        "list",
+        "Home",
+        "com.example.scores",
+        "--yes",
+    ]);
+    assert!(
+        graph
+            .named_extension("L-home", "com.example.scores")
+            .is_none()
+    );
+    env.json(&["undo"]);
+    let back = graph
+        .named_extension("L-home", "com.example.scores")
+        .expect("made again");
+    assert_eq!(back["scores"], json!([3, 5]));
+    assert_eq!(back["scores@odata.type"], "#Collection(Int64)");
+
     // On a task, named by its title in a list; Graph can't list its,
     // so `list` gives ms-todo's own.
     env.json(&[

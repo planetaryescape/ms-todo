@@ -1,28 +1,29 @@
-//! Where an attachment's download may go (D-067): a URL someone typed may
-//! name any host, but a redirect may not lead to this machine or its
+//! Where an attachment's download may go (D-067): the URL someone typed
+//! may name any host, but no redirect may lead to this machine or its
 //! network (loopback, private, link-local, unique-local and the like),
 //! where a server could otherwise have the daemon fetch what only it can
-//! reach. The check is in the resolver the connection itself uses, so a
-//! name can't resolve to one address when checked and another when
-//! connected; an address written in the URL is checked in the redirect
-//! policy, since no resolver sees it.
+//! reach, the typed host included (another port, a later DNS answer). The
+//! check is in the resolver the connection itself uses, so a name can't
+//! resolve to one address when checked and another when connected; an
+//! address written in the URL is checked before the request, since no
+//! resolver sees it. The first request and the redirects use separate
+//! clients, so no redirect reuses the first request's connection.
 
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr};
 
 use reqwest::Url;
 use reqwest::dns::{Addrs, Name, Resolve, Resolving};
 
-/// Resolves every name but the one the user typed only to public
-/// addresses.
+/// Resolves only to public addresses, or, for the first request's client
+/// (`trusted`), to anything.
 pub(crate) struct PublicOnly {
-    /// The typed URL's host, lowercase: what the user asked for.
-    pub typed: String,
+    pub trusted: bool,
 }
 
 impl Resolve for PublicOnly {
     fn resolve(&self, name: Name) -> Resolving {
         let host = name.as_str().to_ascii_lowercase();
-        let trusted = host == self.typed;
+        let trusted = self.trusted;
         Box::pin(async move {
             let found: Vec<SocketAddr> =
                 tokio::net::lookup_host((host.as_str(), 0)).await?.collect();
@@ -40,13 +41,10 @@ impl Resolve for PublicOnly {
     }
 }
 
-/// Whether a redirect to `url` may be followed, as far as its host goes:
-/// the host typed, a name (the resolver checks it), or a public address.
-pub(crate) fn redirect_allowed(url: &Url, typed: &str) -> bool {
-    let host = url.host_str().unwrap_or_default().to_ascii_lowercase();
-    if host == typed {
-        return true;
-    }
+/// Whether a redirect to `url` may be requested, as far as its host goes:
+/// a name (the resolver checks it) or a public address.
+pub(crate) fn redirect_allowed(url: &Url) -> bool {
+    let host = url.host_str().unwrap_or_default();
     if host.is_empty() {
         return false;
     }
@@ -130,35 +128,24 @@ mod tests {
     }
 
     #[test]
-    fn a_redirect_may_not_lead_to_a_private_address_other_than_the_one_typed() {
+    fn a_redirect_may_not_lead_to_a_private_address() {
         let url = |text: &str| Url::parse(text).expect("url");
-        assert!(redirect_allowed(
-            &url("https://example.com/a"),
-            "files.example"
-        ));
-        assert!(!redirect_allowed(
-            &url("https://169.254.169.254/x"),
-            "files.example"
-        ));
-        assert!(!redirect_allowed(&url("https://[::1]/x"), "files.example"));
-        assert!(redirect_allowed(
-            &url("https://192.168.1.5/b"),
-            "192.168.1.5"
-        ));
-        assert!(redirect_allowed(&url("https://1.1.1.1/x"), "files.example"));
+        assert!(redirect_allowed(&url("https://example.com/a")));
+        assert!(!redirect_allowed(&url("https://169.254.169.254/x")));
+        assert!(!redirect_allowed(&url("https://[::1]/x")));
+        assert!(
+            !redirect_allowed(&url("https://192.168.1.5/b")),
+            "typed or not"
+        );
+        assert!(redirect_allowed(&url("https://1.1.1.1/x")));
     }
 
     #[tokio::test]
-    async fn a_name_on_this_machine_is_refused_unless_it_was_typed() {
+    async fn a_name_on_this_machine_is_refused_but_for_the_first_request() {
         let name = |host: &str| host.parse::<Name>().expect("name");
-        let guard = PublicOnly {
-            typed: "files.example".into(),
-        };
-        let refused = guard.resolve(name("localhost")).await;
-        assert!(refused.is_err());
-        let trusted = PublicOnly {
-            typed: "localhost".into(),
-        };
-        assert!(trusted.resolve(name("localhost")).await.is_ok());
+        let strict = PublicOnly { trusted: false };
+        assert!(strict.resolve(name("localhost")).await.is_err());
+        let first = PublicOnly { trusted: true };
+        assert!(first.resolve(name("localhost")).await.is_ok());
     }
 }
