@@ -198,7 +198,8 @@ async fn keys_drive_the_daemon_and_the_screen_follows() {
         &requests[1],
         Request::Seed {
             scope: None,
-            search: None
+            search: None,
+            ..
         }
     ));
     let change = requests

@@ -20,6 +20,7 @@ Commands:
   extensions   Open extensions on a list or task: data other apps (or you) keep there. ms-todo's own, com.planetaryescape.mstodo, can be read but not written here
   search       Find tasks by the words in their title or notes, in every list, best match first
   done         What you completed, by day, newest first: for a standup or a weekly review. Microsoft To Do keeps the day of a completion, not its time
+  next         What to do now: the few open tasks that matter most, each with why. Overdue first (most overdue first), then due today, in My Day, high importance, due within 3 days, then the oldest. Deferred and Someday tasks are never next
   reschedule   Move open tasks to a new due date: the overdue ones, those due before a day, or the ones named. One `undo` puts them all back
   outbox       Writes waiting to reach Microsoft To Do, and those that didn't
   undo         Reverse a change: the last one by default, or the one with this op_id

@@ -1,7 +1,7 @@
 //! The arguments of `tasks list` and of `lists` (rung 8e).
 
 use clap::{ArgGroup, Args, Subcommand, ValueEnum};
-use ms_todo_protocol::{DueFilter, Importance, StatusFilter, TaskSort};
+use ms_todo_protocol::{DeferredFilter, DueFilter, Importance, StatusFilter, TaskSort};
 
 use crate::args::IdempotencyArgs;
 use crate::phrases;
@@ -9,11 +9,12 @@ use crate::phrases;
 #[derive(Debug, Args)]
 pub struct TaskListArgs {
     /// The list's exact name or its ID [default: the "Tasks" list, or with
-    /// --status, --due, --importance or --category, every list]
+    /// --status, --due, --importance, --category or --deferred only, every
+    /// list]
     #[arg(long, value_name = "NAME|ID", conflicts_with = "my_day")]
     pub list: Option<String>,
     /// Today's My Day instead of a list, as `myday list` gives it
-    #[arg(long, conflicts_with_all = ["search", "assignee", "status", "completed", "due", "importance", "category", "sort", "limit"])]
+    #[arg(long, conflicts_with_all = ["search", "assignee", "status", "completed", "due", "importance", "category", "sort", "limit", "deferred"])]
     pub my_day: bool,
     /// Only tasks whose title or notes match, best match first; the
     /// syntax is `search`'s
@@ -49,6 +50,29 @@ pub struct TaskListArgs {
     /// At most this many, after sorting
     #[arg(long, value_name = "N", value_parser = clap::value_parser!(u32).range(1..))]
     pub limit: Option<u32>,
+    /// Tasks deferred to a later day, or parked as Someday: hide (the
+    /// default; the table says how many), include, or only them (every
+    /// list without --list, by the day they come back, then Someday). A
+    /// search always includes them
+    #[arg(long, value_enum, value_name = "WHICH")]
+    pub deferred: Option<DeferredArg>,
+}
+
+#[derive(Clone, Copy, Debug, ValueEnum)]
+pub enum DeferredArg {
+    Hide,
+    Include,
+    Only,
+}
+
+impl From<DeferredArg> for DeferredFilter {
+    fn from(deferred: DeferredArg) -> Self {
+        match deferred {
+            DeferredArg::Hide => Self::Hide,
+            DeferredArg::Include => Self::Include,
+            DeferredArg::Only => Self::Only,
+        }
+    }
 }
 
 impl TaskListArgs {
@@ -64,6 +88,7 @@ impl TaskListArgs {
             category: self.category.clone(),
             sort: self.sort.map(Into::into),
             limit: self.limit,
+            deferred: self.deferred.map(Into::into).unwrap_or_default(),
         }
     }
 }

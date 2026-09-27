@@ -161,6 +161,12 @@ fn render(input: &str) -> String {
     if parsed.my_day {
         out.push_str("  my_day: true\n");
     }
+    if let Some(defer) = parsed.defer {
+        out.push_str(&format!("  defer: {defer}\n"));
+    }
+    if parsed.someday {
+        out.push_str("  someday: true\n");
+    }
     let spans: Vec<String> = parsed
         .spans
         .iter()
@@ -528,6 +534,42 @@ fn my_day_is_read_out_of_the_title() {
         assert!(parsed.warnings.is_empty(), "{:?}", parsed.warnings);
     }
     assert!(!parse("Rate it *****").my_day);
+}
+
+#[test]
+fn defer_and_someday_are_read_out_of_the_title() {
+    // Thursday 24 September.
+    let day = |value: &str| NaiveDate::parse_from_str(value, "%Y-%m-%d").ok();
+    let parsed = parse("Plan the trip ^fri p1 1 oct");
+    assert_eq!(parsed.title, "Plan the trip");
+    assert_eq!(parsed.defer, day("2026-09-25"));
+    assert_eq!(parsed.due, day("2026-10-01"), "the due date is its own");
+    assert!(parsed.warnings.is_empty(), "{:?}", parsed.warnings);
+    // Several words, unquoted, as `!` takes them.
+    assert_eq!(parse("Taxes ^next week").defer, day("2026-09-28"));
+    assert_eq!(parse("Taxes ^in 3 days").defer, day("2026-09-27"));
+    let timed = parse("Call ^tomorrow 9am");
+    assert_eq!(timed.defer, day("2026-09-25"));
+    assert_eq!(timed.reminder, None, "a defer's time isn't a reminder");
+    assert_eq!(timed.warnings.len(), 1);
+    let parked = parse("Learn the cello +someday");
+    assert!(parked.someday);
+    assert_eq!(parked.title, "Learn the cello");
+    assert!(
+        parked.summary(&now()).contains(&"Someday".to_owned()),
+        "{:?}",
+        parked.summary(&now())
+    );
+    // Not a date, escaped, or glued to a word: stays as typed.
+    let odd = parse("Tune ^nope");
+    assert_eq!((odd.title.as_str(), odd.defer), ("Tune ^nope", None));
+    assert_eq!(odd.warnings.len(), 1);
+    assert_eq!(parse("x \\^fri").defer, None);
+    assert_eq!(parse("2^10 bits").title, "2^10 bits");
+    assert!(!parse("+somedays").someday);
+    let json = parse("Taxes ^fri +someday").to_json("Taxes ^fri +someday");
+    assert_eq!(json["defer"], "2026-09-25");
+    assert_eq!(json["someday"], true);
 }
 
 #[test]

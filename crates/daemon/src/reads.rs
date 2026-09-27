@@ -2,7 +2,8 @@
 //! (D-034) with the scope's sync state beside the items.
 
 use ms_todo_protocol::{
-    ErrorPayload, ResponseData, SearchStatus, SyncInfo, SyncState, TaskFilter, TaskSort,
+    DeferredFilter, ErrorPayload, ResponseData, SearchStatus, SyncInfo, SyncState, TaskFilter,
+    TaskSort,
 };
 use ms_todo_store::{LISTS_SCOPE, ListRow, StatusFilter, TaskRow, TaskSearch, View};
 use std::collections::HashMap;
@@ -46,11 +47,13 @@ pub(crate) async fn list_tasks(
         return Ok(ResponseData::Tasks {
             items: Vec::new(),
             sync: lists_sync,
+            deferred_hidden: Some(0),
         });
     }
     let lists = state.store.lists().await.map_err(store_error)?;
     let every_list = wanted.is_none() && (assignee.is_some() || filter.narrows());
     let mut filter = filter.clone();
+    filter.deferred = crate::deferral::searched(filter.deferred, search);
     let (rows, sync) = if !every_list {
         let (_, rows, sync) = list_rows(state, &lists, wanted, search).await?;
         (rows, sync)
@@ -59,7 +62,9 @@ pub(crate) async fn list_tasks(
             (Some(_), None) => state.store.tasks_in_view(View::Assigned).await,
             (Some(_), Some(query)) => search_view(state, query, View::Assigned).await,
             (None, None) => {
-                filter.sort.get_or_insert(TaskSort::Due);
+                if filter.deferred != DeferredFilter::Only {
+                    filter.sort.get_or_insert(TaskSort::Due);
+                }
                 state.store.every_task().await
             }
             (None, Some(query)) => search_every_list(state, query).await,
@@ -76,11 +81,13 @@ pub(crate) async fn list_tasks(
         }
         None => rows,
     };
-    let rows = crate::task_filter::apply(rows, &filter, chrono::Local::now().date_naive())?;
+    let (rows, hidden) = crate::task_filter::apply(rows, &filter, crate::deferral::today())?;
+    let deferred_hidden = Some(hidden);
     if !every_list && assignee.is_none() {
         return Ok(ResponseData::Tasks {
             items: rows.iter().map(task_entity).collect(),
             sync,
+            deferred_hidden,
         });
     }
     let names: HashMap<&str, &str> = lists
@@ -97,11 +104,12 @@ pub(crate) async fn list_tasks(
             })
             .collect(),
         sync,
+        deferred_hidden,
     })
 }
 
 /// Every list's tasks matching `query`, best first, whatever their status.
-async fn search_every_list(
+pub(crate) async fn search_every_list(
     state: &State,
     query: &str,
 ) -> Result<Vec<TaskRow>, ms_todo_store::StoreError> {
@@ -150,6 +158,7 @@ pub(crate) async fn get_tasks(
             .map(|target| task_entity(&target.row))
             .collect(),
         sync: read_state(state, LISTS_SCOPE).await?,
+        deferred_hidden: None,
     })
 }
 

@@ -151,6 +151,7 @@ fn cli_help_snapshots_cover_all_commands() {
         ("cli_help_myday_rollover", &["myday", "rollover", "--help"]),
         ("cli_help_search", &["search", "--help"]),
         ("cli_help_done", &["done", "--help"]),
+        ("cli_help_next", &["next", "--help"]),
         ("cli_help_reschedule", &["reschedule", "--help"]),
         ("cli_help_outbox", &["outbox", "--help"]),
         ("cli_help_outbox_list", &["outbox", "list", "--help"]),

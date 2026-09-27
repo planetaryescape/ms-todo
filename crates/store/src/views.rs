@@ -26,6 +26,11 @@ pub enum View {
     /// Open tasks with an assignee (`assignee` in our extension), grouped
     /// by person.
     Assigned,
+    /// Open tasks deferred (`deferUntil` in our extension) to a day after
+    /// this one, and not Someday, soonest back first.
+    Upcoming(NaiveDate),
+    /// Open tasks parked as Someday (`someday` in our extension).
+    Someday,
 }
 
 impl View {
@@ -49,6 +54,11 @@ impl View {
             Self::Assigned => Cow::Owned(format!(
                 "tasks.status <> 'completed' AND COALESCE(trim({ASSIGNEE}), '') <> ''"
             )),
+            Self::Upcoming(today) => Cow::Owned(format!(
+                "tasks.status <> 'completed' AND NOT {SOMEDAY} AND {DEFER_UNTIL} > '{}'",
+                today.format(ms_todo_core::DATE_FORMAT)
+            )),
+            Self::Someday => Cow::Owned(format!("tasks.status <> 'completed' AND {SOMEDAY}")),
         }
     }
 
@@ -72,8 +82,23 @@ impl View {
                 "lower(trim(json_extract(tasks.extension_json, '$.assignee'))), \
                  tasks.due_date IS NULL, tasks.due_date, tasks.created_at, tasks.rowid"
             }
+            Self::Upcoming(_) => {
+                "json_extract(tasks.extension_json, '$.deferUntil'), \
+                 tasks.created_at, tasks.rowid"
+            }
+            Self::Someday => "tasks.created_at, tasks.rowid",
         }
     }
+}
+
+/// Whether a task is out of the everyday views on `today`
+/// (`ms_todo_core::deferral::hidden`, as SQL): open, and Someday or
+/// deferred to a later day.
+fn hidden(today: NaiveDate) -> String {
+    format!(
+        "(tasks.status <> 'completed' AND ({SOMEDAY} OR {DEFER_UNTIL} > '{}'))",
+        today.format(ms_todo_core::DATE_FORMAT)
+    )
 }
 
 /// How many tasks each view and each list holds.
@@ -84,6 +109,8 @@ pub struct TaskCounts {
     pub all: u64,
     pub completed: u64,
     pub assigned: u64,
+    pub upcoming: u64,
+    pub someday: u64,
     /// Open tasks by list local ID; a list with none is absent.
     pub open_by_list: BTreeMap<String, u64>,
 }
@@ -94,6 +121,16 @@ pub(crate) const MY_DAY: &str = "json_extract(tasks.extension_json, '$.myDay')";
 
 /// Who a task waits on, as ms-todo's extension has it, or null.
 const ASSIGNEE: &str = "json_extract(tasks.extension_json, '$.assignee')";
+
+/// Whether a task is Someday: JSON's `true` reads as 1.
+const SOMEDAY: &str = "COALESCE(json_extract(tasks.extension_json, '$.someday'), 0) = 1";
+
+/// The day a deferred task comes back, `YYYY-MM-DD`, or `''`, which sorts
+/// before every day. Anything not shaped like a day is `''` too, as
+/// `ms_todo_core::deferral` ignores what it can't read.
+const DEFER_UNTIL: &str = "CASE WHEN json_extract(tasks.extension_json, '$.deferUntil') \
+     GLOB '[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]' \
+     THEN json_extract(tasks.extension_json, '$.deferUntil') ELSE '' END";
 
 /// Live tasks in live lists.
 pub(crate) const LIVE: &str = "FROM tasks JOIN lists ON lists.local_id = tasks.list_local_id \
@@ -125,22 +162,36 @@ impl Store {
         records.into_iter().map(TaskRow::try_from).collect()
     }
 
-    /// Every view's count and each list's open tasks, in one read.
-    pub async fn task_counts(&self) -> Result<TaskCounts, StoreError> {
+    /// Every view's count and each list's open tasks, in one read. The
+    /// everyday views and the lists leave out what's deferred or Someday
+    /// on `today`, as they show it.
+    pub async fn task_counts(&self, today: NaiveDate) -> Result<TaskCounts, StoreError> {
+        let hidden = hidden(today);
         let sum = |view: View| format!("COALESCE(SUM({}), 0)", view.condition());
-        let (important, planned, all, completed, assigned): (i64, i64, i64, i64, i64) =
-            sqlx::query_as(AssertSqlSafe(format!(
-                "SELECT {}, {}, {}, {}, {} {LIVE}",
-                sum(View::Important),
-                sum(View::Planned),
-                sum(View::All),
-                sum(View::Completed),
-                sum(View::Assigned)
-            )))
-            .fetch_one(self.reader())
-            .await?;
+        let shown = |view: View| format!("COALESCE(SUM({} AND NOT {hidden}), 0)", view.condition());
+        let (important, planned, all, completed, assigned, upcoming, someday): (
+            i64,
+            i64,
+            i64,
+            i64,
+            i64,
+            i64,
+            i64,
+        ) = sqlx::query_as(AssertSqlSafe(format!(
+            "SELECT {}, {}, {}, {}, {}, {}, {} {LIVE}",
+            shown(View::Important),
+            shown(View::Planned),
+            shown(View::All),
+            sum(View::Completed),
+            shown(View::Assigned),
+            sum(View::Upcoming(today)),
+            sum(View::Someday)
+        )))
+        .fetch_one(self.reader())
+        .await?;
         let by_list: Vec<(String, i64)> = sqlx::query_as(AssertSqlSafe(format!(
-            "SELECT tasks.list_local_id, COUNT(*) {LIVE} AND {} GROUP BY tasks.list_local_id",
+            "SELECT tasks.list_local_id, COUNT(*) {LIVE} AND {} AND NOT {hidden} \
+             GROUP BY tasks.list_local_id",
             View::All.condition()
         )))
         .fetch_all(self.reader())
@@ -152,6 +203,8 @@ impl Store {
             all: count(all),
             completed: count(completed),
             assigned: count(assigned),
+            upcoming: count(upcoming),
+            someday: count(someday),
             open_by_list: by_list
                 .into_iter()
                 .map(|(list, open)| (list, count(open)))

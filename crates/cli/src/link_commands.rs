@@ -149,7 +149,9 @@ pub(crate) async fn task(paths: &Paths, args: LinkArgs) -> Result<(Entity, SyncI
         list: args.list,
     };
     match daemon_client::ask(paths, request).await? {
-        ResponseData::Tasks { mut items, sync } if items.len() == 1 => Ok((items.remove(0), sync)),
+        ResponseData::Tasks {
+            mut items, sync, ..
+        } if items.len() == 1 => Ok((items.remove(0), sync)),
         _ => Err(crate::unexpected_response()),
     }
 }

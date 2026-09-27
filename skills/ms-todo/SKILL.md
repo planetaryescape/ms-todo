@@ -5,7 +5,7 @@ description: Read, find, filter, add, complete, reopen, edit, reschedule, move a
 
 # ms-todo
 
-**Skill v12, for ms-todo rung 8e, the whole API** (instant reads from a local cache kept live by delta sync; search across every list; what was completed, by day; instant writes that queue offline and are never dropped; bulk reschedules and edits; moving tasks between lists without losing anything; undo; quick add, which reads a task's text for its list, dates, recurrence and importance, and which agents turn off with `--no-parse`; optional list suggestions for inbox tasks; My Day, ms-todo's plan for today, mirrored on the phone through the due date; a task's steps and its one link; its files, attached and downloaded by path; who a task is waiting on; filters across lists; start dates and recurrences; lists made, renamed and deleted; Outlook categories; and open extensions).
+**Skill v13, for ms-todo rung 9a, defer, Someday and next** (instant reads from a local cache kept live by delta sync; search across every list; what was completed, by day; instant writes that queue offline and are never dropped; bulk reschedules and edits; moving tasks between lists without losing anything; undo; quick add, which reads a task's text for its list, dates, recurrence and importance, and which agents turn off with `--no-parse`; optional list suggestions for inbox tasks; My Day, ms-todo's plan for today, mirrored on the phone through the due date; a task's steps and its one link; its files, attached and downloaded by path; who a task is waiting on; filters across lists; start dates and recurrences; lists made, renamed and deleted; Outlook categories; open extensions; and tasks deferred to a day or parked as Someday, with `next` for what to do now).
 
 `ms-todo tui` (`mst tui`) is a full-screen view for people at a keyboard. Don't use it: it needs a terminal, and everything it does is a command below. Always pass a subcommand: a bare `ms-todo` opens the TUI in a terminal, and elsewhere only prints help and exits 2.
 
@@ -69,6 +69,7 @@ ms-todo tasks list --list "Work" --status waiting --format json
 ms-todo tasks show <ID> --format json                            # one task, every field
 ```
 
+- **`tasks list` leaves out deferred and Someday tasks** (ms-todo's own, below): the envelope's `deferred_hidden` says how many. Pass `--deferred include` when the user asks for everything in a list, or `--deferred only` for what's put off. Graph's `--status deferred` is a different thing: a status the To Do apps set, unrelated to ms-todo's defer.
 - `--status open|completed|all|not-started|in-progress|waiting|deferred`, `--due today|overdue|none|any|"before W"|"after W"|<day>`, `--importance`, `--category` (ignoring case), `--sort due|importance|created|modified|title`, `--limit N`.
 - A filter with no `--list` looks in every list, soonest due first, each item with `list` (its list's name). With `--list`, that list only.
 - `--fresh` before any read syncs and waits first: `ms-todo --fresh tasks list --due today --format json`.
@@ -205,6 +206,24 @@ ms-todo myday rollover --dry-run --format json    # what the daily rollover woul
 - The daemon empties the day's My Day by itself at `my_day.rollover_time` (00:00 unless config.toml says otherwise). Don't run `myday rollover` unless the user asks; it's one change, `my_day_rollover` in `outbox list`, and only `undo <op_id>` reverses it: a plain `undo` skips the daemon's own rollover.
 - Only suggest; **add only what the user picks**. Adding a task already in My Day, or removing one that isn't, changes nothing (`items: []`).
 - Tasks the user put in My Day in the To Do app aren't visible here: Graph can't read the app's My Day. Don't tell the user their My Day is empty on that basis; say ms-todo's is.
+
+## Put tasks off, and what to do now
+
+```bash
+ms-todo tasks add "Plan the trip" --no-parse --defer fri --format json   # hidden until Friday
+ms-todo tasks add "Learn the cello" --no-parse --someday --format json   # parked as Someday
+ms-todo tasks edit <ID> [<ID>...] --defer 2026-10-02 --format json       # --clear-defer shows it again
+ms-todo tasks edit <ID> --someday --format json                          # --no-someday takes it out
+ms-todo tasks list --deferred only --format json      # what's put off: by the day it comes back, then Someday
+ms-todo next --format json                            # the 5 open tasks to do now, each with "why" and "list"
+ms-todo next --limit 10 --list "Work" --format json
+```
+
+- Every task has `defer_until` (`YYYY-MM-DD` or null) and `someday` (boolean). A deferred task comes back by itself on its day; nothing needs to run. The due date is separate and untouched: use `--defer` when the user says "don't show me this until…", `--due` when they give a deadline.
+- The phone doesn't hide deferred tasks. Say so if the user expects it to.
+- `search` finds deferred and Someday tasks; `tasks list`, `waiting`, `next` and My Day's suggestions don't show them.
+- `next` is a fixed order: overdue (most overdue first), due today, in My Day, high importance, due within 3 days, then the oldest. Quote each task's `why` rather than inventing a reason.
+- In quick-add text, `^fri` / `^next week` defers and `+someday` parks; with `--no-parse` use the flags. `undo` reverses either unless it changed since.
 
 ## Waiting on someone
 

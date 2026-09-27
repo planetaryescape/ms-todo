@@ -22,10 +22,14 @@ pub const TASK_COLUMNS: &[&str] = &[
     "created",
     "modified",
     "sync_state",
+    "defer_until",
+    "someday",
 ];
 
 /// Tasks from every list (`tasks list` with a filter and no `--list`):
-/// the task columns, then the list's name.
+/// the task columns as they were, the list's name, then the columns added
+/// since. New columns go at the end of every CSV shape, so no column's
+/// position ever moves.
 pub const EVERY_LIST_COLUMNS: &[&str] = &[
     "id",
     "title",
@@ -38,6 +42,8 @@ pub const EVERY_LIST_COLUMNS: &[&str] = &[
     "modified",
     "sync_state",
     "list",
+    "defer_until",
+    "someday",
 ];
 
 /// A search result: enough to recognise the task and where it matched.
@@ -63,6 +69,17 @@ pub const ASSIGNED_COLUMNS: &[&str] = &[
     "list",
     "status",
     "due",
+    "sync_state",
+];
+
+/// A task `next` gives: what, why, where and when it's due.
+pub const NEXT_COLUMNS: &[&str] = &[
+    "id",
+    "title",
+    "list",
+    "why",
+    "due",
+    "importance",
     "sync_state",
 ];
 
@@ -99,6 +116,36 @@ pub fn task_row(task: &Entity) -> Vec<String> {
             .unwrap_or_default(),
         text(task, "createdDateTime").to_owned(),
         text(task, "lastModifiedDateTime").to_owned(),
+        text(task, "sync_state").to_owned(),
+        text(task, "defer_until").to_owned(),
+        boolean(task, "someday"),
+    ]
+}
+
+/// Tasks from every list: [`task_row_with_list`] with the list's name.
+pub fn every_list_row(task: &Entity) -> Vec<String> {
+    task_row_with_list(task, text(task, "list"))
+}
+
+/// [`task_row`] in [`EVERY_LIST_COLUMNS`]' order: `list` where it always
+/// was, before the columns added after it (rung 9a's `defer_until` and
+/// `someday`), so no position moves.
+pub fn task_row_with_list(task: &Entity, list: &str) -> Vec<String> {
+    let mut row = task_row(task);
+    let added = row.split_off(row.len() - 2);
+    row.push(list.to_owned());
+    row.extend(added);
+    row
+}
+
+pub fn next_row(task: &Entity) -> Vec<String> {
+    vec![
+        text(task, "id").to_owned(),
+        text(task, "title").to_owned(),
+        text(task, "list").to_owned(),
+        text(task, "why").to_owned(),
+        local_due(task),
+        text(task, "importance").to_owned(),
         text(task, "sync_state").to_owned(),
     ]
 }
@@ -216,4 +263,24 @@ fn boolean(entity: &Entity, key: &str) -> String {
         .and_then(Value::as_bool)
         .map(|value| value.to_string())
         .unwrap_or_default()
+}
+
+#[cfg(test)]
+mod column_order_tests {
+    use serde_json::json;
+
+    use super::*;
+
+    #[test]
+    fn list_keeps_its_place_and_new_columns_come_last() {
+        let task =
+            json!({ "id": "t1", "list": "Home", "defer_until": "2026-10-02", "someday": true });
+        let row = every_list_row(task.as_object().expect("object"));
+        assert_eq!(row.len(), EVERY_LIST_COLUMNS.len());
+        let at = |name: &str| EVERY_LIST_COLUMNS.iter().position(|column| *column == name);
+        assert_eq!(at("list"), Some(10), "where it was before rung 9a");
+        assert_eq!(row[10], "Home");
+        assert_eq!(&row[11..], ["2026-10-02", "true"]);
+        assert_eq!(&EVERY_LIST_COLUMNS[11..], ["defer_until", "someday"]);
+    }
 }

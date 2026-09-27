@@ -202,6 +202,7 @@ fn merge(
         !parsed.categories.is_empty(),
     );
     overrode("--recur", args.recur.is_some(), parsed.recurrence.is_some());
+    overrode("--defer", args.defer.is_some(), parsed.defer.is_some());
     let clear_due = matches!(args.due, Some(Clearable::Clear));
     if clear_due && args.recur.is_some() {
         return Err(CliError::message(
@@ -285,6 +286,11 @@ fn merge(
         my_day: parsed.my_day || args.my_day,
         assignee: args.assignee.clone(),
         keep_status: args.keep_status,
+        defer_until: args
+            .defer
+            .clone()
+            .or_else(|| parsed.defer.map(|day| day.format(DATE_FORMAT).to_string())),
+        someday: parsed.someday || args.someday,
     };
     Ok((task, notes))
 }

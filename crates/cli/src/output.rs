@@ -137,6 +137,10 @@ struct CollectionEnvelope<'a> {
     #[serde(skip_serializing_if = "Option::is_none")]
     sync: Option<SyncInfo>,
     items: &'a [Entity],
+    /// `tasks list`: how many deferred and Someday tasks matched but were
+    /// left out.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    deferred_hidden: Option<u64>,
 }
 
 /// A collection from the cache. JSON carries the scope's sync state in its
@@ -148,7 +152,27 @@ pub fn print_collection(
     sync: SyncInfo,
     table: &Table,
 ) -> Result<(), CliError> {
-    print_items(format, items, Some(sync), table)
+    print_items(format, items, Some(sync), None, table)
+}
+
+/// Tasks `tasks list` found, and how many deferred and Someday tasks it
+/// left out: in JSON's envelope, and a note under a table.
+pub fn print_task_collection(
+    format: OutputFormat,
+    items: &[Entity],
+    sync: SyncInfo,
+    deferred_hidden: Option<u64>,
+    table: &Table,
+) -> Result<(), CliError> {
+    print_items(format, items, Some(sync), deferred_hidden, table)?;
+    if format == OutputFormat::Table
+        && let Some(hidden @ 1..) = deferred_hidden
+    {
+        crate::terminal::note(&format!(
+            "{hidden} deferred hidden, --deferred include to show"
+        ));
+    }
+    Ok(())
 }
 
 /// A collection read from Graph as it is now, not from the cache: it has
@@ -158,13 +182,14 @@ pub fn print_live_collection(
     items: &[Entity],
     table: &Table,
 ) -> Result<(), CliError> {
-    print_items(format, items, None, table)
+    print_items(format, items, None, None, table)
 }
 
 fn print_items(
     format: OutputFormat,
     items: &[Entity],
     sync: Option<SyncInfo>,
+    deferred_hidden: Option<u64>,
     table: &Table,
 ) -> Result<(), CliError> {
     let initial = sync.is_some_and(|sync| sync.state == SyncState::Initial);
@@ -182,6 +207,7 @@ fn print_items(
                 schema_version: SCHEMA_VERSION,
                 sync,
                 items,
+                deferred_hidden,
             },
         ),
         OutputFormat::Jsonl => {

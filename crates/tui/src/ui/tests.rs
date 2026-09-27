@@ -42,15 +42,15 @@ fn the_selected_row_is_highlighted_in_the_focused_pane_only() {
     terminal
         .draw(|frame| super::draw(frame, &app))
         .expect("draw");
-    // Under the title bar, Home is the sidebar's eighth row; "Pay rent"
+    // Under the title bar, Home is the sidebar's eleventh row; "Pay rent"
     // the list's first.
-    assert!(!selected(&terminal, &app, 2, 9));
+    assert!(!selected(&terminal, &app, 2, 12));
     assert!(selected(&terminal, &app, 26, 2));
     app.focus = Pane::Sidebar;
     terminal
         .draw(|frame| super::draw(frame, &app))
         .expect("draw");
-    assert!(selected(&terminal, &app, 2, 9));
+    assert!(selected(&terminal, &app, 2, 12));
     assert!(!selected(&terminal, &app, 26, 2));
 }
 
@@ -482,7 +482,7 @@ fn the_detail_cursor_follows_the_rows_on_screen() {
     use crate::app::edit::Field;
     let mut app = seeded();
     app.focus = Pane::Detail;
-    let mut terminal = Terminal::new(TestBackend::new(110, 20)).expect("terminal");
+    let mut terminal = Terminal::new(TestBackend::new(110, 22)).expect("terminal");
     let mut rows = Vec::new();
     for field in Field::ALL {
         app.detail_row = crate::app::steps::DetailRow::Field(field);
@@ -491,7 +491,7 @@ fn the_detail_cursor_follows_the_rows_on_screen() {
             .expect("draw");
         // The detail pane's first column inside its border.
         let x = 77;
-        let row = (0..20)
+        let row = (0..22)
             .find(|&y| selected(&terminal, &app, x, y))
             .expect("a highlighted row");
         let buffer = terminal.backend().buffer();

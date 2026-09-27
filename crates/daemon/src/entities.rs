@@ -1,11 +1,14 @@
 //! Cached rows as clients see them (docs/blueprint/07-cli.md#output-contract):
 //! Graph's JSON with every field, `id` replaced by the local ID and Graph's
-//! beside it as `graph_id`, plus `sync_state`, and a task's `list_id`. Our
-//! extension, when known, is under `extensions` as Graph returns it.
+//! beside it as `graph_id`, plus `sync_state`, and a task's `list_id`,
+//! `defer_until` and `someday`. Our extension, when known, is under
+//! `extensions` as Graph returns it.
 //!
 //! Also the other direction: Graph's JSON split into what the store keeps
 //! as `raw_json` and our extension.
 
+use ms_todo_core::DATE_FORMAT;
+use ms_todo_core::deferral::{defer_until, someday};
 use ms_todo_protocol::Entity;
 use ms_todo_store::{ListRow, SearchHit, TaskRow};
 use serde_json::{Value, json};
@@ -37,7 +40,15 @@ pub(crate) fn task_entity(row: &TaskRow) -> Entity {
         &row.sync_state,
     );
     entity.insert("list_id".into(), json!(row.list_local_id));
-    add_extension(&mut entity, row.extension.as_ref());
+    // On every task, so a client never has to dig in the extension for
+    // them (rung 9a).
+    let extension = row.extension.as_ref();
+    entity.insert(
+        "defer_until".into(),
+        json!(defer_until(extension).map(|day| day.format(DATE_FORMAT).to_string())),
+    );
+    entity.insert("someday".into(), json!(someday(extension)));
+    add_extension(&mut entity, extension);
     entity
 }
 

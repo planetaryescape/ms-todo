@@ -40,10 +40,29 @@ pub enum Scope {
     Completed,
     /// Open tasks with an assignee, grouped by person.
     Assigned,
+    /// What to do now: the top open tasks by `next`'s urgency order,
+    /// each with `why`.
+    Next,
+    /// Open tasks deferred to a later day, by that day.
+    Upcoming,
+    /// Open tasks parked as Someday.
+    Someday,
     /// One list's tasks, open and completed, by its local ID or name.
     List { id: String },
     #[serde(other)]
     Unknown,
+}
+
+impl Scope {
+    /// Whether the scope leaves out deferred and Someday tasks (rung 9a):
+    /// every list and view but those that are about them, or where a task
+    /// was put by hand (My Day).
+    pub fn hides_deferred(&self) -> bool {
+        !matches!(
+            self,
+            Self::MyDay | Self::Next | Self::Upcoming | Self::Someday
+        )
+    }
 }
 
 /// The answer to `Seed`.
@@ -81,7 +100,9 @@ pub struct MyDaySeed {
     pub suggestions: Vec<Entity>,
 }
 
-/// How many tasks each smart view and each list holds.
+/// How many tasks each smart view and each list holds. Every count but
+/// My Day's, Upcoming's and Someday's leaves out deferred and Someday
+/// tasks, as the views do.
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Counts {
     /// Open tasks in today's My Day.
@@ -94,6 +115,12 @@ pub struct Counts {
     /// Open tasks with an assignee.
     #[serde(default)]
     pub assigned: u64,
+    /// Open tasks deferred to a later day (not Someday).
+    #[serde(default)]
+    pub upcoming: u64,
+    /// Open tasks parked as Someday.
+    #[serde(default)]
+    pub someday: u64,
     /// Open tasks by list local ID; a list with none is absent.
     #[serde(default)]
     pub lists: std::collections::BTreeMap<String, u64>,

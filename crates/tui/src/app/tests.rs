@@ -53,6 +53,8 @@ pub(crate) fn seed(scope: Scope, tasks: Vec<ms_todo_protocol::Entity>) -> Seed {
             all: 3,
             completed: 1,
             assigned: 0,
+            upcoming: 0,
+            someday: 0,
             lists: [("home".to_owned(), 3)].into_iter().collect(),
         },
         tasks,
@@ -177,7 +179,8 @@ fn connecting_asks_for_the_default_list_and_the_seed_fills_every_pane() {
             tag: Tag::Seed(1),
             request: Request::Seed {
                 scope: None,
-                search: None
+                search: None,
+                include_deferred: false,
             }
         }]
     );
@@ -189,8 +192,8 @@ fn connecting_asks_for_the_default_list_and_the_seed_fills_every_pane() {
         titles(&app),
         ["Pay rent", "Call Sam", "Water plants", "Ship blueprint"]
     );
-    // The sidebar follows: six views, then Tasks, then Home.
-    assert_eq!(app.sidebar_index, 7);
+    // The sidebar follows: nine views, then Tasks, then Home.
+    assert_eq!(app.sidebar_index, 10);
     assert_eq!(app.lists.len(), 2);
     assert_eq!(app.counts.all, 3);
 }
@@ -229,9 +232,9 @@ fn page_keys_move_by_the_visible_rows_and_stop_at_the_ends() {
 
     app.focus = Pane::Sidebar;
     act(&mut app, Action::PageUp);
-    assert_eq!(app.sidebar_index, 5);
+    assert_eq!(app.sidebar_index, 8);
     act(&mut app, Action::PageDown);
-    assert_eq!(app.sidebar_index, 7);
+    assert_eq!(app.sidebar_index, 10);
 }
 
 #[test]
@@ -292,7 +295,8 @@ fn moving_in_the_sidebar_seeds_the_new_scope_and_drops_stale_answers() {
         second[0].request,
         Request::Seed {
             scope: Some(Scope::Completed),
-            search: None
+            search: None,
+            include_deferred: false,
         }
     );
     // The answer for Tasks arrives after Completed was asked for: dropped.
@@ -310,7 +314,7 @@ fn moving_in_the_sidebar_seeds_the_new_scope_and_drops_stale_answers() {
     answer_seed(&mut app, &second[0], seed(Scope::Completed, done));
     assert_eq!(app.shown, Some(Scope::Completed));
     assert_eq!(titles(&app), ["Ship blueprint"]);
-    assert_eq!(app.sidebar_index, 5);
+    assert_eq!(app.sidebar_index, 8);
     // At the top, another k asks for nothing.
     act(&mut app, Action::JumpTop);
     assert!(act(&mut app, Action::MoveUp).is_empty());
@@ -597,7 +601,8 @@ fn slash_filters_as_you_type_and_escape_clears_it() {
         effects[0].request,
         Request::Seed {
             scope: Some(scope_home()),
-            search: Some("r*".into())
+            search: Some("r*".into()),
+            include_deferred: false,
         }
     );
     let effects = app.update(Msg::Char('e'));
@@ -619,7 +624,8 @@ fn slash_filters_as_you_type_and_escape_clears_it() {
         effects[0].request,
         Request::Seed {
             scope: Some(scope_home()),
-            search: None
+            search: None,
+            include_deferred: false,
         }
     );
     assert_eq!(app.filter, None);
@@ -813,7 +819,8 @@ fn a_deleted_list_falls_back_to_the_default_one() {
         effects[0].request,
         Request::Seed {
             scope: None,
-            search: None
+            search: None,
+            include_deferred: false,
         }
     );
 }
@@ -829,7 +836,8 @@ fn a_lost_connection_is_shown_and_reconnecting_seeds_again() {
         effects[0].request,
         Request::Seed {
             scope: Some(scope_home()),
-            search: None
+            search: None,
+            include_deferred: false,
         }
     );
 }
@@ -870,10 +878,13 @@ fn the_views_are_read_ahead_and_a_scope_seen_before_paints_at_once() {
         scopes,
         [
             Some(Scope::MyDay),
+            Some(Scope::Next),
             Some(Scope::Important),
             Some(Scope::Planned),
             Some(Scope::All),
             Some(Scope::Assigned),
+            Some(Scope::Upcoming),
+            Some(Scope::Someday),
             Some(Scope::Completed)
         ]
     );
@@ -903,7 +914,8 @@ fn the_views_are_read_ahead_and_a_scope_seen_before_paints_at_once() {
         effects[0].request,
         Request::Seed {
             scope: Some(Scope::Completed),
-            search: None
+            search: None,
+            include_deferred: false,
         }
     );
 }
@@ -941,7 +953,8 @@ fn after_switching_to_a_scope_not_loaded_yet_no_action_takes_the_old_rows() {
         again[0].request,
         Request::Seed {
             scope: Some(tasks),
-            search: None
+            search: None,
+            include_deferred: false,
         }
     );
     let effects = act(&mut app, Action::ToggleComplete);
@@ -987,4 +1000,52 @@ fn a_list_name_cannot_put_escape_sequences_in_the_window_title() {
     let title = app.window_title();
     assert!(!title.contains(char::is_control), "{title:?}");
     assert_eq!(title, "ms-todo \u{2014} Home]52;c;aGk=");
+}
+
+#[test]
+fn z_shows_deferred_tasks_in_every_view_and_reads_the_view_again() {
+    let mut app = seeded();
+    let shown = act(&mut app, Action::ToggleDeferred);
+    assert!(app.show_deferred);
+    assert!(matches!(
+        &shown[0].request,
+        Request::Seed {
+            include_deferred: true,
+            ..
+        }
+    ));
+    let hidden = act(&mut app, Action::ToggleDeferred);
+    assert!(!app.show_deferred);
+    assert!(matches!(
+        &hidden[0].request,
+        Request::Seed {
+            include_deferred: false,
+            ..
+        }
+    ));
+}
+
+#[test]
+fn a_new_day_reads_the_view_again_and_a_tick_within_the_day_does_not() {
+    let mut app = seeded();
+    let later = Clock {
+        now: chrono::DateTime::parse_from_rfc3339("2026-09-24T23:59:00+01:00").expect("now"),
+    };
+    let same_day = app.update(Msg::Tick(later));
+    assert!(
+        !same_day
+            .iter()
+            .any(|effect| matches!(effect.request, Request::Seed { .. }))
+    );
+    let midnight = Clock {
+        now: chrono::DateTime::parse_from_rfc3339("2026-09-25T00:00:01+01:00").expect("now"),
+    };
+    let next_day = app.update(Msg::Tick(midnight));
+    assert!(
+        next_day.iter().any(|effect| matches!(
+            &effect.request,
+            Request::Seed { scope, .. } if *scope == app.wanted
+        )),
+        "{next_day:?}"
+    );
 }

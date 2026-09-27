@@ -37,6 +37,12 @@ pub struct Glyphs {
     /// The Assigned view, and the person chip on a task someone's
     /// assigned.
     pub assigned: &'static str,
+    /// The Next view.
+    pub next: &'static str,
+    /// The Upcoming view, and the chip on a task deferred to a later day.
+    pub upcoming: &'static str,
+    /// The Someday view, and the chip on a task parked there.
+    pub someday: &'static str,
 }
 
 pub const UNICODE: Glyphs = Glyphs {
@@ -65,6 +71,9 @@ pub const UNICODE: Glyphs = Glyphs {
     more_below: "\u{2193} more",     // ↓
     more_above: "\u{2191} more",     // ↑
     assigned: "\u{25d4}",            // ◔
+    next: "\u{00bb}",                // »
+    upcoming: "\u{29d6}",            // ⧖
+    someday: "\u{2026}",             // …
 };
 
 pub const ASCII: Glyphs = Glyphs {
@@ -93,4 +102,7 @@ pub const ASCII: Glyphs = Glyphs {
     more_below: "v more",
     more_above: "^ more",
     assigned: "w",
+    next: ">",
+    upcoming: "u",
+    someday: "s",
 };

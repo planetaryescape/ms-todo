@@ -4,7 +4,7 @@
 use chrono::NaiveDate;
 use ms_todo_protocol::{ErrorPayload, Event, Request, ResponseData, Scope, Seed, SyncState};
 
-use super::scope::{Entry, SidebarList, VIEWS, belongs, order};
+use super::scope::{Entry, Shown, SidebarList, VIEWS, belongs, order};
 use super::{App, Effect, Level, Mode, Tag, Task, Write, search_query};
 
 impl App {
@@ -18,6 +18,7 @@ impl App {
                 request: Request::Seed {
                     scope: Some(view.clone()),
                     search: None,
+                    include_deferred: self.show_deferred,
                 },
             })
             .collect()
@@ -33,6 +34,7 @@ impl App {
             request: Request::Seed {
                 scope: self.wanted.clone(),
                 search: self.filter.as_deref().map(search_query),
+                include_deferred: self.show_deferred,
             },
         }
     }
@@ -242,13 +244,21 @@ impl App {
             return;
         };
         let my_day = self.my_day();
+        let rule = Shown {
+            my_day,
+            today: self.clock.today(),
+            // A search finds deferred tasks too.
+            deferred: self.show_deferred || self.filter.is_some(),
+        };
         for mut task in items.iter().filter_map(Task::from_entity) {
             let at = self.tasks.iter().position(|row| row.id == task.id);
-            if let Some(at) = at
-                && task.my_day != Some(my_day)
-            {
-                // Still a suggestion, until the view is read again.
-                task.suggestion = self.tasks[at].suggestion.clone();
+            if let Some(at) = at {
+                // Still a suggestion, and Next's reason, until the view is
+                // read again.
+                if task.my_day != Some(my_day) {
+                    task.suggestion = self.tasks[at].suggestion.clone();
+                }
+                task.why = task.why.take().or_else(|| self.tasks[at].why.clone());
             }
             match (write, at) {
                 (Write::Delete, Some(at)) => {
@@ -257,7 +267,7 @@ impl App {
                 (Write::Delete, None) => {}
                 // A filtered list is the search's to decide.
                 (Write::Add, _) if self.filter.is_some() => {}
-                (Write::Add, _) if belongs(&shown, &task, my_day) => {
+                (Write::Add, _) if belongs(&shown, &task, rule) => {
                     let id = task.id.clone();
                     let open = self.tasks.iter().filter(|row| !row.completed).count();
                     self.tasks.insert(open, task);
@@ -271,7 +281,7 @@ impl App {
                     let name = self.list_name(&task.list_id).unwrap_or("Tasks").to_owned();
                     self.show(Level::Info, &format!("Added to {name}"));
                 }
-                (_, Some(at)) if belongs(&shown, &task, my_day) => self.tasks[at] = task,
+                (_, Some(at)) if belongs(&shown, &task, rule) => self.tasks[at] = task,
                 (_, Some(at)) => {
                     self.tasks.remove(at);
                 }

@@ -39,6 +39,11 @@ expression: pretty
         "type": "boolean",
         "x-cli": "--clear-categories"
       },
+      "clear_defer": {
+        "description": "Show it again now: remove its defer date",
+        "type": "boolean",
+        "x-cli": "--clear-defer"
+      },
       "clear_due": {
         "description": "Remove the due date",
         "type": "boolean",
@@ -58,6 +63,11 @@ expression: pretty
         "description": "Remove the start date",
         "type": "boolean",
         "x-cli": "--clear-start"
+      },
+      "defer": {
+        "description": "Hide it until this day, in the forms --due takes; empty or `-` shows it again, as --clear-defer does. The due date isn't touched",
+        "type": "string",
+        "x-cli": "--defer"
       },
       "dry_run": {
         "description": "Show what would change without changing anything",
@@ -99,6 +109,11 @@ expression: pretty
         "type": "string",
         "x-cli": "--list"
       },
+      "no_someday": {
+        "description": "Take it out of Someday",
+        "type": "boolean",
+        "x-cli": "--no-someday"
+      },
       "overdue": {
         "description": "Every open task due before today",
         "type": "boolean",
@@ -113,6 +128,11 @@ expression: pretty
         "description": "Remind me at this local time, in the forms --reminder takes on `tasks add`; empty or `-` turns it off",
         "type": "string",
         "x-cli": "--reminder"
+      },
+      "someday": {
+        "description": "Park it as Someday: hidden until --no-someday",
+        "type": "boolean",
+        "x-cli": "--someday"
       },
       "start": {
         "description": "New start date, in the forms --due takes; empty or `-` removes it. The task's due date is sent with it, or with none, the start date becomes the due date too, as Microsoft To Do makes it",
@@ -193,6 +213,13 @@ expression: pretty
                 "createdDateTime": {
                   "type": "string"
                 },
+                "defer_until": {
+                  "description": "YYYY-MM-DD, a local day: the task is hidden from everyday views until then (ms-todo's own; the To Do apps don't hide it). On its day it shows again",
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
                 "dueDateTime": {
                   "description": "Graph's dateTimeTimeZone; a date only",
                   "type": "object"
@@ -238,6 +265,10 @@ expression: pretty
                 "reminderDateTime": {
                   "type": "object"
                 },
+                "someday": {
+                  "description": "Parked as Someday: hidden from everyday views until taken out (ms-todo's own)",
+                  "type": "boolean"
+                },
                 "status": {
                   "description": "notStarted, waitingOnOthers or completed, among Graph's values",
                   "type": "string"
@@ -260,7 +291,9 @@ expression: pretty
                 "graph_id",
                 "sync_state",
                 "list_id",
-                "title"
+                "title",
+                "defer_until",
+                "someday"
               ],
               "type": "object"
             },

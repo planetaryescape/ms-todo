@@ -244,6 +244,7 @@ impl App {
         // A list gets the task; a view adds it to the default list with
         // what puts it in the view, as To Do does.
         let my_day = self.shown == Some(Scope::MyDay);
+        let someday = self.shown == Some(Scope::Someday);
         let (list, importance, due) = match &self.shown {
             Some(Scope::List { id }) => (Some(id.clone()), None, None),
             Some(Scope::Important) => (None, Some(Importance::High), None),
@@ -257,6 +258,7 @@ impl App {
                 due,
                 importance,
                 my_day,
+                someday,
                 ..NewTask::default()
             };
         };
@@ -280,6 +282,8 @@ impl App {
                 .map(ms_todo_nlp::Recurrence::to_graph),
             categories: parsed.categories.clone(),
             my_day: parsed.my_day || my_day,
+            defer_until: parsed.defer.map(date),
+            someday: parsed.someday || someday,
             ..NewTask::default()
         }
     }

@@ -25,6 +25,9 @@ pub struct TaskFilter {
     /// At most this many, after sorting.
     #[serde(default)]
     pub limit: Option<u32>,
+    /// Deferred and Someday tasks: hidden unless asked for.
+    #[serde(default)]
+    pub deferred: DeferredFilter,
 }
 
 impl TaskFilter {
@@ -35,6 +38,7 @@ impl TaskFilter {
             || self.due.is_some()
             || self.importance.is_some()
             || self.category.is_some()
+            || self.deferred == DeferredFilter::Only
     }
 
     pub fn is_empty(&self) -> bool {
@@ -69,6 +73,20 @@ impl StatusFilter {
             Self::Deferred => status == "deferred",
         }
     }
+}
+
+/// What `tasks list` does with open tasks that are deferred to a later
+/// day or parked as Someday (rung 9a).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum DeferredFilter {
+    /// Leave them out, and count them (`deferred_hidden`).
+    #[default]
+    Hide,
+    /// Show them with the rest.
+    Include,
+    /// Only them: deferred ones by the day they come back, then Someday.
+    Only,
 }
 
 /// Which tasks by due date, each a local day (`YYYY-MM-DD`).

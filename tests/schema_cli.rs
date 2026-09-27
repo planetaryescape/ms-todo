@@ -70,6 +70,7 @@ const COMMANDS: &[&str] = &[
     "extensions delete",
     "search",
     "done",
+    "next",
     "reschedule",
     "outbox list",
     "outbox retry",
@@ -219,6 +220,8 @@ async fn real_output_has_every_field_its_schema_requires() {
         ("daemon logs", &["daemon", "logs"]),
         ("search", &["search", "milk"]),
         ("done", &["done", "--since", "2026-09-01"]),
+        ("next", &["next"]),
+        ("tasks list", &["tasks", "list", "--deferred", "only"]),
         (
             "reschedule",
             &["reschedule", "--overdue", "--to", "tomorrow", "--dry-run"],

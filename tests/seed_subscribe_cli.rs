@@ -72,6 +72,7 @@ impl Client {
             .ask(Request::Seed {
                 scope,
                 search: search.map(str::to_owned),
+                include_deferred: false,
             })
             .await
         {

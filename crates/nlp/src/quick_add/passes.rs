@@ -1,8 +1,8 @@
 //! The deterministic reader: ordered passes over the input, each masking
 //! the bytes it claims so later passes can't read them again (06). Quotes
 //! and escapes first, then `#List`, `@label`, `p1`–`p4`, `+myday`,
-//! `every …`, `!reminder`, `start <date>`, and last the bare date and time
-//! phrases. That order is what stops `every mon` or `!9am` from also
+//! `+someday`, `every …`, `^defer`, `!reminder`, `start <date>`, and last
+//! the bare date and time phrases. That order is what stops `every mon` or `!9am` from also
 //! being the due date.
 
 use std::ops::Range;
@@ -27,7 +27,9 @@ impl QuickAddParser for DeterministicParser {
         scan.labels(ctx, &mut task);
         scan.priority(&mut task);
         scan.my_day(&mut task);
+        scan.someday(&mut task);
         let repeats = scan.recurrence(ctx);
+        scan.defer(ctx, &mut task);
         let reminder = scan.reminder(ctx, &mut task);
         let start = scan.start(ctx);
         let dates = scan.dates(ctx, &mut task);
@@ -102,7 +104,7 @@ impl<'i> Scan<'i> {
                 b'\\'
                     if matches!(
                         bytes.get(at + 1),
-                        Some(b'#' | b'@' | b'!' | b'*' | b'+' | b'"' | b'\\')
+                        Some(b'#' | b'@' | b'!' | b'^' | b'*' | b'+' | b'"' | b'\\')
                     ) =>
                 {
                     self.claim(at..at + 1, SpanKind::Syntax);
@@ -263,6 +265,69 @@ impl<'i> Scan<'i> {
             task.my_day = true;
             self.claim(at..at + length, SpanKind::MyDay);
         }
+    }
+
+    /// `+someday`: park the task as Someday.
+    fn someday(&mut self, task: &mut ParsedTask) {
+        for at in self.word_starts() {
+            let rest = &self.scan[at..];
+            let clean = rest.strip_prefix("+someday").is_some_and(|after| {
+                after
+                    .chars()
+                    .next()
+                    .is_none_or(|next| next.is_whitespace() || next == MASK)
+            });
+            if clean {
+                task.someday = true;
+                self.claim(at.."+someday".len() + at, SpanKind::Someday);
+            }
+        }
+    }
+
+    /// `^<date>`: the day the task comes back into view, read as `!` reads
+    /// its phrase, so `^next week` needs no quotes. A time with it is
+    /// dropped (a defer is a day); a `^` with no date after it stays in
+    /// the title, with a warning. The first one counts.
+    fn defer(&mut self, ctx: &QuickAddContext, task: &mut ParsedTask) {
+        for at in self.word_starts() {
+            if !self.scan[at..].starts_with('^') {
+                continue;
+            }
+            let read = phrase_at(&self.scan, at + 1, &ctx.when);
+            match read.and_then(|(when, end)| Some((when.date()?, when.time(), end))) {
+                Some((day, time, end)) if task.defer.is_none() => {
+                    if time.is_some() {
+                        task.warnings
+                            .push("a defer is a day, so the time with it is dropped".into());
+                    }
+                    task.defer = Some(day);
+                    self.claim(at..end, SpanKind::Defer);
+                }
+                Some(_) => task.warnings.push(format!(
+                    "{}: only one defer date counts, so it stays in the title",
+                    self.word_at(at)
+                )),
+                None if self.scan[at + 1..]
+                    .chars()
+                    .next()
+                    .is_some_and(char::is_alphanumeric) =>
+                {
+                    task.warnings.push(format!(
+                        "{}: not a date, so it stays in the title",
+                        self.word_at(at)
+                    ));
+                }
+                None => {}
+            }
+        }
+    }
+
+    /// The word of the input starting at `at`, for a warning.
+    fn word_at(&self, at: usize) -> &str {
+        let end = self.scan[at..]
+            .find(char::is_whitespace)
+            .map_or(self.scan.len(), |to| at + to);
+        &self.input[at..end]
     }
 
     /// `every …` (or a lowercase `daily`): the first one counts.

@@ -84,6 +84,8 @@ fn pick(due: Vec<TaskRow>, left: Vec<TaskRow>, today: NaiveDate) -> Vec<(TaskRow
         .partition(|row| graph_due_date(&row.raw) == Some(today));
     let mut seen: HashSet<String> = HashSet::new();
     let mut picked = Vec::new();
+    // Deferred and Someday tasks wait their turn here too.
+    let local = crate::deferral::today();
     let reasons = [
         (due_today, Reason::DueToday),
         (overdue, Reason::Overdue),
@@ -93,6 +95,7 @@ fn pick(due: Vec<TaskRow>, left: Vec<TaskRow>, today: NaiveDate) -> Vec<(TaskRow
         for row in rows {
             if !completed(&row)
                 && my_day_of(&row) != Some(today)
+                && !crate::deferral::hidden(&row, local)
                 && seen.insert(row.local_id.clone())
             {
                 picked.push((row, reason));

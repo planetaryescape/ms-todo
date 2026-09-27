@@ -4,7 +4,7 @@
 
 use serde_json::{Value, json};
 
-use super::builders::{nullable, object, versioned};
+use super::builders::{collection, nullable, object, versioned};
 use super::entities::{list_entity, task_entity};
 use crate::output::SCHEMA_VERSION;
 
@@ -14,7 +14,7 @@ pub(super) fn parsed_task() -> Value {
         json!({
             "start": { "type": "integer", "description": "Byte offset into the input" },
             "end": { "type": "integer" },
-            "kind": { "enum": ["list", "label", "priority", "recurrence", "reminder", "start", "date", "my_day", "syntax"] },
+            "kind": { "enum": ["list", "label", "priority", "recurrence", "reminder", "start", "date", "my_day", "defer", "someday", "syntax"] },
             "text": { "type": "string" }
         }),
         &["start", "end", "kind", "text"],
@@ -39,6 +39,8 @@ pub(super) fn parsed_task() -> Value {
             "priority": { "type": ["integer", "null"], "description": "The p1–p4 typed" },
             "categories": { "type": "array", "items": { "type": "string" } },
             "my_day": { "type": "boolean", "description": "+myday or * was typed: the task goes in today's My Day" },
+            "defer": nullable("string", "YYYY-MM-DD from ^date: the task is hidden until then"),
+            "someday": { "type": "boolean", "description": "+someday was typed: the task is parked as Someday" },
             "spans": { "type": "array", "items": span },
             "warnings": { "type": "array", "items": { "type": "string" } }
         }),
@@ -54,6 +56,8 @@ pub(super) fn parsed_task() -> Value {
             "priority",
             "categories",
             "my_day",
+            "defer",
+            "someday",
             "spans",
             "warnings",
         ],
@@ -66,8 +70,42 @@ pub(super) fn every_list_task() -> Value {
     let mut schema = task_entity();
     schema["properties"]["list"] = json!({
         "type": "string",
-        "description": "The name of the task's list: only with --assignee, or a filter (--status, --due, --importance, --category) and no --list"
+        "description": "The name of the task's list: only with --assignee, or a filter (--status, --due, --importance, --category, --deferred only) and no --list"
     });
+    schema
+}
+
+/// `tasks list` and `waiting`: the collection, with how many deferred and
+/// Someday tasks it left out.
+pub(super) fn task_collection(item: Value) -> Value {
+    let mut schema = collection(item);
+    schema["properties"]["deferred_hidden"] = json!({
+        "type": "integer",
+        "description": "How many open tasks matched but were left out for being deferred to a later day or Someday; --deferred include shows them"
+    });
+    schema["required"]
+        .as_array_mut()
+        .expect("collection lists required keys")
+        .push(json!("deferred_hidden"));
+    schema
+}
+
+/// A task `next` gives: with `list` and `why`.
+pub(super) fn next_result() -> Value {
+    let mut schema = task_entity();
+    schema["properties"]["list"] =
+        json!({ "type": "string", "description": "The name of the task's list" });
+    schema["properties"]["why"] = json!({
+        "type": "string",
+        "description": "Every reason it's there, most urgent first, joined by \", \": overdue Nd, due today, in My Day, high, due tomorrow, due in Nd; else added today or added Nd ago"
+    });
+    schema["required"]
+        .as_array_mut()
+        .expect("task_entity lists required keys")
+        .extend([json!("list"), json!("why")]);
+    schema["description"] = json!(
+        "An open task to do now, most urgent first: the task as `tasks list` gives it, with `list` and `why`"
+    );
     schema
 }
 

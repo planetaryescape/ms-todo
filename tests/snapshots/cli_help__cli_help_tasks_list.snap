@@ -13,7 +13,7 @@ Options:
           [possible values: table, json, jsonl, ids, csv]
 
       --list <NAME|ID>
-          The list's exact name or its ID [default: the "Tasks" list, or with --status, --due, --importance or --category, every list]
+          The list's exact name or its ID [default: the "Tasks" list, or with --status, --due, --importance, --category or --deferred only, every list]
 
       --instance <NAME>
           Use a separate copy of ms-todo's data (also MS_TODO_INSTANCE). Builds run from Cargo's target/ directory default to "dev"; "default" is the installed copy
@@ -67,6 +67,11 @@ Options:
 
       --limit <N>
           At most this many, after sorting
+
+      --deferred <WHICH>
+          Tasks deferred to a later day, or parked as Someday: hide (the default; the table says how many), include, or only them (every list without --list, by the day they come back, then Someday). A search always includes them
+
+          [possible values: hide, include, only]
 
   -h, --help
           Print help (see a summary with '-h')

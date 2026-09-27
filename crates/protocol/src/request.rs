@@ -49,6 +49,18 @@ pub enum Request {
         #[serde(default, skip_serializing_if = "TaskFilter::is_empty")]
         filter: TaskFilter,
     },
+    /// What to do now, answered `Tasks`: the open tasks that aren't
+    /// deferred or Someday, in `next`'s fixed urgency order
+    /// (docs/blueprint/05-custom-features.md#next), each with `why` and
+    /// `list`, its list's name.
+    NextTasks {
+        /// Only this list (a name or ID); `None` is every list.
+        #[serde(default)]
+        list: Option<String>,
+        /// At most this many; `None` is 5.
+        #[serde(default)]
+        limit: Option<u32>,
+    },
     /// Tasks whose title or notes match `query`, best match first, from the
     /// cache. `query` is FTS5's syntax: words (all must match), `"phrases"`,
     /// `prefix*`, `AND`, `OR`, `NOT` and parentheses.
@@ -188,6 +200,9 @@ pub enum Request {
         scope: Option<Scope>,
         #[serde(default)]
         search: Option<String>,
+        /// Show deferred and Someday tasks in the views that hide them.
+        #[serde(default)]
+        include_deferred: bool,
     },
     /// Stream events on this connection from now on: `EntityChanged`,
     /// `ResyncNeeded`, `SyncState` and `WriteRejected`, each with this

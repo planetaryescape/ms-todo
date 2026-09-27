@@ -38,6 +38,8 @@ Due and start are dates (D-027), so they're `NaiveDate`, not `DueSpec`. `ParsedT
 | `p1` `p2` `p3` `p4` | Importance: p1 is high, p2 and p3 are normal, p4 is low. Graph only has three levels, so p2 and p3 both map to normal (D-017) | `p1` |
 | `!<time or date>` | Reminder | `!9am`, `!tomorrow 8:30` |
 | `*` or `+myday` | Add to My Day | `+myday` |
+| `^<date>` | Defer: hide the task until that day (rung 9a). Read as `!` reads its phrase, so several words need no quotes; a time with it is dropped with a warning. The first one counts | `^fri`, `^next week`, `^in 3 days` |
+| `+someday` | Park it as Someday (rung 9a) | `+someday` |
 | `start <date>` | `startDateTime`. With no due date, Graph sets the due date to the start date too (S11), so the parser adds a warning saying so | `start monday` |
 | Date and time phrases | Due date. A time goes to the reminder (see below) | `tomorrow`, `next fri 5pm`, `in 3 days`, `on 12 oct` |
 | `every …` | Recurrence | see below |
@@ -45,7 +47,7 @@ Due and start are dates (D-027), so they're `NaiveDate`, not `DueSpec`. `ParsedT
 Two more rules:
 
 - Anything not recognised stays in the title. Recognised spans are removed from the title, and runs of spaces are collapsed.
-- **Escaping:** anything inside quotes stays literal. `\#` and `\@` are literal characters.
+- **Escaping:** anything inside quotes stays literal. `\#`, `\@`, `\!` and `\^` are literal characters.
 
 ## Date and time parsing
 

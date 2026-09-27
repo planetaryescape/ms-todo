@@ -6,83 +6,15 @@ expression: pretty
   "input": {
     "additionalProperties": false,
     "properties": {
-      "assignee": {
-        "description": "Only tasks assigned to this person (a case-insensitive exact match), or to anyone with `*`. Without --list, the open tasks of every list, grouped by person",
-        "type": "string",
-        "x-cli": "--assignee"
-      },
-      "category": {
-        "description": "Only tasks with this category (ignoring case)",
-        "type": "string",
-        "x-cli": "--category"
-      },
-      "completed": {
-        "description": "Only completed tasks, as --status completed",
-        "type": "boolean",
-        "x-cli": "--completed"
-      },
-      "deferred": {
-        "description": "Tasks deferred to a later day, or parked as Someday: hide (the default; the table says how many), include, or only them (every list without --list, by the day they come back, then Someday). A search always includes them",
-        "enum": [
-          "hide",
-          "include",
-          "only"
-        ],
-        "x-cli": "--deferred"
-      },
-      "due": {
-        "description": "Only tasks due: today, overdue (open and due before today), none, any, \"before fri\", \"after 12 oct\", or on a day (tomorrow, 2026-10-02)",
-        "type": "string",
-        "x-cli": "--due"
-      },
-      "importance": {
-        "description": "Only tasks of this importance: high, normal or low (or 1–4, p1–p4)",
-        "type": "string",
-        "x-cli": "--importance"
-      },
       "limit": {
-        "description": "At most this many, after sorting",
+        "description": "At most this many",
         "type": "string",
         "x-cli": "--limit"
       },
       "list": {
-        "description": "The list's exact name or its ID [default: the \"Tasks\" list, or with --status, --due, --importance, --category or --deferred only, every list]",
+        "description": "Only this list (exact name or ID) [default: every list]",
         "type": "string",
         "x-cli": "--list"
-      },
-      "my_day": {
-        "description": "Today's My Day instead of a list, as `myday list` gives it",
-        "type": "boolean",
-        "x-cli": "--my-day"
-      },
-      "search": {
-        "description": "Only tasks whose title or notes match, best match first; the syntax is `search`'s",
-        "type": "string",
-        "x-cli": "--search"
-      },
-      "sort": {
-        "description": "Order by: due (soonest first, none last), importance (high first), created or modified (newest first), title [default: the list's order; every list's is by due date]",
-        "enum": [
-          "due",
-          "importance",
-          "created",
-          "modified",
-          "title"
-        ],
-        "x-cli": "--sort"
-      },
-      "status": {
-        "description": "Only tasks with this status",
-        "enum": [
-          "open",
-          "completed",
-          "all",
-          "not-started",
-          "in-progress",
-          "waiting",
-          "deferred"
-        ],
-        "x-cli": "--status"
       }
     },
     "required": [],
@@ -90,13 +22,9 @@ expression: pretty
   },
   "output": {
     "properties": {
-      "deferred_hidden": {
-        "description": "How many open tasks matched but were left out for being deferred to a later day or Someday; --deferred include shows them",
-        "type": "integer"
-      },
       "items": {
         "items": {
-          "description": "A task: every field Microsoft Graph returns, with `id` replaced",
+          "description": "An open task to do now, most urgent first: the task as `tasks list` gives it, with `list` and `why`",
           "properties": {
             "attachments": {
               "description": "Its attachments' metadata, as `attachments list` gives it without `index`; absent until a sync has fetched it",
@@ -160,7 +88,7 @@ expression: pretty
               "type": "string"
             },
             "list": {
-              "description": "The name of the task's list: only with --assignee, or a filter (--status, --due, --importance, --category, --deferred only) and no --list",
+              "description": "The name of the task's list",
               "type": "string"
             },
             "list_id": {
@@ -192,6 +120,10 @@ expression: pretty
             },
             "title": {
               "type": "string"
+            },
+            "why": {
+              "description": "Every reason it's there, most urgent first, joined by \", \": overdue Nd, due today, in My Day, high, due tomorrow, due in Nd; else added today or added Nd ago",
+              "type": "string"
             }
           },
           "required": [
@@ -201,7 +133,9 @@ expression: pretty
             "list_id",
             "title",
             "defer_until",
-            "someday"
+            "someday",
+            "list",
+            "why"
           ],
           "type": "object"
         },
@@ -234,8 +168,7 @@ expression: pretty
     "required": [
       "schema_version",
       "sync",
-      "items",
-      "deferred_hidden"
+      "items"
     ],
     "type": "object"
   }

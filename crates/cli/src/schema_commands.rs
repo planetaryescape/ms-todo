@@ -71,6 +71,7 @@ const COMMANDS: &[&str] = &[
     "extensions delete",
     "search",
     "done",
+    "next",
     "reschedule",
     "outbox list",
     "outbox retry",

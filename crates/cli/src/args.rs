@@ -9,7 +9,7 @@ use crate::output::OutputFormat;
 pub use crate::child_args::{
     AttachmentsCommand, LinksCommand, StepTargetArgs, StepsCommand, WriteArgs,
 };
-pub use crate::find_args::{DoneArgs, SearchArgs, SearchStatusArg};
+pub use crate::find_args::{DoneArgs, NextArgs, SearchArgs, SearchStatusArg};
 pub use crate::folder_args::{DeleteFolderArgs, FoldersCommand, OrderFolderArgs, RenameFolderArgs};
 pub use crate::list_args::{ListsCommand, MoveListsArgs, OrderListArgs};
 pub use crate::my_day_args::{MyDayCommand, MyDayTargetArgs};
@@ -119,6 +119,11 @@ pub enum Command {
     /// What you completed, by day, newest first: for a standup or a weekly
     /// review. Microsoft To Do keeps the day of a completion, not its time
     Done(DoneArgs),
+    /// What to do now: the few open tasks that matter most, each with why.
+    /// Overdue first (most overdue first), then due today, in My Day, high
+    /// importance, due within 3 days, then the oldest. Deferred and
+    /// Someday tasks are never next
+    Next(NextArgs),
     /// Move open tasks to a new due date: the overdue ones, those due
     /// before a day, or the ones named. One `undo` puts them all back
     Reschedule(RescheduleArgs),

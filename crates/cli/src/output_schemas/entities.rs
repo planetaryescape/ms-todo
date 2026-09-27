@@ -60,9 +60,22 @@ pub(super) fn task_entity() -> Value {
         "description": "Its attachments' metadata, as `attachments list` gives it without `index`; absent until a sync has fetched it",
         "items": { "type": "object" }
     });
+    properties["defer_until"] = nullable(
+        "string",
+        "YYYY-MM-DD, a local day: the task is hidden from everyday views until then (ms-todo's own; the To Do apps don't hide it). On its day it shows again",
+    );
+    properties["someday"] = json!({ "type": "boolean", "description": "Parked as Someday: hidden from everyday views until taken out (ms-todo's own)" });
     let mut schema = object(
         properties,
-        &["id", "graph_id", "sync_state", "list_id", "title"],
+        &[
+            "id",
+            "graph_id",
+            "sync_state",
+            "list_id",
+            "title",
+            "defer_until",
+            "someday",
+        ],
     );
     schema["description"] =
         json!("A task: every field Microsoft Graph returns, with `id` replaced");

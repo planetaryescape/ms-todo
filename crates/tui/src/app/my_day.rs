@@ -99,7 +99,8 @@ pub(crate) mod tests {
             effects[0].request,
             Request::Seed {
                 scope: Some(Scope::MyDay),
-                search: None
+                search: None,
+                include_deferred: false,
             }
         );
         answer_seed(&mut app, &effects[0], my_day_seed());

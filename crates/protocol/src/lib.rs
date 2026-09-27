@@ -44,7 +44,7 @@ pub use status::{
 pub use task_change::{
     Clearable, Importance, LinkEdit, NewLink, NewTask, TaskChange, TaskEdit, TaskSelect,
 };
-pub use task_filter::{DueFilter, StatusFilter, TaskFilter, TaskSort};
+pub use task_filter::{DeferredFilter, DueFilter, StatusFilter, TaskFilter, TaskSort};
 pub use views::{Counts, MyDay, MyDaySeed, Scope, Seed};
 
 /// Bumped on any change an older peer can't read. 5: `Seed` and
@@ -78,8 +78,13 @@ pub use views::{Counts, MyDay, MyDaySeed, Scope, Seed};
 /// `categories`, `ListTasks.filter`, `ListChange::CreateList`,
 /// `RenameList` and `DeleteList`, and the category and extension
 /// requests, so an older daemon never drops a field or a filter it
-/// doesn't know and answers as if it were asked for less.
-pub const PROTOCOL_VERSION: u32 = 16;
+/// doesn't know and answers as if it were asked for less. 17: defer,
+/// Someday and next (rung 9a): `NewTask.defer_until` and `someday`,
+/// `TaskEdit.defer_until` and `someday`, `TaskFilter.deferred`,
+/// `Scope::Next`, `Upcoming` and `Someday`, `Counts.upcoming` and
+/// `someday`, `Seed.include_deferred` and `NextTasks`, so an older daemon
+/// never drops a defer it doesn't know and adds the task in plain view.
+pub const PROTOCOL_VERSION: u32 = 17;
 
 /// The socket buffer both ends ask for: room for a large list's `Seed` in
 /// one write. macOS gives a Unix socket 8 KiB, so a 350 KiB seed crossed

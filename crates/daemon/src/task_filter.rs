@@ -6,7 +6,7 @@
 use std::cmp::Ordering;
 
 use chrono::NaiveDate;
-use ms_todo_protocol::{DueFilter, ErrorPayload, Importance, TaskFilter, TaskSort};
+use ms_todo_protocol::{DeferredFilter, DueFilter, ErrorPayload, Importance, TaskFilter, TaskSort};
 use ms_todo_store::TaskRow;
 use serde_json::Value;
 
@@ -23,16 +23,18 @@ enum Due {
     After(NaiveDate),
 }
 
-/// `rows` narrowed and ordered by `filter`, `today` being the local day.
-/// Without a sort they keep the order they came in.
+/// `rows` narrowed and ordered by `filter`, `today` being the local day,
+/// and how many matched but were left out for being deferred or Someday
+/// (`filter.deferred`). Without a sort they keep the order they came in,
+/// but for `--deferred only`'s, by the day they come back.
 pub(crate) fn apply(
     rows: Vec<TaskRow>,
     filter: &TaskFilter,
     today: NaiveDate,
-) -> Result<Vec<TaskRow>, ErrorPayload> {
+) -> Result<(Vec<TaskRow>, u64), ErrorPayload> {
     let due = filter.due.as_ref().map(read_due).transpose()?;
     let category = filter.category.as_deref().map(str::trim);
-    let mut kept: Vec<TaskRow> = rows
+    let kept: Vec<TaskRow> = rows
         .into_iter()
         .filter(|row| {
             let status = text(row, "status");
@@ -46,6 +48,7 @@ pub(crate) fn apply(
                     .is_none_or(|due| due_matches(due, row, status, today))
         })
         .collect();
+    let (mut kept, hidden) = crate::deferral::keep(kept, filter.deferred, today);
     match filter.sort {
         // Keys read once per task: a due date is parsed and converted. No
         // due date sorts last; ties keep their order (the sort is stable).
@@ -55,12 +58,15 @@ pub(crate) fn apply(
         }),
         Some(TaskSort::Title) => kept.sort_by_cached_key(|row| row.title.to_lowercase()),
         Some(sort) => kept.sort_by(|one, other| compare(sort, one, other)),
+        None if filter.deferred == DeferredFilter::Only => {
+            crate::deferral::sort_by_return(&mut kept);
+        }
         None => {}
     }
     if let Some(limit) = filter.limit {
         kept.truncate(usize::try_from(limit).unwrap_or(usize::MAX));
     }
-    Ok(kept)
+    Ok((kept, hidden))
 }
 
 fn read_due(due: &DueFilter) -> Result<Due, ErrorPayload> {
@@ -192,7 +198,7 @@ mod tests {
     }
 
     fn filtered(filter: TaskFilter) -> Vec<String> {
-        titles(&apply(rows(), &filter, today()).expect("filter"))
+        titles(&apply(rows(), &filter, today()).expect("filter").0)
             .into_iter()
             .map(str::to_owned)
             .collect()

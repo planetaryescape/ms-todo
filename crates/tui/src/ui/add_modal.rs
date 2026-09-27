@@ -144,12 +144,12 @@ pub fn draw(frame: &mut Frame, app: &App, input: &LineEditor, parsed: Option<&Pa
 /// The style a recognised part is drawn in.
 fn mark(theme: &Theme, kind: SpanKind) -> Style {
     match kind {
-        SpanKind::Date | SpanKind::Start | SpanKind::Reminder => theme.nlp_date,
+        SpanKind::Date | SpanKind::Start | SpanKind::Reminder | SpanKind::Defer => theme.nlp_date,
         SpanKind::List => theme.nlp_list,
         SpanKind::Label => theme.nlp_label,
         SpanKind::Priority => theme.nlp_priority,
         SpanKind::Recurrence => theme.nlp_recurrence,
-        SpanKind::MyDay => theme.text_dim,
+        SpanKind::MyDay | SpanKind::Someday => theme.text_dim,
         SpanKind::Syntax => theme.text_muted,
     }
 }

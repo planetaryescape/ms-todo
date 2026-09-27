@@ -1,5 +1,6 @@
-//! The arguments of `search` and `done`: finding tasks across every list,
-//! by their words or the day they were completed.
+//! The arguments of `search`, `done` and `next`: finding tasks across
+//! every list, by their words, the day they were completed, or what's
+//! most urgent.
 
 use clap::{Args, ValueEnum};
 
@@ -42,6 +43,16 @@ pub struct DoneArgs {
     /// At most this many, newest first
     #[arg(long, value_name = "N", value_parser = clap::value_parser!(u32).range(1..))]
     pub limit: Option<u32>,
+}
+
+#[derive(Debug, Args)]
+pub struct NextArgs {
+    /// At most this many
+    #[arg(long, value_name = "N", default_value_t = 5, value_parser = clap::value_parser!(u32).range(1..))]
+    pub limit: u32,
+    /// Only this list (exact name or ID) [default: every list]
+    #[arg(long, value_name = "NAME|ID")]
+    pub list: Option<String>,
 }
 
 #[derive(Clone, Copy, Debug, ValueEnum)]
