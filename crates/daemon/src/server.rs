@@ -182,6 +182,7 @@ async fn build_state(paths: &Paths) -> Result<State, Fatal> {
         suggest: crate::suggest::Suggester::load(&paths.config_file),
         my_day: crate::my_day::Config::load(&paths.config_file),
         semantic: crate::semantic::Semantic::load(&paths.config_file, &paths.data_dir),
+        nag: crate::nag::Nagger::load(&paths.config_file),
     })
 }
 
@@ -212,6 +213,7 @@ async fn accept_until_shutdown(listener: UnixListener, state: Arc<State>) -> Res
     connections.spawn(outbox::run(Arc::clone(&state)));
     connections.spawn(crate::my_day::run(Arc::clone(&state)));
     connections.spawn(crate::semantic::run(Arc::clone(&state)));
+    connections.spawn(crate::nag::run(Arc::clone(&state)));
     loop {
         tokio::select! {
             accepted = listener.accept() => match accepted {

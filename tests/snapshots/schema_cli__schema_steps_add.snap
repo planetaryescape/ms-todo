@@ -105,7 +105,7 @@ expression: pretty
                   "type": "object"
                 },
                 "extensions": {
-                  "description": "ms-todo's own open extension (com.planetaryescape.mstodo), when it has one and it has been fetched",
+                  "description": "ms-todo's own open extension (com.planetaryescape.mstodo), when it has one and it has been fetched. A task's may hold myDay, myDayDueSet, assignee, assigneeStatusSet and nag (minutes between nag reminders)",
                   "items": {
                     "type": "object"
                   },

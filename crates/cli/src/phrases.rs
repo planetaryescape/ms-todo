@@ -7,9 +7,10 @@
 use chrono::Local;
 use ms_todo_core::{DATE_FORMAT, REMINDER_FORMAT};
 use ms_todo_nlp::{
-    NotUnderstood, ParseContext, Reading, read_due, read_importance, read_past_date, read_reminder,
+    NotUnderstood, ParseContext, Reading, interval_label, read_due, read_importance, read_interval,
+    read_past_date, read_reminder,
 };
-use ms_todo_protocol::{Clearable, DueFilter, Importance};
+use ms_todo_protocol::{Clearable, DueFilter, Importance, NAG_MAX_MINUTES, NAG_MIN_MINUTES};
 
 pub(crate) fn now() -> ParseContext {
     ParseContext::new(Local::now().fixed_offset())
@@ -85,6 +86,22 @@ pub fn reminder(value: &str) -> Result<Clearable<String>, NotUnderstood> {
         Reading::Clear => Clearable::Clear,
         Reading::Set { value, .. } => Clearable::Set(value.format(REMINDER_FORMAT).to_string()),
     })
+}
+
+/// `--nag` and `tasks nag --every`: how often, in minutes, such as `15m`
+/// or `1h`, from 5 minutes to a day.
+pub fn nag_every(value: &str) -> Result<u32, NotUnderstood> {
+    let minutes = read_interval(value)?;
+    if (NAG_MIN_MINUTES..=NAG_MAX_MINUTES).contains(&minutes) {
+        Ok(minutes)
+    } else {
+        Err(NotUnderstood(format!(
+            "a nag repeats every {} to {}, not every {}",
+            interval_label(NAG_MIN_MINUTES),
+            interval_label(NAG_MAX_MINUTES),
+            interval_label(minutes)
+        )))
+    }
 }
 
 /// `--importance`: `1`–`4`, `p1`–`p4`, or `high`, `normal` or `low`.

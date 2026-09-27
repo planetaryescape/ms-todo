@@ -109,6 +109,10 @@ pub enum Request {
     },
     /// The daemon's view of its own health, for `ms-todo doctor`.
     Doctor,
+    /// Show one test notification the way a nag does, for `doctor
+    /// --notify-test`. Answered `Ack` once it's handed to the system, or
+    /// an error saying why it couldn't be.
+    NotifyTest,
     /// An authenticated GET of a path under the Graph v1.0 root.
     RawGet { path: String },
     /// A synchronous POST, PATCH or DELETE of a path under the Graph v1.0

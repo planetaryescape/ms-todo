@@ -291,6 +291,7 @@ fn merge(
             .clone()
             .or_else(|| parsed.defer.map(|day| day.format(DATE_FORMAT).to_string())),
         someday: parsed.someday || args.someday,
+        nag: args.nag.or(parsed.nag),
     };
     Ok((task, notes))
 }

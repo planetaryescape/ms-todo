@@ -49,6 +49,11 @@ expression: pretty
         "type": "boolean",
         "x-cli": "--clear-due"
       },
+      "clear_nag": {
+        "description": "Stop nagging",
+        "type": "boolean",
+        "x-cli": "--clear-nag"
+      },
       "clear_recur": {
         "description": "Stop it repeating. Its due date stays",
         "type": "boolean",
@@ -108,6 +113,11 @@ expression: pretty
         "description": "Look for the task in this list (exact name or ID), which also lets TASK be an exact title",
         "type": "string",
         "x-cli": "--list"
+      },
+      "nag": {
+        "description": "Once its reminder is due, notify me on this machine every so often until it's done: 15m, 1h, 1h30m (5m to 24h). Needs a reminder",
+        "type": "string",
+        "x-cli": "--nag"
       },
       "no_someday": {
         "description": "Take it out of Someday",
@@ -225,7 +235,7 @@ expression: pretty
                   "type": "object"
                 },
                 "extensions": {
-                  "description": "ms-todo's own open extension (com.planetaryescape.mstodo), when it has one and it has been fetched",
+                  "description": "ms-todo's own open extension (com.planetaryescape.mstodo), when it has one and it has been fetched. A task's may hold myDay, myDayDueSet, assignee, assigneeStatusSet and nag (minutes between nag reminders)",
                   "items": {
                     "type": "object"
                   },

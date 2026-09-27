@@ -16,8 +16,8 @@ pub use crate::my_day_args::{MyDayCommand, MyDayTargetArgs};
 pub use crate::outbox_args::{OutboxCommand, OutboxStateArg, UndoArgs};
 pub use crate::system_args::{AuthCommand, DaemonCommand, RawArgs, RawMethod, TuiArgs};
 pub use crate::task_args::{
-    AddArgs, EditArgs, LinkArgs, MoveArgs, ParseArgs, RescheduleArgs, SelectArgs, TargetArgs,
-    TasksCommand,
+    AddArgs, EditArgs, LinkArgs, MoveArgs, NagArgs, ParseArgs, RescheduleArgs, SelectArgs,
+    TargetArgs, TasksCommand,
 };
 
 /// A local-first, keyboard-native terminal client for Microsoft To Do.
@@ -139,7 +139,12 @@ pub enum Command {
         wait: bool,
     },
     /// Check sign-in, the daemon, the local cache and each list's sync
-    Doctor,
+    Doctor {
+        /// First show a test notification the way a nag does, to check
+        /// that nag reminders reach you on this machine
+        #[arg(long)]
+        notify_test: bool,
+    },
     /// Print the JSON schemas of a command's input and output (every
     /// command's without CMD)
     Schema {

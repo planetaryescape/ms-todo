@@ -5,7 +5,13 @@ expression: pretty
 {
   "input": {
     "additionalProperties": false,
-    "properties": {},
+    "properties": {
+      "notify_test": {
+        "description": "First show a test notification the way a nag does, to check that nag reminders reach you on this machine",
+        "type": "boolean",
+        "x-cli": "--notify-test"
+      }
+    },
     "required": [],
     "type": "object"
   },
@@ -139,6 +145,44 @@ expression: pretty
           "rollover_time": {
             "description": "HH:MM, local: when a day's My Day ends",
             "type": "string"
+          }
+        },
+        "type": [
+          "object",
+          "null"
+        ]
+      },
+      "nag": {
+        "description": "Nag reminders (rung 9b); null when the daemon didn't report",
+        "properties": {
+          "active": {
+            "description": "[nag] enabled, and this system can notify",
+            "type": "boolean"
+          },
+          "count": {
+            "description": "Open tasks set to nag",
+            "type": "integer"
+          },
+          "notifier": {
+            "description": "How notifications are shown (osascript), or null where they can't be",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "problem": {
+            "description": "Why nagging is off or failing",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "quiet_hours": {
+            "description": "HH:MM-HH:MM, local, when nothing is shown; null for none",
+            "type": [
+              "string",
+              "null"
+            ]
           }
         },
         "type": [

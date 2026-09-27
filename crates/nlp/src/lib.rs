@@ -6,6 +6,7 @@
 
 mod dates;
 mod importance;
+mod interval;
 mod quick_add;
 mod recurrence;
 mod recurrence_phrase;
@@ -15,6 +16,7 @@ pub use dates::{
     read_when,
 };
 pub use importance::{Importance, read_importance};
+pub use interval::{interval_label, read_interval};
 pub use quick_add::{
     DeterministicParser, ListRef, ParsedTask, QuickAddContext, QuickAddParser, Span, SpanKind,
     list_token,

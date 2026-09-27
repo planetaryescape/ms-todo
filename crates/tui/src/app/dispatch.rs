@@ -254,6 +254,7 @@ impl App {
             | Action::RescheduleOverdue
             | Action::MoveTasks
             | Action::ToggleMyDay
+            | Action::ToggleNag
             | Action::Attach
             | Action::Assign
                 if self.still_loading() =>
@@ -276,6 +277,7 @@ impl App {
                 Vec::new()
             }
             Action::ToggleMyDay => self.toggle_my_day(),
+            Action::ToggleNag => self.toggle_nag(),
             Action::Assign => {
                 self.start_assign();
                 Vec::new()

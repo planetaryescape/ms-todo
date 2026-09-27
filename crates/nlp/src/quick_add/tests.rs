@@ -573,6 +573,22 @@ fn defer_and_someday_are_read_out_of_the_title() {
 }
 
 #[test]
+fn a_nag_interval_is_read_out_of_the_title() {
+    let parsed = parse("Call mum !6pm +nag15m");
+    assert_eq!(parsed.nag, Some(15));
+    assert_eq!(parsed.title, "Call mum");
+    assert!(parsed.reminder.is_some());
+    assert!(parsed.summary(&now()).contains(&"nag every 15m".to_owned()));
+    assert_eq!(parse("+NAG1h30m Call mum").nag, Some(90));
+    // Unreadable: kept, and said so.
+    let parsed = parse("Stop +nagging me");
+    assert_eq!(parsed.nag, None);
+    assert_eq!(parsed.title, "Stop +nagging me");
+    assert_eq!(parsed.warnings.len(), 1, "{:?}", parsed.warnings);
+    assert_eq!(parse("Call mum \\+nag15m").nag, None);
+}
+
+#[test]
 fn priorities_count_in_lower_case_only() {
     for input in ["P1 incident review", "P3 review"] {
         let parsed = parse(input);

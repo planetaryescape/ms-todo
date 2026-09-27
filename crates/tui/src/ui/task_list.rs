@@ -167,6 +167,11 @@ fn task_row<'a>(
         let padding = " ".repeat(slot.saturating_sub(glyph.width()));
         Span::styled(format!("{glyph}{padding}"), style)
     };
+    // A nag is a reminder that repeats, so it takes the reminder's place.
+    let (reminder_glyph, reminder_style) = match task.nag {
+        Some(_) => (glyphs.nag, theme.accent),
+        None => (glyphs.reminder, theme.text_muted),
+    };
     let flags = vec![
         flag(task.important(), glyphs.important, theme.important),
         flag(
@@ -174,7 +179,7 @@ fn task_row<'a>(
             glyphs.recurring,
             theme.text_muted,
         ),
-        flag(task.reminder.is_some(), glyphs.reminder, theme.text_muted),
+        flag(task.reminder.is_some(), reminder_glyph, reminder_style),
     ];
     let mut title = if selected {
         vec![
@@ -231,16 +236,21 @@ fn task_row<'a>(
     ])
 }
 
-/// Cells each marker (important, recurring, reminder) gets: the widest of
+/// Cells each marker (important, recurring, reminder or nag) gets: the widest of
 /// them by display width, plus one. Some fonts draw a width-1 symbol such
 /// as the star a little wider than its cell, so the spare cell keeps it
 /// from running into the next marker.
 fn flag_slot(glyphs: &Glyphs) -> usize {
-    [glyphs.important, glyphs.recurring, glyphs.reminder]
-        .iter()
-        .map(|glyph| glyph.width())
-        .max()
-        .unwrap_or(1)
+    [
+        glyphs.important,
+        glyphs.recurring,
+        glyphs.reminder,
+        glyphs.nag,
+    ]
+    .iter()
+    .map(|glyph| glyph.width())
+    .max()
+    .unwrap_or(1)
         + 1
 }
 

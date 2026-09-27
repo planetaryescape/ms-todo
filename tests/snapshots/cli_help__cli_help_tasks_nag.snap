@@ -1,0 +1,55 @@
+---
+source: tests/cli_help.rs
+expression: help_output(args)
+---
+Nag me about tasks: once a task's reminder is due, this machine notifies me every so often until it's completed
+
+Only machines running the ms-todo daemon nag; the setting itself syncs with the task. A task needs a reminder to nag. Quiet hours (`[nag] quiet_hours`, 22:00-07:00 unless set) hold notifications back. `doctor --notify-test` checks notifications reach you
+
+Usage: ms-todo tasks nag [OPTIONS] <--every <EVERY>|--off> <TASK>...
+
+Arguments:
+  <TASK>...
+          Task IDs from `tasks list`, or exact titles when --list is given. `-` reads IDs from stdin, one per line
+
+Options:
+      --every <EVERY>
+          How often: 15m, 1h, 1h30m (5m to 24h)
+
+      --format <FORMAT>
+          Output format: jsonl is one object per line, ids one ID per line, csv has a header row [default: table in a terminal, json when piped]
+
+          [possible values: table, json, jsonl, ids, csv]
+
+      --instance <NAME>
+          Use a separate copy of ms-todo's data (also MS_TODO_INSTANCE). Builds run from Cargo's target/ directory default to "dev"; "default" is the installed copy
+
+      --off
+          Stop nagging
+
+      --fresh
+          Before reading, sync and wait, so the answer is as fresh as Microsoft To Do's (a read is otherwise answered from the cache)
+
+      --list <NAME|ID>
+          Look for the tasks in this list (exact name or ID), which also lets TASK be an exact title
+
+      --dry-run
+          Show what would change without changing anything
+
+      --quiet
+          Print nothing on stderr but errors: no notes and no progress
+
+      --no-color
+          No colour or bold in tables (also NO_COLOR)
+
+      --yes
+          Change several tasks without asking. Off a terminal, changing more than one needs it
+
+      --idempotency-key <KEY>
+          Run this change at most once: repeating the command with the same key returns the first result for 24 hours, and the same key with a different change exits 2
+
+  -h, --help
+          Print help (see a summary with '-h')
+
+  -V, --version
+          Print version

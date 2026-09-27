@@ -13,7 +13,7 @@ Options:
           [possible values: table, json, jsonl, ids, csv]
 
       --list <NAME|ID>
-          The list's exact name or its ID [default: the "Tasks" list, or with --status, --due, --importance, --category or --deferred only, every list]
+          The list's exact name or its ID [default: the "Tasks" list, or with --status, --due, --importance, --category, --deferred only or --nagging, every list]
 
       --instance <NAME>
           Use a separate copy of ms-todo's data (also MS_TODO_INSTANCE). Builds run from Cargo's target/ directory default to "dev"; "default" is the installed copy
@@ -59,6 +59,9 @@ Options:
 
       --category <NAME>
           Only tasks with this category (ignoring case)
+
+      --nagging
+          Only open tasks set to nag (`tasks nag`); each has `nag`, its interval in minutes, in its extension
 
       --sort <SORT>
           Order by: due (soonest first, none last), importance (high first), created or modified (newest first), title [default: the list's order; every list's is by due date]

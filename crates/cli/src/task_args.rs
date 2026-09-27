@@ -37,13 +37,21 @@ pub enum TasksCommand {
     /// Mark completed tasks as not started again
     Reopen(TargetArgs),
     /// Change a task's title, dates, importance, reminder, notes,
-    /// recurrence, categories, assignee, defer date or Someday; or all but
-    /// the title and notes of several at once
+    /// recurrence, categories, assignee, defer date, Someday or nag; or all
+    /// but the title and notes of several at once
     Edit(EditArgs),
     /// Move tasks to another list, keeping everything they hold: steps,
     /// link, attachments and ms-todo's own fields. Each is copied, the copy
     /// checked, and only then the original deleted; `undo` moves it back
     Move(MoveArgs),
+    /// Nag me about tasks: once a task's reminder is due, this machine
+    /// notifies me every so often until it's completed
+    ///
+    /// Only machines running the ms-todo daemon nag; the setting itself
+    /// syncs with the task. A task needs a reminder to nag. Quiet hours
+    /// (`[nag] quiet_hours`, 22:00-07:00 unless set) hold notifications
+    /// back. `doctor --notify-test` checks notifications reach you
+    Nag(NagArgs),
     /// Delete tasks. Asks first in a terminal; anywhere else it needs --yes
     Delete {
         #[command(flatten)]
@@ -208,6 +216,11 @@ pub struct AddArgs {
     /// take it out with `tasks edit --no-someday`
     #[arg(long)]
     pub someday: bool,
+    /// Once its reminder is due, notify me on this machine every so often
+    /// until it's done, as +nag15m in the text does: 15m, 1h, 1h30m (5m
+    /// to 24h). Needs a reminder
+    #[arg(long, value_name = "EVERY", value_parser = phrases::nag_every)]
+    pub nag: Option<u32>,
     /// Show what would be sent without changing anything
     #[arg(long)]
     pub dry_run: bool,
@@ -240,6 +253,34 @@ pub struct TargetArgs {
     /// Show what would change without changing anything
     #[arg(long)]
     pub dry_run: bool,
+    #[command(flatten)]
+    pub idempotency: IdempotencyArgs,
+}
+
+#[derive(Debug, Args)]
+#[command(group(ArgGroup::new("nag_change").required(true).args(["every", "off"])))]
+pub struct NagArgs {
+    /// Task IDs from `tasks list`, or exact titles when --list is given.
+    /// `-` reads IDs from stdin, one per line
+    #[arg(required = true, value_name = "TASK")]
+    pub tasks: Vec<String>,
+    /// How often: 15m, 1h, 1h30m (5m to 24h)
+    #[arg(long, value_name = "EVERY", value_parser = phrases::nag_every)]
+    pub every: Option<u32>,
+    /// Stop nagging
+    #[arg(long)]
+    pub off: bool,
+    /// Look for the tasks in this list (exact name or ID), which also lets
+    /// TASK be an exact title
+    #[arg(long, value_name = "NAME|ID")]
+    pub list: Option<String>,
+    /// Show what would change without changing anything
+    #[arg(long)]
+    pub dry_run: bool,
+    /// Change several tasks without asking. Off a terminal, changing more
+    /// than one needs it
+    #[arg(long)]
+    pub yes: bool,
     #[command(flatten)]
     pub idempotency: IdempotencyArgs,
 }
@@ -388,6 +429,13 @@ pub struct EditArgs {
     /// Take it out of Someday
     #[arg(long)]
     pub no_someday: bool,
+    /// Once its reminder is due, notify me on this machine every so often
+    /// until it's done: 15m, 1h, 1h30m (5m to 24h). Needs a reminder
+    #[arg(long, value_name = "EVERY", value_parser = phrases::nag_every, conflicts_with = "clear_nag")]
+    pub nag: Option<u32>,
+    /// Stop nagging
+    #[arg(long)]
+    pub clear_nag: bool,
     /// Show what would change without changing anything
     #[arg(long)]
     pub dry_run: bool,

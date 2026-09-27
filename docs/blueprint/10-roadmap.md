@@ -419,6 +419,20 @@ Split into **6a**, the deterministic quick add below, and **6b**, where Jev sugg
 
 **As built (2026-09-27, D-062):** as above. Protocol 18. Tests: the store's jobs, saves, prunes and candidates against a real SQLite file; the download's checksum, size and keep-on-disk rules against a mock server; config parsing; the CLI end to end against the fake Graph with a made-up four-axis model (off by default with nothing downloaded, found by meaning with no word in common, ranking, `--limit`, `--status`, every format, a task renamed on Graph embedded again after the sync, `doctor`); the TUI's toggle and hint bar. **Driven live** on a fresh `livetest9c` instance (release build, `[search] semantic = true` in a temporary config through `MS_TODO_CONFIG_DIR`): the daemon downloaded and checked the three files (0600, in a 0700 directory) and indexed the account's 627 tasks in the background. In a throwaway list, five invented tasks were each found by a query sharing no word with them, first across the whole account and within the list (`dentist` → "Book teeth cleaning" 0.52, `vehicle insurance` → "Renew car insurance" 0.65, `groceries` → "Buy milk and eggs" 0.31, `pet` → "Take the dog to the vet" 0.66, `retirement` → "Sort out the pension paperwork" 0.45), where keyword search found none; a search took 10 ms end to end. A task renamed in the CLI was found by its new meaning three seconds later and no longer by its old one. The list was deleted, its five vectors pruned (627 indexed again), and the daemon stopped. Only the invented tasks' results were looked at.
 
+## Rung 9b: nag reminders
+
+**Previously:** the whole To Do API in a CLI and a TUI. **Now:** the same, plus a task that keeps nagging, on this machine, until it's done.
+
+**Promise:** "For a task I mark as a nag, once its reminder time passes my Mac keeps notifying me every N minutes until I complete it."
+
+**Build:** `nag` (minutes) in our extension; `tasks nag`, `--nag` on `tasks add|edit`, `--nagging`, `+nag15m`; a nagger loop in the daemon with quiet hours; notifications through `osascript` (S18); `doctor --notify-test`; `n` and a row marker in the TUI.
+
+**Done when:** a task with a reminder a minute or two ahead, set to nag every 5 minutes, shows a notification when the reminder passes and another 5 minutes later, and none after it's completed.
+
+**Left out:** the phone (it shows only the task's own reminder), snooze, notification actions, Linux.
+
+**As built (2026-09-27, D-063):** all of the above, protocol 19, no migration (the last-nagged times are in `settings`). A task needs a reminder to nag; one without is refused. Tests: the schedule, quiet hours, config and setting rules (unit); the parser's interval and `+nag` token; the CLI end to end against the fake Graph (set, list, clear and undo; refusals without a reminder and below 5 minutes; add with a flag and with the text; the nagger showing a safe one-line title with the list, repeating, and stopping when the task is completed; `doctor --notify-test` and the quiet hours' default), and the TUI's `n` and marker. **Driven live** with a release build on the `livetest9b` instance, in the throwaway list `ms-todo-spike-9b-1654`: `tasks add "Nag spike call !16:56 +nag5m"` made the task with its reminder and `nag: 5` (`doctor`: active, `osascript`, one task); the daemon logged `nag: notified <id>` at 16:56:22 and again at 17:01:23, and `usernoted`'s log shows each presented as a banner; after `tasks complete` at 17:01:34 the same daemon showed nothing more to 17:07. An earlier run on the shared `livetest` instance (list `ms-todo-spike-9b-1632`) also checked the refusal without a reminder (exit 2), `nag` in Graph's copy of the extension (`raw GET`), `doctor --notify-test` presented, and a daemon restart two minutes after a nag sending nothing new. Both lists were deleted and both daemons stopped. **Not verified by us:** what the banner looks like (read from the log, not the screen), and Linux.
+
 ## Deferred (not in v1)
 
 - An optional local-LLM parser behind `QuickAddParser` (D-016).

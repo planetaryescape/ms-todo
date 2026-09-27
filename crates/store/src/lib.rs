@@ -16,6 +16,7 @@ mod list_lifecycle;
 mod lists;
 mod moves;
 mod my_day;
+mod nag;
 mod outbox;
 mod pool;
 mod search;

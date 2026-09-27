@@ -97,6 +97,9 @@ pub struct DoctorReport {
     /// Semantic search (rung 9c); `None` from a daemon before it.
     #[serde(default)]
     pub semantic: Option<SemanticStatus>,
+    /// Nag reminders (rung 9b); `None` from a daemon before them.
+    #[serde(default)]
+    pub nag: Option<NagStatus>,
 }
 
 /// How semantic search stands, for `doctor` (D-062).
@@ -138,6 +141,27 @@ pub enum ModelState {
     Failed,
     #[serde(other)]
     Unknown,
+}
+
+/// How nag reminders stand, for `doctor`.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct NagStatus {
+    /// `[nag] enabled`, and notifications possible on this system.
+    pub active: bool,
+    /// How this machine shows notifications (`osascript`), or `None`
+    /// where it can't.
+    #[serde(default)]
+    pub notifier: Option<String>,
+    /// `HH:MM-HH:MM`, local, when nothing is shown; `None` when there are
+    /// none.
+    #[serde(default)]
+    pub quiet_hours: Option<String>,
+    /// Open tasks set to nag.
+    pub count: u64,
+    /// Why nagging is off or failing: a bad `[nag]` setting, no way to
+    /// notify here, or the last notification that failed.
+    #[serde(default)]
+    pub problem: Option<String>,
 }
 
 /// How My Day stands, for `doctor`.

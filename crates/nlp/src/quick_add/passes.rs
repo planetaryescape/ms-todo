@@ -1,8 +1,8 @@
 //! The deterministic reader: ordered passes over the input, each masking
 //! the bytes it claims so later passes can't read them again (06). Quotes
 //! and escapes first, then `#List`, `@label`, `p1`–`p4`, `+myday`,
-//! `+someday`, `every …`, `^defer`, `!reminder`, `start <date>`, and last
-//! the bare date and time phrases. That order is what stops `every mon` or `!9am` from also
+//! `+someday`, `+nag15m`, `every …`, `^defer`, `!reminder`, `start <date>`,
+//! and last the bare date and time phrases. That order is what stops `every mon` or `!9am` from also
 //! being the due date.
 
 use std::ops::Range;
@@ -13,6 +13,7 @@ use super::{ListRef, ParsedTask, QuickAddContext, QuickAddParser, Span, SpanKind
 use crate::dates::span::{LITERAL, MASK, When, ends_word, phrase_at};
 use crate::dates::{DEFAULT_REMINDER_TIME, DueSpec, ParseContext, preview};
 use crate::importance::read_importance;
+use crate::interval::read_interval;
 use crate::recurrence::{self, Recurrence, RecurrenceEnd};
 
 #[derive(Clone, Copy, Debug, Default)]
@@ -28,6 +29,7 @@ impl QuickAddParser for DeterministicParser {
         scan.priority(&mut task);
         scan.my_day(&mut task);
         scan.someday(&mut task);
+        scan.nag(&mut task);
         let repeats = scan.recurrence(ctx);
         scan.defer(ctx, &mut task);
         let reminder = scan.reminder(ctx, &mut task);
@@ -328,6 +330,31 @@ impl<'i> Scan<'i> {
             .find(char::is_whitespace)
             .map_or(self.scan.len(), |to| at + to);
         &self.input[at..end]
+    }
+
+    /// `+nag<interval>`, such as `+nag15m`: nag every so often once the
+    /// reminder is due (rung 9b). One word, so the interval can't be
+    /// mistaken for a date; one that can't be read stays in the title.
+    fn nag(&mut self, task: &mut ParsedTask) {
+        for at in self.word_starts() {
+            if !self.scan[at..].starts_with("+nag") {
+                continue;
+            }
+            let end = self.scan[at..]
+                .find(|ch: char| ch.is_whitespace() || ch == MASK)
+                .map_or(self.scan.len(), |to| at + to);
+            match read_interval(&self.scan[at + 4..end]) {
+                Ok(minutes) if task.nag.is_none() => {
+                    task.nag = Some(minutes);
+                    self.claim(at..end, SpanKind::Nag);
+                }
+                Ok(_) => {}
+                Err(_) => task.warnings.push(format!(
+                    "{}: not an interval such as +nag15m or +nag1h, so it stays in the title",
+                    &self.input[at..end]
+                )),
+            }
+        }
     }
 
     /// `every …` (or a lowercase `daily`): the first one counts.

@@ -129,6 +129,10 @@ Copy these from mxr, including its keybinding registry:
 - a diagnostics page (`ms-todo doctor` output) inside the TUI, like mxr's
 - a help screen (`?`) that lists every key in the registry, and the line editor's, by where it's pressed: Navigation, Tasks, Detail pane, Prompts and editing, Views and palette. It's two columns when both fit side by side (109 columns and up with today's keys), otherwise one, with a long label wrapped rather than cut off. When it's taller than the terminal it scrolls: `j`/`k`, the arrows, `PgUp`/`PgDn` and `g`/`G`, with a scrollbar and `↓ more` or `↑ more` on its border. `Esc`, `?` or `q` closes it. This replaces D-044's note that help didn't fit a short terminal. A test fails if a binding in the registry is missing from help
 
+## Nag reminders
+
+Rung 9b (D-063). `n` sets the task under the cursor, or the selection, to nag every 15 minutes, or stops them when every one nags already; one without a reminder is refused with a banner before anything is sent. A nagging task's row shows `◉` (`N` in ASCII) in the reminder's place, in the accent colour. Another interval is the CLI's `tasks nag --every`.
+
 ## Editing fields and typing
 
 As built in the editing fix (D-045):

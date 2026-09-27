@@ -67,8 +67,8 @@ pub(crate) async fn change_extension(
     }
     if name.eq_ignore_ascii_case(EXTENSION_NAME) {
         return Err(invalid(format!(
-            "{EXTENSION_NAME} is ms-todo's own: it holds My Day, folders and assignees, which \
-             `myday`, `lists move` and `tasks edit --assignee` change"
+            "{EXTENSION_NAME} is ms-todo's own: it holds My Day, folders, assignees and nags, \
+             which `myday`, `lists move`, `tasks edit --assignee` and `tasks nag` change"
         )));
     }
     let current = read_extension(state, &path, name).await?;

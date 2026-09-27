@@ -91,6 +91,15 @@ Rung 9a (D-061). `next` answers "what should I do now?" with a few open tasks in
 
 Ties go to the oldest task (Graph's `createdDateTime`). Completed, deferred and Someday tasks are never next. Due dates are read against today's local date, My Day against My Day's day. Each task comes with `why`: every reason that applies, in the order above (`overdue 2d, in My Day, high`), or `added 12d ago` when none does. `next` gives 5 by default (`--limit`), from every list or one (`--list`); the TUI's Next view gives the same 5. Contexts, a later rung, will narrow it by one more predicate beside the defer rule.
 
+## Nag reminders
+
+Rung 9b (D-063). A task set to nag shows a notification on this machine once its reminder time passes, then every N minutes until it's completed, the nag is turned off, or the task is deleted. BK chose local notifications only: nothing is written to Microsoft but the setting.
+
+- **Field:** `nag: <minutes>` (5 to 1440) in the same document as `myDay` and `assignee`, through the same GET, merge and whole-document write (`task_extension`), so it syncs to every ms-todo and `undo` reverses it by the changed-since rule. `null` stops it.
+- **Needs a reminder:** a nag starts at `reminderDateTime`, so a write setting one on a task with no reminder time is refused (exit 2), unless the same edit sets a reminder; a new task needs `--reminder` or `!time`. Refusing beats inventing a start (such as the due date at 09:00): the reminder is already the time the user chose to be told, and the To Do app fires its own there.
+- **The nagger** (`crates/daemon/src/nag/`) looks at the open live tasks with `nag` twice a minute. One is due when its reminder has passed and it hasn't nagged since, or it last nagged an interval ago; a notification before the reminder was moved later doesn't count. When each task last nagged is kept in `settings` (`nag.last_notified`), so a restarted daemon owes each task at most one notification. Quiet hours (`[nag] quiet_hours`, default `22:00-07:00`) hold notifications back; `[nag] enabled = false` turns the nagger off.
+- **Notifications:** `/usr/bin/osascript` with the title and list name as argv (S18: `notify-rust` is silently dropped on macOS 27). Linux has none yet, and `doctor` says so.
+
 ## Move between lists
 
 Graph has no move operation. ms-todo implements `task move` as **a copy that checks its work and loses nothing:**

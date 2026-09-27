@@ -128,6 +128,17 @@ pub(super) fn doctor() -> Value {
                     "problem": nullable("string", "Why it's off or failing")
                 }
             },
+            "nag": {
+                "type": ["object", "null"],
+                "description": "Nag reminders (rung 9b); null when the daemon didn't report",
+                "properties": {
+                    "active": { "type": "boolean", "description": "[nag] enabled, and this system can notify" },
+                    "notifier": nullable("string", "How notifications are shown (osascript), or null where they can't be"),
+                    "quiet_hours": nullable("string", "HH:MM-HH:MM, local, when nothing is shown; null for none"),
+                    "count": { "type": "integer", "description": "Open tasks set to nag" },
+                    "problem": nullable("string", "Why nagging is off or failing")
+                }
+            },
             "problems": { "type": "array", "items": { "type": "string" } }
         }),
         &["sign_in", "daemon", "database", "scopes", "problems"],

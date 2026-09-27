@@ -61,7 +61,17 @@ pub struct NewTask {
     /// Park it as Someday (ms-todo's `someday`): hidden until taken out.
     #[serde(default)]
     pub someday: bool,
+    /// Nag every this many minutes once the reminder is due, until it's
+    /// completed ([`NAG_MIN_MINUTES`] to [`NAG_MAX_MINUTES`]); ms-todo's
+    /// `nag`. Needs `reminder`.
+    #[serde(default)]
+    pub nag: Option<u32>,
 }
+
+/// The shortest nag interval: more often is noise, not a reminder.
+pub const NAG_MIN_MINUTES: u32 = 5;
+/// The longest: a day. Past that, a reminder of its own does the job.
+pub const NAG_MAX_MINUTES: u32 = 24 * 60;
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "action", rename_all = "snake_case")]
@@ -198,6 +208,11 @@ pub struct TaskEdit {
     pub assignee: Option<Clearable<String>>,
     #[serde(default)]
     pub keep_status: bool,
+    /// Nag every this many minutes (`NewTask.nag`), or stop nagging. A
+    /// task needs a reminder to nag, so setting one on a task without
+    /// one is refused.
+    #[serde(default)]
+    pub nag: Option<Clearable<u32>>,
     /// `YYYY-MM-DD`. Microsoft To Do sets the due date to it too when the
     /// task has none (S11).
     #[serde(default)]

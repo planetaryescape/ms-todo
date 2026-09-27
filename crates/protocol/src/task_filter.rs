@@ -20,6 +20,9 @@ pub struct TaskFilter {
     /// Only tasks carrying this category, ignoring case.
     #[serde(default)]
     pub category: Option<String>,
+    /// Only open tasks set to nag (rung 9b).
+    #[serde(default)]
+    pub nagging: bool,
     #[serde(default)]
     pub sort: Option<TaskSort>,
     /// At most this many, after sorting.
@@ -39,6 +42,7 @@ impl TaskFilter {
             || self.importance.is_some()
             || self.category.is_some()
             || self.deferred == DeferredFilter::Only
+            || self.nagging
     }
 
     pub fn is_empty(&self) -> bool {
