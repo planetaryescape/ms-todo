@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.35](https://github.com/planetaryescape/ms-todo/compare/v0.1.34...v0.1.35) (2026-09-27)
+
+
+### Features
+
+* close the TUI gaps (D-066) ([#83](https://github.com/planetaryescape/ms-todo/issues/83)) ([9438031](https://github.com/planetaryescape/ms-todo/commit/94380310f6b0e832c69ad5d78ab24ac74e671b7a))
+
 ## [0.1.34](https://github.com/planetaryescape/ms-todo/compare/v0.1.33...v0.1.34) (2026-09-27)
 
 
