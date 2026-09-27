@@ -21,8 +21,8 @@ use entities::{
     outbox_op, step, task_entity,
 };
 use reads::{
-    done_result, every_list_task, next_result, parsed_task, search_result, shown_list, suggestion,
-    task_collection, waiting_result,
+    active_context, context_item, done_result, every_list_task, next_result, parsed_task, scoped,
+    search_result, shown_list, suggestion, task_collection, waiting_result,
 };
 use writes::{applied, catalog_applied, catalog_plan, list_applied, list_plan, plan};
 
@@ -96,11 +96,13 @@ pub fn output_schema(command: &str) -> Option<Value> {
             &["path", "lines"],
         ),
         "waiting" => task_collection(waiting_result()),
-        "next" => collection(next_result()),
-        "myday suggest" => collection(suggestion()),
+        "next" => scoped(collection(next_result())),
+        "myday suggest" => scoped(collection(suggestion())),
+        "ctx" | "ctx show" => active_context(),
+        "ctx list" => live_collection(context_item()),
         "myday add" | "myday remove" | "myday rollover" => json!({ "oneOf": [applied(), plan()] }),
         "search" => {
-            let mut schema = collection(search_result());
+            let mut schema = scoped(collection(search_result()));
             schema["properties"]["semantic"] = json!({
                 "type": "object",
                 "description": "With --semantic only: the embedding model, and how many tasks in the search's scope it hasn't embedded for their current text yet (missing from items, or ranked by their old text)",

@@ -18,6 +18,7 @@ mod attachments;
 mod catalog;
 mod child_undo;
 mod completed;
+mod contexts;
 mod deferral;
 mod doctor;
 mod entities;

@@ -11,13 +11,14 @@ Arguments:
   [ATTACHMENT]...  The attachments: each its number from 1, its ID, or its exact name [default: all of them]
 
 Options:
-      --format <FORMAT>  Output format: jsonl is one object per line, ids one ID per line, csv has a header row [default: table in a terminal, json when piped] [possible values: table, json, jsonl, ids, csv]
-      --list <NAME|ID>   Look for the task in this list (exact name or ID), which also lets TASK be an exact title
-      --instance <NAME>  Use a separate copy of ms-todo's data (also MS_TODO_INSTANCE). Builds run from Cargo's target/ directory default to "dev"; "default" is the installed copy
-      --out <DIR>        The directory to save into [default: the current directory]
-      --force            Replace a file of the same name instead of numbering the new one
-      --fresh            Before reading, sync and wait, so the answer is as fresh as Microsoft To Do's (a read is otherwise answered from the cache)
-      --quiet            Print nothing on stderr but errors: no notes and no progress
-      --no-color         No colour or bold in tables (also NO_COLOR)
-  -h, --help             Print help
-  -V, --version          Print version
+      --format <FORMAT>      Output format: jsonl is one object per line, ids one ID per line, csv has a header row [default: table in a terminal, json when piped] [possible values: table, json, jsonl, ids, csv]
+      --list <NAME|ID>       Look for the task in this list (exact name or ID), which also lets TASK be an exact title
+      --instance <NAME>      Use a separate copy of ms-todo's data (also MS_TODO_INSTANCE). Builds run from Cargo's target/ directory default to "dev"; "default" is the installed copy
+      --out <DIR>            The directory to save into [default: the current directory]
+      --force                Replace a file of the same name instead of numbering the new one
+      --fresh                Before reading, sync and wait, so the answer is as fresh as Microsoft To Do's (a read is otherwise answered from the cache)
+      --quiet                Print nothing on stderr but errors: no notes and no progress
+      --no-color             No colour or bold in tables (also NO_COLOR)
+      --context <NAME|none>  Read this command in this context (from config.toml) rather than the active one; `none` for every list
+  -h, --help                 Print help
+  -V, --version              Print version

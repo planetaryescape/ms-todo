@@ -519,10 +519,10 @@ fn a_task_gone_while_typing_or_picking_is_not_edited() {
         tasks.remove(0);
         app.update(Msg::Response {
             tag: effects[0].tag,
-            result: Ok(ResponseData::Seed(crate::app::tests::seed(
+            result: Ok(ResponseData::Seed(Box::new(crate::app::tests::seed(
                 crate::app::tests::scope_home(),
                 tasks,
-            ))),
+            )))),
         });
     };
     let mut app = seeded();

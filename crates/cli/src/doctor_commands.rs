@@ -6,8 +6,8 @@
 use ms_todo_core::Paths;
 use ms_todo_graph::auth::{Authenticator, Endpoints};
 use ms_todo_protocol::{
-    DoctorReport, ModelState, MyDayStatus, NagStatus, OutboxDepth, Request, ResponseData,
-    ScopeStatus, SemanticStatus, SuggestStatus, SyncMode, SyncState,
+    ContextsStatus, DoctorReport, ModelState, MyDayStatus, NagStatus, OutboxDepth, Request,
+    ResponseData, ScopeStatus, SemanticStatus, SuggestStatus, SyncMode, SyncState,
 };
 use serde::Serialize;
 
@@ -37,6 +37,8 @@ pub struct Doctor {
     pub semantic: Option<SemanticStatus>,
     /// Nag reminders (rung 9b), when the daemon reported.
     pub nag: Option<NagStatus>,
+    /// Contexts (rung 9d), when the daemon reported.
+    pub contexts: Option<ContextsStatus>,
     /// What needs attention, for people.
     pub problems: Vec<String>,
 }
@@ -153,7 +155,7 @@ pub async fn doctor(paths: &Paths) -> Result<Doctor, CliError> {
         Ok((mut client, status)) => {
             let daemon = DaemonState::new(paths, Inspection::Ready(status));
             match client.request(Request::Doctor).await {
-                Ok(ResponseData::Doctor(report)) => (daemon, Some(report)),
+                Ok(ResponseData::Doctor(report)) => (daemon, Some(*report)),
                 Ok(_) => {
                     problems.push("the daemon sent an unexpected answer to `doctor`".into());
                     (daemon, None)
@@ -185,6 +187,7 @@ pub async fn doctor(paths: &Paths) -> Result<Doctor, CliError> {
             my_day: None,
             semantic: None,
             nag: None,
+            contexts: None,
             problems,
         });
     };
@@ -198,6 +201,7 @@ pub async fn doctor(paths: &Paths) -> Result<Doctor, CliError> {
         my_day,
         semantic,
         nag,
+        contexts,
     } = report;
     if let Some(problem) = semantic
         .as_ref()
@@ -207,6 +211,14 @@ pub async fn doctor(paths: &Paths) -> Result<Doctor, CliError> {
     }
     if let Some(problem) = nag.as_ref().and_then(|nag| nag.problem.as_ref()) {
         problems.push(format!("nag: {problem}"));
+    }
+    if let Some(contexts) = &contexts {
+        problems.extend(
+            contexts
+                .problems
+                .iter()
+                .map(|problem| format!("contexts: {problem}")),
+        );
     }
     if let Some(problem) = my_day.as_ref().and_then(|my_day| my_day.problem.as_ref()) {
         problems.push(format!("my_day: {problem}"));
@@ -269,6 +281,7 @@ pub async fn doctor(paths: &Paths) -> Result<Doctor, CliError> {
         my_day,
         semantic,
         nag: nag.map(|nag| *nag),
+        contexts,
         problems,
     })
 }
@@ -411,6 +424,13 @@ impl Render for Doctor {
         }
         if let Some(nag) = &self.nag {
             rows.push(("Nag", nag_row(nag)));
+        }
+        if let Some(contexts) = &self.contexts {
+            let active = contexts.active.as_deref().unwrap_or("none");
+            rows.push((
+                "Context",
+                format!("{active} ({} defined)", contexts.defined),
+            ));
         }
         for scope in self
             .scopes

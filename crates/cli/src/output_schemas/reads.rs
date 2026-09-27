@@ -78,7 +78,7 @@ pub(super) fn every_list_task() -> Value {
 /// `tasks list` and `waiting`: the collection, with how many deferred and
 /// Someday tasks it left out.
 pub(super) fn task_collection(item: Value) -> Value {
-    let mut schema = collection(item);
+    let mut schema = scoped(collection(item));
     schema["properties"]["deferred_hidden"] = json!({
         "type": "integer",
         "description": "How many open tasks matched but were left out for being deferred to a later day or Someday; --deferred include shows them"
@@ -88,6 +88,74 @@ pub(super) fn task_collection(item: Value) -> Value {
         .expect("collection lists required keys")
         .push(json!("deferred_hidden"));
     schema
+}
+
+/// A read a context narrows (rung 9d): `context` beside the items.
+pub(super) fn scoped(mut schema: Value) -> Value {
+    schema["properties"]["context"] = json!({
+        "type": ["object", "null"],
+        "description": "The context that narrowed the read (the active one, or --context); null when none did, as with an explicit --list",
+        "properties": {
+            "name": { "type": "string" },
+            "lists": { "type": "integer", "description": "How many lists it covers" },
+            "default_list": { "type": "string", "description": "Where a task added with no list goes, when the context names one of its lists" }
+        },
+        "required": ["name", "lists"]
+    });
+    schema["required"]
+        .as_array_mut()
+        .expect("collection lists required keys")
+        .push(json!("context"));
+    schema
+}
+
+/// `ctx`, `ctx show` and `ctx NAME|none`: the active context.
+pub(super) fn active_context() -> Value {
+    versioned(
+        json!({
+            "active": nullable("string", "The active context's name; null when every list is shown"),
+            "lists": { "type": "array", "items": { "type": "string" }, "description": "The names of the lists it covers, in the sidebar's order" },
+            "list_ids": { "type": "array", "items": { "type": "string" }, "description": "Their local IDs, in the same order" },
+            "folders": { "type": "array", "items": { "type": "string" }, "description": "The folders it takes every list of, as configured" },
+            "default_list": nullable("string", "Where a task added with no list goes, as configured; \"Tasks\" when null"),
+            "problems": { "type": "array", "items": { "type": "string" }, "description": "What doesn't resolve: a folder or list no longer there, config.toml unreadable, an active context it no longer defines" }
+        }),
+        &[
+            "active",
+            "lists",
+            "list_ids",
+            "folders",
+            "default_list",
+            "problems",
+        ],
+    )
+}
+
+/// A context `ctx list` gives.
+pub(super) fn context_item() -> Value {
+    let strings = json!({ "type": "array", "items": { "type": "string" } });
+    object(
+        json!({
+            "name": { "type": "string" },
+            "active": { "type": "boolean" },
+            "folders": strings,
+            "lists": strings,
+            "default_list": nullable("string", ""),
+            "list_count": { "type": "integer", "description": "How many lists it covers now" },
+            "resolved": { "type": "array", "items": { "type": "string" }, "description": "The names of the lists it covers now, in the sidebar's order" },
+            "problems": { "type": "array", "items": { "type": "string" }, "description": "A folder or list it names that isn't there, or a default_list not among its lists" }
+        }),
+        &[
+            "name",
+            "active",
+            "folders",
+            "lists",
+            "default_list",
+            "list_count",
+            "resolved",
+            "problems",
+        ],
+    )
 }
 
 /// A task `next` gives: with `list` and `why`.

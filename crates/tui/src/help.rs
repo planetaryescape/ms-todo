@@ -109,7 +109,7 @@ fn place(binding: &Binding) -> (Section, Option<&'static str>) {
                 | Action::Open
                 | Action::Help
                 | Action::Quit => Section::Navigation,
-                Action::Palette | Action::Diagnostics => Section::Views,
+                Action::Palette | Action::Diagnostics | Action::NextContext => Section::Views,
                 _ => Section::Tasks,
             }
         };

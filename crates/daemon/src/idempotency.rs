@@ -25,6 +25,21 @@ use crate::handlers::{State, error_payload, store_error};
 /// be left out by accident.
 pub(crate) fn fingerprint(request: &Request) -> String {
     let mut request = request.clone();
+    // `--context` is part of what was asked: under another context the
+    // same change can pick other tasks, or another default list.
+    match &mut request {
+        Request::InContext { request, .. } => without_ids(request),
+        request => without_ids(request),
+    }
+    let json = serde_json::to_string(&request).unwrap_or_default();
+    Sha256::digest(json.as_bytes())
+        .iter()
+        .map(|byte| format!("{byte:02x}"))
+        .collect()
+}
+
+/// `request` without what differs between two sends of the same change.
+fn without_ids(request: &mut Request) {
     if let Request::AddTask {
         op_id,
         idempotency_key,
@@ -54,16 +69,11 @@ pub(crate) fn fingerprint(request: &Request) -> String {
         op_id,
         idempotency_key,
         ..
-    } = &mut request
+    } = request
     {
         *op_id = None;
         *idempotency_key = None;
     }
-    let json = serde_json::to_string(&request).unwrap_or_default();
-    Sha256::digest(json.as_bytes())
-        .iter()
-        .map(|byte| format!("{byte:02x}"))
-        .collect()
 }
 
 /// Run `operation` under `key`, or answer from the key's first run.
@@ -193,5 +203,14 @@ mod tests {
         assert_eq!(a, fingerprint(&add("Buy milk", "op-2", "k2")));
         assert_ne!(a, fingerprint(&add("Buy oat milk", "op-1", "k")));
         assert_eq!(a.len(), 64);
+        // `--context` is part of the change; the op ID inside it isn't.
+        let within = |name: &str, op_id: &str| Request::InContext {
+            context: ms_todo_protocol::ContextChoice::Named { name: name.into() },
+            request: Box::new(add("Buy milk", op_id, "k")),
+        };
+        let work = fingerprint(&within("work", "op-1"));
+        assert_eq!(work, fingerprint(&within("work", "op-2")));
+        assert_ne!(work, fingerprint(&within("home", "op-1")));
+        assert_ne!(work, a);
     }
 }

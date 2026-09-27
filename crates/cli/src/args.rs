@@ -9,6 +9,7 @@ use crate::output::OutputFormat;
 pub use crate::child_args::{
     AttachmentsCommand, LinksCommand, StepTargetArgs, StepsCommand, WriteArgs,
 };
+pub use crate::context_args::{CtxArgs, CtxCommand};
 pub use crate::find_args::{DoneArgs, NextArgs, SearchArgs, SearchStatusArg};
 pub use crate::folder_args::{DeleteFolderArgs, FoldersCommand, OrderFolderArgs, RenameFolderArgs};
 pub use crate::list_args::{ListsCommand, MoveListsArgs, OrderListArgs};
@@ -58,6 +59,11 @@ pub struct GlobalArgs {
     /// No colour or bold in tables (also NO_COLOR)
     #[arg(long, global = true)]
     pub no_color: bool,
+
+    /// Read this command in this context (from config.toml) rather than
+    /// the active one; `none` for every list
+    #[arg(long, global = true, value_name = "NAME|none")]
+    pub context: Option<String>,
 }
 
 #[derive(Debug, Subcommand)]
@@ -124,6 +130,16 @@ pub enum Command {
     /// importance, due within 3 days, then the oldest. Deferred and
     /// Someday tasks are never next
     Next(NextArgs),
+    /// Show, list or switch the context: a named set of lists that
+    /// narrows the everyday reads
+    ///
+    /// Contexts are defined in config.toml as `[contexts.<name>]` with
+    /// `folders`, `lists` and `default_list`. The active one narrows
+    /// `tasks list`, search, `next`, `waiting`, My Day's suggestions and
+    /// the TUI to its lists, and a new task with no list goes to its
+    /// default list. An explicit --list always wins; My Day itself is
+    /// never narrowed
+    Ctx(CtxArgs),
     /// Move open tasks to a new due date: the overdue ones, those due
     /// before a day, or the ones named. One `undo` puts them all back
     Reschedule(RescheduleArgs),

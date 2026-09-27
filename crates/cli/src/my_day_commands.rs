@@ -53,7 +53,15 @@ pub async fn run(
         MyDayCommand::Suggest => {
             let my_day = my_day(paths).await?;
             heading(format, "Suggestions for My Day", &my_day);
-            print_collection(format, &my_day.suggestions, my_day.sync, &SUGGESTIONS_TABLE)
+            // Only the suggestions are narrowed by a context.
+            let found = crate::data_commands::Found {
+                items: my_day.suggestions,
+                sync: my_day.sync,
+                deferred_hidden: None,
+                context: my_day.context,
+                semantic: None,
+            };
+            crate::output::print_task_collection(format, &found, &SUGGESTIONS_TABLE)
         }
         MyDayCommand::Rollover { dry_run } => {
             let request = Request::MyDayRollover {

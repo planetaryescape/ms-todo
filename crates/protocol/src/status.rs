@@ -101,6 +101,9 @@ pub struct DoctorReport {
     /// so `Response` stays within clippy's variant-size limit.
     #[serde(default)]
     pub nag: Option<Box<NagStatus>>,
+    /// Contexts (rung 9d); `None` from a daemon before them.
+    #[serde(default)]
+    pub contexts: Option<ContextsStatus>,
 }
 
 /// How semantic search stands, for `doctor` (D-062).
@@ -163,6 +166,20 @@ pub struct NagStatus {
     /// notify here, or the last notification that failed.
     #[serde(default)]
     pub problem: Option<String>,
+}
+
+/// How contexts stand, for `doctor`.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ContextsStatus {
+    /// The active context's name.
+    #[serde(default)]
+    pub active: Option<String>,
+    /// How many config.toml defines.
+    pub defined: u64,
+    /// Every warning: a folder or list a context names that isn't there,
+    /// config.toml unreadable, an active context no longer defined.
+    #[serde(default)]
+    pub problems: Vec<String>,
 }
 
 /// How My Day stands, for `doctor`.

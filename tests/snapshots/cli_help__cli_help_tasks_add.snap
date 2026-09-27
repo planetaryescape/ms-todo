@@ -45,6 +45,9 @@ Options:
       --reminder <WHEN>
           Remind me at this local time, over any in the text: 17:30 (the next one), tomorrow 9am, fri 5:30pm, 2026-10-02 09:30. A day alone, such as tomorrow or in 2 days, is 09:00 on it
 
+      --context <NAME|none>
+          Read this command in this context (from config.toml) rather than the active one; `none` for every list
+
       --importance <LEVEL>
           How important it is, over any p1–p4 in the text: 1 or p1 (high), 2, 3, p2 or p3 (normal), 4 or p4 (low), or high, normal or low
 

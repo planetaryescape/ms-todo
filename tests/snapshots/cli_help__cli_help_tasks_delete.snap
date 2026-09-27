@@ -19,5 +19,6 @@ Options:
       --quiet                  Print nothing on stderr but errors: no notes and no progress
       --yes                    Delete without asking
       --no-color               No colour or bold in tables (also NO_COLOR)
+      --context <NAME|none>    Read this command in this context (from config.toml) rather than the active one; `none` for every list
   -h, --help                   Print help
   -V, --version                Print version

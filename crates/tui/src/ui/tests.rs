@@ -68,10 +68,10 @@ fn planned_is_grouped_by_how_soon() {
     let effects = app.update(Msg::Event(ms_todo_protocol::Event::ResyncNeeded));
     app.update(Msg::Response {
         tag: effects[0].tag,
-        result: Ok(ms_todo_protocol::ResponseData::Seed(seed(
+        result: Ok(ms_todo_protocol::ResponseData::Seed(Box::new(seed(
             Scope::Planned,
             tasks,
-        ))),
+        )))),
     });
     app.task_index = 2;
     insta::assert_snapshot!(render(&app));
@@ -97,10 +97,10 @@ fn completed_is_grouped_by_day() {
     let effects = app.update(Msg::Event(ms_todo_protocol::Event::ResyncNeeded));
     app.update(Msg::Response {
         tag: effects[0].tag,
-        result: Ok(ms_todo_protocol::ResponseData::Seed(seed(
+        result: Ok(ms_todo_protocol::ResponseData::Seed(Box::new(seed(
             Scope::Completed,
             tasks,
-        ))),
+        )))),
     });
     app.task_index = 2;
     insta::assert_snapshot!(render(&app));
@@ -977,4 +977,17 @@ fn categories_are_chips_on_the_row() {
     ] {
         assert!(labels.iter().any(|label| label == wanted), "{labels:?}");
     }
+}
+
+#[test]
+fn the_title_bar_names_the_context() {
+    let mut app = seeded();
+    app.active_context = Some(ms_todo_protocol::AppliedContext {
+        name: "work".into(),
+        lists: 7,
+        default_list: None,
+    });
+    let frame = render(&app);
+    let title = frame.lines().next().unwrap_or_default();
+    assert!(title.contains("\u{b7} context: work"), "{title}");
 }

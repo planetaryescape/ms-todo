@@ -20,6 +20,7 @@ Options:
       --to <WHEN>              The new due date: today, tomorrow, fri, next mon, +3d, 12 oct, 2026-10-02
       --list <NAME|ID>         Only tasks in this list (exact name or ID), which also lets TASK be an exact title
       --no-color               No colour or bold in tables (also NO_COLOR)
+      --context <NAME|none>    Read this command in this context (from config.toml) rather than the active one; `none` for every list
       --dry-run                Show which tasks would move without changing anything
       --yes                    Move several tasks without asking. Off a terminal, moving more than one needs it
       --idempotency-key <KEY>  Run this change at most once: repeating the command with the same key returns the first result for 24 hours, and the same key with a different change exits 2

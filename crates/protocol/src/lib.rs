@@ -14,6 +14,7 @@
 
 mod catalog;
 mod codec;
+mod contexts;
 mod events;
 mod list_change;
 mod mutation;
@@ -27,6 +28,7 @@ mod views;
 
 pub use catalog::{CategoryChange, ExtensionChange, ExtensionOwner, OwnerKind};
 pub use codec::{Codec, FrameTooLarge, MAX_FRAME_BYTES};
+pub use contexts::{AppliedContext, ContextChoice, ContextInfo, Contexts};
 pub use events::{EntityChanged, Event, WriteRejected};
 pub use list_change::{Anchor, Folder, ListChange};
 pub use mutation::{Applied, Plan, PlannedList, PlannedTask, Refused, Rolled, TaskAction};
@@ -38,9 +40,9 @@ pub use response::{
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
 pub use status::{
-    DaemonStatus, DoctorReport, ModelState, MyDayStatus, NagStatus, ScopeError, ScopeStatus,
-    SemanticStatus, SuggestStatus, SyncActivity, SyncInfo, SyncMode, SyncProgress, SyncReport,
-    SyncState,
+    ContextsStatus, DaemonStatus, DoctorReport, ModelState, MyDayStatus, NagStatus, ScopeError,
+    ScopeStatus, SemanticStatus, SuggestStatus, SyncActivity, SyncInfo, SyncMode, SyncProgress,
+    SyncReport, SyncState,
 };
 pub use task_change::{
     Clearable, Importance, LinkEdit, NAG_MAX_MINUTES, NAG_MIN_MINUTES, NewLink, NewTask,
@@ -91,8 +93,12 @@ pub use views::{Counts, MyDay, MyDaySeed, Scope, Seed};
 /// with a keyword search. 19: nag reminders (rung 9b): `NewTask.nag`,
 /// `TaskEdit.nag`, `TaskFilter.nagging`, `NotifyTest` and
 /// `DoctorReport.nag`, so an older daemon never adds or edits a task
-/// without its nag, or lists every task for `--nagging`.
-pub const PROTOCOL_VERSION: u32 = 19;
+/// without its nag, or lists every task for `--nagging`. 20: contexts
+/// (rung 9d): `Contexts`, `SetContext`, `InContext`,
+/// `ResponseData::Contexts`, and `context` on the answers a context
+/// narrows, so an older daemon never answers `--context` as if everything
+/// were asked for.
+pub const PROTOCOL_VERSION: u32 = 20;
 
 /// The socket buffer both ends ask for: room for a large list's `Seed` in
 /// one write. macOS gives a Unix socket 8 KiB, so a 350 KiB seed crossed

@@ -1,0 +1,46 @@
+---
+source: tests/cli_help.rs
+expression: help_output(args)
+---
+Show, list or switch the context: a named set of lists that narrows the everyday reads
+
+Contexts are defined in config.toml as `[contexts.<name>]` with `folders`, `lists` and `default_list`. The active one narrows `tasks list`, search, `next`, `waiting`, My Day's suggestions and the TUI to its lists, and a new task with no list goes to its default list. An explicit --list always wins; My Day itself is never narrowed
+
+Usage: ms-todo ctx [OPTIONS] [NAME]
+       ms-todo ctx <COMMAND>
+
+Commands:
+  show  The active context and the lists it covers (the same as `ctx`)
+  list  Every context config.toml defines, with the lists each covers now
+  help  Print this message or the help of the given subcommand(s)
+
+Arguments:
+  [NAME]
+          Make this context active (as named in config.toml), or `none` to show everything again
+
+Options:
+      --format <FORMAT>
+          Output format: jsonl is one object per line, ids one ID per line, csv has a header row [default: table in a terminal, json when piped]
+
+          [possible values: table, json, jsonl, ids, csv]
+
+      --instance <NAME>
+          Use a separate copy of ms-todo's data (also MS_TODO_INSTANCE). Builds run from Cargo's target/ directory default to "dev"; "default" is the installed copy
+
+      --fresh
+          Before reading, sync and wait, so the answer is as fresh as Microsoft To Do's (a read is otherwise answered from the cache)
+
+      --quiet
+          Print nothing on stderr but errors: no notes and no progress
+
+      --no-color
+          No colour or bold in tables (also NO_COLOR)
+
+      --context <NAME|none>
+          Read this command in this context (from config.toml) rather than the active one; `none` for every list
+
+  -h, --help
+          Print help (see a summary with '-h')
+
+  -V, --version
+          Print version

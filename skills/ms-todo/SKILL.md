@@ -5,7 +5,7 @@ description: Read, find, filter, add, complete, reopen, edit, reschedule, move a
 
 # ms-todo
 
-**Skill v15, for ms-todo rung 9b, nag reminders, on top of defer, Someday, next and search by meaning** (instant reads from a local cache kept live by delta sync; search across every list, by words or, when it's turned on, by meaning; what was completed, by day; instant writes that queue offline and are never dropped; bulk reschedules and edits; moving tasks between lists without losing anything; undo; quick add, which reads a task's text for its list, dates, recurrence and importance, and which agents turn off with `--no-parse`; optional list suggestions for inbox tasks; My Day, ms-todo's plan for today, mirrored on the phone through the due date; a task's steps and its one link; its files, attached and downloaded by path; who a task is waiting on; nag reminders, repeated notifications on this machine until a task is done; filters across lists; start dates and recurrences; lists made, renamed and deleted; Outlook categories; open extensions; and tasks deferred to a day or parked as Someday, with `next` for what to do now).
+**Skill v16, for ms-todo rung 9d, contexts, on top of nag reminders, defer, Someday, next and search by meaning** (instant reads from a local cache kept live by delta sync; search across every list, by words or, when it's turned on, by meaning; what was completed, by day; instant writes that queue offline and are never dropped; bulk reschedules and edits; moving tasks between lists without losing anything; undo; quick add, which reads a task's text for its list, dates, recurrence and importance, and which agents turn off with `--no-parse`; optional list suggestions for inbox tasks; My Day, ms-todo's plan for today, mirrored on the phone through the due date; a task's steps and its one link; its files, attached and downloaded by path; who a task is waiting on; nag reminders, repeated notifications on this machine until a task is done; filters across lists; start dates and recurrences; lists made, renamed and deleted; Outlook categories; open extensions; tasks deferred to a day or parked as Someday, with `next` for what to do now; and contexts, named sets of lists that narrow the everyday reads).
 
 `ms-todo tui` (`mst tui`) is a full-screen view for people at a keyboard. Don't use it: it needs a terminal, and everything it does is a command below. Always pass a subcommand: a bare `ms-todo` opens the TUI in a terminal, and elsewhere only prints help and exits 2.
 
@@ -235,6 +235,20 @@ ms-todo next --limit 10 --list "Work" --format json
 - `search` finds deferred and Someday tasks; `tasks list`, `waiting`, `next` and My Day's suggestions don't show them.
 - `next` is a fixed order: overdue (most overdue first), due today, in My Day, high importance, due within 3 days, then the oldest. Quote each task's `why` rather than inventing a reason.
 - In quick-add text, `^fri` / `^next week` defers and `+someday` parks; with `--no-parse` use the flags. `undo` reverses either unless it changed since.
+
+## Contexts: reads may be narrowed
+
+The user can make a context active (`ms-todo ctx work`), and then `tasks list` without `--list`, `search`, `next`, `waiting` and `myday suggest` only look at that context's lists, and `tasks add` with no `--list` goes to its default list. The active context is shared with the user's TUI.
+
+```bash
+ms-todo ctx --format json                     # {"active": "work" or null, "lists": [...], "list_ids": [...], "problems": [...]}
+ms-todo ctx list --format json                # every context config.toml defines
+ms-todo --context none search "invoice" --format json   # this one command over every list
+```
+
+- Narrowed answers carry `"context": {"name", "lists", "default_list"}` in the envelope (null when nothing was narrowed). **When it isn't null, say the answer is only for that context** ("in your work context, …"), and use `--context none` before saying something doesn't exist anywhere.
+- Don't switch the user's active context (`ctx NAME`, `ctx none`) unless they ask: it changes what their TUI shows. Use `--context NAME|none` for a single command instead.
+- An explicit `--list` always wins, and `myday list` is never narrowed.
 
 ## Waiting on someone
 

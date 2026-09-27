@@ -74,7 +74,7 @@ impl App {
                         // it couldn't (such as the model loading) is stale.
                         self.filter_error = None;
                         let first = !self.seeded;
-                        self.apply_seed(seed);
+                        self.apply_seed(*seed);
                         if first && self.lists_ready {
                             self.prefetch_views()
                         } else {
@@ -120,6 +120,7 @@ impl App {
                 self.downloaded(result);
                 Vec::new()
             }
+            (Tag::Context, result) => self.context_switched(result),
             (Tag::Write(write), Ok(ResponseData::Applied(applied))) => {
                 self.apply_write(write, &applied.items);
                 if write == Write::Move {
@@ -216,6 +217,13 @@ impl App {
             .filter_map(SidebarList::from_entity)
             .collect();
         self.counts = seed.counts;
+        let switched = self.active_context != seed.context;
+        if switched {
+            // Another context's rows, read before, aren't this one's.
+            self.cache.clear();
+        }
+        self.active_context = seed.context;
+        self.context_names = seed.contexts;
         self.activity = seed.activity;
         self.outbox = seed.outbox;
         self.lists_ready = seed.lists_sync.state == SyncState::Ready;
@@ -223,6 +231,9 @@ impl App {
         self.seeded = true;
         if let Some(scope) = &seed.scope {
             self.wanted = Some(scope.clone());
+        }
+        if switched {
+            self.left_context();
         }
         self.place_sidebar_cursor(row.filter(|row| matches!(row, Entry::Folder { .. })));
         let changed_scope = self.shown != seed.scope;

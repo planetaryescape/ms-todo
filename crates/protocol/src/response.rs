@@ -5,8 +5,8 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 use crate::{
-    Applied, DaemonStatus, DoctorReport, Entity, Folder, MyDay, OutboxOp, Plan, Seed, SyncInfo,
-    SyncReport,
+    Applied, AppliedContext, Contexts, DaemonStatus, DoctorReport, Entity, Folder, MyDay, OutboxOp,
+    Plan, Seed, SyncInfo, SyncReport,
 };
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -50,6 +50,9 @@ pub enum ResponseData {
         /// but were left out.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         deferred_hidden: Option<u64>,
+        /// The context that narrowed them, if one did.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        context: Option<AppliedContext>,
     },
     /// Tasks a search matched, best first: each task entity with `list`,
     /// its list's name, and `snippet`, the passage that matched on one
@@ -61,9 +64,13 @@ pub enum ResponseData {
         sync: SyncInfo,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         semantic: Option<SemanticIndex>,
+        /// The context that narrowed them, if one did.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        context: Option<AppliedContext>,
     },
     Sync(SyncReport),
-    Doctor(DoctorReport),
+    /// Boxed, as `Seed` is: every part of the daemon reports in it.
+    Doctor(Box<DoctorReport>),
     Raw {
         body: Value,
     },
@@ -83,7 +90,8 @@ pub enum ResponseData {
         /// Unix seconds.
         expires_at: i64,
     },
-    Seed(Seed),
+    /// Boxed: by far the largest answer, and one per screen.
+    Seed(Box<Seed>),
     /// The answer to `SuggestList`: `None` when no list is likely enough.
     ListSuggestion {
         suggestion: Option<ListSuggestion>,
@@ -103,6 +111,7 @@ pub enum ResponseData {
     Extensions {
         items: Vec<Entity>,
     },
+    Contexts(Contexts),
     Ack,
     #[serde(other)]
     Unknown,

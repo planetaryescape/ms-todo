@@ -20,6 +20,7 @@ Options:
       --quiet                  Print nothing on stderr but errors: no notes and no progress
       --no-color               No colour or bold in tables (also NO_COLOR)
       --title <TITLE>          New title, taken literally
+      --context <NAME|none>    Read this command in this context (from config.toml) rather than the active one; `none` for every list
       --due <WHEN>             New due date, in the forms --due takes on `tasks add`; empty or `-` removes it, as --clear-due does
       --clear-due              Remove the due date
       --importance <LEVEL>     New importance: 1 or p1 (high), 2, 3, p2 or p3 (normal), 4 or p4 (low), or high, normal or low

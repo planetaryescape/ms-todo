@@ -247,6 +247,7 @@ pub async fn ask_with_events(
     on_event: impl FnMut(Event),
 ) -> Result<ResponseData, CliError> {
     let (mut client, _) = connect(paths).await?;
+    let request = crate::context_commands::scoped(request);
     client.request_with_events(request, on_event).await
 }
 
@@ -259,6 +260,7 @@ pub async fn ask_mutation(
     check: &str,
 ) -> Result<ResponseData, CliError> {
     let (mut client, _) = connect(paths).await?;
+    let request = crate::context_commands::scoped(request);
     client.mutate(request, op_id, check).await
 }
 

@@ -29,8 +29,11 @@ use crate::task_fields::{
 };
 use crate::task_resolution::{Target, resolve_tasks, select_tasks};
 
+/// With no list named, the task goes to the context's `default_list`
+/// (`choice`, else the active context's), else to "Tasks".
 pub(crate) async fn add_task(
     state: &State,
+    choice: Option<&ms_todo_protocol::ContextChoice>,
     task: NewTask,
     dry_run: bool,
     op_id: String,
@@ -56,7 +59,12 @@ pub(crate) async fn add_task(
     }
     ensure_ready(state, LISTS_SCOPE).await?;
     let lists = state.store.lists().await.map_err(store_error)?;
-    let list = resolve_list(&lists, task.list.as_deref())?;
+    let default = crate::contexts::applied(state, choice, task.list.as_deref(), &lists)?
+        .and_then(|context| context.default_list);
+    let list = match default {
+        Some(list) => list,
+        None => resolve_list(&lists, task.list.as_deref())?,
+    };
     let mut body = graph_body(&fields, &user_time_zone());
     if dry_run {
         if let Some(ours) = ours {
@@ -96,6 +104,9 @@ pub(crate) struct Targets<'a> {
     pub names: &'a [String],
     pub list: Option<&'a str>,
     pub select: Option<&'a TaskSelect>,
+    /// `--context`; a selection with no list or folder is narrowed by it,
+    /// else by the active context, as `tasks list` is (rung 9d).
+    pub context: Option<&'a ms_todo_protocol::ContextChoice>,
 }
 
 pub(crate) async fn change_tasks(
@@ -346,7 +357,7 @@ pub(crate) async fn resolve(
             ms_todo_core::ErrorKind::InvalidInput,
             "name the tasks or select them (--overdue, --due-before), not both".into(),
         )),
-        Some(select) => select_tasks(state, select, targets.list).await,
+        Some(select) => select_tasks(state, select, targets.list, targets.context).await,
         None => resolve_tasks(state, targets.names, targets.list).await,
     }
 }

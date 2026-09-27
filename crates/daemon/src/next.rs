@@ -13,7 +13,7 @@
 //! Each comes with `why`: every reason that applies, not only its tier's.
 
 use chrono::{DateTime, NaiveDate};
-use ms_todo_protocol::{Entity, ErrorPayload, ResponseData, SyncState};
+use ms_todo_protocol::{ContextChoice, Entity, ErrorPayload, ResponseData, SyncState};
 use ms_todo_store::{LISTS_SCOPE, TaskRow, View};
 use serde_json::{Value, json};
 
@@ -38,9 +38,11 @@ pub(crate) struct Days {
     pub my_day: NaiveDate,
 }
 
-/// `next [--list L] [--limit N]`: each task with `why` and `list`.
+/// `next [--list L] [--limit N]`: each task with `why` and `list`. With
+/// no list, a context (`choice`, else the active one) narrows it.
 pub(crate) async fn next_tasks(
     state: &State,
+    choice: Option<&ContextChoice>,
     wanted: Option<&str>,
     limit: Option<u32>,
 ) -> Result<ResponseData, ErrorPayload> {
@@ -50,10 +52,12 @@ pub(crate) async fn next_tasks(
             items: Vec::new(),
             sync: lists_sync,
             deferred_hidden: None,
+            context: None,
         });
     }
     let lists = state.store.lists().await.map_err(store_error)?;
     let scope = ListScope::of(&lists, wanted, None)?;
+    let context = crate::contexts::applied(state, choice, wanted, &lists)?;
     let sync = scope.read_state(state, lists_sync).await?;
     // Open tasks only: completed history grows without end, and is never next.
     let rows: Vec<TaskRow> = state
@@ -62,7 +66,10 @@ pub(crate) async fn next_tasks(
         .await
         .map_err(store_error)?
         .into_iter()
-        .filter(|row| scope.lists.contains_key(&row.list_local_id))
+        .filter(|row| {
+            scope.lists.contains_key(&row.list_local_id)
+                && crate::contexts::within(context.as_ref(), &row.list_local_id)
+        })
         .collect();
     let days = days(state);
     let items = pick(rows, days, limit.unwrap_or(DEFAULT_LIMIT))
@@ -78,6 +85,7 @@ pub(crate) async fn next_tasks(
         items,
         sync,
         deferred_hidden: None,
+        context: context.as_ref().map(crate::contexts::Resolved::applied),
     })
 }
 

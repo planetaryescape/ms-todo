@@ -18,5 +18,6 @@ Options:
       --fresh                  Before reading, sync and wait, so the answer is as fresh as Microsoft To Do's (a read is otherwise answered from the cache)
       --quiet                  Print nothing on stderr but errors: no notes and no progress
       --no-color               No colour or bold in tables (also NO_COLOR)
+      --context <NAME|none>    Read this command in this context (from config.toml) rather than the active one; `none` for every list
   -h, --help                   Print help
   -V, --version                Print version

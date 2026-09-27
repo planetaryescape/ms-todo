@@ -59,6 +59,12 @@ impl Events {
         let _ = self.sender.send(Event::IndexChanged);
     }
 
+    /// What every client shows has changed (the active context): read
+    /// it again.
+    pub fn resync_needed(&self) {
+        let _ = self.sender.send(Event::ResyncNeeded);
+    }
+
     pub fn subscribe(&self) -> broadcast::Receiver<Event> {
         self.sender.subscribe()
     }

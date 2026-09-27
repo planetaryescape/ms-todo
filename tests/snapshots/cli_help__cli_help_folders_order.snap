@@ -19,5 +19,6 @@ Options:
       --idempotency-key <KEY>  Run this change at most once: repeating the command with the same key returns the first result for 24 hours, and the same key with a different change exits 2
       --quiet                  Print nothing on stderr but errors: no notes and no progress
       --no-color               No colour or bold in tables (also NO_COLOR)
+      --context <NAME|none>    Read this command in this context (from config.toml) rather than the active one; `none` for every list
   -h, --help                   Print help
   -V, --version                Print version

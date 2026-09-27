@@ -186,6 +186,7 @@ pub const BINDINGS: &[Binding] = &[
         "Show or hide deferred",
         false,
     ),
+    bind(BROWSE, "c", Action::NextContext, "Next context", false),
     bind(&[Context::Prompt], "Enter", Action::Submit, "Done", true),
     // The filter's hint bar shows it with the mode it's in; other prompts
     // ignore it.

@@ -8,8 +8,8 @@ use ms_todo_core::{ErrorKind, message_with_causes};
 use ms_todo_graph::auth::Authenticator;
 use ms_todo_graph::{GraphClient, GraphError, Method};
 use ms_todo_protocol::{
-    DaemonStatus, ErrorPayload, PROTOCOL_VERSION, RawWriteMethod, Request, Response, ResponseData,
-    SyncReport,
+    ContextChoice, DaemonStatus, ErrorPayload, PROTOCOL_VERSION, RawWriteMethod, Request, Response,
+    ResponseData, SyncReport,
 };
 use ms_todo_store::{LISTS_SCOPE, Store, StoreError};
 use serde_json::Value;
@@ -45,6 +45,10 @@ pub(crate) struct State {
     pub semantic: crate::semantic::Semantic,
     /// Nag reminders: `[nag]`, and how this machine notifies.
     pub nag: crate::nag::Nagger,
+    /// config.toml, read again for each request that uses a context.
+    pub config_file: std::path::PathBuf,
+    /// The active context (rung 9d).
+    pub context: crate::contexts::Active,
 }
 
 impl State {
@@ -56,6 +60,16 @@ impl State {
 }
 
 pub(crate) async fn handle(state: &State, request: Request) -> Response {
+    // `--context`: the reads a context narrows, and a new task's default
+    // list, use this rather than the active context.
+    let (choice, request) = match request {
+        Request::InContext { context, request } => (Some(context), *request),
+        request => (None, request),
+    };
+    let choice = choice.as_ref();
+    if let Err(error) = crate::contexts::check(state, choice) {
+        return Response::Error { error };
+    }
     let result = match request {
         Request::Status => Ok(ResponseData::Status(status(state))),
         Request::ListLists => list_lists(state).await,
@@ -71,6 +85,7 @@ pub(crate) async fn handle(state: &State, request: Request) -> Response {
         } => {
             list_tasks(
                 state,
+                choice,
                 list.as_deref(),
                 search.as_deref(),
                 assignee.as_deref(),
@@ -79,7 +94,7 @@ pub(crate) async fn handle(state: &State, request: Request) -> Response {
             .await
         }
         Request::NextTasks { list, limit } => {
-            crate::next::next_tasks(state, list.as_deref(), limit).await
+            crate::next::next_tasks(state, choice, list.as_deref(), limit).await
         }
         Request::SearchTasks {
             query,
@@ -87,7 +102,18 @@ pub(crate) async fn handle(state: &State, request: Request) -> Response {
             status,
             limit,
             semantic,
-        } => search_tasks(state, &query, list.as_deref(), status, limit, semantic).await,
+        } => {
+            search_tasks(
+                state,
+                choice,
+                &query,
+                list.as_deref(),
+                status,
+                limit,
+                semantic,
+            )
+            .await
+        }
         Request::CompletedTasks {
             since,
             until,
@@ -126,7 +152,7 @@ pub(crate) async fn handle(state: &State, request: Request) -> Response {
         | Request::ChangeLists { .. }
         | Request::ChangeCategory { .. }
         | Request::ChangeExtension { .. }
-        | Request::Undo { .. }) => mutate(state, request).await,
+        | Request::Undo { .. }) => mutate(state, choice, request).await,
         Request::Seed {
             scope,
             search,
@@ -134,7 +160,7 @@ pub(crate) async fn handle(state: &State, request: Request) -> Response {
             semantic,
         } => {
             let search = search.as_deref();
-            crate::seed::seed(state, scope, search, include_deferred, semantic).await
+            crate::seed::seed(state, choice, scope, search, include_deferred, semantic).await
         }
         // The connection loop answers `Subscribe` itself, and starts the
         // stream.
@@ -150,7 +176,7 @@ pub(crate) async fn handle(state: &State, request: Request) -> Response {
                 .await
                 .map(|suggestion| ResponseData::ListSuggestion { suggestion })
         }
-        Request::MyDay => crate::my_day::my_day(state).await,
+        Request::MyDay => crate::my_day::my_day(state, choice).await,
         Request::MyDayRollover { dry_run, op_id } => {
             let op_id = op_id.unwrap_or_else(new_op_id);
             crate::my_day::rollover(state, dry_run, op_id, crate::my_day::Origin::User).await
@@ -186,6 +212,12 @@ pub(crate) async fn handle(state: &State, request: Request) -> Response {
         Request::GetExtension { owner, name } => {
             crate::catalog::get_extension(state, &owner, &name).await
         }
+        Request::Contexts => crate::contexts::contexts(state).await,
+        Request::SetContext { name } => crate::contexts::set_context(state, name).await,
+        Request::InContext { .. } => Err(error_payload(
+            ErrorKind::InvalidInput,
+            "a request is read in one context; `InContext` can't hold another".into(),
+        )),
         Request::Unknown => Err(error_payload(
             ErrorKind::Unsupported,
             "this daemon doesn't know that request; restart it with `ms-todo daemon stop`".into(),
@@ -197,8 +229,18 @@ pub(crate) async fn handle(state: &State, request: Request) -> Response {
 /// `tasks add|complete|reopen|edit|delete`, the folder changes and
 /// `undo`, run at most once per `--idempotency-key` (a dry run never uses
 /// the key).
-async fn mutate(state: &State, request: Request) -> Result<ResponseData, ErrorPayload> {
-    let fingerprint = fingerprint(&request);
+async fn mutate(
+    state: &State,
+    choice: Option<&ContextChoice>,
+    request: Request,
+) -> Result<ResponseData, ErrorPayload> {
+    let fingerprint = match choice {
+        Some(context) => fingerprint(&Request::InContext {
+            context: context.clone(),
+            request: Box::new(request.clone()),
+        }),
+        None => fingerprint(&request),
+    };
     match request {
         Request::AddTask {
             task,
@@ -208,7 +250,7 @@ async fn mutate(state: &State, request: Request) -> Result<ResponseData, ErrorPa
         } => {
             let op_id = op_id.unwrap_or_else(new_op_id);
             let key = idempotency_key.filter(|_| !dry_run);
-            let operation = add_task(state, task, dry_run, op_id.clone());
+            let operation = add_task(state, choice, task, dry_run, op_id.clone());
             run_once(state, key.as_deref(), &fingerprint, &op_id, operation).await
         }
         Request::ChangeTasks {
@@ -226,6 +268,7 @@ async fn mutate(state: &State, request: Request) -> Result<ResponseData, ErrorPa
                 names: &tasks,
                 list: list.as_deref(),
                 select: select.as_ref(),
+                context: choice,
             };
             let operation = change_tasks(state, targets, change, dry_run, op_id.clone());
             run_once(state, key.as_deref(), &fingerprint, &op_id, operation).await

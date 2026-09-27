@@ -16,6 +16,8 @@ mod catalog_commands;
 mod child_args;
 mod child_commands;
 mod confirm;
+mod context_args;
+mod context_commands;
 mod csv_columns;
 mod daemon_client;
 mod daemon_commands;
@@ -86,6 +88,7 @@ pub fn run(daemon: DaemonEntry) -> ExitCode {
     };
     let format = OutputFormat::resolve(cli.global.format);
     terminal::configure(cli.global.quiet, cli.global.no_color);
+    context_commands::configure(cli.global.context.as_deref());
     let command = match cli.command {
         Some(command) => command,
         None if bare_opens_tui(
@@ -164,7 +167,11 @@ fn reads_cache(command: &Command) -> bool {
         Command::Steps(command) => matches!(command, StepsCommand::List(_)),
         Command::Links(command) => matches!(command, LinksCommand::List(_)),
         Command::Attachments(command) => matches!(command, AttachmentsCommand::List(_)),
-        Command::Waiting { .. } | Command::Search(_) | Command::Done(_) | Command::Next(_) => true,
+        Command::Waiting { .. }
+        | Command::Search(_)
+        | Command::Done(_)
+        | Command::Next(_)
+        | Command::Ctx(_) => true,
         _ => false,
     }
 }
@@ -232,31 +239,30 @@ async fn dispatch(command: Command, paths: &Paths, format: OutputFormat) -> Resu
         Command::MyDay(command) => my_day_commands::run(paths, command, format).await,
         Command::Tasks(TasksCommand::List(args)) => {
             let filter = args.filter();
-            let table = match (&args.assignee, &args.list) {
-                (Some(_), _) => &data_commands::WAITING_TABLE,
-                (None, None) if filter.narrows() => &data_commands::EVERY_LIST_TABLE,
-                (None, _) => &data_commands::TASKS_TABLE,
-            };
-            let (items, sync, hidden) =
+            let narrows = filter.narrows();
+            let (assigned, listed) = (args.assignee.is_some(), args.list.is_some());
+            let found =
                 data_commands::tasks(paths, args.list, args.search, args.assignee, filter).await?;
-            output::print_task_collection(format, &items, sync, hidden, table)
+            // A context with no --list reads every list of it, each task
+            // with its list, as a filter with no --list does.
+            let every_list = !listed && (narrows || found.context.is_some());
+            let table = match (assigned, every_list) {
+                (true, _) => &data_commands::WAITING_TABLE,
+                (false, true) => &data_commands::EVERY_LIST_TABLE,
+                (false, false) => &data_commands::TASKS_TABLE,
+            };
+            output::print_task_collection(format, &found, table)
         }
         Command::Tasks(TasksCommand::Show(args)) => show_commands::task(paths, args, format).await,
         Command::Waiting { person } => {
             let assignee = Some(person.unwrap_or_else(|| "*".to_owned()));
-            let (items, sync, hidden) =
+            let found =
                 data_commands::tasks(paths, None, None, assignee, Default::default()).await?;
-            output::print_task_collection(
-                format,
-                &items,
-                sync,
-                hidden,
-                &data_commands::WAITING_TABLE,
-            )
+            output::print_task_collection(format, &found, &data_commands::WAITING_TABLE)
         }
         Command::Next(args) => {
-            let (items, sync) = data_commands::next(paths, args).await?;
-            print_collection(format, &items, sync, &data_commands::NEXT_TABLE)
+            let found = data_commands::next(paths, args).await?;
+            output::print_task_collection(format, &found, &data_commands::NEXT_TABLE)
         }
         Command::Categories(command) => catalog_commands::categories(paths, command, format).await,
         Command::Extensions(command) => catalog_commands::extensions(paths, command, format).await,
@@ -265,23 +271,14 @@ async fn dispatch(command: Command, paths: &Paths, format: OutputFormat) -> Resu
         Command::Attachments(command) => attachment_commands::run(paths, command, format).await,
         Command::Search(args) => {
             let found = data_commands::search(paths, args).await?;
-            match &found.semantic {
-                Some(index) => output::print_semantic_results(
-                    format,
-                    &found.items,
-                    found.sync,
-                    index,
-                    &data_commands::SEMANTIC_TABLE,
-                ),
-                None => print_collection(
-                    format,
-                    &found.items,
-                    found.sync,
-                    &data_commands::SEARCH_TABLE,
-                ),
-            }
+            let table = match found.semantic {
+                Some(_) => &data_commands::SEMANTIC_TABLE,
+                None => &data_commands::SEARCH_TABLE,
+            };
+            output::print_task_collection(format, &found, table)
         }
         Command::Done(args) => done_command::done(paths, args, format).await,
+        Command::Ctx(args) => context_commands::run(paths, args, format).await,
         Command::Reschedule(args) => task_commands::reschedule(paths, args, format).await,
         Command::Sync { wait } => print_success(format, &sync_commands::sync(paths, wait).await?),
         Command::Doctor { notify_test } => {

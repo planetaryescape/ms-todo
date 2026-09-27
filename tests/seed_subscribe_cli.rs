@@ -77,7 +77,7 @@ impl Client {
             })
             .await
         {
-            ResponseData::Seed(seed) => seed,
+            ResponseData::Seed(seed) => *seed,
             other => unreachable!("{other:?}"),
         }
     }

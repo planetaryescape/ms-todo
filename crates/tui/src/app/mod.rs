@@ -17,6 +17,7 @@
 mod answers;
 mod assign;
 pub mod attachments;
+mod contexts;
 mod detail_cursor;
 pub mod diagnostics;
 mod dispatch;
@@ -46,7 +47,9 @@ mod themes;
 use std::collections::{HashMap, HashSet};
 
 use chrono::{DateTime, FixedOffset, Local, NaiveDate};
-use ms_todo_protocol::{Counts, OutboxDepth, Request, Scope, SyncActivity, TaskChange};
+use ms_todo_protocol::{
+    AppliedContext, Counts, OutboxDepth, Request, Scope, SyncActivity, TaskChange,
+};
 use ratatui::layout::Size;
 
 use crate::glyphs::Glyphs;
@@ -210,6 +213,11 @@ pub struct App {
     /// `z`: deferred and Someday tasks shown in every view, for this
     /// session.
     pub show_deferred: bool,
+    /// The daemon's active context, as the last seed said: the sidebar
+    /// and the views hold only its lists (rung 9d).
+    pub active_context: Option<AppliedContext>,
+    /// Every context config.toml defines, for `c` and the palette.
+    pub context_names: Vec<String>,
 }
 
 impl App {
@@ -259,6 +267,8 @@ impl App {
             places: attachments::Places::default(),
             screen: Size::new(80, 24),
             show_deferred: false,
+            active_context: None,
+            context_names: Vec::new(),
         }
     }
 

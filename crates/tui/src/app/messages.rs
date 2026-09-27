@@ -31,6 +31,8 @@ pub enum Tag {
     ListHint,
     /// An attachment saved to open (rung 8b).
     Download,
+    /// The active context switched (rung 9d).
+    Context,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
