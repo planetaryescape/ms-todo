@@ -15,7 +15,7 @@ A task's extension also holds `opId`, the outbox operation ID of the create that
 - **Adding a task:** set the extension field `myDay: "YYYY-MM-DD"` to today's local date. Like every extension write, it reads, merges and PATCHes the whole document ([04](04-sync-cache.md#children-of-a-task)).
   - **If the task has no due date,** also set `dueDateTime` to today and record `myDayDueSet: true` in the extension. The app then shows the task in its own My Day, on devices where "Show 'Due Today' tasks in My Day" is on.
   - **If it has a due date,** leave it. The app shows it in its My Day only on the day it's actually due.
-- **Removing a task:** clear `myDay`. Whether a due date ms-todo set is cleared at once is Q13 in [12](12-open-questions.md#product-questions-for-bk) (placeholder: yes, by the rollover's rule).
+- **Removing a task:** clear `myDay`. A due date ms-todo set is cleared at once, by the rollover's rule (Q13 in [12](12-open-questions.md#product-questions-for-bk), answered yes).
 - **Daily rollover:** at the first daemon tick after the rollover time (setting `my_day.rollover_time = "HH:MM"`, default `"00:00"` local; D-024), for each task where `myDay` is before today:
   - Clear `myDay`, in a batch.
   - If `myDayDueSet` is true, clear it too, and if the task isn't completed and its due date is still the one ms-todo set, remove the due date. A due date the user set or moved is never touched. A completed task keeps its date.
@@ -32,7 +32,7 @@ A task's extension also holds `opId`, the outbox operation ID of the create that
 - **Preconditions at send time.** The due-date edit carries `expect_due`, the due date it was planned from: it's sent only while Graph's still is that date (read first), so a date changed on the phone meanwhile is kept. The rollover's extension write carries `expect: { myDay: <the day> }`, so a task put back in today's My Day on another machine is left there. A write whose precondition fails is `done` with Graph's copy recorded, and nothing sent.
 - **`myDayDueSet` comes last:** an add that sets the due date writes `myDay`, then the due-date edit, then `myDayDueSet: true`, which is sent only if that edit was made (`after`). A skipped operation is `done` with a `skipped:` note.
 - **Adding a task that ms-todo set a due date for earlier** (its `myDayDueSet` date is still its due date, and the rollover hasn't run) moves that date to today. A user's due date clears a stale `myDayDueSet`.
-- **Remove** is the rollover's rule (Q13, placeholder yes): clear `myDay` and `myDayDueSet`, and the due date only if the task is open and its due date is still the `myDay` day.
+- **Remove** is the rollover's rule (Q13, answered yes): clear `myDay` and `myDayDueSet`, and the due date only if the task is open and its due date is still the `myDay` day.
 - **A new task** (`tasks add --my-day`, `+myday`, `*`, or `a` from the My Day view) carries `myDay`, and without a due or start date also today's due date and `myDayDueSet`, in its create's inline extension: one POST.
 - **"Today"** is My Day's day: the local date at `now − rollover_time`, so with `"04:00"` a task added at 02:00 goes in the day before's My Day. A bad `rollover_time` falls back to 00:00 with a `doctor` problem.
 - **The rollover** runs on the daemon's minute tick, after its first sync pass and only once the lists have synced, when `settings.my_day.last_rollover` is before today, and for every task whose `myDay` is before today, open or not. It records the day even when nothing was taken out; `myday rollover` runs it at once. The open tasks it took out are kept in `settings.my_day.left_over` for suggestions.
@@ -118,7 +118,7 @@ Rung 9b (D-063). A task set to nag shows a notification on this machine once its
 - **Needs a reminder:** a nag starts at `reminderDateTime`, so a write setting one on a task with no reminder time is refused (exit 2), unless the same edit sets a reminder; a new task needs `--reminder` or `!time`. Refusing beats inventing a start (such as the due date at 09:00): the reminder is already the time the user chose to be told, and the To Do app fires its own there.
 - **The nagger** (`crates/daemon/src/nag/`) looks at the open live tasks with `nag` twice a minute. One is due when its reminder has passed and it hasn't nagged since, or it last nagged an interval ago; a notification before the reminder was moved later doesn't count. When each task last nagged is kept in `settings` (`nag.last_notified`), so a restarted daemon owes each task at most one notification. Quiet hours (`[nag] quiet_hours`, default `22:00-07:00`) hold notifications back; `[nag] enabled = false` turns the nagger off.
 - **Deferred or Someday:** a nag pauses while its task is out of the everyday views (9a, D-061), and resumes once the task shows again.
-- **Notifications:** `/usr/bin/osascript` with the title and list name as argv (S18: `notify-rust` is silently dropped on macOS 27). Linux has none yet, and `doctor` says so.
+- **Notifications:** `/usr/bin/osascript` with the title and list name as argv (S18: `notify-rust` is silently dropped on macOS 27). On Linux, `notify-rust` over the D-Bus session bus when there is one (D-065); without one, `doctor` says so. Nags fire only while the daemon runs: `ms-todo daemon install` starts it at login.
 
 ## Move between lists
 

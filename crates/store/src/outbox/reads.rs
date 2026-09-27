@@ -2,7 +2,6 @@
 
 use sqlx::{AssertSqlSafe, FromRow};
 
-use super::UNKNOWN_LOOKUP_SECS;
 use super::operation::{OpState, OutboxRow, ops_sql, rows};
 use crate::tasks::{TaskRecord, task_record_columns};
 use crate::{Store, StoreError, TaskRow, now};
@@ -124,8 +123,12 @@ impl Store {
     }
 
     /// How many operations are in each state, and how many `unknown` ones
-    /// are flagged for the user.
-    pub async fn outbox_depth(&self) -> Result<(Vec<(OpState, i64)>, i64), StoreError> {
+    /// are flagged for the user: unknown for over `lookup_secs`, or with
+    /// no way to be attributed ([`OutboxRow::is_flagged`]).
+    pub async fn outbox_depth(
+        &self,
+        lookup_secs: i64,
+    ) -> Result<(Vec<(OpState, i64)>, i64), StoreError> {
         let counts: Vec<(String, i64)> =
             sqlx::query_as("SELECT state, COUNT(*) FROM outbox GROUP BY state")
                 .fetch_all(self.reader())
@@ -134,7 +137,7 @@ impl Store {
             "SELECT COUNT(*) FROM outbox WHERE state = 'unknown' AND (unknown_since <= ? \
              OR json_extract(progress_json, '$.needs_user') = 1 OR op IN ('child', 'list_create'))",
         )
-        .bind(now() - UNKNOWN_LOOKUP_SECS)
+        .bind(now() - lookup_secs)
         .fetch_one(self.reader())
         .await?;
         let counts = counts

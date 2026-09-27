@@ -104,6 +104,10 @@ pub struct DoctorReport {
     /// Contexts (rung 9d); `None` from a daemon before them.
     #[serde(default)]
     pub contexts: Option<ContextsStatus>,
+    /// The outbox's size and settings (D-065); `None` from a daemon
+    /// before them.
+    #[serde(default)]
+    pub outbox_upkeep: Option<crate::OutboxUpkeep>,
 }
 
 /// How semantic search stands, for `doctor` (D-062).

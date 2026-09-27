@@ -40,6 +40,8 @@ pub enum Tag {
     /// answer meant for another session or task is dropped.
     TriageInbox(u64),
     TriageSuggest(u64),
+    /// The focus hint: the list on screen (D-065).
+    Focus,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]

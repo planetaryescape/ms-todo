@@ -46,6 +46,7 @@ impl Nagger {
         let notifier = Notifier::for_this_system(
             config::notify_file(),
             cfg!(target_os = "macos") && !config::no_notifier(),
+            cfg!(target_os = "linux") && !config::no_notifier() && notify::session_bus(),
         );
         Self {
             config,

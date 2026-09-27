@@ -88,6 +88,8 @@ const COMMANDS: &[&str] = &[
     "daemon stop",
     "daemon status",
     "daemon restart",
+    "daemon install",
+    "daemon uninstall",
     "daemon logs",
 ];
 
@@ -251,6 +253,11 @@ async fn real_output_has_every_field_its_schema_requires() {
         ("undo", &["undo"]),
         ("doctor", &["doctor"]),
         ("daemon status", &["daemon", "status"]),
+        (
+            "daemon install",
+            &["--instance", "default", "daemon", "install"],
+        ),
+        ("daemon uninstall", &["daemon", "uninstall"]),
     ];
     for (command, args) in cases {
         let words: Vec<&str> = command.split(' ').collect();

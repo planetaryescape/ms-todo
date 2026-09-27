@@ -15,6 +15,21 @@ use crate::output::print_ids;
 /// spans there: the latency measurements, among others.
 const TRACE_ENV: &str = "MS_TODO_TUI_TRACE";
 
+/// How the TUI starts a daemon that went away: as any command does, so
+/// it's detached and of this version (D-046, D-065).
+fn restarter(paths: &Paths) -> ms_todo_tui::Restart {
+    let paths = paths.clone();
+    std::sync::Arc::new(move || {
+        let paths = paths.clone();
+        Box::pin(async move {
+            daemon_client::connect(&paths)
+                .await
+                .map(|_| ())
+                .map_err(|error| error.message)
+        })
+    })
+}
+
 pub async fn tui(paths: &Paths, args: TuiArgs, started: Instant) -> Result<(), CliError> {
     if args.list_themes {
         return print_ids(ms_todo_tui::theme::names());
@@ -44,6 +59,7 @@ pub async fn tui(paths: &Paths, args: TuiArgs, started: Instant) -> Result<(), C
         bench_startup: args.bench_startup,
         started,
         trace: std::env::var_os(TRACE_ENV).map(Into::into),
+        restart: Some(restarter(paths)),
     };
     match ms_todo_tui::run(options).await {
         Ok(Some(report)) => {

@@ -101,7 +101,8 @@ impl App {
                 Vec::new()
             }
             // Only a head start; the scope's own seed says what's wrong.
-            (Tag::Prefetch, _) => Vec::new(),
+            // The focus hint is only a hint (an older daemon refuses it).
+            (Tag::Prefetch | Tag::Focus, _) => Vec::new(),
             (Tag::Diagnostics(part), result) => {
                 self.diagnosed(part, result);
                 Vec::new()
@@ -354,6 +355,13 @@ impl App {
                 );
                 self.rejections
                     .insert(rejected.task_id, rejected.error.message);
+                self.reseed()
+            }
+            Event::ConflictOverwritten(overwritten) => {
+                self.show(
+                    Level::Info,
+                    &format!("Your edit won: {}", overwritten.message),
+                );
                 self.reseed()
             }
             Event::SyncState(activity) => {

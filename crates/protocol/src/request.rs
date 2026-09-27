@@ -28,6 +28,13 @@ pub enum Request {
         #[serde(default)]
         list: Option<String>,
     },
+    /// A hint from the TUI: this list (a name or ID) is on screen, so
+    /// sync passes do it first, and a pass starts soon if the last was a
+    /// while ago; `None` when no one list is. Answered `Ack` (D-065).
+    Focus {
+        #[serde(default)]
+        list: Option<String>,
+    },
     /// Tasks from the cache, of the list named or identified by `list`, or
     /// of the default list ("Tasks") when `None`.
     ListTasks {

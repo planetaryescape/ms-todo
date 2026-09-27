@@ -89,6 +89,8 @@ const COMMANDS: &[&str] = &[
     "daemon stop",
     "daemon status",
     "daemon restart",
+    "daemon install",
+    "daemon uninstall",
     "daemon logs",
 ];
 

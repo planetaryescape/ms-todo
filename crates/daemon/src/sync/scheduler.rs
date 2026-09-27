@@ -24,6 +24,9 @@ const ACTIVE_INTERVAL: Duration = Duration::from_secs(20);
 const IDLE_INTERVAL: Duration = Duration::from_secs(5 * 60);
 /// How long after a client's last request it still counts as active.
 const ACTIVE_FOR: Duration = Duration::from_secs(10 * 60);
+/// A focus hint starts a pass only when the last finished at least this
+/// long ago, so paging through lists doesn't send a pass per key.
+const FOCUS_STALE_SECS: i64 = 10;
 
 tokio::task_local! {
     /// Where the request being handled wants the progress of a pass it
@@ -103,6 +106,8 @@ pub(crate) struct Syncer {
     status: watch::Sender<SyncStatus>,
     wake: Notify,
     activity: watch::Sender<Activity>,
+    /// The list the TUI has on screen (a local ID), synced first.
+    focus: std::sync::Mutex<Option<String>>,
 }
 
 /// A connected client. Dropping it disconnects.
@@ -130,7 +135,38 @@ impl Syncer {
             status,
             wake: Notify::new(),
             activity: watch::Sender::new(Activity::default()),
+            focus: std::sync::Mutex::new(None),
         }
+    }
+
+    /// The TUI's focus hint (D-065): `list`, a local ID, is on screen, so
+    /// passes sync it first. A new focus also starts a pass when none is
+    /// running and the last finished [`FOCUS_STALE_SECS`] or more ago.
+    /// Returns whether it started one.
+    pub fn focus(&self, list: Option<String>) -> bool {
+        let Ok(mut focus) = self.focus.lock() else {
+            return false;
+        };
+        if *focus == list {
+            return false;
+        }
+        focus.clone_from(&list);
+        drop(focus);
+        let status = self.status();
+        let stale = list.is_some()
+            && !status.running()
+            && status
+                .last_finished_at
+                .is_none_or(|at| chrono::Utc::now().timestamp() - at >= FOCUS_STALE_SECS);
+        if stale {
+            self.request();
+        }
+        stale
+    }
+
+    /// The list on screen, if the TUI said.
+    pub fn focused(&self) -> Option<String> {
+        self.focus.lock().ok().and_then(|focus| focus.clone())
     }
 
     /// A client connected; it counts as active until the guard drops.
@@ -201,7 +237,7 @@ impl Syncer {
     pub async fn run(&self, context: PassContext) {
         let context = &context;
         self.run_with(move || {
-            run_pass(context, move |progress| {
+            run_pass(context, self.focused(), move |progress| {
                 self.status.send_modify(|status| status.progress = progress);
             })
         })
@@ -315,6 +351,31 @@ mod tests {
         assert_eq!(count(), settled);
         at(start, secs(1261)).await;
         assert_eq!(count(), settled + 1);
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn a_new_focus_starts_a_pass_unless_one_just_finished() {
+        let start = Instant::now();
+        let (syncer, passes) = counting();
+        let count = || passes.load(Ordering::SeqCst);
+        at(start, secs(1)).await;
+        assert_eq!(count(), 1);
+        // Paused time doesn't move the wall clock the check reads, so the
+        // last pass counts as finished just now.
+        assert!(!syncer.focus(Some("l1".into())), "a pass just finished");
+        assert_eq!(syncer.focused().as_deref(), Some("l1"));
+        syncer.status.send_modify(|status| {
+            status.last_finished_at = Some(chrono::Utc::now().timestamp() - 60);
+        });
+        assert!(!syncer.focus(Some("l1".into())), "the same list again");
+        assert!(syncer.focus(Some("l2".into())), "a new list, a minute on");
+        at(start, secs(2)).await;
+        assert_eq!(count(), 2);
+        syncer.status.send_modify(|status| {
+            status.last_finished_at = Some(chrono::Utc::now().timestamp() - 60);
+        });
+        assert!(!syncer.focus(None), "no list, no pass");
+        assert_eq!(syncer.focused(), None);
     }
 
     #[tokio::test(start_paused = true)]

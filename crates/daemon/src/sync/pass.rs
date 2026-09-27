@@ -51,7 +51,13 @@ pub(crate) struct PassContext {
     pub events: Events,
 }
 
-pub(super) async fn run_pass(context: &PassContext, report: impl Fn(SyncProgress)) -> PassOutcome {
+/// `focus` is the list the TUI has on screen (a local ID): it's synced
+/// first, so it's fresh soonest.
+pub(super) async fn run_pass(
+    context: &PassContext,
+    focus: Option<String>,
+    report: impl Fn(SyncProgress),
+) -> PassOutcome {
     report(SyncProgress {
         scopes_done: 0,
         scopes_total: 0,
@@ -68,13 +74,16 @@ pub(super) async fn run_pass(context: &PassContext, report: impl Fn(SyncProgress
             return outcome;
         }
     }
-    let lists = match context.store.lists().await {
+    let mut lists = match context.store.lists().await {
         Ok(lists) => lists,
         Err(error) => {
             outcome.failure = Some(store_error(error));
             return outcome;
         }
     };
+    if let Some(focus) = focus.as_deref() {
+        focus_first(&mut lists, |list| list.local_id == focus);
+    }
     let total = u32::try_from(lists.len() + 1).unwrap_or(u32::MAX);
     let mut done = 1;
     let mut results = stream::iter(lists)
@@ -106,6 +115,11 @@ pub(super) async fn run_pass(context: &PassContext, report: impl Fn(SyncProgress
         });
     }
     outcome
+}
+
+/// Put what's `focused` first, keeping the order otherwise.
+fn focus_first<T>(items: &mut [T], focused: impl Fn(&T) -> bool) {
+    items.sort_by_key(|item| !focused(item));
 }
 
 async fn sync_lists(context: &PassContext) -> Result<u64, ErrorPayload> {
@@ -363,4 +377,18 @@ async fn fail(store: &Store, scope: &str, failure: ErrorPayload) -> ErrorPayload
         );
     }
     failure
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn the_focused_list_goes_first_and_the_rest_keep_their_order() {
+        let mut lists = ["a", "b", "c", "d"];
+        focus_first(&mut lists, |list| *list == "c");
+        assert_eq!(lists, ["c", "a", "b", "d"]);
+        focus_first(&mut lists, |_| false);
+        assert_eq!(lists, ["c", "a", "b", "d"]);
+    }
 }

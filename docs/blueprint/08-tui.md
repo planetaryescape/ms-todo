@@ -135,6 +135,14 @@ Copy these from mxr, including its keybinding registry:
 
 Rung 9b (D-063). `n` sets the task under the cursor, or the selection, to nag every 15 minutes, or stops them when every one nags already; one without a reminder is refused with a banner before anything is sent. A nagging task's row shows `◉` (`N` in ASCII) in the reminder's place, in the accent colour. Another interval is the CLI's `tasks nag --every`.
 
+## The daemon behind it
+
+As built (D-065):
+
+- **Focus hint.** Opening a list or view from the sidebar sends `Focus` with the list (none for a view) beside its seed, so the daemon syncs that list first and starts a pass if the last was 10 or more seconds ago. The answer is ignored; an older daemon's refusal changes nothing.
+- **A daemon that went away is started again.** When the connection has failed for 3 seconds, the TUI starts the daemon as a command does (the CLI hands it the launcher), once per outage. The status line says "starting it again…", or why it couldn't, until it connects; a `daemon restart` or an upgrade is back before then.
+- **An edit that overwrote another device's change** shows an info banner, "Your edit won: overwrote … (was "…" there)", and the view reads its seed again (`ConflictOverwritten`, last write wins, [04](04-sync-cache.md#conflicts)). `outbox list` keeps the note.
+
 ## Editing fields and typing
 
 As built in the editing fix (D-045):

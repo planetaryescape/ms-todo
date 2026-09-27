@@ -118,6 +118,9 @@ futures-util = { version = "0.3", default-features = false, features = ["sink", 
 # An attachment ID in an upload session's `Location`.
 percent-encoding = "2"
 nix = { version = "0.30", default-features = false, features = ["process", "signal"] }
+# Nag notifications on Linux, over D-Bus through zbus (pure Rust). Not on
+# macOS, where it reports success and macOS 27 drops what it sends (S18).
+notify-rust = { version = "4", default-features = false, features = ["z-with-tokio"] }
 ratatui = "0.30"
 # Safe-API openat/linkat/renameat, for writing downloads relative to one
 # directory handle (D-056).

@@ -35,6 +35,10 @@ tokenizers = { workspace = true }
 tokio-util = { workspace = true }
 uuid = { workspace = true }
 
+[target.'cfg(target_os = "linux")'.dependencies]
+# Nag notifications over D-Bus (D-065).
+notify-rust = { workspace = true }
+
 [dev-dependencies]
 # Paused time, for the sync cadence.
 tokio = { workspace = true, features = ["test-util"] }

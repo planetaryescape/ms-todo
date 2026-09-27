@@ -483,25 +483,40 @@ async fn a_412_on_a_field_nobody_else_touched_is_re_sent_with_the_new_etag() {
 }
 
 #[tokio::test]
-async fn a_412_on_a_field_the_server_changed_too_is_rejected_as_a_conflict() {
+async fn a_412_on_a_field_the_server_changed_too_overwrites_it_and_says_so() {
     let mut env = Env::new();
     let graph = stale_etag_graph(&mut env, json!({ "title": "Almond milk" })).await;
 
     let edited = env.json(&["tasks", "edit", "T1", "--title", "Oat milk"]);
 
-    let op = env.op_in_state(edited["op_id"].as_str().expect("op_id"), "failed");
-    assert_eq!(op["last_error"]["kind"], "conflict");
+    // Last write wins (04, D-065): sent again over the phone's title.
+    let op = env.op_in_state(edited["op_id"].as_str().expect("op_id"), "done");
+    let note = op["note"].as_str().unwrap_or_default();
     assert!(
-        op["last_error"]["message"]
-            .as_str()
-            .is_some_and(|message| message.contains("title")),
+        note.contains("overwrote") && note.contains("title (was \"Almond milk\" there)"),
         "{op}"
     );
-    assert_eq!(graph.writes().await.len(), 1, "nothing overwritten");
-    // Rolled back, and marked until the user discards it.
-    let task = &env.json(&["tasks", "list"])["items"][0];
-    assert_eq!(task["title"], "Buy milk");
-    assert_eq!(task["sync_state"], "failed");
+    assert_eq!(graph.writes().await.len(), 2, "sent, then sent over theirs");
+    let listed = &env.json(&["tasks", "list"])["items"][0];
+    assert_eq!(listed["title"], "Oat milk");
+    assert_eq!(listed["sync_state"], "synced");
+    let log = env.json(&["daemon", "logs"]).to_string();
+    assert!(log.contains("ConflictOverwritten"), "{log}");
+
+    // Undo puts back what the other device wrote, not the older title.
+    Mock::given(method("PATCH"))
+        .and(path(format!("{LIST}/T1")))
+        .and(header("If-Match", "W/\"e3\""))
+        .respond_with(ResponseTemplate::new(200).set_body_json(task(
+            "T1",
+            "Almond milk",
+            "W/\"e4\"",
+        )))
+        .mount(&graph.server)
+        .await;
+    let undone = env.json(&["undo", edited["op_id"].as_str().expect("op_id")]);
+    env.settled();
+    assert_eq!(undone["items"][0]["title"], "Almond milk", "{undone}");
 }
 
 #[tokio::test]

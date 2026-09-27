@@ -312,3 +312,22 @@ async fn a_change_to_more_tasks_than_the_cap_is_a_resync() {
         .await;
     assert_eq!(event, Event::ResyncNeeded);
 }
+
+/// The TUI's focus hint (D-065) is only a hint: a list by name, one
+/// that isn't there and none are all answered `Ack`, and nothing fails.
+#[tokio::test]
+async fn the_focus_hint_is_acknowledged_whatever_it_names() {
+    let (env, _graph) = synced_env().await;
+    let mut client = Client::connect(&env).await;
+    for list in [Some("Home"), Some("Nowhere"), None] {
+        let answer = client
+            .ask(Request::Focus {
+                list: list.map(str::to_owned),
+            })
+            .await;
+        assert_eq!(answer, ResponseData::Ack, "{list:?}");
+    }
+    // The daemon still syncs and answers after it.
+    env.synced();
+    assert_eq!(client.seed(None, None).await.lists.len(), 2);
+}

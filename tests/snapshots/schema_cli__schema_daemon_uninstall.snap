@@ -1,0 +1,47 @@
+---
+source: tests/schema_cli.rs
+expression: pretty
+---
+{
+  "input": {
+    "additionalProperties": false,
+    "properties": {},
+    "required": [],
+    "type": "object"
+  },
+  "output": {
+    "properties": {
+      "changed": {
+        "description": "install and uninstall only: whether anything changed",
+        "type": "boolean"
+      },
+      "installed": {
+        "type": "boolean"
+      },
+      "manager": {
+        "description": "launchd (macOS) or systemd (Linux)",
+        "type": "string"
+      },
+      "now": {
+        "description": "install and uninstall only: how to start or stop it now rather than at the next login",
+        "type": "string"
+      },
+      "path": {
+        "description": "The file that starts it",
+        "type": "string"
+      },
+      "schema_version": {
+        "const": 2
+      }
+    },
+    "required": [
+      "schema_version",
+      "installed",
+      "manager",
+      "path",
+      "changed",
+      "now"
+    ],
+    "type": "object"
+  }
+}

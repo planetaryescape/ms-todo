@@ -6,13 +6,14 @@
 use ms_todo_core::Paths;
 use ms_todo_graph::auth::{Authenticator, Endpoints};
 use ms_todo_protocol::{
-    ContextsStatus, DoctorReport, ModelState, MyDayStatus, NagStatus, OutboxDepth, Request,
-    ResponseData, ScopeStatus, SemanticStatus, SuggestStatus, SyncMode, SyncState,
+    ContextsStatus, DoctorReport, ModelState, MyDayStatus, NagStatus, OutboxDepth, OutboxUpkeep,
+    Request, ResponseData, ScopeStatus, SemanticStatus, SuggestStatus, SyncMode, SyncState,
 };
 use serde::Serialize;
 
 use crate::daemon_client::{self, Inspection};
 use crate::daemon_commands::DaemonState;
+use crate::daemon_service::{self, ServiceState};
 use crate::error::CliError;
 use crate::output::{OutputFormat, Render};
 use crate::time::rfc3339;
@@ -29,6 +30,12 @@ pub struct Doctor {
     pub last_error: Option<LastError>,
     /// How many writes are in each outbox state.
     pub outbox: Option<OutboxDepth>,
+    /// The outbox's size, `[outbox]` settings and last prune (D-065),
+    /// when the daemon reported.
+    pub outbox_upkeep: Option<OutboxUpkeep>,
+    /// Whether the daemon starts at login (`daemon install`); null where
+    /// that isn't built (not macOS or Linux).
+    pub service: Option<ServiceState>,
     /// List suggestions (rung 6b), when the daemon reported.
     pub suggest: Option<Suggest>,
     /// My Day (rung 7), when the daemon reported.
@@ -151,6 +158,7 @@ pub struct LastError {
 pub async fn doctor(paths: &Paths) -> Result<Doctor, CliError> {
     let mut problems = Vec::new();
     let sign_in = sign_in(paths, &mut problems)?;
+    let service = daemon_service::status();
     let (daemon, report) = match daemon_client::connect(paths).await {
         Ok((mut client, status)) => {
             let daemon = DaemonState::new(paths, Inspection::Ready(status));
@@ -183,6 +191,8 @@ pub async fn doctor(paths: &Paths) -> Result<Doctor, CliError> {
             scopes: Vec::new(),
             last_error: None,
             outbox: None,
+            outbox_upkeep: None,
+            service,
             suggest: None,
             my_day: None,
             semantic: None,
@@ -202,7 +212,26 @@ pub async fn doctor(paths: &Paths) -> Result<Doctor, CliError> {
         semantic,
         nag,
         contexts,
+        outbox_upkeep,
     } = report;
+    if let Some(problem) = outbox_upkeep
+        .as_ref()
+        .and_then(|upkeep| upkeep.problem.as_ref())
+    {
+        problems.push(format!("outbox: {problem}"));
+    }
+    // Nags fire only while the daemon runs, and nothing else starts it
+    // after a login.
+    if paths.instance == ms_todo_core::Instance::Default
+        && nag.as_ref().is_some_and(|nag| nag.active && nag.count > 0)
+        && service.as_ref().is_some_and(|service| !service.installed)
+    {
+        problems.push(
+            "tasks nag, but the daemon doesn't start at login, so they wait until ms-todo runs; \
+             `ms-todo daemon install` starts it then"
+                .into(),
+        );
+    }
     if let Some(problem) = semantic
         .as_ref()
         .and_then(|semantic| semantic.problem.as_ref())
@@ -277,6 +306,8 @@ pub async fn doctor(paths: &Paths) -> Result<Doctor, CliError> {
         scopes,
         last_error,
         outbox: Some(outbox),
+        outbox_upkeep,
+        service,
         suggest,
         my_day,
         semantic,
@@ -393,13 +424,25 @@ impl Render for Doctor {
             rows.push(("Sync", sync));
         }
         if let Some(outbox) = &self.outbox {
-            rows.push((
-                "Outbox",
-                format!(
-                    "{} pending, {} sending, {} unknown, {} failed, {} done",
-                    outbox.pending, outbox.inflight, outbox.unknown, outbox.failed, outbox.done
-                ),
-            ));
+            let mut line = format!(
+                "{} pending, {} sending, {} unknown, {} failed, {} done",
+                outbox.pending, outbox.inflight, outbox.unknown, outbox.failed, outbox.done
+            );
+            if let Some(upkeep) = &self.outbox_upkeep {
+                line.push_str(&format!(
+                    "; {} rows, done kept {} days",
+                    upkeep.rows, upkeep.retention_days
+                ));
+            }
+            rows.push(("Outbox", line));
+        }
+        if let Some(service) = &self.service {
+            let login = if service.installed {
+                format!("the daemon starts at login ({})", service.manager)
+            } else {
+                "the daemon doesn't start at login; `ms-todo daemon install`".into()
+            };
+            rows.push(("Login", login));
         }
         if let Some(suggest) = &self.suggest {
             let state = match &suggest.sends {

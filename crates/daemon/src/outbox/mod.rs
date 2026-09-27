@@ -20,14 +20,17 @@
 mod attachment_write;
 mod child_write;
 mod commands;
+mod config;
+mod conflict;
 mod extension_write;
 mod list_write;
 pub(crate) mod move_job;
+pub(crate) mod prune;
 mod rollback;
 mod send;
 mod unknown;
 
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use ms_todo_core::message_with_causes;
@@ -36,6 +39,7 @@ use tokio::sync::Notify;
 use crate::handlers::State;
 
 pub(crate) use commands::{discard, list, retry};
+pub(crate) use config::Config;
 pub(crate) use send::fields_not_holding;
 
 /// The longest the worker sleeps with nothing due, in case a wake-up was
@@ -44,20 +48,36 @@ const IDLE_WAKE: Duration = Duration::from_secs(60);
 /// How long the worker waits after the store itself failed.
 const STORE_RETRY: Duration = Duration::from_secs(5);
 
-/// Wakes the worker when something is queued.
+/// Wakes the worker when something is queued, and holds `[outbox]`.
 pub(crate) struct Outbox {
     wake: Notify,
+    pub config: Config,
+    /// When the last prune ran, and how many operations it removed.
+    last_prune: Mutex<Option<(i64, u64)>>,
 }
 
 impl Outbox {
-    pub fn new() -> Self {
+    pub fn load(config_file: &std::path::Path) -> Self {
         Self {
             wake: Notify::new(),
+            config: Config::load(config_file),
+            last_prune: Mutex::new(None),
         }
     }
 
     pub fn wake(&self) {
         self.wake.notify_one();
+    }
+
+    fn pruned(&self, at: i64, removed: u64) {
+        if let Ok(mut last) = self.last_prune.lock() {
+            *last = Some((at, removed));
+        }
+    }
+
+    /// When the last prune ran, and how many operations it removed.
+    pub fn last_prune(&self) -> Option<(i64, u64)> {
+        self.last_prune.lock().ok().and_then(|last| *last)
     }
 }
 

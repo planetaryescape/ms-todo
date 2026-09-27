@@ -237,6 +237,7 @@ pub(crate) mod tests {
             semantic: None,
             nag: None,
             contexts: None,
+            outbox_upkeep: None,
         }
     }
 

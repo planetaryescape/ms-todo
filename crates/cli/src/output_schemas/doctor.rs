@@ -1,4 +1,4 @@
-//! `daemon status` and `doctor`.
+//! `daemon status`, `daemon install|uninstall` and `doctor`.
 
 use serde_json::{Value, json};
 
@@ -80,7 +80,7 @@ pub(super) fn doctor() -> Value {
             },
             "outbox": {
                 "type": ["object", "null"],
-                "description": "How many writes are in each state; flagged are unknown for over 24 hours",
+                "description": "How many writes are in each state; flagged are unknown for over [outbox] unknown_lookup_hours (24 by default), or can't be attributed",
                 "properties": {
                     "pending": { "type": "integer" },
                     "inflight": { "type": "integer" },
@@ -90,6 +90,19 @@ pub(super) fn doctor() -> Value {
                     "flagged": { "type": "integer" }
                 }
             },
+            "outbox_upkeep": {
+                "type": ["object", "null"],
+                "description": "The outbox's size and [outbox] settings (D-065); null when the daemon didn't report",
+                "properties": {
+                    "rows": { "type": "integer", "description": "Operations stored, in every state" },
+                    "retention_days": { "type": "integer", "description": "Finished writes are kept, and undoable, this long" },
+                    "unknown_lookup_hours": { "type": "integer", "description": "How long an unknown write is looked for before it's flagged" },
+                    "last_pruned_at": nullable("integer", "Unix seconds: when finished writes were last pruned, since the daemon started"),
+                    "last_pruned": nullable("integer", "How many operations that prune removed"),
+                    "problem": nullable("string", "Why an [outbox] setting wasn't used")
+                }
+            },
+            "service": service(),
             "suggest": {
                 "type": ["object", "null"],
                 "description": "List suggestions (rung 6b); null when the daemon didn't report",
@@ -152,4 +165,21 @@ pub(super) fn doctor() -> Value {
         }),
         &["sign_in", "daemon", "database", "scopes", "problems"],
     )
+}
+
+/// Whether the daemon starts at login: `daemon install|uninstall`, and
+/// `service` in `doctor`.
+pub(super) fn service() -> Value {
+    json!({
+        "type": ["object", "null"],
+        "description": "Whether the daemon starts at login (`daemon install`); null where that isn't built",
+        "properties": {
+            "installed": { "type": "boolean" },
+            "manager": { "type": "string", "description": "launchd (macOS) or systemd (Linux)" },
+            "path": { "type": "string", "description": "The file that starts it" },
+            "changed": { "type": "boolean", "description": "install and uninstall only: whether anything changed" },
+            "now": { "type": "string", "description": "install and uninstall only: how to start or stop it now rather than at the next login" }
+        },
+        "required": ["installed", "manager", "path"]
+    })
 }

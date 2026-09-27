@@ -1,8 +1,10 @@
 //! Moving the cursor: a row, a page or to either end, in the sidebar
 //! (which switches scope) or the task list.
 
+use ms_todo_protocol::{Request, Scope};
+
 use super::scope::{self, Entry};
-use super::{App, Effect, Pane};
+use super::{App, Effect, Pane, Tag};
 use crate::action::Action;
 
 impl App {
@@ -104,6 +106,17 @@ impl App {
             self.task_index = 0;
             self.painted_from_cache = true;
         }
-        vec![self.seed_now()]
+        // The daemon syncs the list on screen first (D-065).
+        let list = match &self.wanted {
+            Some(Scope::List { id }) => Some(id.clone()),
+            _ => None,
+        };
+        vec![
+            self.seed_now(),
+            Effect {
+                tag: Tag::Focus,
+                request: Request::Focus { list },
+            },
+        ]
     }
 }

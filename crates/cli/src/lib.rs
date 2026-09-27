@@ -21,6 +21,7 @@ mod context_commands;
 mod csv_columns;
 mod daemon_client;
 mod daemon_commands;
+mod daemon_service;
 mod data_commands;
 mod dates_config;
 mod doctor_commands;
@@ -337,6 +338,12 @@ async fn dispatch(command: Command, paths: &Paths, format: OutputFormat) -> Resu
         }
         Command::Daemon(DaemonCommand::Restart) => {
             print_success(format, &daemon_commands::restart(paths).await?)
+        }
+        Command::Daemon(DaemonCommand::Install) => {
+            print_success(format, &daemon_service::install(paths)?)
+        }
+        Command::Daemon(DaemonCommand::Uninstall) => {
+            print_success(format, &daemon_service::uninstall()?)
         }
         Command::Daemon(DaemonCommand::Logs { follow }) => {
             daemon_commands::logs(paths, follow, format).await

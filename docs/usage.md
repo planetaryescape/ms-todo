@@ -284,7 +284,8 @@ ms-todo doctor --notify-test                   # show one notification, then the
   ```
 
   A setting that can't be read keeps the defaults and says why in `doctor`.
-- **macOS only, for now.** Notifications are shown with `osascript`, so macOS lists them under Script Editor: if `doctor --notify-test` shows nothing, allow notifications for Script Editor in System Settings > Notifications. On Linux, `doctor` says nagging isn't available on this system ([S18](research/spikes/S18.md)).
+- **macOS and Linux.** On macOS notifications are shown with `osascript`, so macOS lists them under Script Editor: if `doctor --notify-test` shows nothing, allow notifications for Script Editor in System Settings > Notifications ([S18](research/spikes/S18.md)). On Linux they go to your desktop's notification service over D-Bus; with no D-Bus session, `doctor` says nagging isn't available.
+- **Only while the daemon runs.** Nags come from the daemon, so after a login nothing nags until ms-todo runs, unless you have it start at login: `ms-todo daemon install` (see [The daemon](#the-daemon)). `doctor` points this out when tasks nag and it isn't set up.
 - **`doctor`** has a Nag line: on or off, how notifications are shown, how many tasks nag, and the quiet hours.
 - **In the TUI**, `n` sets the task under the cursor, or the selection, to nag every 15 minutes, or stops them when they all nag already; `u` undoes it. A nagging task shows `◉` (`N` in ASCII) where the reminder's `◷` would be. Another interval is `tasks nag --every`.
 
@@ -445,7 +446,7 @@ Every change is applied to the local cache and queued in an outbox in one step, 
 
 - `synced`: Microsoft To Do has it.
 - `pending`: queued or being sent.
-- `unknown`: it was sent, but no answer said whether Microsoft To Do applied it (a timeout or a server error on a create or a recurring completion). ms-todo never resends these by itself, since that could make a duplicate. After each sync it looks for the task by the `op_id` it carries; when found, the task becomes `synced`. After 24 hours it's flagged for you.
+- `unknown`: it was sent, but no answer said whether Microsoft To Do applied it (a timeout or a server error on a create or a recurring completion). ms-todo never resends these by itself, since that could make a duplicate. After each sync it looks for the task by the `op_id` it carries; when found, the task becomes `synced`. After 24 hours (`[outbox] unknown_lookup_hours`) it's flagged for you.
 - `failed`: Microsoft To Do rejected it, for example because the list was deleted on another device. The change is rolled back but kept, with its content.
 
 ```sh
@@ -456,6 +457,19 @@ ms-todo undo                          # reverse the latest change; or `ms-todo u
 ```
 
 Undo is itself a change, so it can be undone. An edit, complete, reopen or folder change is undone only while what it set is still there: if a later change or another device has changed that field since, `undo` refuses with exit 5 (`conflict`) rather than overwrite it, and changes nothing. For a change to several tasks the rule is per task: the ones changed since are left alone and named in `refused`, and the rest are undone. Undoing an add deletes the task; an edit, complete or reopen puts the fields back (undoing a complete also turns the reminder back on if it was on); a delete brings the task back with the same ID (and a new Graph ID). Undoing the completion of a recurring task also deletes the completed copy Microsoft To Do made, so it asks which one: `ms-todo undo <OP_ID> --copy <ID>` (without `--copy`, it lists the candidates and exits 2).
+
+**Two devices, one field.** If the phone changed a field you also changed before your change reached Microsoft To Do, yours wins: it's sent over theirs, and its entry in `outbox list` notes what it overwrote (`overwrote … title (was "Almond milk" there)`); the TUI shows a banner. `ms-todo undo` on it puts the phone's value back. Completing a recurring task is the exception: if its due date moved on another device meanwhile, someone completed that occurrence, so yours fails as a `conflict` rather than complete the next one too.
+
+**How long the outbox keeps things.** Finished changes are kept, and can be undone, for 30 days, then pruned when the daemon starts and once a day; failed and unknown ones stay until you resolve them. `doctor` shows how many rows the outbox holds and when it last pruned.
+
+```toml
+# ~/.config/ms-todo/config.toml
+[outbox]
+retention_days = 30        # finished changes kept, and undoable, this long (1 to 3650)
+unknown_lookup_hours = 24  # how long an unknown change is looked for before it's flagged (1 to 720)
+```
+
+Run `ms-todo daemon stop` after changing it: the daemon reads it when it starts. A value out of range keeps the defaults, and `doctor` says why.
 
 A database upgraded by a newer ms-todo is refused with "this database was upgraded by a newer ms-todo; install the latest version" (error kind `database_too_new`, exit 1).
 
@@ -528,7 +542,16 @@ ms-todo daemon restart
 ms-todo daemon logs --follow   # its log; --format json gives { path, lines }
 ```
 
-Its socket is private to your user (0600, in a 0700 directory), and its log is `daemon.log` in the data directory's `logs/`. A newer ms-todo restarts an older daemon by itself.
+Its socket is private to your user (0600, in a 0700 directory), and its log is `daemon.log` in the data directory's `logs/`. A newer ms-todo restarts an older daemon by itself, and an open TUI starts it again if it stays away for 3 seconds.
+
+To have it start when you log in, so nag reminders fire without opening ms-todo first:
+
+```sh
+ms-todo daemon install     # a launchd agent on macOS, a systemd user unit on Linux
+ms-todo daemon uninstall   # remove it
+```
+
+`install` writes `~/Library/LaunchAgents/com.planetaryescape.ms-todo.plist` (macOS) or `~/.config/systemd/user/ms-todo.service`, enabled (Linux). It runs the installed ms-todo's daemon, and starts it again if it crashes, but not after `daemon stop`. It only writes the file, which takes effect at your next login; to start it now, run the command it prints (`launchctl bootstrap gui/$(id -u) …`, or `systemctl --user daemon-reload && systemctl --user start ms-todo`). Running either again changes nothing. It's for the installed copy: from a development build, pass `--instance default`. `doctor` has a Login line saying whether it's set up.
 
 ## Files
 

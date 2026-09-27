@@ -5,7 +5,9 @@
 //! task DELETE ignores it, so it's not sent. On a 412 the task is read
 //! again once: if our fields already hold our values, it's done; if nobody
 //! touched them, it's re-sent with the new etag; otherwise Graph's copy
-//! changed the same field, and the operation is rejected as a conflict,
+//! changed the same field, and ours is re-sent over it, last write wins,
+//! with a `ConflictOverwritten` (`conflict`). A recurring completion, or
+//! an edit a flag claims as ms-todo's, is rejected as a conflict instead,
 //! overwriting nothing.
 
 use std::collections::BTreeMap;
@@ -17,6 +19,7 @@ use ms_todo_store::{Entity, OpKind, OutboxRow, SKIPPED_NOTE};
 use serde_json::{Map, Value};
 
 use super::child_write;
+use super::conflict;
 use super::extension_write;
 use super::move_job;
 use super::rollback::{announce_entity, reconcile_list, reject};
@@ -29,6 +32,16 @@ use crate::task_fields::graph_due_date;
 pub(super) enum Attempt {
     /// Graph's task after the change, and our extension if it said.
     Changed(Entity, Option<Option<Value>>),
+    /// Changed, over a change another device made to the same `fields`
+    /// meanwhile; `note` says what was overwritten.
+    Overwrote {
+        task: Entity,
+        extension: Option<Option<Value>>,
+        fields: Vec<String>,
+        note: String,
+        /// Graph's copy just before ours landed: what undo puts back.
+        theirs: Entity,
+    },
     /// A 201: recorded, but not `done` until its list is confirmed live.
     Created {
         task: Entity,
@@ -123,6 +136,29 @@ pub(super) async fn send_ready(state: &State) -> bool {
                 }
                 Ok(Attempt::Changed(task, extension)) => {
                     record(state, &op, &task, extension, true).await;
+                }
+                Ok(Attempt::Overwrote {
+                    task,
+                    extension,
+                    fields,
+                    note,
+                    theirs,
+                }) => {
+                    if record(state, &op, &task, extension, true).await {
+                        if let Err(error) = state
+                            .store
+                            .record_overwrite(&op.op_id, &note, &theirs)
+                            .await
+                        {
+                            log_store(&error);
+                        }
+                        state.events.conflict_overwritten(
+                            &op.op_id,
+                            &op.entity_local_id,
+                            fields,
+                            &note,
+                        );
+                    }
                 }
                 Ok(Attempt::Skipped {
                     task,
@@ -437,6 +473,8 @@ async fn patch(
         .graph
         .update_task(list_graph_id, graph_id, body, etag(cached), !recurring)
         .await;
+    // What a re-send overwrote, if it did.
+    let mut overwrote: Option<(Vec<String>, String)> = None;
     let (seen, sent) = match sent {
         Err(error) if error.status() == Some(412) => {
             // The cached etag is stale: the task changed since we read it.
@@ -463,14 +501,18 @@ async fn patch(
             let before = op.rollback.as_ref().unwrap_or(cached);
             let touched = touched_keys(before, &current, body, recurring);
             if !touched.is_empty() {
-                return Err(Failure::Rejected(error_payload(
-                    ErrorKind::Conflict,
-                    format!(
-                        "the task changed on another device since ms-todo last read it ({}), so \
-                         nothing was overwritten",
-                        touched.join(", ")
-                    ),
-                )));
+                if recurring || claims_ownership(op) {
+                    return Err(Failure::Rejected(error_payload(
+                        ErrorKind::Conflict,
+                        format!(
+                            "the task changed on another device since ms-todo last read it ({}), \
+                             so nothing was overwritten",
+                            touched.join(", ")
+                        ),
+                    )));
+                }
+                let note = conflict::note(&touched, &current);
+                overwrote = Some((touched, note));
             }
             let sent = state
                 .graph
@@ -491,7 +533,16 @@ async fn patch(
                         .into(),
                 )));
             }
-            Ok(Attempt::Changed(updated, extension))
+            Ok(match overwrote {
+                Some((fields, note)) => Attempt::Overwrote {
+                    task: updated,
+                    extension,
+                    fields,
+                    note,
+                    theirs: seen,
+                },
+                None => Attempt::Changed(updated, extension),
+            })
         }
         Err(error) => Err(classify(error)),
     }
@@ -533,18 +584,22 @@ pub(crate) fn fields_not_holding(body: &Value, task: &Entity) -> Vec<String> {
     };
     fields
         .iter()
-        .filter(|(key, sent)| {
-            let current = task.get(key.as_str()).unwrap_or(&Value::Null);
-            let holds = match key.as_str() {
-                "dueDateTime" | "startDateTime" => as_date(sent) == as_date(current),
-                "reminderDateTime" => as_time(sent) == as_time(current),
-                "body" => sent.get("content") == current.get("content"),
-                _ => *sent == current,
-            };
-            !holds
-        })
+        .filter(|(key, sent)| !same(key, sent, task.get(key.as_str()).unwrap_or(&Value::Null)))
         .map(|(key, _)| key.clone())
         .collect()
+}
+
+/// Whether field `key` has the same value in `a` and `b`, reading dates
+/// as dates: Graph writes them back in its own shape (UTC where we sent
+/// a local zone), and re-stamps a new recurring task that way a moment
+/// after creating it.
+fn same(key: &str, a: &Value, b: &Value) -> bool {
+    match key {
+        "dueDateTime" | "startDateTime" => as_date(a) == as_date(b),
+        "reminderDateTime" => as_time(a) == as_time(b),
+        "body" => a.get("content") == b.get("content"),
+        _ => a == b,
+    }
 }
 
 fn as_date(value: &Value) -> Option<String> {
@@ -575,7 +630,10 @@ fn touched_keys(before: &Entity, now: &Entity, body: &Value, recurring: bool) ->
     if recurring {
         keys.push("dueDateTime".into());
     }
-    keys.retain(|key| before.get(key) != now.get(key));
+    keys.retain(|key| {
+        let (was, is) = (before.get(key), now.get(key));
+        !same(key, was.unwrap_or(&Value::Null), is.unwrap_or(&Value::Null))
+    });
     keys.dedup();
     keys
 }
@@ -696,6 +754,24 @@ mod tests {
         });
         assert!(is_applied(&sent, &task));
         assert!(!is_applied(&json!({ "title": "Oat milk" }), &task));
+    }
+
+    #[test]
+    fn a_date_graph_wrote_back_in_its_own_shape_is_not_touched() {
+        // A new recurring task as the 201 had it, then as Graph re-stamped
+        // it a moment later: the same day, in UTC.
+        let before = entity(json!({
+            "dueDateTime": { "dateTime": "2026-09-27T00:00:00.0000000", "timeZone": "Europe/London" }
+        }));
+        let now = entity(json!({
+            "dueDateTime": { "dateTime": "2026-09-26T23:00:00.0000000", "timeZone": "UTC" }
+        }));
+        let body = json!({ "status": "completed" });
+        assert!(touched_keys(&before, &now, &body, true).is_empty());
+        let moved = entity(json!({
+            "dueDateTime": { "dateTime": "2026-09-27T23:00:00.0000000", "timeZone": "UTC" }
+        }));
+        assert_eq!(touched_keys(&before, &moved, &body, true), ["dueDateTime"]);
     }
 
     #[test]

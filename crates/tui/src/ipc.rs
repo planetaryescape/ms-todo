@@ -1,15 +1,19 @@
 // Request/response correlation by message ID is adapted from mxr
 // crates/tui/src/ipc.rs @ dfb23d10138b1cfc24f8ea7450d3426e5e4da37a. Changes:
 // one connection carries both the requests and the `Subscribe` stream, so
-// events and answers arrive in the order the daemon sent them; and it
-// reconnects by itself, re-subscribing, if the daemon restarts.
+// events and answers arrive in the order the daemon sent them; it
+// reconnects by itself, re-subscribing, if the daemon restarts; and it
+// starts a daemon that stays away (D-065).
 
 //! The TUI's one connection to the daemon. Requests go out tagged, and
 //! every answer and event comes back to the runner as a [`Msg`].
 
 use std::collections::HashMap;
 use std::path::PathBuf;
+use std::sync::Arc;
 use std::time::Duration;
+
+use futures_util::future::BoxFuture;
 
 use futures_util::{SinkExt, StreamExt};
 use ms_todo_core::ErrorKind;
@@ -27,6 +31,14 @@ const RECONNECT_EVERY: Duration = Duration::from_millis(500);
 /// On macOS a connect that races the daemon closing its socket can wait
 /// forever (docs/issues/003-flaky-task-writes-tests.md), so it's bounded.
 const CONNECT_TIMEOUT: Duration = Duration::from_secs(3);
+/// How long the daemon may stay unreachable before it's started again: a
+/// restart (`daemon restart`, an upgrade) is back well within it.
+const RESTART_AFTER: Duration = Duration::from_secs(3);
+
+/// Starts the daemon as a command does when it finds none (the detached
+/// launcher, D-046), and says why it couldn't. Supplied by the CLI, which
+/// owns starting it.
+pub type Restart = Arc<dyn Fn() -> BoxFuture<'static, Result<(), String>> + Send + Sync>;
 
 /// Sends requests to the daemon. Dropping it closes the connection.
 #[derive(Clone)]
@@ -42,23 +54,38 @@ impl DaemonLink {
 }
 
 /// Connect to the daemon at `socket`, and keep connecting after it goes
-/// away. Answers and events arrive on the receiver.
-pub fn connect(socket: PathBuf) -> (DaemonLink, mpsc::UnboundedReceiver<Msg>) {
+/// away; with `restart`, start it again once it has stayed away for
+/// [`RESTART_AFTER`]. Answers and events arrive on the receiver.
+pub fn connect(
+    socket: PathBuf,
+    restart: Option<Restart>,
+) -> (DaemonLink, mpsc::UnboundedReceiver<Msg>) {
     let (outgoing, requests) = mpsc::unbounded_channel();
     let (incoming, messages) = mpsc::unbounded_channel();
-    tokio::spawn(run(socket, requests, incoming));
+    tokio::spawn(run(socket, restart, requests, incoming));
     (DaemonLink { outgoing }, messages)
 }
 
 async fn run(
     socket: PathBuf,
+    restart: Option<Restart>,
     mut requests: mpsc::UnboundedReceiver<Effect>,
     incoming: mpsc::UnboundedSender<Msg>,
 ) {
+    // Since when the daemon has been unreachable, and whether it was
+    // started again in that time: once per outage, so a daemon that
+    // can't start isn't started over and over.
+    let mut away_since: Option<tokio::time::Instant> = None;
+    let mut restarted = false;
+    // Why starting it again failed, kept on the status line after.
+    let mut failed: Option<String> = None;
     loop {
         let connected = tokio::time::timeout(CONNECT_TIMEOUT, UnixStream::connect(&socket)).await;
         let why = match connected {
             Ok(Ok(stream)) => {
+                away_since = None;
+                restarted = false;
+                failed = None;
                 // See SOCKET_BUFFER_BYTES; best effort, as the daemon's side.
                 let _ = socket2::SockRef::from(&stream).set_recv_buffer_size(SOCKET_BUFFER_BYTES);
                 serve(stream, &mut requests, &incoming).await
@@ -66,12 +93,30 @@ async fn run(
             Ok(Err(error)) => Some(format!("cannot reach the daemon: {error}")),
             Err(_) => Some("the daemon didn't accept a connection".to_owned()),
         };
-        let Some(why) = why else {
+        let Some(mut why) = why else {
             // The runner is gone.
             return;
         };
+        if let Some(failed) = &failed {
+            why = format!("{why}; starting it again failed: {failed}");
+        }
         if incoming.send(Msg::Disconnected(why)).is_err() {
             return;
+        }
+        let away = away_since.get_or_insert_with(tokio::time::Instant::now);
+        if let Some(restart) = restart.as_ref().filter(|_| !restarted)
+            && away.elapsed() >= RESTART_AFTER
+        {
+            restarted = true;
+            let _ = incoming.send(Msg::Disconnected(
+                "the daemon went away; starting it again…".to_owned(),
+            ));
+            if let Err(why) = restart().await {
+                let _ = incoming.send(Msg::Disconnected(format!(
+                    "the daemon went away and couldn't be started again: {why}"
+                )));
+                failed = Some(why);
+            }
         }
         // Requests made while disconnected can't be sent; say so rather
         // than leave them waiting.
@@ -183,6 +228,7 @@ fn lost(tag: Tag, why: &str) -> Msg {
         | Tag::Diagnostics(_)
         | Tag::Categories
         | Tag::ListHint
+        | Tag::Focus
         | Tag::Download
         | Tag::Context
         | Tag::TriageInbox(_)
