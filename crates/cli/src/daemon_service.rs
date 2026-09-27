@@ -1,7 +1,8 @@
 //! `ms-todo daemon install|uninstall` (D-065): start the daemon when the
 //! user logs in, so nags fire without a client starting it first. On macOS
 //! a launchd agent, `~/Library/LaunchAgents/com.planetaryescape.ms-todo.plist`;
-//! on Linux a systemd user unit, `~/.config/systemd/user/ms-todo.service`,
+//! on Linux a systemd user unit, `~/.config/systemd/user/ms-todo.service`
+//! (always under HOME, whatever `XDG_CONFIG_HOME` says),
 //! enabled by its link in `default.target.wants`, as `systemctl --user
 //! enable` makes it. Either runs this binary's `daemon run` for the
 //! default instance, and starts it again if it crashes but not after a
@@ -106,11 +107,10 @@ impl Manager {
             });
         }
         if cfg!(target_os = "linux") {
-            let config = std::env::var_os("XDG_CONFIG_HOME")
-                .map(PathBuf::from)
-                .filter(|dir| dir.is_absolute())
-                .unwrap_or_else(|| home.join(".config"));
-            let units = config.join("systemd/user");
+            // Not $XDG_CONFIG_HOME: the user manager at login may not have
+            // the installing shell's, and it always searches ~/.config. The
+            // unit's Environment= lines carry the XDG directories instead.
+            let units = home.join(".config/systemd/user");
             return Ok(Self {
                 name: "systemd",
                 file: units.join(SYSTEMD_UNIT),

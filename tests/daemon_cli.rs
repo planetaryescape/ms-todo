@@ -353,7 +353,7 @@ fn service_file(env: &Env) -> std::path::PathBuf {
             .path()
             .join("Library/LaunchAgents/com.planetaryescape.ms-todo.plist")
     } else {
-        env.home.path().join("config/systemd/user/ms-todo.service")
+        env.home.path().join(".config/systemd/user/ms-todo.service")
     }
 }
 
@@ -391,7 +391,7 @@ fn install_and_uninstall_write_and_remove_the_login_item_idempotently() {
         let wants = env
             .home
             .path()
-            .join("config/systemd/user/default.target.wants/ms-todo.service");
+            .join(".config/systemd/user/default.target.wants/ms-todo.service");
         assert_eq!(std::fs::read_link(&wants).expect("enabled"), file);
     }
     let again = env.json(&["--instance", "default", "daemon", "install"]);
