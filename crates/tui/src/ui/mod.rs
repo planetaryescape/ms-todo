@@ -80,7 +80,11 @@ pub fn draw(frame: &mut Frame, app: &App) {
             what,
             query,
             index,
-        } => move_picker::draw(frame, app, ids, what, query, *index),
+            merging,
+        } => {
+            let targets = app.picker_targets(ids, merging.as_deref(), &query.text());
+            move_picker::draw(frame, app, &targets, what, query, *index);
+        }
         Mode::Diagnostics => diagnostics::draw(frame, main, app),
         Mode::Themes { index, .. } => theme_picker::draw(frame, app, *index),
         Mode::Links { links, index } => link_picker::draw(frame, app, links, *index),

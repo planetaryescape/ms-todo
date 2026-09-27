@@ -2217,6 +2217,7 @@ dependencies = [
  "ms-todo-protocol",
  "ms-todo-store",
  "notify-rust",
+ "percent-encoding",
  "reqwest",
  "rustix",
  "serde",

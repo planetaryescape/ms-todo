@@ -109,6 +109,9 @@ pub enum Action {
     RenameList,
     /// "Delete list…", after an inline confirmation.
     DeleteList,
+    /// "Merge list into…" in the palette: every open task of the current
+    /// list moved to a list picked by name (D-067).
+    MergeList,
     /// `z`: show deferred and Someday tasks in every view, or hide them
     /// again.
     ToggleDeferred,

@@ -31,8 +31,39 @@ pub enum Event {
     /// tasks were embedded for their new text. A search by meaning shown
     /// now may rank differently (D-061).
     IndexChanged,
+    /// How far an attachment's upload session has got: sent as it starts,
+    /// after each chunk Graph takes, and once when the attempt ends,
+    /// finished or not (`done`).
+    UploadProgress(UploadProgress),
     #[serde(other)]
     Unknown,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct UploadProgress {
+    /// The outbox operation adding the attachment.
+    pub op_id: String,
+    /// The task's local ID.
+    pub task_id: String,
+    /// The attachment's name.
+    pub name: String,
+    /// Bytes Graph has taken so far.
+    pub sent: u64,
+    pub total: u64,
+    /// The attempt is over: `sent == total` if it finished; otherwise it
+    /// stopped, and the outbox says why and what happens next.
+    #[serde(default)]
+    pub done: bool,
+}
+
+impl UploadProgress {
+    /// How far it's got, from 0 to 100.
+    pub fn percent(&self) -> u64 {
+        (self.sent.saturating_mul(100))
+            .checked_div(self.total)
+            .unwrap_or(0)
+            .min(100)
+    }
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]

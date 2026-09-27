@@ -64,6 +64,7 @@ impl App {
             ("Rename list\u{2026}", Action::RenameList),
             ("Delete list\u{2026}", Action::DeleteList),
             ("Suggest lists for inbox", Action::TriageInbox),
+            ("Merge list into\u{2026}", Action::MergeList),
         ]
         .into_iter()
         .map(|(label, action)| Item {

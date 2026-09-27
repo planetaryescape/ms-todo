@@ -45,6 +45,9 @@ pub struct Glyphs {
     pub someday: &'static str,
     /// In a task's reminder place, when it nags (rung 9b).
     pub nag: &'static str,
+    /// An upload's gauge in the status line: done and still to go.
+    pub gauge_done: &'static str,
+    pub gauge_left: &'static str,
 }
 
 pub const UNICODE: Glyphs = Glyphs {
@@ -77,6 +80,8 @@ pub const UNICODE: Glyphs = Glyphs {
     upcoming: "\u{29d6}",            // ⧖
     someday: "\u{2026}",             // …
     nag: "\u{25c9}",                 // ◉
+    gauge_done: "\u{2588}",          // █
+    gauge_left: "\u{2591}",          // ░
 };
 
 pub const ASCII: Glyphs = Glyphs {
@@ -109,4 +114,6 @@ pub const ASCII: Glyphs = Glyphs {
     upcoming: "u",
     someday: "s",
     nag: "N",
+    gauge_done: "#",
+    gauge_left: ".",
 };

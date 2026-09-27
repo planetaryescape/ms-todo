@@ -210,7 +210,7 @@ fn cached(data: Map<String, Value>) -> Map<String, Value> {
 /// Our fields only: not Graph's `id`, `extensionName` or `@odata`
 /// annotations (`order@odata.type`), which it adds itself.
 fn document(extension: &Map<String, Value>) -> Map<String, Value> {
-    extension
+    let mut document = extension
         .iter()
         .filter(|(key, _)| {
             *key != "id"
@@ -219,7 +219,9 @@ fn document(extension: &Map<String, Value>) -> Map<String, Value> {
                 && !key.contains("@odata.")
         })
         .map(|(key, value)| (key.clone(), value.clone()))
-        .collect()
+        .collect();
+    crate::entities::type_collections(&mut document);
+    document
 }
 
 #[cfg(test)]

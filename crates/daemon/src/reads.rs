@@ -168,11 +168,13 @@ pub(crate) async fn get_tasks(
     list: Option<&str>,
 ) -> Result<ResponseData, ErrorPayload> {
     let targets = crate::task_resolution::resolve_tasks(state, names, list).await?;
+    let mut items: Vec<_> = targets
+        .iter()
+        .map(|target| task_entity(&target.row))
+        .collect();
+    crate::related::annotate(state, &mut items).await?;
     Ok(ResponseData::Tasks {
-        items: targets
-            .iter()
-            .map(|target| task_entity(&target.row))
-            .collect(),
+        items,
         sync: read_state(state, LISTS_SCOPE).await?,
         deferred_hidden: None,
         context: None,

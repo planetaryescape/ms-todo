@@ -151,13 +151,19 @@ pub(crate) async fn load(source: &Source) -> Result<Embedder, String> {
 }
 
 fn http_client() -> Result<reqwest::Client, String> {
+    http_client_builder()
+        .build()
+        .map_err(|error| format!("can't make an HTTP client: {error}"))
+}
+
+/// The daemon's HTTP client for downloads off Graph: this one's, and an
+/// attachment's from a URL (D-067).
+pub(crate) fn http_client_builder() -> reqwest::ClientBuilder {
     reqwest::Client::builder()
         .user_agent(concat!("ms-todo/", env!("CARGO_PKG_VERSION")))
         .connect_timeout(Duration::from_secs(15))
-        // Per read, not for the whole 30 MB: a slow line still finishes.
+        // Per read, not for the whole download: a slow line still finishes.
         .read_timeout(Duration::from_secs(60))
-        .build()
-        .map_err(|error| format!("can't make an HTTP client: {error}"))
 }
 
 /// `file`'s bytes from `dir`, or from `url` when it's missing there or

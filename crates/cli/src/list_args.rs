@@ -218,6 +218,41 @@ pub enum ListsCommand {
     Move(MoveListsArgs),
     /// Put a list just before or after another list in its folder
     Order(OrderListArgs),
+    /// Move every open task of a list into another, keeping everything
+    /// each holds, and optionally delete the emptied list
+    ///
+    /// Each task moves as `tasks move` moves it: copied, the copy checked,
+    /// then the original deleted, resuming after a crash. With
+    /// --delete-source the list is deleted only once every task has moved
+    /// and Microsoft To Do shows it empty, by its own operation
+    /// (`<op_id>.delete`); `ms-todo undo` undoes that first, then the
+    /// moves. Asks first in a terminal; anywhere else it needs --yes
+    Merge(MergeListArgs),
+}
+
+#[derive(Debug, Args)]
+pub struct MergeListArgs {
+    /// The list to empty, by exact name or ID
+    #[arg(value_name = "FROM")]
+    pub from: String,
+    /// The list its tasks go to, by exact name or ID
+    #[arg(long, value_name = "TO")]
+    pub into: String,
+    /// Move its completed tasks too
+    #[arg(long)]
+    pub include_completed: bool,
+    /// Delete FROM once every task has moved. With completed tasks in it,
+    /// it needs --include-completed, so none is lost
+    #[arg(long)]
+    pub delete_source: bool,
+    /// Show which tasks would move without changing anything
+    #[arg(long)]
+    pub dry_run: bool,
+    /// Merge without asking
+    #[arg(long)]
+    pub yes: bool,
+    #[command(flatten)]
+    pub idempotency: IdempotencyArgs,
 }
 
 #[derive(Debug, Args)]

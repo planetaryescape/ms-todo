@@ -197,6 +197,24 @@ pub(crate) async fn undo(
                     continue;
                 }
                 let from_list = move_job::from_list(op);
+                let gone = state
+                    .store
+                    .list_state(&from_list)
+                    .await
+                    .map_err(store_error)?
+                    .is_none_or(|(_, deleted)| deleted);
+                if gone {
+                    // A merge that deleted the list it emptied: its delete
+                    // is undone first, which makes the list again.
+                    return Err(error_payload(
+                        ErrorKind::InvalidInput,
+                        format!(
+                            "the list {:?} came from is deleted; undo its delete first (`ms-todo \
+                             undo {}.delete` after a merge), then this",
+                            row.title, op.command_id
+                        ),
+                    ));
+                }
                 inverse.push(move_op(id(inverse.len()), &row, &from_list));
             }
             OpKind::TaskExtension => {
@@ -297,6 +315,8 @@ fn extension_undo(op_id: String, row: &TaskRow, op: &OutboxRow) -> Result<NewOp,
     let action = match op.action.as_str() {
         "my_day_add" => TaskAction::MyDayRemove,
         "my_day_remove" | "my_day_rollover" => TaskAction::MyDayAdd,
+        "relate" => TaskAction::Unrelate,
+        "unrelate" => TaskAction::Relate,
         _ => TaskAction::Edit,
     };
     Ok(NewOp {

@@ -12,8 +12,8 @@ use ms_todo_protocol::{DownloadedFile, Entity, Request, ResponseData, TaskChange
 use serde::Serialize;
 use serde_json::Value;
 
-use crate::args::{AttachmentsCommand, LinkArgs};
-use crate::child_commands::{delete, number, numbered, write_child};
+use crate::args::{AttachmentsCommand, LinkArgs, WriteArgs};
+use crate::child_commands::{delete, number, numbered};
 
 use crate::csv_columns::text;
 use crate::daemon_client;
@@ -23,6 +23,7 @@ use crate::output::{
     OutputFormat, SCHEMA_VERSION, Table, Versioned, print_collection, print_ids, print_json,
     write_csv,
 };
+use crate::task_commands::{change_request, send_and_print};
 
 pub const ATTACHMENT_COLUMNS: &[&str] =
     &["index", "id", "name", "size", "content_type", "modified"];
@@ -62,20 +63,12 @@ pub async fn run(
 ) -> Result<(), CliError> {
     match command {
         AttachmentsCommand::List(task) => list(paths, task, format).await,
-        AttachmentsCommand::Add { task, files, write } => {
-            let files = files
-                .iter()
-                .map(|file| checked(file))
-                .collect::<Result<Vec<_>, _>>()?;
-            write_child(
-                paths,
-                task,
-                TaskChange::AddAttachments { files },
-                write,
-                format,
-            )
-            .await
-        }
+        AttachmentsCommand::Add {
+            task,
+            files,
+            name,
+            write,
+        } => add(paths, task, &files, name, write, format).await,
         AttachmentsCommand::Download {
             task,
             attachments,
@@ -118,6 +111,85 @@ async fn list(paths: &Paths, task: LinkArgs, format: OutputFormat) -> Result<(),
         &ATTACHMENTS_TABLE,
     )
 }
+
+/// `attachments add`: files by path, stdin (`-`) through a private
+/// temporary file the daemon copies, or a URL the daemon downloads. No
+/// bytes cross the socket either way.
+async fn add(
+    paths: &Paths,
+    task: LinkArgs,
+    files: &[PathBuf],
+    name: Option<String>,
+    write: WriteArgs,
+    format: OutputFormat,
+) -> Result<(), CliError> {
+    let invalid = |why: &str| CliError::message(ErrorKind::InvalidInput, why.to_owned());
+    let special = files.iter().find_map(|file| {
+        let text = file.to_str()?;
+        (text == STDIN || text.contains("://")).then_some(text)
+    });
+    if special.is_some() && files.len() > 1 {
+        return Err(invalid(
+            "`-` or a URL attaches one thing; attach files by path together, and stdin or a URL \
+             on its own",
+        ));
+    }
+    // Kept until the daemon has answered, which copies it first.
+    let mut stdin_file = None;
+    let change = match special {
+        Some(STDIN) => {
+            if name.is_none() {
+                return Err(invalid(
+                    "stdin has no file name: give the attachment one with --name",
+                ));
+            }
+            let file = crate::stdin_file::save()?;
+            let path = file.path().to_string_lossy().into_owned();
+            stdin_file = Some(file);
+            TaskChange::AddAttachments {
+                files: vec![path],
+                name,
+                copy: true,
+                url: None,
+            }
+        }
+        // The daemon, which downloads it, says which URLs it takes.
+        Some(url) => TaskChange::AddAttachments {
+            files: Vec::new(),
+            name,
+            copy: false,
+            url: Some(url.to_owned()),
+        },
+        None => TaskChange::AddAttachments {
+            files: files
+                .iter()
+                .map(|file| checked(file))
+                .collect::<Result<Vec<_>, _>>()?,
+            name,
+            copy: false,
+            url: None,
+        },
+    };
+    let dry_run = write.dry_run;
+    let watch = crate::upload_progress::subscribe(paths, dry_run).await;
+    let request = change_request(
+        vec![task.task],
+        task.list,
+        None,
+        change,
+        dry_run,
+        write.idempotency.idempotency_key,
+    );
+    let answer = send_and_print(paths, request, format).await;
+    drop(stdin_file);
+    if let (Some(watch), ResponseData::Applied(applied)) = (watch, answer?) {
+        watch.follow(&applied).await;
+    }
+    Ok(())
+}
+
+/// Read in place of a file: stdin.
+const STDIN: &str = "-";
 
 /// `file` as an absolute path, checked to be a regular file of 25 MB or
 /// less, so a mistake is caught before anything is queued. The daemon

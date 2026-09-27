@@ -133,7 +133,7 @@ pub(crate) async fn seed(
         Some(Scope::List { .. } | Scope::MyDay) | None => rows,
         Some(_) => crate::contexts::keep(context, rows),
     };
-    let tasks = if scope == Some(Scope::Next) {
+    let mut tasks: Vec<_> = if scope == Some(Scope::Next) {
         let days = crate::next::days(state);
         crate::next::pick(rows, days, crate::next::DEFAULT_LIMIT)
             .into_iter()
@@ -142,6 +142,8 @@ pub(crate) async fn seed(
     } else {
         rows.iter().map(task_entity).collect()
     };
+    // The detail pane names a task's linked tasks and opens them.
+    crate::related::annotate(state, &mut tasks).await?;
     let my_day = match &scope {
         Some(Scope::MyDay) => Some(MyDaySeed {
             date: today.format(DATE_FORMAT).to_string(),

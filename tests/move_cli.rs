@@ -234,6 +234,15 @@ async fn a_move_copies_every_field_and_child_then_deletes_the_source() {
     assert_eq!(in_groceries.len(), 1);
     assert_eq!(in_groceries[0]["id"], local.as_str());
     assert_eq!(in_groceries[0]["graph_id"], copy_id.as_str());
+    // The copy's files are cached with it, not only once its etag moves.
+    let mut cached: Vec<&str> = in_groceries[0]["attachments"]
+        .as_array()
+        .expect("attachments cached")
+        .iter()
+        .filter_map(|attachment| attachment["name"].as_str())
+        .collect();
+    cached.sort_unstable();
+    assert_eq!(cached, ["big.bin", "small.txt"]);
     assert!(tasks(&env, "Tasks").is_empty());
     env.synced();
     assert_eq!(

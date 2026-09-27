@@ -168,6 +168,11 @@ pub(crate) async fn change_tasks(
         change @ (TaskChange::AddAttachments { .. } | TaskChange::DeleteAttachments { .. }) => {
             return crate::attachments::change(state, &targets, change, dry_run, op_id).await;
         }
+        TaskChange::Relate | TaskChange::Unrelate => {
+            let relate = change == TaskChange::Relate;
+            let targets = resolve(state, &targets).await?;
+            return crate::related::change(state, targets, relate, dry_run, op_id).await;
+        }
         TaskChange::Unknown => {
             return Err(error_payload(
                 ms_todo_core::ErrorKind::Unsupported,
@@ -301,16 +306,16 @@ async fn move_tasks(
     dry_run: bool,
     op_id: String,
 ) -> Result<ResponseData, ErrorPayload> {
-    if targets.select.is_some() {
-        return Err(error_payload(
-            ms_todo_core::ErrorKind::InvalidInput,
-            "name the tasks to move; --overdue and --due-before don't pick tasks to move".into(),
-        ));
-    }
     ensure_ready(state, LISTS_SCOPE).await?;
     let lists = state.store.lists().await.map_err(store_error)?;
     let list = resolve_list(&lists, Some(to))?;
-    let targets = resolve(state, targets).await?;
+    let selected = targets.select.is_some();
+    let mut targets = resolve(state, targets).await?;
+    if selected {
+        // Picked by a rule, a task already in the list is simply where it's
+        // going; only one named is a mistake worth saying.
+        targets.retain(|target| target.row.list_local_id != list.local_id);
+    }
     let already: Vec<String> = targets
         .iter()
         .filter(|target| target.row.list_local_id == list.local_id)
@@ -478,12 +483,14 @@ pub(crate) fn our_extension(op_id: &str, kept: Option<&Value>) -> Value {
     let mut extension = Map::new();
     if let Some(Value::Object(kept)) = kept {
         for (key, value) in kept {
-            // Graph's own bookkeeping, not our data.
-            if key != "id" && !key.starts_with('@') {
+            // Graph's own bookkeeping, not our data; arrays are typed
+            // afresh below.
+            if key != "id" && !key.starts_with('@') && !key.contains("@odata.") {
                 extension.insert(key.clone(), value.clone());
             }
         }
     }
+    crate::entities::type_collections(&mut extension);
     extension.insert(
         "@odata.type".into(),
         json!("microsoft.graph.openTypeExtension"),
@@ -578,6 +585,9 @@ pub(crate) fn action_name(action: TaskAction) -> &'static str {
         TaskAction::CategoryDelete => "category_delete",
         TaskAction::ExtensionSet => "extension_set",
         TaskAction::ExtensionDelete => "extension_delete",
+        TaskAction::Relate => "relate",
+        TaskAction::Unrelate => "unrelate",
+        TaskAction::MergeList => "merge_list",
         TaskAction::Undo | TaskAction::Unknown => "change",
     }
 }

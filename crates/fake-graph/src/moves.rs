@@ -214,6 +214,9 @@ pub fn create_task(data: &mut Data, request: &Request) -> ResponseTemplate {
             }
         }
     }
+    if let Some(refused) = extension.as_ref().and_then(crate::graph::refuse_untyped) {
+        return refused;
+    }
     let mut stored = None;
     if let Some(mut extension) = extension {
         if let Some(fields) = extension.as_object_mut() {

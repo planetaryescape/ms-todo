@@ -29,7 +29,7 @@ mod views;
 pub use catalog::{CategoryChange, ExtensionChange, ExtensionOwner, OwnerKind};
 pub use codec::{Codec, FrameTooLarge, MAX_FRAME_BYTES};
 pub use contexts::{AppliedContext, ContextChoice, ContextInfo, Contexts};
-pub use events::{ConflictOverwritten, EntityChanged, Event, WriteRejected};
+pub use events::{ConflictOverwritten, EntityChanged, Event, UploadProgress, WriteRejected};
 pub use list_change::{Anchor, Folder, ListChange};
 pub use mutation::{Applied, Plan, PlannedList, PlannedTask, Refused, Rolled, TaskAction};
 pub use outbox::{OpError, OutboxDepth, OutboxOp, OutboxState, OutboxUpkeep};
@@ -103,8 +103,13 @@ pub use views::{Counts, MyDay, MyDaySeed, Scope, Seed};
 /// the daemon's placed-later gaps (D-065): `Focus`, the
 /// `ConflictOverwritten` event and `DoctorReport.outbox_upkeep`, so the
 /// TUI's focus hint never reaches a daemon that would answer it with an
-/// error.
-pub const PROTOCOL_VERSION: u32 = 22;
+/// error. 23: closing the move, attachment and task-link gaps (D-067):
+/// `ChangeTasks.select` with `TaskChange::Move`, `ListChange::MergeList`,
+/// `AddAttachments.name`, `copy` and `url`, `TaskChange::Relate` and
+/// `Unrelate`, their `TaskAction`s, and `Event::UploadProgress`, so an
+/// older daemon never attaches a temporary file it doesn't copy, or
+/// refuses a merge as unknown.
+pub const PROTOCOL_VERSION: u32 = 23;
 
 /// The socket buffer both ends ask for: room for a large list's `Seed` in
 /// one write. macOS gives a Unix socket 8 KiB, so a 350 KiB seed crossed

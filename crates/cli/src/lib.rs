@@ -43,6 +43,7 @@ mod phrases;
 mod quick_add;
 mod schema_commands;
 mod show_commands;
+mod stdin_file;
 mod suggest_commands;
 mod sync_commands;
 mod system_args;
@@ -53,6 +54,7 @@ mod task_output;
 mod terminal;
 mod time;
 mod tui_command;
+mod upload_progress;
 
 use std::io::IsTerminal;
 use std::process::ExitCode;
@@ -222,6 +224,9 @@ async fn dispatch(command: Command, paths: &Paths, format: OutputFormat) -> Resu
         Command::Lists(ListsCommand::Order(args)) => {
             folder_commands::order_list(paths, args, format).await
         }
+        Command::Lists(ListsCommand::Merge(args)) => {
+            list_commands::merge(paths, args, format).await
+        }
         Command::Folders(FoldersCommand::List) => {
             let (items, sync) = folder_commands::list(paths).await?;
             print_collection(format, &items, sync, &folder_commands::FOLDERS_TABLE)
@@ -316,6 +321,12 @@ async fn dispatch(command: Command, paths: &Paths, format: OutputFormat) -> Resu
             task_commands::move_tasks(paths, args, format).await
         }
         Command::Tasks(TasksCommand::Nag(args)) => task_commands::nag(paths, args, format).await,
+        Command::Tasks(TasksCommand::Relate(args)) => {
+            task_commands::relate(paths, args, TaskChange::Relate, format).await
+        }
+        Command::Tasks(TasksCommand::Unrelate(args)) => {
+            task_commands::relate(paths, args, TaskChange::Unrelate, format).await
+        }
         Command::Raw(args) => print_raw(format, &task_commands::raw(paths, args).await?),
         Command::Outbox(OutboxCommand::List { state }) => {
             outbox_commands::list(paths, state, format).await

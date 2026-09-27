@@ -48,6 +48,15 @@ impl Attachment {
     }
 }
 
+/// A task this one is linked to (`tasks relate`, D-067), as the daemon
+/// found it; `id` and `list_id` are `None` for one it doesn't have.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Related {
+    pub id: Option<String>,
+    pub list_id: Option<String>,
+    pub title: Option<String>,
+}
+
 #[derive(Clone, Debug, PartialEq)]
 pub struct Task {
     /// ms-todo's local ID.
@@ -108,6 +117,8 @@ pub struct Task {
     pub why: Option<String>,
     /// Minutes between nags (`nag` in our extension), when it nags.
     pub nag: Option<u32>,
+    /// The tasks it's linked to, in the order they were linked.
+    pub related: Vec<Related>,
 }
 
 impl Task {
@@ -153,6 +164,20 @@ impl Task {
                         .to_owned(),
                     size: attachment.get("size").and_then(Value::as_u64),
                 })
+            })
+            .collect();
+        let related = entity
+            .get("related")
+            .and_then(Value::as_array)
+            .into_iter()
+            .flatten()
+            .map(|other| {
+                let text = |key: &str| other.get(key).and_then(Value::as_str).map(str::to_owned);
+                Related {
+                    id: text("id"),
+                    list_id: text("list_id"),
+                    title: text("title"),
+                }
             })
             .collect();
         let link_field = |key: &str| {
@@ -226,6 +251,7 @@ impl Task {
                 .get("extensions")
                 .and_then(|extensions| extensions.get(0)?.get("nag")?.as_u64())
                 .and_then(|minutes| u32::try_from(minutes).ok()),
+            related,
         })
     }
 

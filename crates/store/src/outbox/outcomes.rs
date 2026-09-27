@@ -269,7 +269,9 @@ impl Store {
 
     /// After a restart, nothing is being sent. A create or a recurring
     /// completion that was may have reached Graph, so it's `unknown`; any
-    /// other operation is safe to send again, so it's `pending` (04).
+    /// other operation is safe to send again, so it's `pending` (04). So
+    /// is an attachment's upload session that hadn't begun its final PUT,
+    /// the only part that commits anything (D-067): it goes on.
     /// Returns how many became `unknown`.
     pub async fn recover_inflight(&self) -> Result<u64, StoreError> {
         let mut tx = self.writer().begin().await?;
@@ -278,7 +280,9 @@ impl Store {
              note = 'the daemon stopped while this was being sent' \
              WHERE state = 'inflight' \
              AND (op IN ('create', 'list_create') OR json_extract(payload_json, '$.recurring') = 1 \
-             OR (op = 'child' AND json_extract(payload_json, '$.verb') = 'create') \
+             OR (op = 'child' AND json_extract(payload_json, '$.verb') = 'create' \
+                 AND NOT (json_extract(progress_json, '$.upload.total') IS NOT NULL \
+                          AND COALESCE(json_extract(progress_json, '$.upload.committing'), 0) = 0)) \
              OR (op = 'move' AND json_extract(progress_json, '$.in_doubt') = 1))",
         )
         .bind(now())

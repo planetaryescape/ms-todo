@@ -38,6 +38,7 @@ mod nag;
 mod navigation;
 pub mod palette;
 pub mod quick_add;
+mod related;
 mod reorder;
 pub mod scope;
 mod selection;
@@ -240,6 +241,12 @@ pub struct App {
     /// `[dates]` from config.toml: how typed dates read, and where
     /// Planned's "This week" ends (D-068).
     pub locale: Locale,
+    /// The attachment upload under way, for the status line's gauge
+    /// (D-067).
+    pub upload: Option<ms_todo_protocol::UploadProgress>,
+    /// A related task being opened in another list: the cursor goes to it
+    /// when that list's seed lands.
+    pub open_after_seed: Option<String>,
 }
 
 impl App {
@@ -298,6 +305,8 @@ impl App {
             order_pending: None,
             orders_in_flight: 0,
             locale: Locale::default(),
+            upload: None,
+            open_after_seed: None,
         }
     }
 

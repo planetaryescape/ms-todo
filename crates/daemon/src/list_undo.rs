@@ -104,6 +104,18 @@ pub(crate) async fn undo_lists(
                 inverse.push(lifecycle(id, &list, TaskAction::RenameList, write));
             }
             OpKind::ListDelete => {
+                if op.payload[ms_todo_store::AFTER_COMMAND].is_string()
+                    && op.state != ms_todo_store::OpState::Done
+                {
+                    return Err(error_payload(
+                        ErrorKind::InvalidInput,
+                        format!(
+                            "deleting {:?} waits for its merge's moves, so there's nothing to \
+                             undo yet; `ms-todo outbox discard {}` keeps the list",
+                            list.display_name, op.op_id
+                        ),
+                    ));
+                }
                 if !deleted {
                     return Err(error_payload(
                         ErrorKind::InvalidInput,

@@ -11,10 +11,30 @@ use ms_todo_core::DATE_FORMAT;
 use ms_todo_core::deferral::{defer_until, someday};
 use ms_todo_protocol::Entity;
 use ms_todo_store::{ListRow, SearchHit, TaskRow};
-use serde_json::{Value, json};
+use serde_json::{Map, Value, json};
 
 /// Our open extension (docs/blueprint/05-custom-features.md).
 pub(crate) const EXTENSION_NAME: &str = "com.planetaryescape.mstodo";
+
+/// Give each array of strings in an open extension's `fields` the type
+/// Graph needs to take it (`related@odata.type`): Graph refuses an array
+/// without one (S20, D-067). One already typed is left as it is.
+pub(crate) fn type_collections(fields: &mut Map<String, Value>) {
+    let arrays: Vec<String> = fields
+        .iter()
+        .filter(|(key, value)| {
+            !key.contains('@')
+                && !fields.contains_key(&format!("{key}@odata.type"))
+                && value
+                    .as_array()
+                    .is_some_and(|items| items.iter().all(Value::is_string))
+        })
+        .map(|(key, _)| key.clone())
+        .collect();
+    for key in arrays {
+        fields.insert(format!("{key}@odata.type"), json!("#Collection(String)"));
+    }
+}
 
 /// A list, with `folder`, its folder's name or null, beside Graph's
 /// fields (docs/blueprint/07-cli.md#output-contract).

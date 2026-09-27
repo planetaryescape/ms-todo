@@ -17,8 +17,8 @@ pub use crate::my_day_args::{MyDayCommand, MyDayTargetArgs};
 pub use crate::outbox_args::{OutboxCommand, OutboxStateArg, UndoArgs};
 pub use crate::system_args::{AuthCommand, DaemonCommand, RawArgs, RawMethod, TuiArgs};
 pub use crate::task_args::{
-    AddArgs, EditArgs, LinkArgs, MoveArgs, NagArgs, ParseArgs, RescheduleArgs, SelectArgs,
-    TargetArgs, TasksCommand,
+    AddArgs, EditArgs, LinkArgs, MoveArgs, NagArgs, ParseArgs, RelateArgs, RescheduleArgs,
+    SelectArgs, TargetArgs, TasksCommand,
 };
 
 /// A local-first, keyboard-native terminal client for Microsoft To Do.

@@ -50,6 +50,13 @@ pub enum TaskAction {
     CategoryDelete,
     ExtensionSet,
     ExtensionDelete,
+    /// Two tasks linked to each other (D-067).
+    Relate,
+    /// The link between two tasks taken away.
+    Unrelate,
+    /// Every task of one list moved to another, and the emptied list
+    /// optionally deleted.
+    MergeList,
     #[serde(other)]
     Unknown,
 }

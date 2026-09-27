@@ -270,7 +270,8 @@ impl App {
                 self.cache.insert(shown.clone(), self.tasks.clone());
             }
         }
-        self.task_index = match keep.filter(|_| !changed_scope) {
+        let opening = self.open_after_seed.take();
+        self.task_index = match opening.or(keep.filter(|_| !changed_scope)) {
             Some(id) => self
                 .tasks
                 .iter()
@@ -376,6 +377,10 @@ impl App {
             // Only a search by meaning ranks by the index: re-run it, as
             // the model may have just loaded or the tasks been re-embedded.
             Event::IndexChanged if self.semantic_filter && self.filter.is_some() => self.reseed(),
+            Event::UploadProgress(progress) => {
+                self.upload = (!progress.done).then_some(progress);
+                Vec::new()
+            }
             Event::IndexChanged | Event::SyncProgress(_) | Event::Unknown => Vec::new(),
         }
     }

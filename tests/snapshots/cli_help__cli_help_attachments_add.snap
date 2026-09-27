@@ -4,21 +4,52 @@ expression: help_output(args)
 ---
 Attach files to the task, up to 25 MB each. The daemon reads each file when it sends it, and refuses one that changed after this command
 
-Usage: ms-todo attachments add [OPTIONS] <TASK> <FILE>...
+`-` attaches what's on stdin (with --name); an https URL is downloaded first, by the daemon, following redirects only to https. Either is kept by the daemon until it's uploaded. In a terminal, a big upload shows its progress; Ctrl-C stops watching, not the upload
+
+Usage: ms-todo attachments add [OPTIONS] <TASK> <FILE|-|URL>...
 
 Arguments:
-  <TASK>     The task's ID from `tasks list`, or its exact title when --list is given
-  <FILE>...  The files; several attach several, in order
+  <TASK>
+          The task's ID from `tasks list`, or its exact title when --list is given
+
+  <FILE|-|URL>...
+          The files; several attach several, in order. Or `-` for stdin, or one https URL
 
 Options:
-      --format <FORMAT>        Output format: jsonl is one object per line, ids one ID per line, csv has a header row [default: table in a terminal, json when piped] [possible values: table, json, jsonl, ids, csv]
-      --list <NAME|ID>         Look for the task in this list (exact name or ID), which also lets TASK be an exact title
-      --dry-run                Show what would change without changing anything
-      --instance <NAME>        Use a separate copy of ms-todo's data (also MS_TODO_INSTANCE). Builds run from Cargo's target/ directory default to "dev"; "default" is the installed copy
-      --fresh                  Before reading, sync and wait, so the answer is as fresh as Microsoft To Do's (a read is otherwise answered from the cache)
-      --idempotency-key <KEY>  Run this change at most once: repeating the command with the same key returns the first result for 24 hours, and the same key with a different change exits 2
-      --quiet                  Print nothing on stderr but errors: no notes and no progress
-      --no-color               No colour or bold in tables (also NO_COLOR)
-      --context <NAME|none>    Read this command in this context (from config.toml) rather than the active one; `none` for every list
-  -h, --help                   Print help
-  -V, --version                Print version
+      --format <FORMAT>
+          Output format: jsonl is one object per line, ids one ID per line, csv has a header row [default: table in a terminal, json when piped]
+
+          [possible values: table, json, jsonl, ids, csv]
+
+      --list <NAME|ID>
+          Look for the task in this list (exact name or ID), which also lets TASK be an exact title
+
+      --instance <NAME>
+          Use a separate copy of ms-todo's data (also MS_TODO_INSTANCE). Builds run from Cargo's target/ directory default to "dev"; "default" is the installed copy
+
+      --name <NAME>
+          The attachment's name, in place of the file's or the URL's; needed with `-`. One file only
+
+      --dry-run
+          Show what would change without changing anything
+
+      --fresh
+          Before reading, sync and wait, so the answer is as fresh as Microsoft To Do's (a read is otherwise answered from the cache)
+
+      --idempotency-key <KEY>
+          Run this change at most once: repeating the command with the same key returns the first result for 24 hours, and the same key with a different change exits 2
+
+      --quiet
+          Print nothing on stderr but errors: no notes and no progress
+
+      --no-color
+          No colour or bold in tables (also NO_COLOR)
+
+      --context <NAME|none>
+          Read this command in this context (from config.toml) rather than the active one; `none` for every list
+
+  -h, --help
+          Print help (see a summary with '-h')
+
+  -V, --version
+          Print version

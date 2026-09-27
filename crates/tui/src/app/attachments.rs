@@ -57,6 +57,9 @@ impl App {
         self.mode = Mode::Normal;
         let change = TaskChange::AddAttachments {
             files: vec![path.to_string_lossy().into_owned()],
+            name: None,
+            copy: false,
+            url: None,
         };
         vec![super::change(Write::Edit, vec![id], change)]
     }
@@ -242,7 +245,10 @@ mod tests {
                 assert_eq!(
                     change,
                     &TaskChange::AddAttachments {
-                        files: vec!["/home/bk/scan.pdf".into()]
+                        files: vec!["/home/bk/scan.pdf".into()],
+                        name: None,
+                        copy: false,
+                        url: None,
                     }
                 );
             }

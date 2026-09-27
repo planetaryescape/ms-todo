@@ -342,6 +342,10 @@ impl App {
                 self.start_delete_list();
                 Vec::new()
             }
+            Action::MergeList => {
+                self.start_merge_list();
+                Vec::new()
+            }
             Action::Diagnostics => self.open_diagnostics(),
             Action::ToggleDeferred => self.toggle_deferred(),
             Action::NextContext => self.next_context(),

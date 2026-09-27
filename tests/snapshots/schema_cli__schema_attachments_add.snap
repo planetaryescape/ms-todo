@@ -12,12 +12,12 @@ expression: pretty
         "x-cli": "--dry-run"
       },
       "files": {
-        "description": "The files; several attach several, in order",
+        "description": "The files; several attach several, in order. Or `-` for stdin, or one https URL",
         "items": {
           "type": "string"
         },
         "type": "array",
-        "x-cli": "<FILE>"
+        "x-cli": "<FILE|-|URL>"
       },
       "idempotency_key": {
         "description": "Run this change at most once: repeating the command with the same key returns the first result for 24 hours, and the same key with a different change exits 2",
@@ -28,6 +28,11 @@ expression: pretty
         "description": "Look for the task in this list (exact name or ID), which also lets TASK be an exact title",
         "type": "string",
         "x-cli": "--list"
+      },
+      "name": {
+        "description": "The attachment's name, in place of the file's or the URL's; needed with `-`. One file only",
+        "type": "string",
+        "x-cli": "--name"
       },
       "task": {
         "description": "The task's ID from `tasks list`, or its exact title when --list is given",
@@ -66,7 +71,10 @@ expression: pretty
               "link_edit",
               "link_delete",
               "attachment_add",
-              "attachment_delete"
+              "attachment_delete",
+              "relate",
+              "unrelate",
+              "merge_list"
             ]
           },
           "items": {
@@ -272,11 +280,14 @@ expression: pretty
               "link_edit",
               "link_delete",
               "attachment_add",
-              "attachment_delete"
+              "attachment_delete",
+              "relate",
+              "unrelate",
+              "merge_list"
             ]
           },
           "changes": {
-            "description": "The Graph fields each target gets; null for delete. For My Day: myDay (the day, or null), and the tasks whose due date is set (due_today) or cleared (due_cleared). For steps, links and attachments: each write, as { collection, verb (create, update or delete), id, body, carried }, and for an attachment's create the file it's read from, as file: { path, bytes, modified }"
+            "description": "The Graph fields each target gets; null for delete. For My Day: myDay (the day, or null), and the tasks whose due date is set (due_today) or cleared (due_cleared). For steps, links and attachments: each write, as { collection, verb (create, update or delete), id, body, carried }, and for an attachment's create the file it's read from, as file: { path, bytes, modified }, or the url it's downloaded from. For relate and unrelate: each task's local ID, with the Graph IDs of its related tasks after it. For move and merge_list: list_id, the list they go to"
           },
           "dry_run": {
             "const": true
@@ -303,6 +314,27 @@ expression: pretty
               "name"
             ],
             "type": "object"
+          },
+          "lists": {
+            "description": "For lists merge: the list emptied, with changes { deleted (whether --delete-source deletes it), completed_left (completed tasks staying in it) }",
+            "items": {
+              "properties": {
+                "changes": {},
+                "id": {
+                  "type": "string"
+                },
+                "name": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "id",
+                "name",
+                "changes"
+              ],
+              "type": "object"
+            },
+            "type": "array"
           },
           "schema_version": {
             "const": 2

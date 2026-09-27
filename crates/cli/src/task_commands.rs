@@ -12,7 +12,8 @@ use ms_todo_protocol::{
 use serde_json::Value;
 
 use crate::args::{
-    AddArgs, EditArgs, MoveArgs, NagArgs, RawArgs, RawMethod, RescheduleArgs, TargetArgs, UndoArgs,
+    AddArgs, EditArgs, MoveArgs, NagArgs, RawArgs, RawMethod, RelateArgs, RescheduleArgs,
+    TargetArgs, UndoArgs,
 };
 use crate::bulk_commands::{self, Bulk};
 use crate::confirm::{can_prompt, confirm};
@@ -176,7 +177,8 @@ pub async fn edit(paths: &Paths, args: EditArgs, format: OutputFormat) -> Result
     bulk_commands::apply(paths, bulk, format).await
 }
 
-/// `tasks move`: the tasks named, to the list `--to`.
+/// `tasks move`: the tasks named, or those `--overdue` or `--due-before`
+/// picks, to the list `--to`.
 pub async fn move_tasks(
     paths: &Paths,
     args: MoveArgs,
@@ -187,7 +189,7 @@ pub async fn move_tasks(
         tasks,
         from_stdin,
         list: args.list,
-        select: None,
+        select: bulk_commands::select(args.select),
         change: TaskChange::Move { to: args.to },
         dry_run: args.dry_run,
         yes: args.yes,
@@ -195,6 +197,24 @@ pub async fn move_tasks(
         verb: "Move",
     };
     bulk_commands::apply(paths, bulk, format).await
+}
+
+/// `tasks relate` and `tasks unrelate`: the two tasks named, both ways.
+pub async fn relate(
+    paths: &Paths,
+    args: RelateArgs,
+    change: TaskChange,
+    format: OutputFormat,
+) -> Result<(), CliError> {
+    let request = change_request(
+        vec![args.task, args.other],
+        args.list,
+        None,
+        change,
+        args.dry_run,
+        args.idempotency.idempotency_key,
+    );
+    send(paths, request, format).await
 }
 
 /// `tasks nag`: a nag edit, to the tasks named.
@@ -410,7 +430,7 @@ pub(crate) async fn send(
 }
 
 /// [`send`], giving back what was printed.
-async fn send_and_print(
+pub(crate) async fn send_and_print(
     paths: &Paths,
     request: Request,
     format: OutputFormat,

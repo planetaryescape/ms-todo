@@ -267,7 +267,13 @@ async fn write_extension(
     data: Option<&Map<String, Value>>,
     exists: bool,
 ) -> Result<(), ErrorPayload> {
-    let written = match (data, exists) {
+    // A user's array of strings needs its type too (S20).
+    let typed = data.map(|data| {
+        let mut data = data.clone();
+        crate::entities::type_collections(&mut data);
+        data
+    });
+    let written = match (typed.as_ref(), exists) {
         (Some(data), true) => {
             state
                 .graph

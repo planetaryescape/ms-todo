@@ -974,6 +974,7 @@ fn categories_are_chips_on_the_row() {
         "New list\u{2026}",
         "Rename list\u{2026}",
         "Delete list\u{2026}",
+        "Merge list into\u{2026}",
     ] {
         assert!(labels.iter().any(|label| label == wanted), "{labels:?}");
     }
@@ -990,4 +991,65 @@ fn the_title_bar_names_the_context() {
     let frame = render(&app);
     let title = frame.lines().next().unwrap_or_default();
     assert!(title.contains("\u{b7} context: work"), "{title}");
+}
+
+#[test]
+fn an_upload_shows_a_gauge_in_the_status_line() {
+    let mut app = seeded();
+    app.upload = Some(ms_todo_protocol::UploadProgress {
+        op_id: "op".into(),
+        task_id: "t".into(),
+        name: "scan.bin".into(),
+        sent: 3,
+        total: 10,
+        done: false,
+    });
+    let screen = render(&app);
+    assert!(
+        screen.contains("uploading scan.bin \u{2588}\u{2588}\u{2588}\u{2591}"),
+        "{screen}"
+    );
+    assert!(screen.contains("30%"), "{screen}");
+    app.glyphs = ASCII;
+    assert!(render(&app).contains("uploading scan.bin ###......."));
+    // The last event ends it.
+    let done = ms_todo_protocol::Event::UploadProgress(ms_todo_protocol::UploadProgress {
+        op_id: "op".into(),
+        task_id: "t".into(),
+        name: "scan.bin".into(),
+        sent: 10,
+        total: 10,
+        done: true,
+    });
+    app.update(Msg::Event(done));
+    assert!(app.upload.is_none());
+}
+
+#[test]
+fn related_tasks_show_in_the_detail_pane_by_title() {
+    let mut app = seeded();
+    app.task_index = 0;
+    let id = app.tasks[0].id.clone();
+    app.tasks[0] = crate::app::Task::from_entity(
+        &json!({
+            "id": id,
+            "title": "Pay rent",
+            "list_id": "home",
+            "related": [
+                { "id": "t9", "graph_id": "G9", "title": "Call landlord", "list_id": "home" },
+                { "id": null, "graph_id": "G8", "title": null, "list_id": null }
+            ]
+        })
+        .as_object()
+        .cloned()
+        .expect("object"),
+    )
+    .expect("task");
+    let mut terminal = Terminal::new(TestBackend::new(110, 30)).expect("terminal");
+    terminal
+        .draw(|frame| super::draw(frame, &app))
+        .expect("draw");
+    let screen = terminal.backend().to_string();
+    assert!(screen.contains("Related    Call landlord"), "{screen}");
+    assert!(screen.contains("not here"), "{screen}");
 }

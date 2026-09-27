@@ -16,6 +16,8 @@ fs2 = { workspace = true }
 futures-util = { workspace = true }
 iana-time-zone = { workspace = true }
 mime_guess = { workspace = true }
+# Decoding a downloaded attachment's name from its URL.
+percent-encoding = { workspace = true }
 # Semantic search's embedding model (rung 9c).
 model2vec-rs = { workspace = true }
 # TypeSafe, for list suggestions (rung 6b), and the embedding model's

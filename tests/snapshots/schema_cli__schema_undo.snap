@@ -50,7 +50,10 @@ expression: pretty
               "link_edit",
               "link_delete",
               "attachment_add",
-              "attachment_delete"
+              "attachment_delete",
+              "relate",
+              "unrelate",
+              "merge_list"
             ]
           },
           "items": {

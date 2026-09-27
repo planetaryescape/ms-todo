@@ -113,12 +113,14 @@ pub enum Mode {
     },
     /// `m`: which list to move the tasks `ids` to, by typing part of its
     /// name or its folder's; `what` names the tasks, as `"Call Sam"` or
-    /// `3 tasks`.
+    /// `3 tasks`. With `merging`, "Merge list into…": that list's open
+    /// tasks, and `ids` is empty.
     MovingTasks {
         ids: Vec<String>,
         what: String,
         query: LineEditor,
         index: usize,
+        merging: Option<String>,
     },
     /// Undoing a recurring completion: which completed copy to delete.
     Picker {

@@ -42,7 +42,8 @@ pub enum TasksCommand {
     Edit(EditArgs),
     /// Move tasks to another list, keeping everything they hold: steps,
     /// link, attachments and ms-todo's own fields. Each is copied, the copy
-    /// checked, and only then the original deleted; `undo` moves it back
+    /// checked, and only then the original deleted; `undo` moves it back.
+    /// Name them, or pick the open ones --overdue or --due-before finds
     Move(MoveArgs),
     /// Nag me about tasks: once a task's reminder is due, this machine
     /// notifies me every so often until it's completed
@@ -52,6 +53,12 @@ pub enum TasksCommand {
     /// (`[nag] quiet_hours`, 22:00-07:00 unless set) hold notifications
     /// back. `doctor --notify-test` checks notifications reach you
     Nag(NagArgs),
+    /// Link two tasks to each other, both ways. Microsoft To Do has no such
+    /// link, so only ms-todo shows it (`tasks show`, the TUI's detail
+    /// pane); it syncs with the tasks. `undo` takes it away
+    Relate(RelateArgs),
+    /// Take away the link between two tasks, both ways
+    Unrelate(RelateArgs),
     /// Delete tasks. Asks first in a terminal; anywhere else it needs --yes
     Delete {
         #[command(flatten)]
@@ -265,6 +272,26 @@ pub struct TargetArgs {
 }
 
 #[derive(Debug, Args)]
+pub struct RelateArgs {
+    /// One task: its ID from `tasks list`, or its exact title when --list
+    /// is given
+    #[arg(value_name = "TASK")]
+    pub task: String,
+    /// The other, named the same way
+    #[arg(value_name = "OTHER")]
+    pub other: String,
+    /// Look for both tasks in this list (exact name or ID), which also
+    /// lets each be an exact title
+    #[arg(long, value_name = "NAME|ID")]
+    pub list: Option<String>,
+    /// Show what would change without changing anything
+    #[arg(long)]
+    pub dry_run: bool,
+    #[command(flatten)]
+    pub idempotency: IdempotencyArgs,
+}
+
+#[derive(Debug, Args)]
 #[command(group(ArgGroup::new("nag_change").required(true).args(["every", "off"])))]
 pub struct NagArgs {
     /// Task IDs from `tasks list`, or exact titles when --list is given.
@@ -293,16 +320,24 @@ pub struct NagArgs {
 }
 
 #[derive(Debug, Args)]
+#[command(group(ArgGroup::new("selector").args(["overdue", "due_before"])))]
 pub struct MoveArgs {
     /// Task IDs from `tasks list`, or exact titles when --list is given.
     /// Several move together; `-` reads IDs from stdin, one per line
-    #[arg(required = true, value_name = "TASK")]
+    #[arg(
+        value_name = "TASK",
+        required_unless_present = "selector",
+        conflicts_with = "selector"
+    )]
     pub tasks: Vec<String>,
+    #[command(flatten)]
+    pub select: SelectArgs,
     /// The list to move them to (exact name or ID)
     #[arg(long, value_name = "NAME|ID")]
     pub to: String,
     /// Look for the tasks in this list (exact name or ID), which also lets
-    /// TASK be an exact title
+    /// TASK be an exact title; with --overdue or --due-before, only this
+    /// list's tasks
     #[arg(long, value_name = "NAME|ID")]
     pub list: Option<String>,
     /// Show which tasks would move without changing anything
