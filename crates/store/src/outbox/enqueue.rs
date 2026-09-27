@@ -89,6 +89,9 @@ impl Store {
         ops: Vec<NewOp>,
     ) -> Result<Vec<TaskRow>, StoreError> {
         let mut tx = self.writer().begin().await?;
+        if let Some(undone) = undoes {
+            cancel_waiting_delete(&mut tx, undone).await?;
+        }
         let rev = next_local_rev(&mut tx).await?;
         let now = now();
         let mut seq: i64 = sqlx::query_scalar("SELECT COALESCE(MAX(seq), 0) FROM outbox")
@@ -224,6 +227,21 @@ impl Store {
         tx.commit().await?;
         Ok(())
     }
+}
+
+/// Undoing a merge (D-067): its delete of the emptied list, still waiting
+/// to be sent, goes with it, so it can never run before the moves back.
+/// It changed nothing yet (the list stays until it's sent), so dropping
+/// it needs no rollback.
+async fn cancel_waiting_delete(tx: &mut SqliteConnection, undone: &str) -> Result<(), StoreError> {
+    sqlx::query(
+        "DELETE FROM outbox WHERE op = 'list_delete' AND state = 'pending' \
+         AND json_extract(payload_json, '$.after_command') = ?",
+    )
+    .bind(undone)
+    .execute(&mut *tx)
+    .await?;
+    Ok(())
 }
 
 /// An operation as it's queued.

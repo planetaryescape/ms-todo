@@ -307,6 +307,60 @@ async fn delete_source_waits_for_every_move_and_needs_completed_tasks_moved_too(
 }
 
 #[tokio::test]
+async fn undoing_a_merge_drops_its_delete_while_that_still_waits() {
+    let mut env = Env::new();
+    let graph = graph_with(
+        &mut env,
+        Vec::new(),
+        vec![task("E1", "Post parcel", "W/\"E1\"")],
+    )
+    .await;
+    // The delete's emptiness check can't reach Graph, so it waits out a
+    // backoff, still pending.
+    wiremock::Mock::given(wiremock::matchers::method("GET"))
+        .and(wiremock::matchers::path("/v1.0/me/todo/lists/L-err/tasks"))
+        .respond_with(wiremock::ResponseTemplate::new(503))
+        .with_priority(1)
+        .mount(&graph.server)
+        .await;
+    let merged = env.json(&[
+        "lists",
+        "merge",
+        "Errands",
+        "--into",
+        "Groceries",
+        "--delete-source",
+        "--yes",
+    ]);
+    let delete_id = format!("{}.delete", op_id(&merged));
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(20);
+    loop {
+        let waiting = env
+            .outbox()
+            .into_iter()
+            .find(|op| op["op_id"] == delete_id.as_str())
+            .expect("the delete");
+        if waiting["state"] == "pending" && !waiting["last_error"].is_null() {
+            break;
+        }
+        assert!(std::time::Instant::now() < deadline, "{waiting}");
+        std::thread::sleep(std::time::Duration::from_millis(50));
+    }
+
+    env.json(&["undo", &op_id(&merged)]);
+    env.settled();
+    assert!(
+        !env.outbox()
+            .iter()
+            .any(|op| op["op_id"] == delete_id.as_str()),
+        "the waiting delete went with the undo"
+    );
+    assert!(graph.list_named("Errands").is_some(), "never deleted");
+    assert_eq!(graph_titles(&graph, "L-err"), ["Post parcel"]);
+    assert!(graph_titles(&graph, "L-groc").is_empty());
+}
+
+#[tokio::test]
 async fn a_list_graph_still_holds_tasks_in_is_kept() {
     let mut env = Env::new();
     let graph = graph_with(

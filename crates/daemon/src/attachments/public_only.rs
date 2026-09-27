@@ -88,7 +88,9 @@ fn public_v6(ip: Ipv6Addr) -> bool {
         // Unique local, fc00::/7.
         || (first & 0xfe00) == 0xfc00
         // Link-local, fe80::/10.
-        || (first & 0xffc0) == 0xfe80)
+        || (first & 0xffc0) == 0xfe80
+        // Site-local, fec0::/10: deprecated, but still a local network.
+        || (first & 0xffc0) == 0xfec0)
 }
 
 #[cfg(test)]
@@ -112,6 +114,7 @@ mod tests {
             "::1",
             "fd12::1",
             "fe80::1",
+            "fec0::1",
             "::ffff:127.0.0.1",
             "::ffff:10.0.0.1",
         ] {

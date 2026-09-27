@@ -86,6 +86,18 @@ pub(crate) async fn undo(
             format!("{target} was undone already, by {by}; `ms-todo undo {by}` redoes it"),
         ));
     }
+    // A merge's delete of its emptied list being sent right now may take
+    // the list the moves back need; a waiting one is dropped with the
+    // undo (`Store::enqueue`).
+    let delete = crate::list_merge::delete_op_id(&target);
+    if let Some(op) = state.store.outbox_op(&delete).await.map_err(store_error)?
+        && op.state == OpState::Inflight
+    {
+        return Err(error_payload(
+            ErrorKind::Conflict,
+            format!("{delete}, deleting the merged list, is being sent; undo once it's done"),
+        ));
+    }
     if ops.iter().all(|op| op.op.is_list()) {
         return crate::list_undo::undo_lists(state, &target, &ops, &op_id).await;
     }
