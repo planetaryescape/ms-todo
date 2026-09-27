@@ -98,6 +98,12 @@ pub enum Mode {
         /// Why the text can't be sent, shown after it.
         error: Option<String>,
     },
+    /// The inline "Clear the due dates of …? y/n" that an empty due date
+    /// for the tasks `ids` asks; `what` names them as `SettingDue` does.
+    ConfirmClearDue {
+        ids: Vec<String>,
+        what: String,
+    },
     /// `W`: who the tasks `ids` wait on; empty clears it. `what` names
     /// them, as `"Call Sam"` or `3 tasks`.
     Assigning {
@@ -130,6 +136,9 @@ pub enum Mode {
         index: usize,
         before: &'static crate::theme::Builtin,
     },
+    /// "Suggest lists for inbox": the inbox's tasks one by one, each
+    /// with the list the daemon suggests.
+    Triage(super::triage::Triage),
     /// A task's links, to open or copy one.
     Links {
         links: Vec<ms_todo_core::links::Link>,

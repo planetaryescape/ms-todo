@@ -7,6 +7,7 @@ use super::task_list::{due_label, sync_marker};
 use super::{focused, line_input, pane, selection};
 use crate::app::edit::{Field, importance_name};
 use crate::app::line_editor::LineEditor;
+use crate::app::link_form::LinkPart;
 use crate::app::scope::back_on;
 use crate::app::steps::{ChildTarget, DetailRow};
 use crate::app::{App, Mode, Pane, SyncMarker, Task};
@@ -113,6 +114,12 @@ pub fn draw(frame: &mut Frame, area: Rect, app: &App) {
     }
     lines.extend(editable(Field::Due, due(task, app)));
     lines.extend(editable(
+        Field::Start,
+        vec![task.start.map_or_else(none, |start| {
+            Span::raw(start.format("%a %-d %b %Y").to_string())
+        })],
+    ));
+    lines.extend(editable(
         Field::Reminder,
         vec![task.reminder.map_or_else(none, |reminder| {
             Span::raw(reminder.format("%a %-d %b %Y %H:%M").to_string())
@@ -141,9 +148,14 @@ pub fn draw(frame: &mut Frame, area: Rect, app: &App) {
             _ => none(),
         }],
     ));
-    if let Some(recurrence) = &task.recurrence {
-        lines.push(field("Repeats", recurrence.clone()));
-    }
+    lines.extend(editable(
+        Field::Repeat,
+        vec![
+            task.recurrence
+                .as_ref()
+                .map_or_else(none, |recurrence| Span::raw(recurrence.clone())),
+        ],
+    ));
     let highlight = |line: Line<'static>, row: DetailRow| {
         if has_focus && cursor == Some(row) && child_editing.is_none() {
             line.style(selection(theme, true))
@@ -199,7 +211,20 @@ pub fn draw(frame: &mut Frame, area: Rect, app: &App) {
         ]));
     }
     match child_editing {
-        Some((ChildTarget::Link(_), ..)) => lines.extend(typing(vec![label("Link")])),
+        // Each of the link's fields, the one being typed with its cursor.
+        Some((ChildTarget::Link(form), ..)) => {
+            for part in LinkPart::ALL {
+                if part == form.part {
+                    lines.extend(typing(vec![label(part.label())]));
+                } else {
+                    let value = match form.value(part) {
+                        "" => none(),
+                        value => Span::styled(value.to_owned(), theme.text_muted),
+                    };
+                    lines.push(Line::from(vec![label(part.label()), value]));
+                }
+            }
+        }
         _ => {
             // A named link's URL goes on a line of its own, under the name.
             let (first, url) = match task.linked.first() {

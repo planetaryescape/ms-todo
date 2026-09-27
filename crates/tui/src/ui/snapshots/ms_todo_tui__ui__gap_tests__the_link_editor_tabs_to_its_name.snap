@@ -1,0 +1,28 @@
+---
+source: crates/tui/src/ui/gap_tests.rs
+expression: render(&app)
+---
+" ms-todo 9.9.9 · Home                                                                                ● synced "
+"╭ Lists ───────────────╮╭ Home ────────────────────────────────────────────╮╭ Detail ────────────────────────╮"
+"│☼ My Day              ││○ Pay rent                         Oct 1 ★ ↻      ││Title      Pay rent             │"
+"│» Next                ││○ Call Sam                                      ◌ ││                                │"
+"│★ Important          1││○ Water plants                                  ✗ ││Status     open                 │"
+"│▦ Planned            2││✓ Ship blueprint                                  ││List       Home                 │"
+"│∞ All                3││                                                  ││Due        Thu 1 Oct 2026       │"
+"│◔ Assigned            ││                                                  ││Start      none                 │"
+"│⧖ Upcoming            ││                                                  ││Reminder   none                 │"
+"│… Someday             ││                                                  ││Importance high                 │"
+"│✓ Completed          1││                                                  ││Assignee   none                 │"
+"│≡ Tasks               ││                                                  ││Defer      none                 │"
+"│≡ Home               3││                                                  ││Repeat     monthly on day 1     │"
+"│                      ││                                                  ││Steps      none                 │"
+"│                      ││                                                  ││Link URL                        │"
+"│                      ││                                                  ││https://example.com/rent        │"
+"│                      ││                                                  ││Link name  Landlord portal█     │"
+"│                      ││                                                  ││Link app   none                 │"
+"│                      ││                                                  ││Link ID    none                 │"
+"│                      ││                                                  ││Files      none                 │"
+"│                      ││                                                  ││Sync       synced               │"
+"╰──────────────────────╯╰──────────────────────────────────────────────────╯╰────────────────────────────────╯"
+" ● daemon  ·  synced 12s ago  ·  all changes sent                                                             "
+" Link name:  Enter Save  Tab Next field  Esc Cancel  ←/→ Move                                                 "

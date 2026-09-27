@@ -20,23 +20,29 @@ pub enum Field {
     #[default]
     Title,
     Due,
+    /// The day it starts (rung 8e's `--start`).
+    Start,
     Reminder,
     Importance,
     /// Who the task waits on (rung 8d).
     Assignee,
     /// When the task comes back into view, or Someday (rung 9a).
     Defer,
+    /// How it repeats, as `--recur` reads it.
+    Repeat,
     Notes,
 }
 
 impl Field {
-    pub const ALL: [Self; 7] = [
+    pub const ALL: [Self; 9] = [
         Self::Title,
         Self::Due,
+        Self::Start,
         Self::Reminder,
         Self::Importance,
         Self::Assignee,
         Self::Defer,
+        Self::Repeat,
         Self::Notes,
     ];
 
@@ -44,10 +50,12 @@ impl Field {
         match self {
             Self::Title => "Title",
             Self::Due => "Due",
+            Self::Start => "Start",
             Self::Importance => "Importance",
             Self::Reminder => "Reminder",
             Self::Assignee => "Assignee",
             Self::Defer => "Defer",
+            Self::Repeat => "Repeat",
             Self::Notes => "Notes",
         }
     }
@@ -58,10 +66,14 @@ impl Field {
         match self {
             Self::Title => "the new title",
             Self::Due => "today, fri, next mon, +3d, 12 oct or 2026-10-02; empty clears",
+            Self::Start => "fri, next mon or 2026-10-02, also the due date if none; empty clears",
             Self::Importance => "1 high, 2 or 3 normal, 4 low",
             Self::Reminder => "17:30, tomorrow 9am or fri 5:30pm; empty clears",
             Self::Assignee => "who it waits on, a name or an email; empty clears",
             Self::Defer => "hide it until fri, next week or 2026-10-02; someday; empty shows it",
+            Self::Repeat => {
+                "every mon, every 2 weeks on tue, weekday, every month on the 1st; empty stops"
+            }
             Self::Notes => "plain text, or empty to clear",
         }
     }
@@ -73,6 +85,17 @@ impl Field {
             Self::Due => task
                 .due
                 .map(|due| due.format(ms_todo_core::DATE_FORMAT).to_string())
+                .unwrap_or_default(),
+            Self::Start => task
+                .start
+                .map(|start| start.format(ms_todo_core::DATE_FORMAT).to_string())
+                .unwrap_or_default(),
+            // Its description when no phrase says it, which Enter leaves
+            // alone rather than clearing.
+            Self::Repeat => task
+                .repeat_phrase
+                .clone()
+                .or_else(|| task.recurrence.clone())
                 .unwrap_or_default(),
             Self::Importance => importance_name(task.importance).to_owned(),
             Self::Reminder => task
@@ -151,6 +174,8 @@ pub fn parse(
         Field::Importance => None,
         Field::Assignee => assignee_edit(typed, task.assignee.as_deref()),
         Field::Defer => defer_edit(typed, task, now)?,
+        Field::Start => schedule::start_edit(typed, task, now)?,
+        Field::Repeat => schedule::repeat_edit(typed, task, now)?,
         // Compared as rendered, so html notes left alone stay html.
         Field::Notes => (typed != task.notes().unwrap_or_default()).then(|| TaskEdit {
             body: Some(typed.to_owned()),
@@ -238,8 +263,8 @@ impl App {
     pub fn date_preview(&self) -> Option<Result<String, String>> {
         let (field, input) = match &self.mode {
             Mode::Editing { field, input, .. } => (field, input),
-            // Several tasks' due date: nothing typed is nothing to show,
-            // not a clear.
+            // Several tasks' due date: nothing typed clears them after a
+            // question, which the hint bar says.
             Mode::SettingDue { input, .. } if !input.text().trim().is_empty() => {
                 (&Field::Due, input)
             }
@@ -251,8 +276,9 @@ impl App {
             Field::Defer if text.trim().eq_ignore_ascii_case(SOMEDAY) => {
                 Ok("\u{2192} Someday: hidden until you take it out".to_owned())
             }
-            Field::Due | Field::Defer => read_due(&text, &now).map(preview_line),
+            Field::Due | Field::Defer | Field::Start => read_due(&text, &now).map(preview_line),
             Field::Reminder => read_reminder(&text, &now).map(preview_line),
+            Field::Repeat => return Some(schedule::repeat_preview(&text, &now)),
             _ => return None,
         };
         Some(resolved.map_err(|why| capitalised(&why.0)))
@@ -428,5 +454,6 @@ pub(super) fn protocol_importance(level: ms_todo_nlp::Importance) -> Importance 
     }
 }
 
+mod schedule;
 #[cfg(test)]
 mod tests;

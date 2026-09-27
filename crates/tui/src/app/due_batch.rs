@@ -2,7 +2,8 @@
 //! the selection, or the task under the cursor, and "Reschedule overdue
 //! to…" (`R`) for the open tasks on screen that are overdue. The day is
 //! read, previewed and checked as the due-date editor's is, and one
-//! `ChangeTasks` goes out, so one `u` puts every task back.
+//! `ChangeTasks` goes out, so one `u` puts every task back. Nothing typed,
+//! or `-`, clears their due dates once `y` confirms it (D-066).
 
 use ms_todo_core::DATE_FORMAT;
 use ms_todo_nlp::read_due;
@@ -56,24 +57,39 @@ impl App {
     }
 
     /// Enter: send the day typed to every task, or say why it can't be.
+    /// Nothing typed, or `-`, asks before clearing them.
     pub(super) fn submit_set_due(&mut self) -> Vec<Effect> {
         let Mode::SettingDue { input, .. } = &self.mode else {
             return Vec::new();
         };
         let due = match set_value(read_due(&input.text(), &self.parse_context())) {
-            Ok(Some(due)) => due,
-            Ok(None) => return self.due_error("Type a day, such as tomorrow or fri"),
+            Ok(due) => due,
             Err(why) => return self.due_error(&why),
         };
-        let Mode::SettingDue { ids, .. } = std::mem::replace(&mut self.mode, Mode::Normal) else {
+        let Mode::SettingDue { ids, what, .. } = std::mem::replace(&mut self.mode, Mode::Normal)
+        else {
+            return Vec::new();
+        };
+        let Some(due) = due else {
+            self.mode = Mode::ConfirmClearDue { ids, what };
             return Vec::new();
         };
         self.selection.clear();
-        let edit = TaskEdit {
-            due: Some(Clearable::Set(due.format(DATE_FORMAT).to_string())),
-            ..TaskEdit::default()
+        vec![due_change(
+            ids,
+            Clearable::Set(due.format(DATE_FORMAT).to_string()),
+        )]
+    }
+
+    /// `y` on "Clear the due dates …?": one change, so one `u` puts them
+    /// all back.
+    pub(super) fn confirm_clear_due(&mut self) -> Vec<Effect> {
+        let Mode::ConfirmClearDue { ids, .. } = std::mem::replace(&mut self.mode, Mode::Normal)
+        else {
+            return Vec::new();
         };
-        vec![change(Write::Edit, ids, TaskChange::Edit(edit))]
+        self.selection.clear();
+        vec![due_change(ids, Clearable::Clear)]
     }
 
     fn due_error(&mut self, why: &str) -> Vec<Effect> {
@@ -82,6 +98,14 @@ impl App {
         }
         Vec::new()
     }
+}
+
+fn due_change(ids: Vec<String>, due: Clearable<String>) -> Effect {
+    let edit = TaskEdit {
+        due: Some(due),
+        ..TaskEdit::default()
+    };
+    change(Write::Edit, ids, TaskChange::Edit(edit))
 }
 
 #[cfg(test)]
@@ -130,9 +154,6 @@ mod tests {
         act(&mut app, Action::SetDue);
         assert_eq!(app.context(), Context::Prompt);
         assert!(matches!(&app.mode, Mode::SettingDue { what, .. } if what == "2 tasks"));
-        // Nothing typed is an error, never a clear.
-        assert!(act(&mut app, Action::Submit).is_empty());
-        assert!(matches!(&app.mode, Mode::SettingDue { error: Some(_), .. }));
         typed(&mut app, "tomorrow");
         assert!(matches!(&app.mode, Mode::SettingDue { error: None, .. }));
         assert_eq!(app.date_preview(), Some(Ok("\u{2192} Fri 25 Sep".into())));
@@ -141,6 +162,44 @@ mod tests {
         assert_eq!(change, due_on("2026-09-25"));
         assert_eq!(app.mode, Mode::Normal);
         assert!(app.selection.is_empty(), "done with once sent");
+    }
+
+    #[test]
+    fn nothing_typed_or_a_dash_clears_every_due_date_once_confirmed() {
+        for cleared in ["", "-", "  "] {
+            let mut app = seeded();
+            act(&mut app, Action::ToggleSelect);
+            act(&mut app, Action::MoveDown);
+            act(&mut app, Action::ToggleSelect);
+            act(&mut app, Action::SetDue);
+            typed(&mut app, cleared);
+            // Asked first: nothing is sent yet.
+            assert!(act(&mut app, Action::Submit).is_empty());
+            assert!(
+                matches!(&app.mode, Mode::ConfirmClearDue { ids, what } if ids.len() == 2 && what == "2 tasks"),
+                "{cleared:?}"
+            );
+            assert_eq!(app.context(), Context::Confirm);
+            let (tasks, change) = due_edit(&act(&mut app, Action::Confirm));
+            assert_eq!(tasks, ["t1", "t2"]);
+            assert_eq!(
+                change,
+                TaskChange::Edit(TaskEdit {
+                    due: Some(Clearable::Clear),
+                    ..TaskEdit::default()
+                })
+            );
+            assert_eq!(app.mode, Mode::Normal);
+            assert!(app.selection.is_empty());
+        }
+        // n keeps them, and the selection.
+        let mut app = seeded();
+        act(&mut app, Action::SelectAll);
+        act(&mut app, Action::SetDue);
+        act(&mut app, Action::Submit);
+        assert!(act(&mut app, Action::Cancel).is_empty());
+        assert_eq!(app.mode, Mode::Normal);
+        assert_eq!(app.selection.len(), 4);
     }
 
     #[test]

@@ -59,6 +59,7 @@ fn place_context(context: Context) -> (Section, &'static str) {
         Context::Adding => (Section::Prompts, "Quick add"),
         Context::Notes => (Section::Prompts, "Notes"),
         Context::Folder => (Section::Prompts, "Move list to folder"),
+        Context::LinkForm => (Section::Prompts, "Editing a link"),
         Context::Fields => (Section::Prompts, "Picking a field (e)"),
         Context::Importance => (Section::Prompts, "Importance"),
         Context::Confirm => (Section::Prompts, "Confirming a delete"),
@@ -67,6 +68,7 @@ fn place_context(context: Context) -> (Section, &'static str) {
         Context::Picker => (Section::Views, "Undoing a recurring task"),
         Context::Themes => (Section::Views, "Theme picker"),
         Context::Links => (Section::Views, "Links"),
+        Context::Triage => (Section::Views, "Suggest lists for inbox"),
         Context::Diagnostics => (Section::Views, "Diagnostics (D)"),
         Context::Help => (Section::Views, "This help"),
     }
@@ -82,7 +84,7 @@ fn is_browsing(context: &Context) -> bool {
 fn is_prompt(context: &Context) -> bool {
     matches!(
         context,
-        Context::Prompt | Context::Adding | Context::Notes | Context::Folder
+        Context::Prompt | Context::Adding | Context::Notes | Context::Folder | Context::LinkForm
     )
 }
 
@@ -107,6 +109,8 @@ fn place(binding: &Binding) -> (Section, Option<&'static str>) {
                 | Action::FocusRight
                 | Action::FocusNext
                 | Action::Open
+                | Action::ReorderUp
+                | Action::ReorderDown
                 | Action::Help
                 | Action::Quit => Section::Navigation,
                 Action::Palette | Action::Diagnostics | Action::NextContext => Section::Views,

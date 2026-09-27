@@ -3,16 +3,17 @@
 //! and the link, then the notes, in the order they're drawn. With it on
 //! a step or the link, `space` checks or unchecks the step, `a` adds a
 //! step (Enter adds the next one, Esc stops), `e` or Enter edits the step
-//! or the link's URL (adding one when there's none), and `d` deletes
+//! or the link (adding one when there's none; Tab moves from its URL to
+//! its name, app and external ID, `link_form`), and `d` deletes
 //! either, after asking. Graph has no order for steps (S15), so there's
 //! no moving them. Every change is a `ChangeTasks` write, so `u` undoes
 //! it.
 
-use ms_todo_core::links::{openable, storable};
-use ms_todo_protocol::{LinkEdit, NewLink, TaskChange};
+use ms_todo_protocol::TaskChange;
 
 use super::edit::Field;
-use super::{App, Effect, Level, LineEditor, Mode, Pane, Task, Write};
+use super::link_form::LinkForm;
+use super::{App, Effect, LineEditor, Mode, Pane, Task, Write};
 use crate::action::Action;
 
 /// A row of the detail pane the cursor can be on, in the order drawn.
@@ -88,8 +89,8 @@ pub enum ChildTarget {
     NewStep,
     /// The step with this ID.
     Step(String),
-    /// The link with this ID, or a new one.
-    Link(Option<String>),
+    /// The link, or a new one, and what's typed in its other fields.
+    Link(LinkForm),
 }
 
 impl ChildTarget {
@@ -98,8 +99,7 @@ impl ChildTarget {
         match self {
             Self::NewStep => "New step",
             Self::Step(_) => "Edit step",
-            Self::Link(None) => "Link URL",
-            Self::Link(Some(_)) => "Edit link URL",
+            Self::Link(form) => form.part.label(),
         }
     }
 }
@@ -185,9 +185,9 @@ impl App {
                 Vec::new()
             }
             (Action::Edit | Action::EditHere, DetailRow::Link) => {
-                let url = task.linked.first().map(|(url, _)| url.clone());
-                let target = ChildTarget::Link(task.link_id.clone());
-                self.prompt(&task, target, url.as_deref().unwrap_or_default());
+                let form = LinkForm::of(&task);
+                let url = form.value(form.part).to_owned();
+                self.prompt(&task, ChildTarget::Link(form), &url);
                 Vec::new()
             }
             (Action::Delete, DetailRow::Step(at)) => {
@@ -240,6 +240,19 @@ impl App {
         let Some(task) = self.task_in_scope(&id).cloned() else {
             return self.gone();
         };
+        if let ChildTarget::Link(form) = target {
+            return match self.link_change(&task, form, text) {
+                Err(why) => self.refuse(&why),
+                Ok(None) => {
+                    self.mode = Mode::Normal;
+                    Vec::new()
+                }
+                Ok(Some(change)) => {
+                    self.mode = Mode::Normal;
+                    vec![change_one(&task, change)]
+                }
+            };
+        }
         let change = match (&target, text.is_empty()) {
             (ChildTarget::NewStep, true) => {
                 self.mode = Mode::Normal;
@@ -266,35 +279,8 @@ impl App {
                     text,
                 }
             }
-            (ChildTarget::Link(_), true) => {
-                return self.refuse("Type a URL; d deletes the link");
-            }
-            (ChildTarget::Link(link), false) => {
-                if let Err(why) = storable(&text) {
-                    return self.refuse(&format!("Not a link: {why}"));
-                }
-                if openable(&text).is_err() {
-                    self.show(
-                        Level::Info,
-                        "Kept, but only http, https and mailto links open",
-                    );
-                }
-                match link {
-                    None => TaskChange::AddLink(NewLink {
-                        url: text,
-                        ..NewLink::default()
-                    }),
-                    Some(_) if task.linked.first().is_some_and(|(url, _)| *url == text) => {
-                        self.mode = Mode::Normal;
-                        return Vec::new();
-                    }
-                    Some(link) => TaskChange::EditLink(LinkEdit {
-                        link: Some(link.clone()),
-                        url: Some(text),
-                        ..LinkEdit::default()
-                    }),
-                }
-            }
+            // Sent above.
+            (ChildTarget::Link(_), _) => return Vec::new(),
         };
         self.mode = Mode::Normal;
         vec![change_one(&task, change)]

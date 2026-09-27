@@ -1,0 +1,28 @@
+---
+source: crates/tui/src/ui/gap_tests.rs
+expression: render(&app)
+---
+" ms-todo 9.9.9 · Planned                                                                             ● synced "
+"╭ Lists ───────────────╮╭ Planned ─────────────────────────────────────────╮╭ Detail ────────────────────────╮"
+"│☼ My Day              ││                                                  ││                                │"
+"│» Next                ││                                                  ││                                │"
+"│★ Important          1││╭ Palette ─────────────────────────────────────────────────╮                        │"
+"│▦ Planned            2│││: █                                                       │                        │"
+"│∞ All                3│││                                                          │                        │"
+"│◔ Assigned            │││Diagnostics                                              D│                        │"
+"│⧖ Upcoming            │││Go to Planned                                             │                        │"
+"│… Someday             │││Sync                                                     r│                        │"
+"│✓ Completed          1│││Add                                                      a│                        │"
+"│≡ Tasks               │││Done                                                     x│                        │"
+"│≡ Home               3│││Edit                                                     e│                        │"
+"│                      │││Delete                                                   d│                        │"
+"│                      │││Set due date…                                            S│                        │"
+"│                      │││Reschedule overdue to…                                   R│                        │"
+"│                      │││Move to list…                                            m│                        │"
+"│                      │││Select                                                   v│                        │"
+"│                      │││Select all                                               V│                        │"
+"│                      ││╰──────────────────────────────────────────────────────────╯                        │"
+"│                      ││                                                  ││                                │"
+"╰──────────────────────╯╰──────────────────────────────────────────────────╯╰────────────────────────────────╯"
+" ● daemon  ·  synced 12s ago  ·  all changes sent                                                             "
+" Enter Run  Esc Close                                                                                         "

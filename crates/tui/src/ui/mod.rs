@@ -22,6 +22,7 @@ mod status_line;
 mod task_list;
 mod theme_picker;
 mod title_bar;
+mod triage;
 
 use ratatui::Frame;
 use ratatui::layout::{Constraint, Layout, Rect};
@@ -83,6 +84,7 @@ pub fn draw(frame: &mut Frame, app: &App) {
         Mode::Diagnostics => diagnostics::draw(frame, main, app),
         Mode::Themes { index, .. } => theme_picker::draw(frame, app, *index),
         Mode::Links { links, index } => link_picker::draw(frame, app, links, *index),
+        Mode::Triage(triage) => triage::draw(frame, app, triage),
         _ => {}
     }
 }
@@ -130,5 +132,7 @@ fn centered(area: Rect, width: u16, height: u16) -> Rect {
     }
 }
 
+#[cfg(test)]
+mod gap_tests;
 #[cfg(test)]
 mod tests;

@@ -22,6 +22,8 @@ pub enum Tag {
     Folders,
     /// A list made, renamed or deleted (rung 8e).
     Lists,
+    /// A list or folder moved up or down the sidebar (D-066).
+    Order,
     Undo,
     Sync,
     Diagnostics(Part),
@@ -33,6 +35,11 @@ pub enum Tag {
     Download,
     /// The active context switched (rung 9d).
     Context,
+    /// The inbox's tasks, for "Suggest lists for inbox" (D-066), and a
+    /// list suggestion for the task being triaged: each numbered, so an
+    /// answer meant for another session or task is dropped.
+    TriageInbox(u64),
+    TriageSuggest(u64),
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]

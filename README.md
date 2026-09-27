@@ -167,11 +167,12 @@ In the TUI's add box, a likely list shows as `→ Finances? (Ctrl-l to accept)`.
 | `PgUp` / `PgDn` | move about one screenful in the sidebar, task list or detail pane; group headings count as rows |
 | `h` / `l`, `Tab` | move between the sidebar, the task list and the detail pane |
 | `Enter` / `Space` in the sidebar | open a list or view; on a folder, fold or unfold it |
+| `K` / `J` (or `Alt-Up` / `Alt-Down`) in the sidebar | move the list up or down within its folder, or the folder among the folders |
 | `a` | quick add, in a box in the middle of the screen: each part it reads is coloured as you type, with the task it makes underneath. `Tab` completes a `#List` or `@label`, `Ctrl-r` takes the text literally, `Ctrl-l` takes a suggested list, `Enter` adds |
 | `x` | complete, or reopen a completed task |
-| `e` | edit a field: `t` title, `d` due date, `r` reminder, `i` importance, `a` assignee, `f` defer date (or `someday`), `n` notes, `I` cycles importance; in the detail pane, edits the field under the cursor |
+| `e` | edit a field: `t` title, `d` due date, `s` start date, `r` reminder, `i` importance, `a` assignee, `f` defer date (or `someday`), `p` repeat (`every mon`; empty stops it), `n` notes, `I` cycles importance; in the detail pane, edits the field under the cursor |
 | `Enter` in the detail pane | edit the field under the cursor |
-| `Space` on a step in the detail pane | check or uncheck it; `a` adds steps, `e` / `Enter` edits a step or the link, `d` deletes one |
+| `Space` on a step in the detail pane | check or uncheck it; `a` adds steps, `e` / `Enter` edits a step or the link (`Tab` moves from its URL to its name, app and ID), `d` deletes one |
 | `A` | attach a file by its path; on a file in the detail pane, `Enter`, `e` or `o` saves it to `~/Downloads` and opens it, `d` deletes it |
 | `v` / `V` | select a task, or every task in the view; `Esc` clears the selection |
 | `t` | put the task or the selection in My Day, or take it out; on a suggestion in the My Day view, add it |
@@ -181,12 +182,12 @@ In the TUI's add box, a likely list shows as `→ Finances? (Ctrl-l to accept)`.
 | `c` | switch to the next [context](#contexts), then none; `:` then "Context: …" picks one |
 | `m` | move the task or the selection to another list |
 | `M` | move the current list into a folder |
-| `S` | set one due date on the selection |
+| `S` | set one due date on the selection; empty or `-` clears them, after a `y` / `n` |
 | `R` | reschedule every overdue task in the view |
 | `d` | delete, after a `y` / `n` confirmation |
 | `u` | undo the last change |
 | `/` | filter the view as you type; `Ctrl-s` switches the filter to meaning ([search by meaning](docs/usage.md#search-by-meaning)) |
-| `:` | the command palette: any action, list or view by name, and "New list…", "Rename list…", "Delete list…" |
+| `:` | the command palette: any action, list or view by name, and "New list…", "Rename list…", "Delete list…", "Suggest lists for inbox" (each inbox task in turn with its suggested list: `Enter` moves it, `s` skips). The last ten commands run from it come first |
 | `D` | diagnostics: sign-in, daemon, cache, each list's sync and the outbox |
 | `o` / `y` | open or copy the task's link |
 | `r` | sync now |

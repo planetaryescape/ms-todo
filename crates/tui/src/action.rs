@@ -16,6 +16,10 @@ pub enum Action {
     Open,
     /// "Move list to folder…": ask for a folder for the current list.
     MoveToFolder,
+    /// `K` and `J` in the sidebar: move the list under the cursor up or
+    /// down within its folder, or the folder among the folders.
+    ReorderUp,
+    ReorderDown,
     /// Tab in the folder prompt: take the first suggestion; in quick add,
     /// finish a `#List` or `@label`.
     Complete,
@@ -110,4 +114,9 @@ pub enum Action {
     ToggleDeferred,
     /// `c`: the next context from config.toml, then none (rung 9d).
     NextContext,
+    /// "Suggest lists for inbox" in the palette: triage the inbox's tasks
+    /// one by one (D-066).
+    TriageInbox,
+    /// `s` in the triage: leave this task where it is, and show the next.
+    Skip,
 }

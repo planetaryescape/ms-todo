@@ -60,16 +60,26 @@ pub struct Task {
     pub importance: Importance,
     /// Local date (S11).
     pub due: Option<NaiveDate>,
+    /// Graph's `startDateTime`, a local date as the due date is.
+    pub start: Option<NaiveDate>,
     /// Local time, when the reminder is on.
     pub reminder: Option<NaiveDateTime>,
     /// "every 2 weeks on Mon", for a recurring task.
     pub recurrence: Option<String>,
+    /// The same recurrence as the Repeat field takes it (`every 2 weeks
+    /// on mon`), for its editor to start from; `None` when the phrase
+    /// grammar can't say it.
+    pub repeat_phrase: Option<String>,
     /// The notes as Graph has them; [`Task::notes`] renders them.
     pub body: Option<Body>,
     /// Graph's `linkedResources`, as `(webUrl, displayName)`.
     pub linked: Vec<(String, Option<String>)>,
     /// The link's ID, to change or delete it: Graph allows one (S14).
     pub link_id: Option<String>,
+    /// The link's `applicationName` and `externalId`, which its editor
+    /// starts from.
+    pub link_app: Option<String>,
+    pub link_external_id: Option<String>,
     /// Graph's `checklistItems`, in its order.
     pub steps: Vec<Step>,
     /// Its attachments, in Graph's order, once a sync has fetched them.
@@ -145,10 +155,12 @@ impl Task {
                 })
             })
             .collect();
-        let link_id = entity
-            .get("linkedResources")
-            .and_then(|links| links.get(0)?.get("id")?.as_str())
-            .map(str::to_owned);
+        let link_field = |key: &str| {
+            entity
+                .get("linkedResources")
+                .and_then(|links| links.get(0)?.get(key)?.as_str())
+                .map(str::to_owned)
+        };
         Some(Self {
             id: text("id")?.to_owned(),
             list_id: text("list_id").unwrap_or_default().to_owned(),
@@ -161,13 +173,17 @@ impl Task {
                 _ => Importance::Normal,
             },
             due: date_time("dueDateTime").and_then(|(at, zone)| local_due_date(at, zone)),
+            start: date_time("startDateTime").and_then(|(at, zone)| local_due_date(at, zone)),
             reminder: date_time("reminderDateTime")
                 .filter(|_| entity.get("isReminderOn").and_then(Value::as_bool) == Some(true))
                 .and_then(|(at, zone)| local_date_time(at, zone)),
             recurrence: entity.get("recurrence").and_then(describe_recurrence),
+            repeat_phrase: entity.get("recurrence").and_then(recurrence_phrase),
             body: entity.get("body").and_then(Body::of),
             linked: ms_todo_core::links::linked_resources(entity),
-            link_id,
+            link_id: link_field("id"),
+            link_app: link_field("applicationName"),
+            link_external_id: link_field("externalId"),
             steps,
             has_attachments: !attachments.is_empty()
                 || entity.get("hasAttachments").and_then(Value::as_bool) == Some(true),
@@ -283,6 +299,90 @@ impl Task {
         let text = text.trim();
         (!text.is_empty()).then(|| text.to_owned())
     }
+}
+
+/// Graph's `patternedRecurrence` in the words the Repeat field and
+/// `--recur` read, so its editor opens on text that reads back as the
+/// same recurrence: `every 2 weeks on mon, thu`, `every month on the 1st`,
+/// `every last fri until 2026-12-31`. `None` for a pattern the grammar
+/// has no words for, such as `relativeYearly` or every 2 years.
+pub fn recurrence_phrase(recurrence: &Value) -> Option<String> {
+    let pattern = recurrence.get("pattern")?;
+    let interval = pattern.get("interval").and_then(Value::as_u64).unwrap_or(1);
+    let days = || -> Option<String> {
+        let days: Vec<String> = pattern
+            .get("daysOfWeek")?
+            .as_array()?
+            .iter()
+            .filter_map(Value::as_str)
+            .map(|day| day.chars().take(3).collect::<String>().to_lowercase())
+            .collect();
+        (!days.is_empty()).then(|| days.join(", "))
+    };
+    let every = |unit: &str| match interval {
+        1 => format!("every {unit}"),
+        n => format!("every {n} {unit}s"),
+    };
+    let day_of_month = || pattern.get("dayOfMonth").and_then(Value::as_u64);
+    let mut phrase = match pattern.get("type")?.as_str()? {
+        "daily" => every("day"),
+        "weekly" => match (interval, days()) {
+            (1, Some(days)) => format!("every {days}"),
+            (_, Some(days)) => format!("{} on {days}", every("week")),
+            (_, None) => every("week"),
+        },
+        "absoluteMonthly" => format!("{} on the {}", every("month"), ordinal(day_of_month()?)),
+        "relativeMonthly" => {
+            let index = pattern
+                .get("index")
+                .and_then(Value::as_str)
+                .unwrap_or("first");
+            match interval {
+                1 => format!("every {index} {}", days()?),
+                _ => format!("{} on the {index} {}", every("month"), days()?),
+            }
+        }
+        "absoluteYearly" => {
+            let month = pattern.get("month").and_then(Value::as_u64)?;
+            let date = NaiveDate::from_ymd_opt(
+                2000,
+                u32::try_from(month).ok()?,
+                u32::try_from(day_of_month()?).ok()?,
+            )?;
+            let date = date.format("%-d %b").to_string().to_lowercase();
+            // The grammar has a date only for every year: "every 2
+            // years" takes its day from the start date, so has no words.
+            match interval {
+                1 => format!("every {date}"),
+                _ => return None,
+            }
+        }
+        _ => return None,
+    };
+    let range = recurrence.get("range");
+    match range.and_then(|range| range.get("type")?.as_str()) {
+        Some("endDate") => {
+            let until = range?.get("endDate")?.as_str()?;
+            phrase.push_str(&format!(" until {until}"));
+        }
+        Some("numbered") => {
+            let count = range?.get("numberOfOccurrences")?.as_u64()?;
+            phrase.push_str(&format!(" for {count} times"));
+        }
+        _ => {}
+    }
+    Some(phrase)
+}
+
+fn ordinal(day: u64) -> String {
+    let suffix = match (day % 10, day % 100) {
+        (_, 11..=13) => "th",
+        (1, _) => "st",
+        (2, _) => "nd",
+        (3, _) => "rd",
+        _ => "th",
+    };
+    format!("{day}{suffix}")
 }
 
 /// Graph's `patternedRecurrence` in a few words: "daily", "every 2 weeks
