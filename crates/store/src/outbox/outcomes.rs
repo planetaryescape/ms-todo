@@ -4,6 +4,7 @@
 use serde_json::Value;
 use sqlx::SqliteConnection;
 
+use super::SKIPPED_NOTE;
 use super::enqueue::apply_body;
 use super::operation::{OpKind, OpState, OutboxRow, op_in};
 use super::task_rows::{replace_row, row_identity, tombstone_row};
@@ -222,6 +223,19 @@ impl Store {
     pub async fn mark_done(&self, op_id: &str) -> Result<(), StoreError> {
         let mut tx = self.writer().begin().await?;
         finish(&mut tx, op_id, OpState::Done, None).await?;
+        // A task deleted takes its steps, link and files with it: a child
+        // write queued before the delete and not sent, or unknown, is moot.
+        sqlx::query(
+            "UPDATE outbox SET state = 'done', finished_at = ?, note = ? \
+             WHERE op = 'child' AND state IN ('pending', 'unknown') AND EXISTS \
+             (SELECT 1 FROM outbox d WHERE d.op_id = ? AND d.op = 'delete' \
+             AND d.entity_local_id = outbox.entity_local_id AND d.seq > outbox.seq)",
+        )
+        .bind(now())
+        .bind(format!("{SKIPPED_NOTE} its task was deleted"))
+        .bind(op_id)
+        .execute(&mut *tx)
+        .await?;
         tx.commit().await?;
         Ok(())
     }

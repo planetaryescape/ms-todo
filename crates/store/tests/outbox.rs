@@ -621,3 +621,121 @@ async fn a_created_step_takes_graphs_id_everywhere_a_queued_change_names_it() {
     let (_, flagged) = store.outbox_depth().await.expect("depth");
     assert_eq!(flagged, 1, "no marker can find a step, so the user decides");
 }
+
+/// T1 synced into the list, with one step `s1` called "A"; its local ID.
+async fn with_step(store: &Store, list: &str) -> String {
+    let rev = store.local_rev().await.expect("rev");
+    let mut raw = task("T1", "Paint", "e1");
+    raw.insert(
+        "checklistItems".into(),
+        json!([{ "id": "s1", "displayName": "A", "isChecked": false }]),
+    );
+    store
+        .apply_tasks(TasksPass {
+            scope: tasks_scope("L1"),
+            list_local_id: list.to_owned(),
+            rev,
+            seen: vec![SeenTask {
+                raw,
+                hydration: Hydration::Kept,
+            }],
+            gone: Vec::new(),
+            failure: None,
+            cursor: whole(),
+        })
+        .await
+        .expect("sync");
+    store.tasks_in_list(list).await.expect("tasks")[0]
+        .local_id
+        .clone()
+}
+
+fn rename_step(op_id: &str, local: &str, list: &str, name: &str) -> NewOp {
+    child(
+        op_id,
+        local,
+        list,
+        ChildVerb::Update,
+        "s1",
+        json!({ "displayName": name }),
+    )
+}
+
+#[tokio::test]
+async fn a_cascade_takes_a_child_written_twice_back_to_where_it_began() {
+    let (_dir, store, list) = open().await;
+    let local = with_step(&store, &list).await;
+    store
+        .enqueue("op-0", None, vec![edit("op-0", &local, &list, "Paint it")])
+        .await
+        .expect("edit");
+    store
+        .enqueue("op-1", None, vec![rename_step("op-1", &local, &list, "B")])
+        .await
+        .expect("A to B");
+    store
+        .enqueue("op-2", None, vec![rename_step("op-2", &local, &list, "C")])
+        .await
+        .expect("B to C");
+
+    let cascaded = store
+        .fail_op("op-0", ("rejected", "no"), &Restore::Nothing)
+        .await
+        .expect("fail");
+    assert_eq!(cascaded, ["op-1", "op-2"]);
+    let row = store.task(&local).await.expect("read").expect("task");
+    assert_eq!(row.raw["checklistItems"][0]["displayName"], "A");
+}
+
+#[tokio::test]
+async fn a_task_delete_skips_its_unsent_child_writes_only_once_it_is_done() {
+    let (_dir, store, list) = open().await;
+    let local = with_step(&store, &list).await;
+    let before = store.task(&local).await.expect("read").expect("task").raw;
+    let delete = |op_id: &str| NewOp {
+        op_id: op_id.into(),
+        entity_local_id: local.clone(),
+        list_local_id: list.clone(),
+        op: OpKind::Delete,
+        action: "delete".into(),
+        payload: json!({}),
+        change: LocalChange::Tombstone,
+    };
+    store
+        .enqueue("op-1", None, vec![rename_step("op-1", &local, &list, "B")])
+        .await
+        .expect("rename");
+    store
+        .enqueue("op-2", None, vec![delete("op-2")])
+        .await
+        .expect("delete");
+    let ready: Vec<String> = store
+        .ready_ops(i64::MAX)
+        .await
+        .expect("ready")
+        .into_iter()
+        .map(|op| op.op_id)
+        .collect();
+    assert_eq!(
+        ready,
+        ["op-1", "op-2"],
+        "the delete doesn't wait on the step"
+    );
+
+    // Rejected, the delete leaves the step to be sent.
+    store
+        .fail_op("op-2", ("rejected", "no"), &Restore::Replace(before))
+        .await
+        .expect("fail");
+    let step = store.outbox_op("op-1").await.expect("read").expect("op");
+    assert_eq!(step.state, OpState::Pending);
+
+    // Done, it takes the step with it.
+    store
+        .enqueue("op-3", None, vec![delete("op-3")])
+        .await
+        .expect("delete again");
+    store.mark_done("op-3").await.expect("done");
+    let step = store.outbox_op("op-1").await.expect("read").expect("op");
+    assert!(step.was_skipped(), "{step:?}");
+}

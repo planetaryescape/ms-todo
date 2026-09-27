@@ -192,7 +192,9 @@ async fn cascade(
     .bind(op_id)
     .fetch_all(&mut *tx)
     .await?;
-    for waiter in &waiting {
+    // Newest first, so a child written twice (A to B, then B to C) goes
+    // back to A, not to B.
+    for waiter in waiting.iter().rev() {
         let op = op_in(tx, waiter).await?;
         if op.op == OpKind::Child
             && let Some(before) = &op.rollback
@@ -202,6 +204,8 @@ async fn cascade(
             let reverted = revert_child(&current, &op.payload, before);
             replace_row(tx, &op.entity_local_id, &reverted, rev).await?;
         }
+    }
+    for waiter in &waiting {
         finish(tx, waiter, OpState::Failed, Some(("rejected", cause))).await?;
         sqlx::query("UPDATE outbox SET note = ? WHERE op_id = ?")
             .bind(cause)

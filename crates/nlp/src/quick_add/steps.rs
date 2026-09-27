@@ -21,7 +21,8 @@ pub(super) fn split(input: &str) -> Option<(usize, Vec<String>)> {
 }
 
 /// The first ` :: ` outside quotes, as the quotes pass pairs them: an
-/// escaped quote (`\"`) is a character, and one with no partner is too.
+/// escaped quote (`\"`) is a character, and after one with no partner
+/// the rest is text.
 fn marker(input: &str) -> Option<usize> {
     let bytes = input.as_bytes();
     let mut at = 0;
@@ -43,7 +44,8 @@ fn marker(input: &str) -> Option<usize> {
                 } else {
                     super::passes::closing_quote(input, at)
                 };
-                at = close.map_or(at + 1, |close| close + 1);
+                // Unclosed, the rest is text, as the quotes pass reads it.
+                at = close? + 1;
             }
             b':' if bytes.get(at + 1) == Some(&b':')
                 && input[..at].ends_with(char::is_whitespace)
@@ -92,7 +94,8 @@ mod tests {
             Some(vec!["c".into()]),
             "the first marker outside the quotes"
         );
-        assert_eq!(steps("12\" pizza :: box"), Some(vec!["box".into()]));
+        // After a quote that never closes, the rest is text.
+        assert_eq!(steps("12\" pizza :: box"), None);
         assert_eq!(steps("say \\\" :: hi"), Some(vec!["hi".into()]));
         // An escaped quote inside quotes doesn't close them.
         assert_eq!(steps("\"Say \\\"hello :: world\" tomorrow"), None);

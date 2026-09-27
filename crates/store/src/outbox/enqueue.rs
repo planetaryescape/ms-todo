@@ -4,7 +4,6 @@
 use serde_json::Value;
 use sqlx::SqliteConnection;
 
-use super::SKIPPED_NOTE;
 use super::operation::{OpKind, OpState};
 use super::outcomes::finish;
 use super::task_rows::{
@@ -248,22 +247,11 @@ pub(crate) async fn insert_op(
     tx: &mut SqliteConnection,
     op: &Queued<'_>,
 ) -> Result<(), StoreError> {
+    // Deleting a task takes its steps, link and files with it, so the
+    // delete never waits on a child write: one blocked or unknown would
+    // hold it for good. They're skipped once the delete is done
+    // (`mark_done`), so a rejected delete leaves them to be sent (D-068).
     let deletes_task = op.op == OpKind::Delete;
-    if deletes_task {
-        // Deleting a task takes its steps, link and files with it, so a
-        // child write not sent yet, or whose outcome is unknown, is moot:
-        // it's skipped, and the delete never waits on one (D-068). One in
-        // flight finishes on its own; the delete doesn't wait for it.
-        sqlx::query(
-            "UPDATE outbox SET state = 'done', finished_at = ?, note = ? \
-             WHERE entity_local_id = ? AND op = 'child' AND state IN ('pending', 'unknown')",
-        )
-        .bind(op.created_at)
-        .bind(format!("{SKIPPED_NOTE} its task was deleted"))
-        .bind(op.entity_local_id)
-        .execute(&mut *tx)
-        .await?;
-    }
     let mut depends_on: Option<String> = sqlx::query_scalar(concat!(
         "SELECT op_id FROM outbox WHERE entity_local_id = ? AND (op <> 'child' OR NOT ?) \
          AND state IN ",
