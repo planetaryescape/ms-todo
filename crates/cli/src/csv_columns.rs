@@ -122,12 +122,18 @@ pub fn task_row(task: &Entity) -> Vec<String> {
     ]
 }
 
-/// Tasks from every list: [`task_row`] with the list's name before the
-/// columns added after it (rung 9a's `defer_until` and `someday`).
+/// Tasks from every list: [`task_row_with_list`] with the list's name.
 pub fn every_list_row(task: &Entity) -> Vec<String> {
+    task_row_with_list(task, text(task, "list"))
+}
+
+/// [`task_row`] in [`EVERY_LIST_COLUMNS`]' order: `list` where it always
+/// was, before the columns added after it (rung 9a's `defer_until` and
+/// `someday`), so no position moves.
+pub fn task_row_with_list(task: &Entity, list: &str) -> Vec<String> {
     let mut row = task_row(task);
     let added = row.split_off(row.len() - 2);
-    row.push(text(task, "list").to_owned());
+    row.push(list.to_owned());
     row.extend(added);
     row
 }
@@ -257,4 +263,24 @@ fn boolean(entity: &Entity, key: &str) -> String {
         .and_then(Value::as_bool)
         .map(|value| value.to_string())
         .unwrap_or_default()
+}
+
+#[cfg(test)]
+mod column_order_tests {
+    use serde_json::json;
+
+    use super::*;
+
+    #[test]
+    fn list_keeps_its_place_and_new_columns_come_last() {
+        let task =
+            json!({ "id": "t1", "list": "Home", "defer_until": "2026-10-02", "someday": true });
+        let row = every_list_row(task.as_object().expect("object"));
+        assert_eq!(row.len(), EVERY_LIST_COLUMNS.len());
+        let at = |name: &str| EVERY_LIST_COLUMNS.iter().position(|column| *column == name);
+        assert_eq!(at("list"), Some(10), "where it was before rung 9a");
+        assert_eq!(row[10], "Home");
+        assert_eq!(&row[11..], ["2026-10-02", "true"]);
+        assert_eq!(&EVERY_LIST_COLUMNS[11..], ["defer_until", "someday"]);
+    }
 }

@@ -8,7 +8,7 @@ use ms_todo_protocol::{Applied, Plan, TaskAction};
 use serde::Serialize;
 use serde_json::Value;
 
-use crate::csv_columns::{LIST_COLUMNS, TASK_COLUMNS, list_row, task_row, text};
+use crate::csv_columns::{EVERY_LIST_COLUMNS, LIST_COLUMNS, list_row, task_row_with_list, text};
 use crate::error::CliError;
 use crate::output::{OutputFormat, SCHEMA_VERSION, Versioned, print_ids, print_json, write_csv};
 
@@ -154,18 +154,13 @@ pub fn print_applied(format: OutputFormat, applied: &Applied) -> Result<(), CliE
         }
         OutputFormat::Csv => {
             // A change can span lists, so its rows always say which list.
-            let headers: Vec<&str> = TASK_COLUMNS.iter().copied().chain(["list"]).collect();
             let rows: Vec<Vec<String>> = applied
                 .items
                 .iter()
                 .zip(&applied.list_ids)
-                .map(|(task, list)| {
-                    let mut row = task_row(task);
-                    row.push(list.clone());
-                    row
-                })
+                .map(|(task, list)| task_row_with_list(task, list))
                 .collect();
-            write_csv(&headers, &rows)
+            write_csv(EVERY_LIST_COLUMNS, &rows)
         }
         OutputFormat::Table => {
             let mut stdout = std::io::stdout().lock();
