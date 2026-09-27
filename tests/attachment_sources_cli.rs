@@ -230,6 +230,32 @@ async fn a_url_is_downloaded_by_the_daemon_and_attached() {
             .is_some_and(|message| message.contains("isn't https")),
         "{away}"
     );
+    // Nor to this machine by another name: the typed host was 127.0.0.1,
+    // and `localhost` resolves to it.
+    let port = files.address().port();
+    Mock::given(method("GET"))
+        .and(path("/inward"))
+        .respond_with(ResponseTemplate::new(302).insert_header(
+            "Location",
+            format!("http://localhost:{port}/files/Q3%20report.pdf").as_str(),
+        ))
+        .mount(&files)
+        .await;
+    let inward = env.failure(
+        &[
+            "attachments",
+            "add",
+            &task,
+            &format!("{}/inward", files.uri()),
+        ],
+        2,
+    );
+    assert!(
+        inward["error"]["message"]
+            .as_str()
+            .is_some_and(|message| message.contains("this machine or its network")),
+        "{inward}"
+    );
     // A URL goes on its own.
     env.cmd()
         .args(["attachments", "add", &task, &url, "/tmp/other.pdf"])

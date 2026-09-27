@@ -217,6 +217,18 @@ pub(crate) async fn undo(
                 }
                 inverse.push(move_op(id(inverse.len()), &row, &from_list));
             }
+            OpKind::TaskExtension if crate::related::Link::of(&op.payload).is_some() => {
+                // A set change is undone as one: only that link, on the
+                // task as it is now (D-067).
+                let link = crate::related::Link::of(&op.payload).unwrap_or_default();
+                let action = if link.linked {
+                    TaskAction::Unrelate
+                } else {
+                    TaskAction::Relate
+                };
+                let id = id(inverse.len());
+                inverse.extend(crate::related::link_op(id, &row, &link.inverse(), action));
+            }
             OpKind::TaskExtension => {
                 let moved = extension_moved(op, &row);
                 if !moved.is_empty() {
@@ -315,8 +327,6 @@ fn extension_undo(op_id: String, row: &TaskRow, op: &OutboxRow) -> Result<NewOp,
     let action = match op.action.as_str() {
         "my_day_add" => TaskAction::MyDayRemove,
         "my_day_remove" | "my_day_rollover" => TaskAction::MyDayAdd,
-        "relate" => TaskAction::Unrelate,
-        "unrelate" => TaskAction::Relate,
         _ => TaskAction::Edit,
     };
     Ok(NewOp {

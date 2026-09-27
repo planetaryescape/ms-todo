@@ -141,6 +141,35 @@ async fn two_tasks_link_both_ways_show_by_title_and_unlink() {
 }
 
 #[tokio::test]
+async fn undoing_one_link_leaves_a_later_one_and_both_sides_agree() {
+    let mut env = Env::new();
+    let graph = graph(&mut env).await;
+    graph.edit(|data| {
+        data.tasks.get_mut("L-groc").expect("groceries").push(task(
+            "G2",
+            "Buy candles",
+            "W/\"g2\"",
+        ));
+    });
+    env.synced();
+    let party = env.local_id(&["tasks", "list", "--list", "Tasks"], "T1");
+    let cake = env.local_id(&["tasks", "list", "--list", "Groceries"], "G1");
+    let candles = env.local_id(&["tasks", "list", "--list", "Groceries"], "G2");
+    let first = env.json(&["tasks", "relate", &party, &cake]);
+    env.settled();
+    env.json(&["tasks", "relate", &party, &candles]);
+    env.settled();
+    assert_eq!(related(&graph, "T1"), json!(["G1", "G2"]));
+
+    let undone = env.json(&["undo", first["op_id"].as_str().expect("op_id")]);
+    assert!(undone.get("refused").is_none(), "{undone}");
+    env.settled();
+    assert_eq!(related(&graph, "T1"), json!(["G2"]), "the later link stays");
+    assert_eq!(related(&graph, "G1"), Value::Null, "gone on both sides");
+    assert_eq!(related(&graph, "G2"), json!(["T1"]));
+}
+
+#[tokio::test]
 async fn a_task_is_not_linked_to_itself_or_to_one_graph_has_not_got() {
     let mut env = Env::new();
     let _graph = graph(&mut env).await;

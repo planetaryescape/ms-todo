@@ -19,6 +19,7 @@
 
 pub(crate) mod files;
 pub(crate) mod kept;
+pub(crate) mod public_only;
 pub(crate) mod staged;
 
 use std::path::{Path, PathBuf};

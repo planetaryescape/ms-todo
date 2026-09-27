@@ -6,8 +6,9 @@
 //! vanish under it: 0600, in a 0700 directory under the instance's data
 //! directory, named at random.
 //!
-//! A download is `https` only, and follows a redirect only to `https`; it
-//! stops past 25 MB, whatever the server said it would send.
+//! A download is `https` only, and follows a redirect only to `https` and
+//! never to this machine or its network (`public_only`); it stops past
+//! 25 MB, whatever the server said it would send.
 //!
 //! [`sweep`] removes a copy once nothing waiting to be sent reads it (its
 //! operation done or discarded), and any copy past a week.
@@ -21,15 +22,12 @@ use ms_todo_graph::MAX_ATTACHMENT_BYTES;
 use ms_todo_graph::private_file::{atomic_write_mode_0600, ensure_private_dir};
 use reqwest::Url;
 
+use super::public_only::{PublicOnly, redirect_allowed};
 use crate::handlers::State;
 
 /// How long a copy is kept when no operation reads it: long enough that a
 /// copy made for a command still being queued is never taken.
 const UNCLAIMED_FOR: Duration = Duration::from_secs(10 * 60);
-
-/// The most a copy is kept, whatever reads it: a failed add left a week
-/// is one the user has moved on from, as a deleted attachment's copy is.
-use super::kept::KEPT_FOR;
 
 /// The most redirects a download follows.
 const MAX_REDIRECTS: usize = 5;
@@ -99,14 +97,21 @@ pub(crate) fn name_of(url: &Url) -> String {
 /// Download `url` into `root`: 25 MB at most, and every redirect to
 /// `https` too.
 pub(crate) async fn download(root: &Path, url: Url) -> Result<Downloaded, String> {
+    let typed = url.host_str().unwrap_or_default().to_ascii_lowercase();
+    let resolver = PublicOnly {
+        typed: typed.clone(),
+    };
     let client = crate::semantic::model::http_client_builder()
-        .redirect(reqwest::redirect::Policy::custom(|attempt| {
+        .dns_resolver(resolver)
+        .redirect(reqwest::redirect::Policy::custom(move |attempt| {
             if attempt.previous().len() >= MAX_REDIRECTS {
                 attempt.error("too many redirects")
-            } else if allowed(attempt.url()) {
-                attempt.follow()
-            } else {
+            } else if !allowed(attempt.url()) {
                 attempt.error("it redirects to a URL that isn't https")
+            } else if !redirect_allowed(attempt.url(), &typed) {
+                attempt.error("it redirects to this machine or its network")
+            } else {
+                attempt.follow()
             }
         }))
         .build()
@@ -170,9 +175,9 @@ fn keep(root: &Path, bytes: &[u8]) -> io::Result<PathBuf> {
 }
 
 /// Remove each copy no unfinished operation reads, once it's had time to
-/// be claimed, and any past [`KEPT_FOR`]. Run when the daemon starts: a
-/// copy sent is removed then and there, so only a failed or discarded
-/// add's waits for this.
+/// be claimed. Run when the daemon starts: a copy sent is removed then and
+/// there, so only a discarded add's, or a done one's the daemon stopped
+/// before removing, waits for this.
 pub(crate) async fn sweep(state: &State) {
     let in_use = match state.store.staged_files_in_use().await {
         Ok(paths) => paths.into_iter().map(PathBuf::from).collect(),
@@ -202,8 +207,9 @@ fn sweep_now(root: &Path, in_use: &HashSet<PathBuf>, now: SystemTime) -> io::Res
             continue;
         }
         let age = now.duration_since(metadata.modified()?).unwrap_or_default();
-        let unclaimed = !in_use.contains(&entry.path()) && age > UNCLAIMED_FOR;
-        if unclaimed || age > KEPT_FOR {
+        // One an unfinished add reads is kept whatever its age: without
+        // it, a retry would have nothing to send.
+        if !in_use.contains(&entry.path()) && age > UNCLAIMED_FOR {
             std::fs::remove_file(entry.path())?;
         }
     }
@@ -247,8 +253,8 @@ mod tests {
         sweep_now(root.path(), &in_use, later).expect("sweep");
         assert!(!unclaimed.exists());
         assert!(claimed.exists(), "an operation reads it");
-        let much_later = SystemTime::now() + KEPT_FOR + Duration::from_secs(1);
-        sweep_now(root.path(), &in_use, much_later).expect("sweep");
-        assert!(!claimed.exists(), "past a week");
+        let years = SystemTime::now() + Duration::from_secs(3 * 365 * 24 * 60 * 60);
+        sweep_now(root.path(), &in_use, years).expect("sweep");
+        assert!(claimed.exists(), "never while an operation reads it");
     }
 }

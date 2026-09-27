@@ -480,17 +480,10 @@ pub(crate) fn delete_op(op_id: String, row: &TaskRow, action: TaskAction) -> New
 /// Our open extension as a create sends it, holding the operation's ID.
 /// `kept` is the rest of an extension the task had, for a re-create.
 pub(crate) fn our_extension(op_id: &str, kept: Option<&Value>) -> Value {
-    let mut extension = Map::new();
-    if let Some(Value::Object(kept)) = kept {
-        for (key, value) in kept {
-            // Graph's own bookkeeping, not our data; arrays are typed
-            // afresh below.
-            if key != "id" && !key.starts_with('@') && !key.contains("@odata.") {
-                extension.insert(key.clone(), value.clone());
-            }
-        }
-    }
-    crate::entities::type_collections(&mut extension);
+    let mut extension = match kept {
+        Some(Value::Object(kept)) => crate::entities::extension_document(kept, |_| false),
+        _ => Map::new(),
+    };
     extension.insert(
         "@odata.type".into(),
         json!("microsoft.graph.openTypeExtension"),

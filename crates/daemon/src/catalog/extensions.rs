@@ -267,7 +267,7 @@ async fn write_extension(
     data: Option<&Map<String, Value>>,
     exists: bool,
 ) -> Result<(), ErrorPayload> {
-    // A user's array of strings needs its type too (S20).
+    // A user's array of strings needs its type too (S21).
     let typed = data.map(|data| {
         let mut data = data.clone();
         crate::entities::type_collections(&mut data);

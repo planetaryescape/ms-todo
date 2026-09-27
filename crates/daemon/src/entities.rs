@@ -16,9 +16,36 @@ use serde_json::{Map, Value, json};
 /// Our open extension (docs/blueprint/05-custom-features.md).
 pub(crate) const EXTENSION_NAME: &str = "com.planetaryescape.mstodo";
 
-/// Give each array of strings in an open extension's `fields` the type
-/// Graph needs to take it (`related@odata.type`): Graph refuses an array
-/// without one (S20, D-067). One already typed is left as it is.
+/// Our extension as a write sends it: our fields, without Graph's `id`,
+/// `extensionName` and `@odata` keys of its own. A field's own annotation
+/// (`scores@odata.type`) is kept while `changed` says the field isn't being
+/// written anew, since Graph drops a type it isn't sent; a non-empty array
+/// of strings with none gets `#Collection(String)`, which Graph needs to
+/// take it (S21, D-067).
+pub(crate) fn extension_document(
+    extension: &Map<String, Value>,
+    changed: impl Fn(&str) -> bool,
+) -> Map<String, Value> {
+    let mut document: Map<String, Value> = extension
+        .iter()
+        .filter(|(key, _)| {
+            if *key == "id" || *key == "extensionName" || key.starts_with('@') {
+                return false;
+            }
+            match key.split_once('@') {
+                Some((field, _)) => extension.contains_key(field) && !changed(field),
+                None => true,
+            }
+        })
+        .map(|(key, value)| (key.clone(), value.clone()))
+        .collect();
+    type_collections(&mut document);
+    document
+}
+
+/// Give each non-empty array of strings in an open extension's `fields`
+/// with no annotation the type Graph needs to take it. An empty one says
+/// nothing of its type, so it's left for Graph to take or not.
 pub(crate) fn type_collections(fields: &mut Map<String, Value>) {
     let arrays: Vec<String> = fields
         .iter()
@@ -27,12 +54,45 @@ pub(crate) fn type_collections(fields: &mut Map<String, Value>) {
                 && !fields.contains_key(&format!("{key}@odata.type"))
                 && value
                     .as_array()
-                    .is_some_and(|items| items.iter().all(Value::is_string))
+                    .is_some_and(|items| !items.is_empty() && items.iter().all(Value::is_string))
         })
         .map(|(key, _)| key.clone())
         .collect();
     for key in arrays {
         fields.insert(format!("{key}@odata.type"), json!("#Collection(String)"));
+    }
+}
+
+#[cfg(test)]
+mod document_tests {
+    use super::*;
+
+    #[test]
+    fn annotations_of_fields_left_alone_are_kept_and_new_arrays_typed() {
+        let extension = json!({
+            "id": "microsoft.graph.openTypeExtension.x",
+            "extensionName": "x",
+            "@odata.type": "#microsoft.graph.openTypeExtension",
+            "scores": [],
+            "scores@odata.type": "#Collection(Int64)",
+            "order": 3,
+            "order@odata.type": "#Int64",
+            "related": ["G2"],
+            "empty": [],
+            "orphan@odata.type": "#Int64"
+        });
+        let sent = extension_document(extension.as_object().expect("object"), |key| key == "order");
+        assert_eq!(
+            Value::Object(sent),
+            json!({
+                "scores": [],
+                "scores@odata.type": "#Collection(Int64)",
+                "order": 3,
+                "related": ["G2"],
+                "related@odata.type": "#Collection(String)",
+                "empty": []
+            })
+        );
     }
 }
 
