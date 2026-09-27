@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.34](https://github.com/planetaryescape/ms-todo/compare/v0.1.33...v0.1.34) (2026-09-27)
+
+
+### Features
+
+* contexts (rung 9d) ([#80](https://github.com/planetaryescape/ms-todo/issues/80)) ([d226832](https://github.com/planetaryescape/ms-todo/commit/d226832e478905f8150060408d06c4925238764a))
+
 ## [0.1.33](https://github.com/planetaryescape/ms-todo/compare/v0.1.32...v0.1.33) (2026-09-27)
 
 
