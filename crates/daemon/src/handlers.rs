@@ -234,7 +234,13 @@ async fn mutate(
     choice: Option<&ContextChoice>,
     request: Request,
 ) -> Result<ResponseData, ErrorPayload> {
-    let fingerprint = fingerprint(&request);
+    let fingerprint = match choice {
+        Some(context) => fingerprint(&Request::InContext {
+            context: context.clone(),
+            request: Box::new(request.clone()),
+        }),
+        None => fingerprint(&request),
+    };
     match request {
         Request::AddTask {
             task,
