@@ -546,3 +546,83 @@ async fn quick_add_adds_the_steps_after_the_marker_and_undo_takes_the_task() {
         [("one".to_owned(), false), ("two".to_owned(), false)]
     );
 }
+
+/// The task quick add made, as `tasks list` shows it.
+fn packed(env: &Env) -> Value {
+    env.json(&["tasks", "list"])["items"]
+        .as_array()
+        .expect("items")
+        .iter()
+        .find(|task| task["title"] == "Pack")
+        .cloned()
+        .expect("the added task")
+}
+
+#[tokio::test]
+async fn undo_of_an_add_whose_step_is_unknown_deletes_the_task() {
+    let mut env = Env::new();
+    let graph = graph(&mut env).await;
+    graph.accept_moves().await;
+    Mock::given(method("POST"))
+        .and(path_regex(r"/checklistItems$"))
+        .respond_with(ResponseTemplate::new(503).set_body_json(
+            json!({ "error": { "code": "ServiceUnavailable", "message": "try later" } }),
+        ))
+        .mount(&graph.server)
+        .await;
+
+    let added = env.json(&["tasks", "add", "Pack :: passport; charger"]);
+    let op_id = added["op_id"].as_str().expect("op_id").to_owned();
+    env.op_in_state(&format!("{op_id}.1"), "unknown");
+    let created = graph
+        .tasks_in("L-tasks")
+        .into_iter()
+        .find(|task| task["title"] == "Pack")
+        .expect("created on Graph");
+
+    // Deleting the task undoes its steps whatever became of them.
+    env.json(&["undo", &op_id]);
+    env.settled();
+    assert!(
+        graph
+            .tasks_in("L-tasks")
+            .iter()
+            .all(|task| task["id"] != created["id"]),
+        "the delete wasn't held behind the unknown step"
+    );
+    for step in [format!("{op_id}.1"), format!("{op_id}.2")] {
+        let op = env.op_in_state(&step, "done");
+        assert!(
+            op["note"]
+                .as_str()
+                .unwrap_or_default()
+                .contains("its task was deleted"),
+            "{op}"
+        );
+    }
+}
+
+#[tokio::test]
+async fn a_rejected_first_step_takes_the_later_steps_off_the_task_too() {
+    let mut env = Env::new();
+    let graph = graph(&mut env).await;
+    graph.accept_moves().await;
+    Mock::given(method("POST"))
+        .and(path_regex(r"/checklistItems$"))
+        .respond_with(ResponseTemplate::new(400).set_body_json(
+            json!({ "error": { "code": "invalidRequest", "message": "no steps today" } }),
+        ))
+        .mount(&graph.server)
+        .await;
+
+    let added = env.json(&["tasks", "add", "Pack :: passport; charger; socks"]);
+    let op_id = added["op_id"].as_str().expect("op_id").to_owned();
+    env.op_in_state(&format!("{op_id}.1"), "failed");
+    env.op_in_state(&format!("{op_id}.3"), "failed");
+    env.settled();
+    let shown = packed(&env);
+    assert!(
+        shown[STEPS].as_array().is_none_or(Vec::is_empty),
+        "no step Graph never got stays on the task: {shown}"
+    );
+}

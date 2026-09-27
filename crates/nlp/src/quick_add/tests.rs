@@ -916,3 +916,14 @@ fn the_locale_orders_slashed_dates_and_starts_weeks() {
         .expect("a recurrence");
     assert_eq!(recurrence.to_graph()["pattern"]["firstDayOfWeek"], "sunday");
 }
+
+#[test]
+fn an_escaped_quote_inside_quotes_keeps_the_title_whole() {
+    let parsed = parse("\"Say \\\"hello :: world\" tomorrow");
+    assert!(parsed.steps.is_empty(), "{parsed:?}");
+    assert_eq!(parsed.title, "Say \"hello :: world");
+    assert_eq!(
+        parsed.due.map(|due| due.to_string()).as_deref(),
+        Some("2026-09-25")
+    );
+}

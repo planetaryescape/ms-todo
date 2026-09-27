@@ -136,11 +136,22 @@ impl<'i> Scan<'i> {
                     at += 2;
                 }
                 b'"' if at == 0 || !matches!(bytes[at - 1], b'#' | b'@') => {
-                    let Some(close) = text[at + 1..].find('"').map(|to| at + 1 + to) else {
+                    let Some(close) = closing_quote(text, at) else {
                         break;
                     };
                     self.claim(at..at + 1, SpanKind::Syntax);
                     self.mask(at + 1..close, LITERAL);
+                    // `\"` and `\\` inside are the character itself.
+                    let mut inner = at + 1;
+                    while inner < close {
+                        if bytes[inner] == b'\\' && matches!(bytes[inner + 1], b'"' | b'\\') {
+                            self.claim(inner..inner + 1, SpanKind::Syntax);
+                            self.mask(inner + 1..inner + 2, LITERAL);
+                            inner += 2;
+                        } else {
+                            inner += 1;
+                        }
+                    }
                     self.claim(close..close + 1, SpanKind::Syntax);
                     at = close + 1;
                 }
@@ -548,6 +559,21 @@ impl<'i> Scan<'i> {
         kept.push_str(&self.input[at..]);
         kept.split_whitespace().collect::<Vec<_>>().join(" ")
     }
+}
+
+/// The `"` that closes the quote opened at `open` in `text`, passing
+/// over `\"` and `\\` inside it.
+pub(super) fn closing_quote(text: &str, open: usize) -> Option<usize> {
+    let bytes = text.as_bytes();
+    let mut at = open + 1;
+    while at < bytes.len() {
+        match bytes[at] {
+            b'\\' if matches!(bytes.get(at + 1), Some(b'"' | b'\\')) => at += 2,
+            b'"' => return Some(at),
+            _ => at += 1,
+        }
+    }
+    None
 }
 
 /// The list `typed` names: the one whose name it is, ignoring case, else

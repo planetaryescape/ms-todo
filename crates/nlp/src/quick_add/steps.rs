@@ -35,10 +35,16 @@ fn marker(input: &str) -> Option<usize> {
             {
                 at += 2;
             }
-            b'"' => match input[at + 1..].find('"') {
-                Some(to) => at += to + 2,
-                None => at += 1,
-            },
+            // A name's quote (`#"…"`) closes at the next quote; any other
+            // passes over `\"` inside it, as the quotes pass does.
+            b'"' => {
+                let close = if at > 0 && matches!(bytes[at - 1], b'#' | b'@') {
+                    input[at + 1..].find('"').map(|to| at + 1 + to)
+                } else {
+                    super::passes::closing_quote(input, at)
+                };
+                at = close.map_or(at + 1, |close| close + 1);
+            }
             b':' if bytes.get(at + 1) == Some(&b':')
                 && input[..at].ends_with(char::is_whitespace)
                 && input[at + 2..].starts_with(char::is_whitespace) =>
@@ -88,5 +94,11 @@ mod tests {
         );
         assert_eq!(steps("12\" pizza :: box"), Some(vec!["box".into()]));
         assert_eq!(steps("say \\\" :: hi"), Some(vec!["hi".into()]));
+        // An escaped quote inside quotes doesn't close them.
+        assert_eq!(steps("\"Say \\\"hello :: world\" tomorrow"), None);
+        assert_eq!(
+            steps("\"Say \\\"hi\\\"\" :: wave"),
+            Some(vec!["wave".into()])
+        );
     }
 }

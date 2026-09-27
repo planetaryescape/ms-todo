@@ -101,6 +101,11 @@ pub(crate) async fn undo(
     let mut created: HashSet<&str> = HashSet::new();
     let id = |queued: usize| op_id_for(&op_id, queued);
     for op in &ops {
+        // Before the outcome check: deleting the task undoes this whatever
+        // became of it, even a step create whose outcome is unknown.
+        if created.contains(op.entity_local_id.as_str()) {
+            continue;
+        }
         // Rejected or skipped, it changed nothing.
         if rejected(op)? || op.was_skipped() {
             continue;
@@ -124,9 +129,6 @@ pub(crate) async fn undo(
                     format!("task {} isn't cached any more", op.entity_local_id),
                 )
             })?;
-        if created.contains(op.entity_local_id.as_str()) {
-            continue;
-        }
         match op.op {
             OpKind::Delete if !deleted => return Err(changed_since(op)),
             OpKind::Delete => inverse.push(recreate(id(inverse.len()), &row, op)?),
