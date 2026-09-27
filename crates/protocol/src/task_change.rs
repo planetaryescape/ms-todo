@@ -132,6 +132,18 @@ pub enum TaskChange {
     /// path the daemon reads when it sends it: no bytes cross the socket.
     AddAttachments {
         files: Vec<String>,
+        /// The attachment's name in place of the file's; one file only.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        name: Option<String>,
+        /// The files are temporary (the CLI's copy of stdin): the daemon
+        /// copies each into its own staging directory now, and sends that.
+        #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+        copy: bool,
+        /// Download this `https` URL (25 MB at most, redirects only to
+        /// `https`) into the daemon's staging directory and attach that,
+        /// in place of `files`.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        url: Option<String>,
     },
     /// Delete attachments of the one task named: each by its number from
     /// 1, its ID or its exact name. The daemon keeps a copy of each first,
@@ -141,6 +153,12 @@ pub enum TaskChange {
         #[serde(default)]
         no_undo: bool,
     },
+    /// Link the two tasks named to each other: each keeps the other's
+    /// Graph ID in ms-todo's `related`, since Graph has no relation
+    /// between tasks (D-067).
+    Relate,
+    /// Take away the link between the two tasks named, both ways.
+    Unrelate,
     #[serde(other)]
     Unknown,
 }

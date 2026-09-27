@@ -86,6 +86,10 @@ impl App {
     /// The daemon's answer to a list's create, rename or delete: say so,
     /// and leave a deleted list for the default one.
     pub(super) fn list_changed(&mut self, applied: &Applied) -> Vec<Effect> {
+        if applied.action == ms_todo_protocol::TaskAction::MergeList {
+            self.moved(applied);
+            return Vec::new();
+        }
         let name = applied
             .items
             .first()
@@ -120,7 +124,7 @@ impl App {
     }
 }
 
-fn list_change(change: ListChange) -> Effect {
+pub(super) fn list_change(change: ListChange) -> Effect {
     Effect {
         tag: Tag::Lists,
         request: Request::ChangeLists {

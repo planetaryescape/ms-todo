@@ -37,6 +37,9 @@ pub(crate) struct State {
     pub moves_dir: std::path::PathBuf,
     /// Where a deleted attachment's bytes are kept for undo (D-056).
     pub kept_dir: std::path::PathBuf,
+    /// Where the daemon keeps its own copy of a file to attach: stdin the
+    /// CLI saved, or a download (D-067).
+    pub staged_dir: std::path::PathBuf,
     /// List suggestions, when `[suggest]` turns them on.
     pub suggest: crate::suggest::Suggester,
     /// `[my_day]`: when a day's My Day ends.

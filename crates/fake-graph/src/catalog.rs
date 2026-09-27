@@ -306,6 +306,9 @@ fn named(data: &mut Data, request: &Request) -> ResponseTemplate {
             }
             // PATCH replaces the whole document (S2).
             let fields = body(request).as_object().cloned().unwrap_or_default();
+            if let Some(refused) = crate::graph::refuse_untyped(&Value::Object(fields.clone())) {
+                return refused;
+            }
             let document = stored(&name, &fields);
             entry.insert(name, document.clone());
             ResponseTemplate::new(200).set_body_json(document)
@@ -320,6 +323,9 @@ fn named(data: &mut Data, request: &Request) -> ResponseTemplate {
 fn post_named(data: &mut Data, request: &Request) -> ResponseTemplate {
     let owner = owner_of(request);
     let fields = body(request).as_object().cloned().unwrap_or_default();
+    if let Some(refused) = crate::graph::refuse_untyped(&Value::Object(fields.clone())) {
+        return refused;
+    }
     let name = fields["extensionName"]
         .as_str()
         .unwrap_or_default()

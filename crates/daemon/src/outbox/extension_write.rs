@@ -139,7 +139,8 @@ async fn write(
     if let Some(fields) = op.body().as_object() {
         merge_extension(&mut merged, fields);
     }
-    let data = document(&merged);
+    crate::related::rebase(&mut merged, &op.payload, current.as_ref());
+    let data = document(&merged, op.body());
     let path = owner.path();
     if data.is_empty() {
         // Graph refuses a PATCH of an empty document: a write that leaves
@@ -207,19 +208,11 @@ fn cached(data: Map<String, Value>) -> Map<String, Value> {
     cached
 }
 
-/// Our fields only: not Graph's `id`, `extensionName` or `@odata`
-/// annotations (`order@odata.type`), which it adds itself.
-fn document(extension: &Map<String, Value>) -> Map<String, Value> {
-    extension
-        .iter()
-        .filter(|(key, _)| {
-            *key != "id"
-                && *key != "extensionName"
-                && !key.starts_with('@')
-                && !key.contains("@odata.")
-        })
-        .map(|(key, value)| (key.clone(), value.clone()))
-        .collect()
+/// Our fields only, as [`crate::entities::extension_document`] writes
+/// them; the operation's own fields (`body`) are written anew, so an
+/// annotation Graph had for one's old value goes.
+fn document(extension: &Map<String, Value>, body: &Value) -> Map<String, Value> {
+    crate::entities::extension_document(extension, |key| body.get(key).is_some())
 }
 
 #[cfg(test)]
@@ -227,7 +220,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn the_document_sent_is_our_fields_without_graphs_annotations() {
+    fn the_document_sent_is_our_fields_without_graphs_own_annotations() {
         let extension = json!({
             "extensionName": EXTENSION_NAME,
             "id": "microsoft.graph.openTypeExtension.com.planetaryescape.mstodo",
@@ -236,7 +229,15 @@ mod tests {
             "order@odata.type": "#Int64",
             "order": 3
         });
-        let sent = document(extension.as_object().expect("object"));
+        let extension = extension.as_object().expect("object");
+        // The folder written anew: order's type is kept.
+        let sent = document(extension, &json!({ "folder": "Areas" }));
+        assert_eq!(
+            Value::Object(sent),
+            json!({ "folder": "Areas", "order": 3, "order@odata.type": "#Int64" })
+        );
+        // The order written anew: its old type goes.
+        let sent = document(extension, &json!({ "order": 3 }));
         assert_eq!(
             Value::Object(sent),
             json!({ "folder": "Areas", "order": 3 })

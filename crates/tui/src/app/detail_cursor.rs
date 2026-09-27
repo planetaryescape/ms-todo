@@ -127,7 +127,9 @@ fn anchor_for(task: &Task, row: DetailRow) -> Anchor {
                     name: attachment.name.clone(),
                 })
         }
-        DetailRow::Field(_) | DetailRow::Steps | DetailRow::Attachments => Child::None,
+        DetailRow::Field(_) | DetailRow::Steps | DetailRow::Attachments | DetailRow::Related(_) => {
+            Child::None
+        }
     };
     Anchor {
         task: task.id.clone(),

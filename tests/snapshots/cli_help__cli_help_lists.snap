@@ -14,6 +14,7 @@ Commands:
   delete  Delete a list and every task in it. Asks first in a terminal; anywhere else it needs --yes. Only an empty list's delete can be undone
   move    Put lists in a folder (made if it's new), or take them out of theirs
   order   Put a list just before or after another list in its folder
+  merge   Move every open task of a list into another, keeping everything each holds, and optionally delete the emptied list
   help    Print this message or the help of the given subcommand(s)
 
 Options:

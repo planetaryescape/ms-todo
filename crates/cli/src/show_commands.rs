@@ -99,6 +99,7 @@ fn task_rows(task: &Entity) -> Vec<(&'static str, String)> {
                 .unwrap_or_default()
                 .to_owned(),
         ),
+        ("Related", related(task)),
         (
             "Attachments",
             match count("attachments") {
@@ -132,6 +133,31 @@ fn task_rows(task: &Entity) -> Vec<(&'static str, String)> {
     rows.into_iter()
         .filter(|(label, value)| !value.is_empty() || matches!(*label, "Title" | "ID"))
         .collect()
+}
+
+/// The tasks this one is linked to (D-067), by title and ID; one this
+/// cache doesn't have by the Graph ID it was linked by.
+fn related(task: &Entity) -> String {
+    task.get("related")
+        .and_then(Value::as_array)
+        .map(|related| {
+            related
+                .iter()
+                .map(
+                    |other| match (other["title"].as_str(), other["id"].as_str()) {
+                        (Some(title), Some(id)) => {
+                            format!("{:?} {id}", ms_todo_core::display_safe(title))
+                        }
+                        _ => format!(
+                            "(not here: {})",
+                            other["graph_id"].as_str().unwrap_or_default()
+                        ),
+                    },
+                )
+                .collect::<Vec<_>>()
+                .join(", ")
+        })
+        .unwrap_or_default()
 }
 
 fn local_day(task: &Entity, key: &str) -> String {

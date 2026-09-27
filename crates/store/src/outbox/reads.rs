@@ -43,14 +43,21 @@ impl Store {
     /// `pending` operations due by `now` whose dependency, if any, is
     /// `done`, in queue order. Only `done` unblocks: one queued on a change
     /// that failed or was discarded would build on something that never
-    /// happened.
+    /// happened. One that waits for a whole command (`after_command`, a
+    /// merge's list delete) waits while any of its operations is
+    /// unresolved; the send then checks how they ended.
     pub async fn ready_ops(&self, now: i64) -> Result<Vec<OutboxRow>, StoreError> {
         rows(
-            sqlx::query_as(AssertSqlSafe(ops_sql(
+            sqlx::query_as(AssertSqlSafe(ops_sql(concat!(
                 "o.state = 'pending' AND o.next_attempt_at <= ? AND (o.depends_on_op_id IS NULL \
                  OR EXISTS (SELECT 1 FROM outbox d WHERE d.op_id = o.depends_on_op_id \
-                 AND d.state = 'done')) ORDER BY o.seq",
-            )))
+                 AND d.state = 'done')) \
+                 AND NOT EXISTS (SELECT 1 FROM outbox w \
+                 WHERE w.command_id = json_extract(o.payload_json, '$.after_command') \
+                 AND w.state IN ",
+                unresolved!(),
+                ") ORDER BY o.seq"
+            ))))
             .bind(now)
             .fetch_all(self.reader())
             .await?,
@@ -66,6 +73,19 @@ impl Store {
         )
         .bind(now)
         .fetch_one(self.reader())
+        .await?)
+    }
+
+    /// The staged files (D-067) that attachment adds not done yet read:
+    /// what the daemon must keep.
+    pub async fn staged_files_in_use(&self) -> Result<Vec<String>, StoreError> {
+        Ok(sqlx::query_scalar(
+            "SELECT json_extract(payload_json, '$.file.path') FROM outbox \
+             WHERE op = 'child' AND state != 'done' \
+             AND json_extract(payload_json, '$.file.staged') = 1 \
+             AND json_extract(payload_json, '$.file.path') IS NOT NULL",
+        )
+        .fetch_all(self.reader())
         .await?)
     }
 

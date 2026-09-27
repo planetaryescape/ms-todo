@@ -141,6 +141,31 @@ impl DaemonClient {
         Ok(self.next_id)
     }
 
+    /// Subscribe this connection to the daemon's events (`Subscribe`), for
+    /// [`DaemonClient::next_event`].
+    pub async fn subscribe(&mut self) -> Result<u64, CliError> {
+        let stall = QUICK_TIMEOUT;
+        let id = self.send(Request::Subscribe, stall).await?;
+        into_data(self.reply(id, stall, |_| {}).await?)?;
+        Ok(id)
+    }
+
+    /// The next event of the subscription `id`, or `None` when none came
+    /// by `until` or the connection closed.
+    pub async fn next_event(&mut self, id: u64, until: Instant) -> Option<Event> {
+        loop {
+            let frame = tokio::time::timeout_at(until, self.framed.next())
+                .await
+                .ok()??;
+            let message = frame.ok()?;
+            if let Payload::Event(event) = message.payload
+                && message.id == id
+            {
+                return Some(event);
+            }
+        }
+    }
+
     /// Wait for the answer to request `id`. Each frame for it (an answer
     /// or a progress event) restarts the `stall` clock; other frames don't.
     async fn reply(

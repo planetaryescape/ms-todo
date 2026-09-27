@@ -1,7 +1,8 @@
-//! `lists create|rename|delete` (rung 8e). Each is a `ChangeLists` the
-//! daemon plans and queues in the outbox, as the folder changes are;
-//! `--dry-run` asks for the plan only. `lists delete` asks in a terminal
-//! and exits 2 anywhere else without `--yes`.
+//! `lists create|rename|delete` (rung 8e) and `lists merge` (D-067). Each
+//! is a `ChangeLists` the daemon plans and queues in the outbox, as the
+//! folder changes are; `--dry-run` asks for the plan only. `lists delete`
+//! and `lists merge` ask in a terminal and exit 2 anywhere else without
+//! `--yes`.
 
 use ms_todo_core::{ErrorKind, Paths};
 use ms_todo_protocol::{ListChange, ResponseData};
@@ -10,7 +11,7 @@ use crate::confirm::{can_prompt, confirm};
 use crate::daemon_client;
 use crate::error::CliError;
 use crate::folder_commands::change_request;
-use crate::list_args::{CreateListArgs, DeleteListArgs, RenameListArgs};
+use crate::list_args::{CreateListArgs, DeleteListArgs, MergeListArgs, RenameListArgs};
 use crate::output::OutputFormat;
 use crate::task_commands::send;
 use crate::task_output::describe_plan;
@@ -86,4 +87,86 @@ pub async fn delete(
         None => change,
     };
     send(paths, change_request(change, false, key), format).await
+}
+
+/// `lists merge FROM --into TO`: previewed and confirmed as a bulk move is,
+/// and a delete of FROM as `lists delete` is.
+pub async fn merge(
+    paths: &Paths,
+    args: MergeListArgs,
+    format: OutputFormat,
+) -> Result<(), CliError> {
+    let change = |from: String, into: String| ListChange::MergeList {
+        from,
+        into,
+        include_completed: args.include_completed,
+        delete_source: args.delete_source,
+    };
+    let (dry_run, key) = (args.dry_run, args.idempotency.idempotency_key.clone());
+    let deletes = args.delete_source && !dry_run;
+    let asked = change(args.from.clone(), args.into.clone());
+    if args.yes || dry_run {
+        return merged(paths, change_request(asked, dry_run, key), deletes, format).await;
+    }
+    let preview = change_request(asked.clone(), true, None);
+    let plan = match daemon_client::ask(paths, preview).await? {
+        ResponseData::Plan(plan) => plan,
+        _ => return Err(crate::unexpected_response()),
+    };
+    let count = plan.targets.len();
+    if count <= 1 && !args.delete_source {
+        return merged(paths, change_request(asked, false, key), deletes, format).await;
+    }
+    if !can_prompt() {
+        return Err(CliError::message(
+            ErrorKind::InvalidInput,
+            format!(
+                "this moves {count} tasks{} and there's no terminal to ask in: pass --yes \
+                 (`ms-todo undo` moves them back), or --dry-run to see them",
+                if args.delete_source {
+                    " and deletes the list"
+                } else {
+                    ""
+                }
+            ),
+        ));
+    }
+    eprintln!("{}", describe_plan(&plan).join("\n"));
+    let question = if args.delete_source {
+        format!("Move {count} tasks, then delete the emptied list?")
+    } else {
+        format!("Move {count} tasks?")
+    };
+    if !confirm(&question)? {
+        eprintln!("Nothing was changed.");
+        return Ok(());
+    }
+    // The lists the preview resolved, so what runs is what was shown.
+    let resolved = match (plan.lists.first(), &plan.list) {
+        (Some(from), Some(into)) => change(from.id.clone(), into.id.clone()),
+        _ => asked,
+    };
+    merged(paths, change_request(resolved, false, key), deletes, format).await
+}
+
+/// Send a merge, and say in a table when a delete of the emptied list
+/// follows, and by which operation.
+async fn merged(
+    paths: &Paths,
+    request: ms_todo_protocol::Request,
+    deletes: bool,
+    format: OutputFormat,
+) -> Result<(), CliError> {
+    let answer = crate::task_commands::send_and_print(paths, request, format).await?;
+    if deletes
+        && format == OutputFormat::Table
+        && let ResponseData::Applied(applied) = answer
+    {
+        println!(
+            "Then deletes the emptied list, once every task has moved and Microsoft To Do shows \
+             it empty: operation {}.delete",
+            applied.op_id
+        );
+    }
+    Ok(())
 }

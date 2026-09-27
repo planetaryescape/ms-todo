@@ -119,6 +119,7 @@ pub(crate) async fn serve(paths: Paths) -> Result<(), Fatal> {
         outbox::recover(&state).await;
         outbox::prune::prune(&state).await;
         crate::attachments::kept::sweep(&state.kept_dir).await;
+        crate::attachments::staged::sweep(&state).await;
         eprintln!(
             "ms-todo daemon {} (pid {}) listening on {}",
             env!("CARGO_PKG_VERSION"),
@@ -183,6 +184,7 @@ async fn build_state(paths: &Paths) -> Result<State, Fatal> {
         started_at: chrono::Utc::now().timestamp(),
         moves_dir: paths.data_dir.join("moves"),
         kept_dir: paths.data_dir.join("attachments-kept"),
+        staged_dir: paths.data_dir.join("attachments-staged"),
         suggest: crate::suggest::Suggester::load(&paths.config_file),
         my_day: crate::my_day::Config::load(&paths.config_file),
         semantic: crate::semantic::Semantic::load(&paths.config_file, &paths.data_dir),

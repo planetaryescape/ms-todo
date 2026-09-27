@@ -10,7 +10,7 @@ pub(super) fn applied() -> Value {
     versioned(
         json!({
             "op_id": { "type": "string", "description": "What `undo` and `outbox list` know the change by" },
-            "action": { "enum": ["add", "complete", "reopen", "edit", "delete", "undo", "move", "my_day_add", "my_day_remove", "my_day_rollover", "step_add", "step_edit", "step_check", "step_uncheck", "step_delete", "link_add", "link_edit", "link_delete", "attachment_add", "attachment_delete"] },
+            "action": { "enum": ["add", "complete", "reopen", "edit", "delete", "undo", "move", "my_day_add", "my_day_remove", "my_day_rollover", "step_add", "step_edit", "step_check", "step_uncheck", "step_delete", "link_add", "link_edit", "link_delete", "attachment_add", "attachment_delete", "relate", "unrelate", "merge_list"] },
             "items": {
                 "type": "array",
                 "items": task_entity(),
@@ -51,7 +51,7 @@ pub(super) fn plan() -> Value {
     versioned(
         json!({
             "dry_run": { "const": true },
-            "action": { "enum": ["add", "complete", "reopen", "edit", "delete", "move", "my_day_add", "my_day_remove", "my_day_rollover", "step_add", "step_edit", "step_check", "step_uncheck", "step_delete", "link_add", "link_edit", "link_delete", "attachment_add", "attachment_delete"] },
+            "action": { "enum": ["add", "complete", "reopen", "edit", "delete", "move", "my_day_add", "my_day_remove", "my_day_rollover", "step_add", "step_edit", "step_check", "step_uncheck", "step_delete", "link_add", "link_edit", "link_delete", "attachment_add", "attachment_delete", "relate", "unrelate", "merge_list"] },
             "list": candidate(),
             "targets": {
                 "type": "array",
@@ -64,7 +64,19 @@ pub(super) fn plan() -> Value {
                     &["id", "title", "list_id"],
                 )
             },
-            "changes": { "description": "The Graph fields each target gets; null for delete. For My Day: myDay (the day, or null), and the tasks whose due date is set (due_today) or cleared (due_cleared). For steps, links and attachments: each write, as { collection, verb (create, update or delete), id, body, carried }, and for an attachment's create the file it's read from, as file: { path, bytes, modified }" }
+            "lists": {
+                "type": "array",
+                "description": "For lists merge: the list emptied, with changes { deleted (whether --delete-source deletes it), completed_left (completed tasks staying in it) }",
+                "items": object(
+                    json!({
+                        "id": { "type": "string" },
+                        "name": { "type": "string" },
+                        "changes": {}
+                    }),
+                    &["id", "name", "changes"],
+                )
+            },
+            "changes": { "description": "The Graph fields each target gets; null for delete. For My Day: myDay (the day, or null), and the tasks whose due date is set (due_today) or cleared (due_cleared). For steps, links and attachments: each write, as { collection, verb (create, update or delete), id, body, carried }, and for an attachment's create the file it's read from, as file: { path, bytes, modified }, or the url it's downloaded from. For relate and unrelate: each task's local ID, with the Graph IDs of its related tasks after it. For move and merge_list: list_id, the list they go to" }
         }),
         &["dry_run", "action", "changes"],
     )

@@ -285,6 +285,17 @@ pub fn draw(frame: &mut Frame, area: Rect, app: &App) {
             ]));
         }
     }
+    for (at, other) in task.related.iter().enumerate() {
+        let name = if at == 0 { "Related" } else { "" };
+        let title = match &other.title {
+            Some(title) => Span::raw(ms_todo_core::one_line_safe(title)),
+            None => Span::styled("not here (another device's, or deleted)", theme.text_dim),
+        };
+        lines.push(highlight(
+            Line::from(vec![label(name), title]),
+            DetailRow::Related(at),
+        ));
+    }
     if !task.categories.is_empty() {
         lines.push(field("Categories", task.categories.join(", ")));
     }

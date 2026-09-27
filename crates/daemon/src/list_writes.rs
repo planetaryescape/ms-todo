@@ -65,6 +65,21 @@ pub(crate) async fn change_lists(
 ) -> Result<ResponseData, ErrorPayload> {
     ensure_ready(state, LISTS_SCOPE).await?;
     let lists = state.store.lists().await.map_err(store_error)?;
+    if let ListChange::MergeList {
+        from,
+        into,
+        include_completed,
+        delete_source,
+    } = &change
+    {
+        let merge = crate::list_merge::Merge {
+            from,
+            into,
+            include_completed: *include_completed,
+            delete_source: *delete_source,
+        };
+        return crate::list_merge::merge(state, &lists, &merge, dry_run, op_id).await;
+    }
     if matches!(
         change,
         ListChange::CreateList { .. }
@@ -195,6 +210,7 @@ fn plan<'a>(
         ListChange::CreateList { .. }
         | ListChange::RenameList { .. }
         | ListChange::DeleteList { .. }
+        | ListChange::MergeList { .. }
         | ListChange::Unknown => {
             return Err(error_payload(
                 ErrorKind::Unsupported,

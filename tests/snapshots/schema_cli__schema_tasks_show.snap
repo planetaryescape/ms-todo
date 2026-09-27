@@ -93,6 +93,49 @@ expression: pretty
       "recurrence": {
         "type": "object"
       },
+      "related": {
+        "description": "Only when it's linked to other tasks (tasks relate): each, as this cache has it; id, title, list_id and status are null for one it doesn't have",
+        "items": {
+          "properties": {
+            "graph_id": {
+              "type": "string"
+            },
+            "id": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "list_id": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "status": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "title": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          "required": [
+            "id",
+            "graph_id",
+            "title",
+            "list_id",
+            "status"
+          ],
+          "type": "object"
+        },
+        "type": "array"
+      },
       "reminderDateTime": {
         "type": "object"
       },

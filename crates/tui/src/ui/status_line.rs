@@ -94,7 +94,31 @@ pub fn draw(frame: &mut Frame, area: Rect, app: &App) {
             spans.push(part);
         }
     }
+    if let Some(upload) = &app.upload {
+        spans.push(Span::styled("  ·  ", muted));
+        spans.extend(gauge(app, upload));
+    }
     frame.render_widget(Paragraph::new(Line::from(spans)), area);
+}
+
+/// How many cells an upload's gauge has.
+const GAUGE_CELLS: u64 = 10;
+
+/// `uploading report.pdf ███░░░░░░░ 30%`.
+fn gauge(app: &App, upload: &ms_todo_protocol::UploadProgress) -> Vec<Span<'static>> {
+    let percent = upload.percent();
+    let done = usize::try_from(percent * GAUGE_CELLS / 100).unwrap_or(0);
+    let left = usize::try_from(GAUGE_CELLS).unwrap_or(0) - done;
+    let (theme, glyphs) = (&app.theme, &app.glyphs);
+    vec![
+        Span::styled(
+            format!("uploading {} ", ms_todo_core::display_safe(&upload.name)),
+            theme.text_dim,
+        ),
+        Span::styled(glyphs.gauge_done.repeat(done), theme.accent),
+        Span::styled(glyphs.gauge_left.repeat(left), theme.text_muted),
+        Span::styled(format!(" {percent}%"), theme.text_dim),
+    ]
 }
 
 pub(super) fn ago(seconds: i64) -> String {

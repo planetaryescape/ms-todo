@@ -597,13 +597,24 @@ impl Job<'_> {
             .graph
             .get_task_with_extension(&self.target, copy_id, EXTENSION_NAME)
             .await;
-        let (copy, copy_extension) = match fetched {
+        let (mut copy, copy_extension) = match fetched {
             Ok(task) => split_extension(task),
             Err(error) if error.status() == Some(404) => return Ok(Check::CopyGone),
             Err(error) => return Err(error),
         };
         let copy_extension = copy_extension.flatten();
-        let copied = self.attachment_hashes(&self.target, copy_id).await?;
+        let (copied, listed) = self.attachments_of(&self.target, copy_id).await?;
+        // The cache keeps an attachment's metadata inline (D-056); without
+        // it the copy's files wouldn't show until its etag moved.
+        copy.insert(
+            ms_todo_store::ATTACHMENTS.into(),
+            Value::Array(
+                listed
+                    .into_iter()
+                    .map(|attachment| Value::Object(ms_todo_graph::attachment_metadata(attachment)))
+                    .collect(),
+            ),
+        );
         let mut wrong = differences(
             &expected_copy(expected, expected_extension),
             &comparable(&copy, copy_extension.as_ref()),
@@ -634,6 +645,15 @@ impl Job<'_> {
         list_graph_id: &str,
         task_graph_id: &str,
     ) -> Result<Vec<Attached>, GraphError> {
+        Ok(self.attachments_of(list_graph_id, task_graph_id).await?.0)
+    }
+
+    /// [`Job::attachment_hashes`], and Graph's listing of them.
+    async fn attachments_of(
+        &self,
+        list_graph_id: &str,
+        task_graph_id: &str,
+    ) -> Result<(Vec<Attached>, Vec<Entity>), GraphError> {
         let listed = self
             .state
             .graph
@@ -654,7 +674,7 @@ impl Job<'_> {
             hashes.push((text(attachment, "name").unwrap_or_default(), size, hash));
         }
         hashes.sort();
-        Ok(hashes)
+        Ok((hashes, listed))
     }
 
     /// Delete the source. From the moment its DELETE may be sent, the copy

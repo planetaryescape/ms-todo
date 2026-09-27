@@ -111,7 +111,9 @@ Every command in the tour and the recipes works in it. The seed data is `demo/se
 | Find a task in any list | `mst search rent` |
 | See what you finished | `mst done --since mon` |
 | Move overdue tasks to today | `mst reschedule --overdue --to today --dry-run` |
-| Move tasks to another list | `mst tasks move <id> --to Groceries --dry-run` |
+| Move tasks to another list | `mst tasks move <id> --to Groceries --dry-run`, `mst tasks move --overdue --list Inbox --to Later` |
+| Empty a list into another | `mst lists merge Errands --into Groceries --dry-run` |
+| Link two tasks | `mst tasks relate <id> <id>`, `unrelate` |
 | Undo the last change | `mst undo` |
 | Open the TUI | `mst` |
 
@@ -189,7 +191,7 @@ In the TUI's add box, a likely list shows as `→ Finances? (Ctrl-l to accept)`.
 | `d` | delete, after a `y` / `n` confirmation |
 | `u` | undo the last change |
 | `/` | filter the view as you type; `Ctrl-s` switches the filter to meaning ([search by meaning](docs/usage.md#search-by-meaning)) |
-| `:` | the command palette: any action, list or view by name, and "New list…", "Rename list…", "Delete list…", "Suggest lists for inbox" (each inbox task in turn with its suggested list: `Enter` moves it, `s` skips). The last ten commands run from it come first |
+| `:` | the command palette: any action, list or view by name, and "New list…", "Rename list…", "Delete list…", "Merge list into…", "Suggest lists for inbox" (each inbox task in turn with its suggested list: `Enter` moves it, `s` skips). The last ten commands run from it come first |
 | `D` | diagnostics: sign-in, daemon, cache, each list's sync and the outbox |
 | `o` / `y` | open or copy the task's link |
 | `r` | sync now |
@@ -255,9 +257,20 @@ A change to several tasks lists them and asks first in a terminal. Anywhere else
 mst tasks move <id> --to Groceries --dry-run
 mst tasks move <id> --to Groceries
 mst undo                                          # moves it back
+mst tasks move --overdue --list Inbox --to Later --dry-run   # pick them as reschedule does
+mst lists merge Errands --into Groceries --delete-source --include-completed --dry-run
 ```
 
-A move keeps the task's steps, link, attachments and ms-todo's own data, and checks the copy before it deletes the original.
+A move keeps the task's steps, link, attachments and ms-todo's own data, and checks the copy before it deletes the original. `lists merge` moves every open task of a list that way (`--include-completed`: every task), and `--delete-source` deletes the emptied list only once every task has moved and Microsoft To Do shows it empty. One `mst undo` moves the tasks back; with `--delete-source`, the first `undo` makes the list again and the second moves them back.
+
+### Related tasks
+
+```sh
+mst tasks relate <id> <id>        # linked both ways
+mst tasks show <id>               # Related: "Buy cake"
+```
+
+Microsoft To Do can't link two tasks, so ms-todo keeps the link in its own data on both: every ms-todo you use sees it, the To Do apps don't. In the TUI the detail pane lists them, and `Enter` on one opens it.
 
 ### Steps and links
 
@@ -277,9 +290,11 @@ mst attachments add <id> ./invoice.pdf           # up to 25 MB each; several at 
 mst attachments list <id>
 mst attachments download <id> --out ~/Downloads  # every file, or name one by number or name
 mst attachments delete <id> 1 --yes              # `mst undo` attaches it again, for a week
+pbpaste | mst attachments add <id> - --name notes.txt   # stdin, named
+mst attachments add <id> https://example.com/q3.pdf     # downloaded first; https only
 ```
 
-Files show on the phone once they're uploaded, and files added on the phone show here after the next sync. Downloads never overwrite a file: a second copy is saved as `invoice (1).pdf`. In the TUI, the detail pane lists them under Files: `A` attaches one, and `Enter` on a file saves it to `[attachments] download_dir` (`~/Downloads` by default) and opens it. [Attachments](docs/usage.md#attachments) has the rest.
+Files show on the phone once they're uploaded, and files added on the phone show here after the next sync. A big upload shows its progress in a terminal and in the TUI's status line, and one cut off by a daemon restart carries on when the daemon starts again. Downloads never overwrite a file: a second copy is saved as `invoice (1).pdf`. In the TUI, the detail pane lists them under Files: `A` attaches one, and `Enter` on a file saves it to `[attachments] download_dir` (`~/Downloads` by default) and opens it. [Attachments](docs/usage.md#attachments) has the rest.
 
 ### My Day
 

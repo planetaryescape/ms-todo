@@ -4,7 +4,7 @@
 //! pressed, never anything outside the current scope; one `ChangeTasks`
 //! moves them all, and one `u` moves them back.
 
-use ms_todo_protocol::{Applied, TaskChange};
+use ms_todo_protocol::{Applied, ListChange, TaskChange};
 
 use super::palette::{rank, step, text_score};
 use super::{App, Effect, Level, LineEditor, Mode, Write, change};
@@ -47,6 +47,36 @@ impl App {
         )
     }
 
+    /// The lists the picker offers: [`App::move_targets`], but never the
+    /// list being merged.
+    pub fn picker_targets(
+        &self,
+        ids: &[String],
+        merging: Option<&str>,
+        query: &str,
+    ) -> Vec<MoveTarget> {
+        let mut targets = self.move_targets(ids, query);
+        targets.retain(|target| Some(target.id.as_str()) != merging);
+        targets
+    }
+
+    /// "Merge list into…": the picker, for every open task of the current
+    /// list.
+    pub(super) fn start_merge_list(&mut self) {
+        let Some(list_id) = self.list_to_move() else {
+            self.show(Level::Info, "Choose a list first; a view can't be merged");
+            return;
+        };
+        let name = self.list_name(&list_id).unwrap_or("the list").to_owned();
+        self.mode = Mode::MovingTasks {
+            ids: Vec::new(),
+            what: format!("every open task of {name}"),
+            query: LineEditor::single(""),
+            index: 0,
+            merging: Some(list_id),
+        };
+    }
+
     /// `m`: open the picker for the selection, or the task under the
     /// cursor.
     pub(super) fn start_move_tasks(&mut self) {
@@ -62,15 +92,24 @@ impl App {
             what,
             query: LineEditor::single(""),
             index: 0,
+            merging: None,
         };
     }
 
     /// Up and Down in the picker, within its matches.
     pub(super) fn move_step(&mut self, down: bool) {
-        let Mode::MovingTasks { ids, query, .. } = &self.mode else {
+        let Mode::MovingTasks {
+            ids,
+            query,
+            merging,
+            ..
+        } = &self.mode
+        else {
             return;
         };
-        let count = self.move_targets(ids, &query.text()).len();
+        let count = self
+            .picker_targets(ids, merging.as_deref(), &query.text())
+            .len();
         if let Mode::MovingTasks { index, .. } = &mut self.mode {
             *index = step(*index, count, down);
         }
@@ -79,18 +118,33 @@ impl App {
     /// Enter in the picker: move the tasks to the chosen list.
     pub(super) fn submit_move_tasks(&mut self) -> Vec<Effect> {
         let Mode::MovingTasks {
-            ids, query, index, ..
+            ids,
+            query,
+            index,
+            merging,
+            ..
         } = std::mem::replace(&mut self.mode, Mode::Normal)
         else {
             return Vec::new();
         };
         let Some(target) = self
-            .move_targets(&ids, &query.text())
+            .picker_targets(&ids, merging.as_deref(), &query.text())
             .into_iter()
             .nth(index)
         else {
             return Vec::new();
         };
+        if let Some(from) = merging {
+            // The source stays: deleting it is the CLI's `--delete-source`,
+            // not a picker's side effect.
+            let change = ListChange::MergeList {
+                from,
+                into: target.id,
+                include_completed: false,
+                delete_source: false,
+            };
+            return vec![super::list_writes::list_change(change)];
+        }
         self.selection.clear();
         vec![change(Write::Move, ids, TaskChange::Move { to: target.id })]
     }
@@ -104,6 +158,7 @@ impl App {
             .unwrap_or("the list")
             .to_owned();
         let text = match applied.items.len() {
+            0 => "Nothing to move".to_owned(),
             1 => format!("Moving to {list}; u moves it back"),
             count => format!("Moving {count} tasks to {list}; u moves them back"),
         };
@@ -212,6 +267,51 @@ mod tests {
             "{:?}",
             app.banner
         );
+    }
+
+    #[test]
+    fn merge_list_into_picks_any_other_list_and_merges_the_current_one() {
+        let mut app = foldered();
+        let labels: Vec<String> = app
+            .palette_items("merge")
+            .into_iter()
+            .map(|item| item.label)
+            .collect();
+        assert_eq!(
+            labels.first().map(String::as_str),
+            Some("Merge list into\u{2026}")
+        );
+        act(&mut app, Action::MergeList);
+        let Mode::MovingTasks {
+            ids, what, merging, ..
+        } = &app.mode
+        else {
+            unreachable!("{:?}", app.mode);
+        };
+        assert!(ids.is_empty());
+        assert_eq!(merging.as_deref(), Some("home"));
+        assert!(what.contains("Home"), "{what}");
+        let offered = app.picker_targets(ids, merging.as_deref(), "");
+        assert_eq!(names(&offered), ["Finances", "Launch", "Tasks"]);
+        for ch in "launch".chars() {
+            app.update(Msg::Char(ch));
+        }
+        let effects = act(&mut app, Action::Submit);
+        assert_eq!(
+            effects[0].request,
+            Request::ChangeLists {
+                change: ListChange::MergeList {
+                    from: "home".into(),
+                    into: "launch".into(),
+                    include_completed: false,
+                    delete_source: false,
+                },
+                dry_run: false,
+                op_id: None,
+                idempotency_key: None,
+            }
+        );
+        assert_eq!(effects[0].tag, crate::app::Tag::Lists);
     }
 
     #[test]

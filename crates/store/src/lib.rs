@@ -34,7 +34,7 @@ pub use children::{
 pub use embeddings::{Candidate, Candidates, Embedded, EmbeddingJob, TaskScope, text_hash};
 pub use idempotency::{Claim, IDEMPOTENCY_WINDOW_SECS};
 pub use list_extension::{ListExtensionOp, merge_extension};
-pub use list_lifecycle::{ListLifecycleOp, ListOp, ListWrite};
+pub use list_lifecycle::{AFTER_COMMAND, ListLifecycleOp, ListOp, ListWrite};
 pub use lists::{FOLDER_FIELD, FOLDER_ORDER_FIELD, ListRow, ListsApplied, ListsPass, ORDER_FIELD};
 pub use outbox::{
     LocalChange, NewOp, OpKind, OpState, OutboxRow, Restore, SKIPPED_NOTE, UNKNOWN_LOOKUP_SECS,

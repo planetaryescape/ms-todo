@@ -193,6 +193,11 @@ impl FakeGraph {
             .await;
     }
 
+    /// Let every open upload session expire: its PUTs are 404s from now.
+    pub fn expire_upload_sessions(&self) {
+        lock(&self.data).sessions.clear();
+    }
+
     /// Put `bytes` on the task `task` in `list` as the file `name`, as a
     /// phone would.
     pub fn attach(&self, list: &str, task: &str, name: &str, bytes: &[u8]) {

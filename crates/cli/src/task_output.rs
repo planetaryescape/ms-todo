@@ -105,6 +105,32 @@ pub fn describe_plan(plan: &Plan) -> Vec<String> {
             list.name,
             list.id
         )),
+        (TaskAction::MergeList, Some(list)) => {
+            let count = plan.targets.len();
+            let noun = if count == 1 { "task" } else { "tasks" };
+            let from = plan.lists.first();
+            let name = from.map(|from| from.name.as_str()).unwrap_or_default();
+            lines.push(format!(
+                "Would move {count} {noun} from {name:?} to {:?} ({}):",
+                list.name, list.id
+            ));
+            for target in &plan.targets {
+                lines.push(format!("  {:?}  {}", target.title, target.id));
+            }
+            if let Some(from) = from {
+                let left = from.changes["completed_left"].as_u64().unwrap_or(0);
+                if from.changes["deleted"] == true {
+                    lines.push(format!(
+                        "then delete {name:?}, once every task has moved and it's empty"
+                    ));
+                } else if left > 0 {
+                    lines.push(format!(
+                        "{left} completed task(s) stay in {name:?} (--include-completed moves them)"
+                    ));
+                }
+            }
+            return lines;
+        }
         (TaskAction::Move, Some(list)) => {
             let count = plan.targets.len();
             let noun = if count == 1 { "task" } else { "tasks" };
@@ -296,6 +322,9 @@ pub(crate) fn verb(action: TaskAction) -> &'static str {
         TaskAction::CategoryDelete => "delete the category",
         TaskAction::ExtensionSet => "set the extension",
         TaskAction::ExtensionDelete => "delete the extension",
+        TaskAction::Relate => "link",
+        TaskAction::Unrelate => "unlink",
+        TaskAction::MergeList => "move",
         TaskAction::Unknown => "change",
     }
 }
@@ -335,6 +364,9 @@ pub(crate) fn past_tense(action: TaskAction) -> &'static str {
         TaskAction::CategoryDelete => "Deleted the category",
         TaskAction::ExtensionSet => "Set the extension",
         TaskAction::ExtensionDelete => "Deleted the extension",
+        TaskAction::Relate => "Linked",
+        TaskAction::Unrelate => "Unlinked",
+        TaskAction::MergeList => "Moving",
         TaskAction::Unknown => "Changed",
     }
 }

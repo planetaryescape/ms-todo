@@ -73,6 +73,21 @@ pub fn output_schema(command: &str) -> Option<Value> {
         "tasks show" => {
             let mut schema = task_entity();
             schema["properties"]["schema_version"] = json!({ "const": SCHEMA_VERSION });
+            schema["properties"]["related"] = json!({
+                "type": "array",
+                "description": "Only when it's linked to other tasks (tasks relate): each, as this cache has it; id, title, list_id and status are null for one it doesn't have",
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "id": { "type": ["string", "null"] },
+                        "graph_id": { "type": "string" },
+                        "title": { "type": ["string", "null"] },
+                        "list_id": { "type": ["string", "null"] },
+                        "status": { "type": ["string", "null"] }
+                    },
+                    "required": ["id", "graph_id", "title", "list_id", "status"]
+                }
+            });
             schema
         }
         "tasks list" => task_collection(every_list_task()),
@@ -116,7 +131,8 @@ pub fn output_schema(command: &str) -> Option<Value> {
         }
         "done" => collection(done_result()),
         "tasks add" | "tasks complete" | "tasks reopen" | "tasks edit" | "tasks move"
-        | "tasks nag" | "tasks delete" | "reschedule" => json!({ "oneOf": [applied(), plan()] }),
+        | "tasks nag" | "tasks relate" | "tasks unrelate" | "tasks delete" | "reschedule"
+        | "lists merge" => json!({ "oneOf": [applied(), plan()] }),
         "undo" => json!({ "oneOf": [applied(), list_applied(), catalog_applied()] }),
         "lists move" | "lists order" | "folders rename" | "folders delete" | "folders order" => {
             json!({ "oneOf": [list_applied(), list_plan()] })

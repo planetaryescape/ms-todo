@@ -19,6 +19,8 @@
 
 pub(crate) mod files;
 pub(crate) mod kept;
+pub(crate) mod public_only;
+pub(crate) mod staged;
 
 use std::path::{Path, PathBuf};
 use std::time::UNIX_EPOCH;
@@ -114,8 +116,118 @@ pub(crate) async fn change(
     dry_run: bool,
     op_id: String,
 ) -> Result<ResponseData, ErrorPayload> {
-    let writes = |raw: &Entity| match change {
-        TaskChange::AddAttachments { files } => Ok((TaskAction::AttachmentAdd, add(&files)?)),
+    let adds = match &change {
+        TaskChange::AddAttachments {
+            files,
+            name,
+            copy,
+            url,
+        } => {
+            let from = From {
+                files,
+                name: name.as_deref(),
+                copy: *copy,
+                url: url.as_deref(),
+            };
+            Some(prepare_adds(state, targets, from, dry_run).await?)
+        }
+        _ => None,
+    };
+    let writes = |raw: &Entity| match (change, adds) {
+        (TaskChange::AddAttachments { .. }, Some(adds)) => Ok((TaskAction::AttachmentAdd, adds)),
+        (change, _) => writes_for(raw, change),
+    };
+    change_children(state, targets, "attachments", dry_run, op_id, writes).await
+}
+
+/// Where an add's bytes come from, as `AddAttachments` says.
+struct From<'a> {
+    files: &'a [String],
+    name: Option<&'a str>,
+    copy: bool,
+    url: Option<&'a str>,
+}
+
+/// The creates an add queues. Files the daemon must keep a copy of (a
+/// temporary file, a download) are copied or fetched only for a real run,
+/// and only once the task is found, so a mistyped task costs no download.
+async fn prepare_adds(
+    state: &State,
+    targets: &Targets<'_>,
+    from: From<'_>,
+    dry_run: bool,
+) -> Result<Vec<ChildWrite>, ErrorPayload> {
+    let name = match from.name.map(str::trim) {
+        Some("") => return Err(invalid("an attachment's name can't be empty".into())),
+        Some(name) if from.files.len() > 1 => {
+            return Err(invalid(format!(
+                "--name {name:?} names one attachment; attach one file with it"
+            )));
+        }
+        name => name,
+    };
+    if let Some(url) = from.url {
+        if !from.files.is_empty() {
+            return Err(invalid("attach files or a URL, not both".into()));
+        }
+        let parsed = staged::check_url(url).map_err(invalid)?;
+        if dry_run {
+            let name = name.map_or_else(|| staged::name_of(&parsed), str::to_owned);
+            let mut write = planned_create(&name, None);
+            write.extra.insert("url".into(), json!(url));
+            return Ok(vec![write]);
+        }
+        one(crate::task_writes::resolve(state, targets).await?)?;
+        let downloaded = staged::download(&state.staged_dir, parsed)
+            .await
+            .map_err(invalid)?;
+        let source = Source::check(&downloaded.path).map_err(invalid)?;
+        let name = name.map_or(downloaded.name, str::to_owned);
+        let mut write = create(&source, &name);
+        if write.body["contentType"] == OCTET_STREAM
+            && let Some(content_type) = downloaded.content_type
+        {
+            write.body["contentType"] = json!(content_type);
+        }
+        mark_staged(&mut write);
+        return Ok(vec![write]);
+    }
+    let checked = add(from.files, name)?;
+    if !from.copy || dry_run {
+        return Ok(checked);
+    }
+    one(crate::task_writes::resolve(state, targets).await?)?;
+    let mut copied = Vec::with_capacity(checked.len());
+    for (file, write) in from.files.iter().zip(checked) {
+        let path = staged::copy_in(&state.staged_dir, Path::new(file))
+            .await
+            .map_err(invalid)?;
+        let source = Source::check(&path).map_err(invalid)?;
+        let name = write.body["name"]
+            .as_str()
+            .unwrap_or("attachment")
+            .to_owned();
+        let mut write = create(&source, &name);
+        mark_staged(&mut write);
+        copied.push(write);
+    }
+    Ok(copied)
+}
+
+/// Say the file is the daemon's own copy, which it keeps until the add is
+/// done (`staged::sweep`).
+fn mark_staged(write: &mut ChildWrite) {
+    if let Some(file) = write.extra.get_mut("file").and_then(Value::as_object_mut) {
+        file.insert("staged".into(), Value::Bool(true));
+    }
+}
+
+/// A delete's writes on the task `raw`.
+fn writes_for(
+    raw: &Entity,
+    change: TaskChange,
+) -> Result<(TaskAction, Vec<ChildWrite>), ErrorPayload> {
+    match change {
         TaskChange::DeleteAttachments {
             attachments,
             no_undo,
@@ -138,8 +250,7 @@ pub(crate) async fn change(
             ErrorKind::Internal,
             "not a change to attachments".into(),
         )),
-    };
-    change_children(state, targets, "attachments", dry_run, op_id, writes).await
+    }
 }
 
 fn one(targets: Vec<Target>) -> Result<Target, ErrorPayload> {
@@ -151,9 +262,10 @@ fn one(targets: Vec<Target>) -> Result<Target, ErrorPayload> {
     }
 }
 
-/// An attachment's create for each file, in order; every file must pass
-/// [`Source::check`], or nothing is queued.
-fn add(files: &[String]) -> Result<Vec<ChildWrite>, ErrorPayload> {
+/// An attachment's create for each file, in order, as `name` when given
+/// (one file); every file must pass [`Source::check`], or nothing is
+/// queued.
+fn add(files: &[String], name: Option<&str>) -> Result<Vec<ChildWrite>, ErrorPayload> {
     if files.is_empty() {
         return Err(invalid("name at least one file to attach".into()));
     }
@@ -161,21 +273,30 @@ fn add(files: &[String]) -> Result<Vec<ChildWrite>, ErrorPayload> {
         .iter()
         .map(|file| {
             let source = Source::check(Path::new(file)).map_err(invalid)?;
-            Ok(create(&source, &file_name(&source.path)))
+            let name = name.map_or_else(|| file_name(&source.path), str::to_owned);
+            Ok(create(&source, &name))
         })
         .collect()
 }
 
+/// What a type guessed from nothing is.
+const OCTET_STREAM: &str = "application/octet-stream";
+
 /// The create that attaches `source` as `name`.
 fn create(source: &Source, name: &str) -> ChildWrite {
+    let mut write = planned_create(name, Some(source.bytes));
+    write.extra.insert("file".into(), source.to_json());
+    write
+}
+
+/// The create of an attachment called `name`, of `bytes` when known.
+fn planned_create(name: &str, bytes: Option<u64>) -> ChildWrite {
     let content_type = mime_guess::from_path(name)
         .first_or_octet_stream()
         .essence_str()
         .to_owned();
-    let body = json!({ "name": name, "contentType": content_type, "size": source.bytes });
-    let mut write = ChildWrite::create(ATTACHMENTS, body, TaskAction::AttachmentAdd);
-    write.extra.insert("file".into(), source.to_json());
-    write
+    let body = json!({ "name": name, "contentType": content_type, "size": bytes });
+    ChildWrite::create(ATTACHMENTS, body, TaskAction::AttachmentAdd)
 }
 
 fn file_name(path: &Path) -> String {
@@ -407,7 +528,7 @@ mod tests {
         let dir = tempfile::tempdir().expect("tempdir");
         let file = dir.path().join("invoice.pdf");
         std::fs::write(&file, b"%PDF-1.7").expect("write");
-        let writes = add(&[file.to_string_lossy().into_owned()]).expect("add");
+        let writes = add(&[file.to_string_lossy().into_owned()], None).expect("add");
         let payload = writes[0].payload();
         assert_eq!(payload["body"]["name"], "invoice.pdf");
         assert_eq!(payload["body"]["contentType"], "application/pdf");
@@ -418,13 +539,13 @@ mod tests {
                 .expect("id")
                 .starts_with(LOCAL_CHILD_PREFIX)
         );
-        assert!(add(&["relative.pdf".into()]).is_err());
+        assert!(add(&["relative.pdf".into()], None).is_err());
         assert!(
-            add(&[dir.path().to_string_lossy().into_owned()]).is_err(),
+            add(&[dir.path().to_string_lossy().into_owned()], None).is_err(),
             "a directory"
         );
         let missing = dir.path().join("missing").to_string_lossy().into_owned();
-        let error = add(&[missing]).expect_err("missing");
+        let error = add(&[missing], None).expect_err("missing");
         assert!(error.message.contains("no file"), "{}", error.message);
     }
 
@@ -434,7 +555,7 @@ mod tests {
         let big = dir.path().join("big.bin");
         let file = std::fs::File::create(&big).expect("create");
         file.set_len(MAX_ATTACHMENT_BYTES as u64 + 1).expect("size");
-        let error = add(&[big.to_string_lossy().into_owned()]).expect_err("too big");
+        let error = add(&[big.to_string_lossy().into_owned()], None).expect_err("too big");
         assert_eq!(error.kind, "invalid_input");
         assert!(error.message.contains("25 MB"), "{}", error.message);
     }

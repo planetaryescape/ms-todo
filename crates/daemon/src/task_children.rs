@@ -177,7 +177,7 @@ pub(crate) async fn change_children(
     queue(state, &op_id, None, ops, action).await
 }
 
-fn planned(target: &Target) -> PlannedTask {
+pub(crate) fn planned(target: &Target) -> PlannedTask {
     PlannedTask {
         id: target.local_id().to_owned(),
         title: target.title().to_owned(),

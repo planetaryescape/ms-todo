@@ -45,6 +45,20 @@ pub enum ListChange {
     /// Delete `list` and every task in it. The default list and Flagged
     /// Emails can't be.
     DeleteList { list: String },
+    /// Move every open task of `from` (and completed ones with
+    /// `include_completed`) to `into`, one move per task under one
+    /// `op_id`. With `delete_source`, `from` is deleted once every move is
+    /// done and Microsoft To Do shows it empty, by its own operation,
+    /// `<op_id>.delete`; it needs `include_completed` when `from` holds
+    /// completed tasks, and `from` can't be a built-in list.
+    MergeList {
+        from: String,
+        into: String,
+        #[serde(default)]
+        include_completed: bool,
+        #[serde(default)]
+        delete_source: bool,
+    },
     #[serde(other)]
     Unknown,
 }

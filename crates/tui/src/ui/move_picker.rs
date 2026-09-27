@@ -7,6 +7,7 @@ use ratatui::widgets::{Clear, List, ListItem, ListState, Paragraph};
 use super::{centered, line_input, pane, selection};
 use crate::app::App;
 use crate::app::line_editor::LineEditor;
+use crate::app::move_tasks::MoveTarget;
 
 /// The most lists shown at once; the list scrolls past them.
 const ROWS: u16 = 12;
@@ -16,12 +17,11 @@ const ROWS: u16 = 12;
 pub fn draw(
     frame: &mut Frame,
     app: &App,
-    ids: &[String],
+    targets: &[MoveTarget],
     what: &str,
     query: &LineEditor,
     index: usize,
 ) {
-    let targets = app.move_targets(ids, &query.text());
     let rows = u16::try_from(targets.len()).unwrap_or(ROWS).clamp(1, ROWS);
     let area = centered(frame.area(), 60, rows + 4);
     frame.render_widget(Clear, area);

@@ -11,15 +11,30 @@ expression: pretty
         "type": "boolean",
         "x-cli": "--dry-run"
       },
+      "due_before": {
+        "description": "Every open task due before this day: fri, next mon, +1w, 2026-10-02",
+        "type": "string",
+        "x-cli": "--due-before"
+      },
+      "folder": {
+        "description": "With --overdue or --due-before: only the lists in this folder",
+        "type": "string",
+        "x-cli": "--folder"
+      },
       "idempotency_key": {
         "description": "Run this change at most once: repeating the command with the same key returns the first result for 24 hours, and the same key with a different change exits 2",
         "type": "string",
         "x-cli": "--idempotency-key"
       },
       "list": {
-        "description": "Look for the tasks in this list (exact name or ID), which also lets TASK be an exact title",
+        "description": "Look for the tasks in this list (exact name or ID), which also lets TASK be an exact title; with --overdue or --due-before, only this list's tasks",
         "type": "string",
         "x-cli": "--list"
+      },
+      "overdue": {
+        "description": "Every open task due before today",
+        "type": "boolean",
+        "x-cli": "--overdue"
       },
       "tasks": {
         "description": "Task IDs from `tasks list`, or exact titles when --list is given. Several move together; `-` reads IDs from stdin, one per line",
@@ -41,7 +56,6 @@ expression: pretty
       }
     },
     "required": [
-      "tasks",
       "to"
     ],
     "type": "object"
@@ -71,7 +85,10 @@ expression: pretty
               "link_edit",
               "link_delete",
               "attachment_add",
-              "attachment_delete"
+              "attachment_delete",
+              "relate",
+              "unrelate",
+              "merge_list"
             ]
           },
           "items": {
@@ -277,11 +294,14 @@ expression: pretty
               "link_edit",
               "link_delete",
               "attachment_add",
-              "attachment_delete"
+              "attachment_delete",
+              "relate",
+              "unrelate",
+              "merge_list"
             ]
           },
           "changes": {
-            "description": "The Graph fields each target gets; null for delete. For My Day: myDay (the day, or null), and the tasks whose due date is set (due_today) or cleared (due_cleared). For steps, links and attachments: each write, as { collection, verb (create, update or delete), id, body, carried }, and for an attachment's create the file it's read from, as file: { path, bytes, modified }"
+            "description": "The Graph fields each target gets; null for delete. For My Day: myDay (the day, or null), and the tasks whose due date is set (due_today) or cleared (due_cleared). For steps, links and attachments: each write, as { collection, verb (create, update or delete), id, body, carried }, and for an attachment's create the file it's read from, as file: { path, bytes, modified }, or the url it's downloaded from. For relate and unrelate: each task's local ID, with the Graph IDs of its related tasks after it. For move and merge_list: list_id, the list they go to"
           },
           "dry_run": {
             "const": true
@@ -308,6 +328,27 @@ expression: pretty
               "name"
             ],
             "type": "object"
+          },
+          "lists": {
+            "description": "For lists merge: the list emptied, with changes { deleted (whether --delete-source deletes it), completed_left (completed tasks staying in it) }",
+            "items": {
+              "properties": {
+                "changes": {},
+                "id": {
+                  "type": "string"
+                },
+                "name": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "id",
+                "name",
+                "changes"
+              ],
+              "type": "object"
+            },
+            "type": "array"
           },
           "schema_version": {
             "const": 2

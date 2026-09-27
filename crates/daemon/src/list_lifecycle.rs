@@ -175,7 +175,7 @@ fn new_name(
     Ok(name.to_owned())
 }
 
-fn refuse_built_in(list: &ListRow, verb: &str) -> Result<(), ErrorPayload> {
+pub(crate) fn refuse_built_in(list: &ListRow, verb: &str) -> Result<(), ErrorPayload> {
     let built_in = BUILT_IN
         .iter()
         .find(|(wellknown, _)| list.wellknown_list_name.as_deref() == Some(*wellknown));

@@ -126,12 +126,22 @@ pub enum AttachmentsCommand {
     /// Attach files to the task, up to 25 MB each. The daemon reads each
     /// file when it sends it, and refuses one that changed after this
     /// command
+    ///
+    /// `-` attaches what's on stdin (with --name); an https URL is
+    /// downloaded first, by the daemon, following redirects only to https.
+    /// Either is kept by the daemon until it's uploaded. In a terminal, a
+    /// big upload shows its progress; Ctrl-C stops watching, not the upload
     Add {
         #[command(flatten)]
         task: LinkArgs,
-        /// The files; several attach several, in order
-        #[arg(required = true, value_name = "FILE")]
+        /// The files; several attach several, in order. Or `-` for stdin,
+        /// or one https URL
+        #[arg(required = true, value_name = "FILE|-|URL")]
         files: Vec<std::path::PathBuf>,
+        /// The attachment's name, in place of the file's or the URL's;
+        /// needed with `-`. One file only
+        #[arg(long, value_name = "NAME")]
+        name: Option<String>,
         #[command(flatten)]
         write: WriteArgs,
     },

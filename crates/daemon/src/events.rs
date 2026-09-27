@@ -88,6 +88,11 @@ impl Events {
         let _ = self.sender.send(Event::ResyncNeeded);
     }
 
+    /// Any other event, such as an upload's progress.
+    pub fn send(&self, event: Event) {
+        let _ = self.sender.send(event);
+    }
+
     pub fn subscribe(&self) -> broadcast::Receiver<Event> {
         self.sender.subscribe()
     }

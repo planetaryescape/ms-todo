@@ -59,6 +59,14 @@ pub enum ListWrite {
     Delete {
         tasks: u64,
     },
+    /// A merge's delete of the list it emptied (D-067): nothing changes
+    /// now, and it's sent only once no operation of the command `after`
+    /// is unresolved, and then only if its `moves` moves are all done and
+    /// the list is empty. The list goes from the cache when it's deleted.
+    DeleteWhenMoved {
+        after: String,
+        moves: u64,
+    },
 }
 
 impl ListWrite {
@@ -66,7 +74,7 @@ impl ListWrite {
         match self {
             Self::Create { .. } | Self::Recreate => OpKind::ListCreate,
             Self::Rename { .. } => OpKind::ListUpdate,
-            Self::Delete { .. } => OpKind::ListDelete,
+            Self::Delete { .. } | Self::DeleteWhenMoved { .. } => OpKind::ListDelete,
         }
     }
 }
@@ -185,11 +193,14 @@ impl Store {
         Ok(())
     }
 
-    /// Graph deleted the list of operation `op_id`: its tasks scope goes,
+    /// Graph deleted the list of operation `op_id`: it's tombstoned, if a
+    /// merge's delete left it standing until now, its tasks scope goes,
     /// cursor and all, and the operation is `done`.
     pub async fn record_list_deleted(&self, op_id: &str) -> Result<(), StoreError> {
         let mut tx = self.writer().begin().await?;
         let op = op_in(&mut tx, op_id).await?;
+        let rev = next_local_rev(&mut tx).await?;
+        tombstone(&mut tx, &op.entity_local_id, rev).await?;
         let graph_id: Option<String> =
             sqlx::query_scalar("SELECT graph_id FROM lists WHERE local_id = ?")
                 .bind(&op.entity_local_id)
@@ -316,8 +327,22 @@ async fn apply_write(
             tombstone(tx, local_id, rev).await?;
             Ok((json!({ "body": {}, "tasks": confirmed }), Some(before)))
         }
+        ListWrite::DeleteWhenMoved { after, moves } => {
+            let before = snapshot(tx, local_id, Vec::new()).await?;
+            let payload = json!({
+                "body": {},
+                "tasks": 0,
+                AFTER_COMMAND: after,
+                "moves": moves,
+            });
+            Ok((payload, Some(before)))
+        }
     }
 }
+
+/// A list delete's payload field naming the command it waits for (a
+/// merge's moves).
+pub const AFTER_COMMAND: &str = "after_command";
 
 /// Undo a list operation's local change by `restore`: `Tombstone` takes
 /// the list (and its tasks) away, `Replace` brings back the list and the

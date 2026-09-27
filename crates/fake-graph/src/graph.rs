@@ -225,6 +225,9 @@ impl FakeGraph {
                         "message": "Resource not found for the segment 'todo'."
                     } }));
                 }
+                if let Some(refused) = refuse_untyped(&body) {
+                    return refused;
+                }
                 let stored = write_list_extension(&mut data, &list, body);
                 ResponseTemplate::new(200).set_body_json(stored)
             })
@@ -270,6 +273,9 @@ impl FakeGraph {
                     fields.remove("@odata.type");
                     fields.remove("extensionName");
                 }
+                if let Some(refused) = refuse_untyped(&body) {
+                    return refused;
+                }
                 write_list_extension(&mut data, &list, body);
                 ResponseTemplate::new(201)
             })
@@ -296,6 +302,9 @@ impl FakeGraph {
                         "code": "RequestBroker--ParseUri",
                         "message": "Resource not found for the segment 'todo'."
                     } }));
+                }
+                if let Some(refused) = refuse_untyped(&body) {
+                    return refused;
                 }
                 let stored = write_task_extension(&mut data, &list, &task, body);
                 ResponseTemplate::new(200).set_body_json(stored)
@@ -331,6 +340,9 @@ impl FakeGraph {
                 if let Some(fields) = body.as_object_mut() {
                     fields.remove("@odata.type");
                     fields.remove("extensionName");
+                }
+                if let Some(refused) = refuse_untyped(&body) {
+                    return refused;
                 }
                 write_task_extension(&mut data, &list, &task, body);
                 ResponseTemplate::new(201)
@@ -581,6 +593,23 @@ fn delta_page(data: &Data, base: &str, path: &str, skip: &str) -> ResponseTempla
         "value": items[offset..end].to_vec(),
         "@odata.nextLink": format!("{base}{path}?$skiptoken={round}-{end}")
     }))
+}
+
+/// Graph's 400 for an open extension holding an array with no
+/// `<field>@odata.type` beside it, as it answered live (D-067).
+pub(crate) fn refuse_untyped(fields: &Value) -> Option<ResponseTemplate> {
+    let fields = fields.as_object()?;
+    let untyped = fields.iter().find(|(key, value)| {
+        value.is_array() && !fields.contains_key(&format!("{key}@odata.type"))
+    })?;
+    Some(ResponseTemplate::new(400).set_body_json(json!({ "error": {
+        "code": "invalidRequest",
+        "message": format!(
+            "The given untyped value '{}' in payload is invalid. Consider using a OData type \
+             annotation explicitly.",
+            untyped.1
+        )
+    } })))
 }
 
 pub(crate) fn not_found() -> ResponseTemplate {

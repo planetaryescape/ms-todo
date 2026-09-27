@@ -6,7 +6,7 @@ All ms-todo open extensions use the name `com.planetaryescape.mstodo` (one exten
 
 A task's extension also holds `opId`, the outbox operation ID of the create that made it, so an uncertain create can be attributed later ([04](04-sync-cache.md#unknown-outcome-d-028)).
 
-**An extension write always sends the whole document** (S2). PATCH replaces the extension rather than merging, so a PATCH of `myDay` alone would wipe `assignee`. So before any extension write, GET the current extension with the filtered `$expand` on that task or list, apply only the fields we're changing on top of it, and PATCH the whole merged document. (POST of an existing name also acts as an upsert.) A race window remains: a write from elsewhere between our GET and PATCH is lost. Whether an extension PATCH honours the parent's `If-Match` is untested (open item in [12](12-open-questions.md#s2-result-2026-09-24)). Integers come back with an `@odata.type` annotation key (`order@odata.type`); ignore those keys when reading. How extension content reaches the cache is in [04](04-sync-cache.md#children-of-a-task).
+**An extension write always sends the whole document** (S2). PATCH replaces the extension rather than merging, so a PATCH of `myDay` alone would wipe `assignee`. So before any extension write, GET the current extension with the filtered `$expand` on that task or list, apply only the fields we're changing on top of it, and PATCH the whole merged document. (POST of an existing name also acts as an upsert.) A race window remains: a write from elsewhere between our GET and PATCH is lost. Whether an extension PATCH honours the parent's `If-Match` is untested (open item in [12](12-open-questions.md#s2-result-2026-09-24)). Integers come back with an `@odata.type` annotation key (`order@odata.type`); ignore those keys when reading. An array is refused unless it's sent with its type beside it, `related@odata.type: "#Collection(String)"` (S21), so every write adds that for each array. How extension content reaches the cache is in [04](04-sync-cache.md#children-of-a-task).
 
 ## My Day
 
@@ -145,6 +145,16 @@ This fixes MAG&Cie's lossy `move_task` (see prior-art.md).
 - Step 3 compares the copy with the source field by field, children by what they hold, attachments by byte count and sha256, and checks the target list is live and the source unchanged since it was read. A mismatch deletes the copy and keeps the source.
 - `tasks move T… --to L` and the TUI's `m` move several tasks as one command; `undo` moves them back the same way, per task, and not a task that has moved or changed since.
 - The To Do apps show the copy as a new task: its `createdDateTime` is the move's. ms-todo shows `originalCreatedAt` in the task's JSON, under its extension.
+
+**Whole lists and selections (D-067):** `tasks move --overdue | --due-before` moves what `reschedule` would pick, and `lists merge FROM --into TO` moves every open task of a list (all of them with `--include-completed`), each through this job, one `undo` for all. `--delete-source` deletes the emptied list by an operation of its own that waits for every move and goes ahead only when the list is empty in the cache and on Graph.
+
+## Related tasks
+
+Graph has no relation between tasks. ms-todo keeps one in the extension (D-067):
+
+- **Field:** `related`, the Graph IDs of the tasks this one is linked to, an array of strings (typed as `#Collection(String)` when written, S21), in the same document as `myDay` and `assignee`, through the same GET, merge and whole-document write (`task_extension`). A link is kept on both tasks: `tasks relate T1 T2` writes both, one operation each, under one `op_id`; `unrelate` takes it from both. Each write adds or takes away just that ID, on Graph's list as it is when sent, and `undo` does the opposite on both tasks as they are then, so a later link to a third task is kept. An empty list removes the field.
+- **Graph IDs, not local ones,** so every machine's ms-todo can follow a link. A task moved by this machine has a new Graph ID; a link by its old one still finds it through the finished move, and linking again replaces the old ID. A link to a task this cache doesn't have (deleted, moved on another machine, not synced) shows as not here.
+- **Reads:** `tasks show` and the TUI's seed give each linked task's local ID, title, list and status; the TUI's detail pane lists them and opens one with Enter.
 
 ## Sharing: not built
 

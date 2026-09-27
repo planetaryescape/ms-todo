@@ -86,6 +86,18 @@ pub(crate) async fn undo(
             format!("{target} was undone already, by {by}; `ms-todo undo {by}` redoes it"),
         ));
     }
+    // A merge's delete of its emptied list being sent right now may take
+    // the list the moves back need; a waiting one is dropped with the
+    // undo (`Store::enqueue`).
+    let delete = crate::list_merge::delete_op_id(&target);
+    if let Some(op) = state.store.outbox_op(&delete).await.map_err(store_error)?
+        && op.state == OpState::Inflight
+    {
+        return Err(error_payload(
+            ErrorKind::Conflict,
+            format!("{delete}, deleting the merged list, is being sent; undo once it's done"),
+        ));
+    }
     if ops.iter().all(|op| op.op.is_list()) {
         return crate::list_undo::undo_lists(state, &target, &ops, &op_id).await;
     }
@@ -197,7 +209,37 @@ pub(crate) async fn undo(
                     continue;
                 }
                 let from_list = move_job::from_list(op);
+                let gone = state
+                    .store
+                    .list_state(&from_list)
+                    .await
+                    .map_err(store_error)?
+                    .is_none_or(|(_, deleted)| deleted);
+                if gone {
+                    // A merge that deleted the list it emptied: its delete
+                    // is undone first, which makes the list again.
+                    return Err(error_payload(
+                        ErrorKind::InvalidInput,
+                        format!(
+                            "the list {:?} came from is deleted; undo its delete first (`ms-todo \
+                             undo {}.delete` after a merge), then this",
+                            row.title, op.command_id
+                        ),
+                    ));
+                }
                 inverse.push(move_op(id(inverse.len()), &row, &from_list));
+            }
+            OpKind::TaskExtension if crate::related::Link::of(&op.payload).is_some() => {
+                // A set change is undone as one: only that link, on the
+                // task as it is now (D-067).
+                let link = crate::related::Link::of(&op.payload).unwrap_or_default();
+                let action = if link.linked {
+                    TaskAction::Unrelate
+                } else {
+                    TaskAction::Relate
+                };
+                let id = id(inverse.len());
+                inverse.extend(crate::related::link_op(id, &row, &link.inverse(), action));
             }
             OpKind::TaskExtension => {
                 let moved = extension_moved(op, &row);

@@ -15,6 +15,19 @@ use crate::tasks::{WriteTask, write_task};
 use crate::{Entity, Store, StoreError, parse_optional, to_json};
 
 impl Store {
+    /// The local ID of the task a finished move copied from the Graph task
+    /// `graph_id`, if this cache moved it: the copy has a new Graph ID, and
+    /// a link to the old one (D-067) still means it.
+    pub async fn moved_from(&self, graph_id: &str) -> Result<Option<String>, StoreError> {
+        Ok(sqlx::query_scalar(
+            "SELECT entity_local_id FROM outbox WHERE op = 'move' AND state = 'done' \
+             AND json_extract(progress_json, '$.source.graph_id') = ? ORDER BY seq DESC LIMIT 1",
+        )
+        .bind(graph_id)
+        .fetch_optional(self.reader())
+        .await?)
+    }
+
     /// Save a move's `progress`, the steps it has taken.
     pub async fn set_progress(&self, op_id: &str, progress: &Value) -> Result<(), StoreError> {
         save_progress(&mut *self.writer().acquire().await?, op_id, progress).await

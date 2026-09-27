@@ -68,7 +68,11 @@ pub(crate) async fn retry(state: &State, op_id: &str) -> Result<ResponseData, Er
             ));
         }
     }
-    let mut progress = None;
+    // The user chose a resend: an attachment's upload starts over in a new
+    // session, not from one whose end may have gone.
+    let mut progress = (op.op == OpKind::Child
+        && matches!(op.state, OpState::Unknown | OpState::Failed))
+    .then(|| serde_json::json!({}));
     let restore = match op.state {
         OpState::Unknown | OpState::Failed if op.op == OpKind::Move => {
             let (restore, steps) = move_job::retry(state, &op).await?;

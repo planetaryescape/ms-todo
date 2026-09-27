@@ -30,6 +30,8 @@ pub enum DetailRow {
     Attachments,
     /// The attachment at this index.
     Attachment(usize),
+    /// The related task at this index: Enter opens it (D-067).
+    Related(usize),
 }
 
 impl Default for DetailRow {
@@ -51,6 +53,7 @@ impl DetailRow {
         rows.push(Self::Link);
         rows.push(Self::Attachments);
         rows.extend((0..task.attachments.len()).map(Self::Attachment));
+        rows.extend((0..task.related.len()).map(Self::Related));
         rows.push(Self::Field(Field::Notes));
         rows
     }
@@ -69,6 +72,11 @@ impl DetailRow {
                 .len()
                 .checked_sub(1)
                 .map_or(Self::Attachments, Self::Attachment),
+            Self::Related(at) if at >= task.related.len() => task
+                .related
+                .len()
+                .checked_sub(1)
+                .map_or(Self::Attachments, Self::Related),
             row => row,
         }
     }
@@ -77,7 +85,12 @@ impl DetailRow {
     pub fn is_child(self) -> bool {
         matches!(
             self,
-            Self::Steps | Self::Step(_) | Self::Link | Self::Attachments | Self::Attachment(_)
+            Self::Steps
+                | Self::Step(_)
+                | Self::Link
+                | Self::Attachments
+                | Self::Attachment(_)
+                | Self::Related(_)
         )
     }
 }
@@ -162,6 +175,9 @@ impl App {
             // `e`, like Enter, does what the row is for: save and open it.
             (Action::Edit | Action::EditHere | Action::OpenLink, DetailRow::Attachment(at)) => {
                 self.download_attachment(&task, at)
+            }
+            (Action::Edit | Action::EditHere, DetailRow::Related(at)) => {
+                self.open_related(&task, at)
             }
             (Action::Delete, DetailRow::Attachment(at)) => {
                 self.confirm_attachment_delete(&task, at);
