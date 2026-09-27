@@ -325,10 +325,16 @@ ms-todo --context none next         # one command outside any
 ms-todo tasks move <ID> --to Groceries             # steps, link, attachments and all
 ms-todo tasks move <ID> <ID> --to Someday --yes    # several at once; asks first in a terminal
 ms-todo tasks move <ID> --to Groceries --dry-run
+ms-todo tasks move --overdue --list Inbox --to Later --dry-run   # what reschedule would pick
 ms-todo undo                                       # moves them back
+ms-todo lists merge Errands --into Groceries --dry-run            # every open task of a list
+ms-todo lists merge Errands --into Groceries --include-completed --delete-source --yes
 ```
 
 Microsoft To Do has no move, so ms-todo copies the task into the other list with every field, its steps (ticked or not), its link, its attachments byte for byte and ms-todo's own data, reads the copy back to check it matches, and only then deletes the original. The task keeps its ID in ms-todo and shows in the new list at once, `pending` until the move is done. If a step fails before the delete, the half-made copy is deleted and the original is untouched; if Microsoft To Do doesn't answer a step, the move pauses in `ms-todo outbox list` and deletes nothing until it's found or you decide (`outbox retry` or `outbox discard`). The To Do apps show the moved task as created at the time of the move; ms-todo keeps the original time as `originalCreatedAt` in its own data. A task that has changed or moved again since isn't moved back by `undo`. One field can differ: a reminder that's off but keeps its time (as completing leaves it) comes back on in the copy, because Microsoft To Do turns a reminder on whenever its time is written.
+
+- **Picking what moves.** `--overdue` (open, due before today) and `--due-before WHEN` pick tasks as `reschedule` does: in `--list` or `--folder`, else in every list of the active [context](#contexts), else everywhere; a task already in the target list stays where it is. Check with `--dry-run` first. More than one asks in a terminal and needs `--yes` elsewhere.
+- **A whole list.** `lists merge FROM --into TO` moves every open task of FROM, each as above, and `--include-completed` the completed ones too; one `undo` moves them all back. The TUI's palette has "Merge list into…". `--delete-source` then deletes FROM, but only once every task has moved and Microsoft To Do shows it empty; if a task didn't move, or one was added on the phone meanwhile, FROM is kept and `ms-todo outbox list` says why. It needs `--include-completed` when FROM has completed tasks, so none is lost. The delete is its own change, `<op_id>.delete`: `ms-todo undo` undoes it first (the list is made again, empty), and a second `undo` moves the tasks back into it.
 
 ### How dates are written
 
@@ -367,6 +373,16 @@ TASK is an ID, or an exact title with `--list`. A step is named by its number fr
 - **A step or link whose add got no answer** stays `unknown` in `ms-todo outbox list`, flagged for you: Microsoft To Do may have it, and nothing can tell which step is which, so it's never sent twice by itself. Look at the task, then `outbox retry` to send it again or `outbox discard` if it's there.
 - **In the TUI**, the detail pane shows Steps with each step's checkbox, then the link, and a task's row shows `2/5`. Move the cursor onto them with `j`/`k`: `Space` checks or unchecks a step, `a` adds steps (Enter adds one and opens the next; Esc stops), `e` or Enter edits a step or the link's URL (or adds a link), and `d` deletes either after asking. In the link's editor, `Tab` moves on to its name, app and external ID; Enter sends every field that changed, and emptying one that has a value is refused, as `links edit` can't clear it.
 
+## Related tasks
+
+```sh
+ms-todo tasks relate <TASK> <OTHER>                # linked both ways
+ms-todo tasks show <TASK>                          # Related: "Buy cake" <id>
+ms-todo tasks unrelate <TASK> <OTHER>
+```
+
+Microsoft To Do has no links between tasks, so ms-todo keeps them in its own data on each task: every ms-todo you use sees them, and the To Do apps don't. `tasks show` lists a task's related tasks by title (JSON: `related`, each with `id`, `title`, `list_id` and `status`); one that's been deleted, or isn't synced here yet, shows as not here. `undo` takes a link away again. A task moved to another list keeps its links. In the TUI the detail pane lists them under Related, and `Enter` on one opens it in its list.
+
 ## Attachments
 
 ```sh
@@ -375,11 +391,16 @@ ms-todo attachments add <TASK> ./invoice.pdf scan.png    # up to 25 MB each, in 
 ms-todo attachments download <TASK>                      # every file, into the current directory
 ms-todo attachments download <TASK> 1 --out ~/Downloads  # one, by number, ID or exact name
 ms-todo attachments delete <TASK> invoice.pdf --yes      # asks first in a terminal
+pbpaste | ms-todo attachments add <TASK> - --name notes.txt   # what's on stdin, named
+ms-todo attachments add <TASK> https://example.com/q3.pdf     # downloaded first, https only
 ```
 
 TASK is an ID, or an exact title with `--list`. A file goes by its path: the daemon reads it when it sends it, and nothing else of it is kept. The file shows on the task at once, marked as uploading, and on the phone once it's there. `ms-todo undo` reverses an add, and a delete too, for a week: ms-todo keeps a copy of a file before deleting it, in its data directory, readable by you only. If it can't keep the copy (a full disk, say), it deletes nothing and says so in `ms-todo outbox list`; `attachments delete --no-undo` then deletes without one.
 
 - **Size.** Microsoft To Do takes files up to 25 MB; a bigger one is refused before anything is sent. Files over 3 MB go up in pieces, and a piece whose answer is lost is sent again. The size `attachments list` shows is Microsoft To Do's, a few hundred bytes more than the file.
+- **From stdin or a URL.** `-` reads the file from stdin (25 MB at most) and needs `--name`. A URL is downloaded by the daemon: `https` only, following redirects only to `https`, 25 MB at most; its name is the URL's last part unless `--name` says otherwise. Either way the daemon keeps its own copy, readable by you only, until the file is uploaded, and nothing of it crosses to the CLI.
+- **Progress.** In a terminal, adding a file over 3 MB shows how far its upload has got on one line, until it's done; Ctrl-C stops watching, and the upload carries on. The TUI shows the same as a gauge in its status line.
+- **A daemon that stops mid-upload** (a restart, a closed laptop) carries on where it was when it starts again, or starts the upload afresh if Microsoft To Do has forgotten it: either way the file is attached once. Only an upload whose last piece may have been sent is `unknown`, as below.
 - **A file changed after `add`**, before it was sent, isn't sent: the write fails in `ms-todo outbox list`, and you add it again.
 - **An upload whose last answer was lost** stays `unknown` in `ms-todo outbox list`, flagged for you: Microsoft To Do may have the file, and ms-todo never sends it twice by itself. Look at the task, then `outbox retry` or `outbox discard`.
 - **Downloads** go into `--out` (the current directory by default), which must be a real directory, not a symlink. A name from Microsoft To Do is made safe first (no `/`, `..` or leading dot), the file is readable by you only, and it never replaces a file already there: the new one is `name (1).pdf`, unless you pass `--force`. `--format json` gives each file's path, byte count and sha256.
@@ -491,7 +512,7 @@ mst tui --theme nord # draw with a theme (mst tui --list-themes names them)
 
 A title bar with the version and the view you're in, a sidebar of smart views (My Day, Next, Important, Planned, All, Assigned, Upcoming, Someday, Completed), then your folders, each with its lists under it and their total, then the lists in no folder, all with their counts, the task list, and a detail pane. The focused task list shows the cursor's position and its task count in the top border (`3/42`). It opens from the local cache, and changes made anywhere, the phone included, show up as the daemon syncs them. A change you make shows at once, marked pending (dim) until it reaches Microsoft To Do; unknown outcomes are amber and rejected changes red, with a banner saying why.
 
-The keys are in the README's [TUI keys](../README.md#tui-keys) table; `?` inside the TUI lists them all. The palette (`:`) also has "New list…", "Rename list…", "Delete list…" (the list under the sidebar's cursor, or the one shown), "Context: …" for each [context](#contexts), and "Suggest lists for inbox" ([List suggestions](#list-suggestions)); with nothing typed, the last ten commands run from it come first. A task's categories show on its row as `@label`.
+The keys are in the README's [TUI keys](../README.md#tui-keys) table; `?` inside the TUI lists them all. The palette (`:`) also has "New list…", "Rename list…", "Delete list…", "Merge list into…" (the list under the sidebar's cursor, or the one shown), "Context: …" for each [context](#contexts), and "Suggest lists for inbox" ([List suggestions](#list-suggestions)); with nothing typed, the last ten commands run from it come first. A task's categories show on its row as `@label`.
 
 In the editor, a due date or a reminder takes what `--due` and `--reminder` take (`tomorrow`, `fri 17:30`, `+2w`, `12 oct`), and shows what it resolves to as you type (`→ Fri 2 Oct`, or `, in the past`); empty or `-` clears it, and input it can't read says why and sends nothing. Importance is picked by level: `1` high, `2` or `3` normal, `4` low (or `h`, `n`, `l`), saved at once. Notes are plain text on several lines: notes written as html on another device are shown as text, and only rewritten as text if you change them. A selection holds only tasks in the view on screen: switching views clears it, and a task that leaves the view drops out of it. The Completed view is grouped by the day each task was completed: Today, Yesterday, then `Mon 21 Sep` and so on. My Day's title has its day (`My Day · Fri 25 Sep`); its tasks come first, then Suggestions. `t` on a suggestion adds it; `t` on the task or the selection puts it in My Day, or takes it out when it's all there already. `a` from My Day adds the new task to it.
 

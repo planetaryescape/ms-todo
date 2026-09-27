@@ -30,6 +30,7 @@ doctor [--notify-test]                  # sign-in, daemon, db, delta state, outb
 
 lists      list | show L | create NAME [--folder F] | rename L NAME | delete L
            move L --folder F | order L --before/--after L2
+           merge L --into L2 [--include-completed] [--delete-source] [--dry-run] [--yes]   # every open task moved (D-067)
 folders    list | rename F NEW | delete F | order F --before/--after F2
 
 tasks      list [--list L] [--status S] [--due before/after/today/overdue] [--importance I]
@@ -45,6 +46,8 @@ tasks      list [--list L] [--status S] [--due before/after/today/overdue] [--im
            edit T... [same field flags, plus --clear-due etc.]   # several, `-`, or --overdue / --due-before (5d)
            complete T... | reopen T... | delete T...
            move T... --to L [--list L] [--dry-run] [--yes]   # copy, check, then delete the source (D-051)
+           move (--overdue | --due-before W) --to L [--list L | --folder F]   # a selection, as reschedule's (D-067)
+           relate T1 T2 | unrelate T1 T2 [--list L]    # a link between two tasks, both ways, in ms-todo's extension (D-067)
            nag T... (--every 15m | --off) [--list L] [--dry-run] [--yes]   # needs a reminder; notifies on this machine (D-063)
            links T [--list L]           # linked resources' webUrls, then URLs in the notes, deduped (D-050)
            open T [--index N] [--list L]   # http, https, mailto only; several and no --index: listed, exit 2
@@ -60,6 +63,7 @@ steps      list T | add T "text"... | edit T S "text" | check T S... | uncheck T
            # S: a number from 1, an ID or the exact text; no `order`: Graph can't reorder steps (S15)
 links      list T | add T URL [--name N] [--app A] [--external-id X] | edit T [R] [--url U] [--name N] … | delete T [R] [--yes]
 attachments list T | add T FILE... | download T [A...] [--out DIR] [--force] | delete T A... [--yes]   # paths only; the daemon moves the bytes
+           add T - --name N | add T https://… [--name N]   # stdin via a private temp file the daemon copies; a URL the daemon downloads (D-067)
 extensions list (list|task) ID | get … NAME | set … NAME --json '{…}' | delete … NAME   # list: ms-todo's own (Graph lists none)
 categories list | create NAME [--color presetN] | recolor … | delete …
            # no rename: Graph ignores it (S7). A new name means create, re-tag the tasks, then delete
@@ -115,6 +119,15 @@ raw        GET|POST|PATCH|DELETE PATH [--body JSON]   # authenticated passthroug
 - `doctor` has `suggest` (`enabled`, `provider`, `sends`: what leaves the machine, `problem`), and a failure or bad setting is a `suggest: …` problem.
 
 **Moving tasks, as built (rung 5e, D-051).** `tasks move T… --to L` moves the tasks named (`-` reads IDs from stdin; `--list L` lets T be an exact title there) to the list L. It's previewed and confirmed as 5d's bulk changes are: several tasks ask in a terminal and need `--yes` elsewhere (exit 2); `--dry-run` answers the `Plan` shape with `action: "move"`, `list` the target and `targets` the tasks. A real run answers `Applied` with `action: "move"` and each task as it now shows, in the target list with `sync_state` `pending`; its local ID never changes. A task already in L, or an unknown L, is refused (exit 2, exit 3) before anything is queued. Each task is one outbox operation (`action: "move"`) whose `note` in `outbox list` says why a paused move is waiting; a move paused on something only the user can settle is `flagged` at once. `outbox retry`, `outbox discard` and `undo` act on moves as D-051 describes.
+
+**Moves, merges, attachments from anywhere and related tasks, as built (D-067).**
+
+- `tasks move --overdue | --due-before W --to L [--list L | --folder F]` picks open tasks as `reschedule` does, in the active context when neither `--list` nor `--folder` is given; a picked task already in L is left out. Previewed and confirmed as 5d's bulk changes are (more than one: a question in a terminal, exit 2 elsewhere without `--yes`); one operation per task, one `op_id`, one `undo`. Naming tasks and a selection together is exit 2.
+- `lists merge FROM --into TO` moves every open task of FROM (`--include-completed`: every task) through D-051's move job, one `op_id` (action `merge_list`; each operation's `action` is `move`), and one `undo` moves them back. `--dry-run` answers `Plan` with `list` the target, `targets` the tasks and `lists: [{ id, name, changes: { deleted, completed_left } }]` for FROM. More than one task, or `--delete-source`, asks in a terminal and needs `--yes` elsewhere. `--delete-source` queues FROM's delete as operation `<op_id>.delete` (action `delete_list`), sent only once every move is done, the cache holds no task in FROM and Microsoft To Do lists none; otherwise it's `failed` and FROM kept. It needs `--include-completed` when FROM holds completed tasks (exit 2), and can't delete "Tasks" or Flagged Emails (exit 2); FROM and TO the same list is exit 2. A table ends with the delete's operation. `undo` alone undoes the delete first (the list made again), then the moves; `undo <op_id>` while FROM is deleted exits 2, pointing at `<op_id>.delete`.
+- `attachments add T - --name N` attaches stdin: 25 MB at most, not empty, not a terminal, `--name` needed (exit 2 otherwise). `attachments add T https://…` has the daemon download it: `https` only, redirects only to `https`, at most 25 MB (each exit 2 before anything is queued); the name is `--name`, else the URL's last path segment. `-` or a URL goes on its own, and `--name` names one file. A dry run shows the write with `url` and downloads nothing. The answer is as for a file; the daemon keeps its own copy until the add is sent.
+- In a terminal (stderr, not `--quiet`), `attachments add` shows a progress line on stderr for each upload over 3 MB, rewritten in place, until it's done; stdout is unchanged, and Ctrl-C stops the watching, not the upload.
+- `tasks relate T1 T2` and `tasks unrelate T1 T2 [--list L]` link two tasks both ways (`--list` lets both be exact titles in that list); answer `Applied` with actions `relate` and `unrelate`, `--dry-run` answers `Plan` with each task's `related` after it in `changes`, keyed by its local ID. A task not yet in Microsoft To Do is exit 2; a task and itself is exit 2; a link already as asked queues nothing. `tasks show` adds `related: [{ id, graph_id, title, list_id, status }]` (`id`, `title`, `list_id` and `status` null for one this cache doesn't have), and its table a Related row. The raw IDs are in `extensions[0].related` on every task entity.
+- **Protocol 23:** `ChangeTasks.select` for `Move`, `ListChange::MergeList`, `AddAttachments.name`, `copy` and `url`, `TaskChange::Relate` and `Unrelate`, their `TaskAction`s and `MergeList`, and `Event::UploadProgress`.
 
 **Steps and links, as built (rung 8a, D-055).** Each command works on one task (`--list L` lets T be an exact title there).
 
