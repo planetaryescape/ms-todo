@@ -264,6 +264,7 @@ ms-todo doctor --notify-test                   # show one notification, then the
 - **A reminder is needed.** A nag starts at the task's reminder, so setting one on a task without a reminder is refused (exit 2), naming the tasks; give it one in the same edit with `--reminder`. A task whose reminder is later removed keeps its nag setting but doesn't nag until it has a reminder again.
 - **What syncs.** The interval is `nag` (minutes) in ms-todo's own data on the task, so every ms-todo you sign in to sees it after its next sync, and `undo` puts it back like any other change. Nothing else goes to Microsoft To Do: the notifications come from the ms-todo daemon on each machine, so only machines running it nag, and the phone shows only the task's own reminder.
 - **When.** The first notification comes as the reminder time passes (the To Do app shows its own reminder then too), then one every interval. The notification's title is the task's title and its text the list's name. A daemon that was stopped owes each task at most one notification when it's back, not one per interval missed: it keeps when each task last nagged. Moving the reminder later starts the nag again from the new time, and reopening a completed task that nags starts it again at once if its reminder has passed.
+- **Deferred or Someday**, a task doesn't nag: it waits until it shows again.
 - **Quiet hours** hold notifications back; the next one comes when they end.
 
   ```toml

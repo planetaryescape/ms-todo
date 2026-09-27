@@ -268,7 +268,7 @@ pub async fn doctor(paths: &Paths) -> Result<Doctor, CliError> {
         suggest,
         my_day,
         semantic,
-        nag,
+        nag: nag.map(|nag| *nag),
         problems,
     })
 }

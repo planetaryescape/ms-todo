@@ -35,6 +35,9 @@ pub(crate) struct Nagger {
     notifier: Notifier,
     /// The last notification that failed, until one works again.
     failure: Mutex<Option<String>>,
+    /// Held while the saved last-nagged times are read and written, so a
+    /// tick can't put back a time `forget` just removed.
+    saving: tokio::sync::Mutex<()>,
 }
 
 impl Nagger {
@@ -45,6 +48,7 @@ impl Nagger {
             config,
             notifier,
             failure: Mutex::new(None),
+            saving: tokio::sync::Mutex::new(()),
         }
     }
 
@@ -87,6 +91,7 @@ async fn tick(state: &State) -> Result<(), ErrorPayload> {
     {
         return Ok(());
     }
+    let _saving = nagger.saving.lock().await;
     let rows = state.store.nagging_tasks().await.map_err(store_error)?;
     let mut last = last_nagged(state).await?;
     let before = last.clone();
@@ -155,6 +160,25 @@ fn due(nagger: &Nagger, row: &TaskRow, now: DateTime<Utc>, last: Option<i64>) ->
     };
     let last = last.and_then(DateTime::from_timestamp_millis);
     schedule::due(now, reminder.with_timezone(&Utc), every, last)
+}
+
+/// Forget when `ids` last nagged, so a nag just set nags as soon as its
+/// reminder has passed. The tick's own pruning can't do this: it skips
+/// quiet hours, and misses a nag turned off and on between two ticks.
+pub(crate) async fn forget(state: &State, ids: &[&str]) -> Result<(), ErrorPayload> {
+    let _saving = state.nag.saving.lock().await;
+    let mut last = last_nagged(state).await?;
+    let before = last.len();
+    last.retain(|id, _| !ids.contains(&id.as_str()));
+    if last.len() == before {
+        return Ok(());
+    }
+    let json = serde_json::to_string(&last).unwrap_or_default();
+    state
+        .store
+        .set_settings(&[(LAST_NAGGED, &json)])
+        .await
+        .map_err(store_error)
 }
 
 async fn last_nagged(state: &State) -> Result<HashMap<String, i64>, ErrorPayload> {

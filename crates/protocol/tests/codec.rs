@@ -237,13 +237,13 @@ fn every_request_and_response_round_trips() {
                     pending: 14,
                     problem: None,
                 }),
-                nag: Some(NagStatus {
+                nag: Some(Box::new(NagStatus {
                     active: true,
                     notifier: Some("osascript".into()),
                     quiet_hours: Some("22:00-07:00".into()),
                     count: 1,
                     problem: None,
-                }),
+                })),
             }),
         }),
         Payload::Request(Request::NotifyTest),

@@ -473,3 +473,6 @@ BK checked the blueprint against his Obsidian notes and approved folding these g
 - **Debug-build hooks for tests only:** `MS_TODO_NAG_NOTIFY_FILE` writes notifications to a file, and `MS_TODO_NAG_MINUTE_MS` shortens a nag's minute. Release builds ignore both, and the 5-minute minimum holds everywhere.
 - **Protocol 19:** `NewTask.nag`, `TaskEdit.nag`, `TaskFilter.nagging`, `NotifyTest` and `DoctorReport.nag`. No migration: `settings` from `0006` holds the last-nagged times.
 - **Not built:** moving the reminder on the server, nags on the phone, snooze, notification actions (non-goals); nags on Linux.
+- **Deferred and Someday tasks don't nag** (9a's rule, D-061): a task out of the everyday views waits until it shows again, then nags as usual.
+- **Setting or stopping a nag** forgets when that task last nagged, so a nag turned off and on again (between two ticks, or in quiet hours, which skip the tick's pruning) nags as soon as its reminder has passed, not an interval later.
+- **Known limits, accepted:** a restart in the middle of a batch of notifications may show one again; in the hour when the clocks go back, a reminder in that hour may start its nag an hour early (its earlier reading is taken); a clock corrected backwards pauses nags until it passes the saved last-nagged time.

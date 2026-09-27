@@ -97,9 +97,10 @@ pub struct DoctorReport {
     /// Semantic search (rung 9c); `None` from a daemon before it.
     #[serde(default)]
     pub semantic: Option<SemanticStatus>,
-    /// Nag reminders (rung 9b); `None` from a daemon before them.
+    /// Nag reminders (rung 9b); `None` from a daemon before them. Boxed
+    /// so `Response` stays within clippy's variant-size limit.
     #[serde(default)]
-    pub nag: Option<NagStatus>,
+    pub nag: Option<Box<NagStatus>>,
 }
 
 /// How semantic search stands, for `doctor` (D-062).

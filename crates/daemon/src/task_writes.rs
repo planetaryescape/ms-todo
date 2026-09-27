@@ -243,7 +243,13 @@ pub(crate) async fn change_tasks(
             ops.push(op);
         }
     }
-    queue(state, &op_id, None, ops, action).await
+    let answer = queue(state, &op_id, None, ops, action).await?;
+    if nag.is_some() {
+        // A nag set or stopped starts afresh, whenever the nagger next looks.
+        let ids: Vec<&str> = targets.iter().map(Target::local_id).collect();
+        crate::nag::forget(state, &ids).await?;
+    }
+    Ok(answer)
 }
 
 /// An edit's assignee change, the name checked, and whether it keeps the

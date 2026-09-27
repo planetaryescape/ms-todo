@@ -310,3 +310,40 @@ async fn a_deferred_or_someday_task_waits_until_it_shows_again() {
         "nags once it shows"
     );
 }
+
+#[tokio::test]
+async fn a_nag_turned_off_and_on_nags_again_at_once() {
+    let mut env = Env::new();
+    let nagging = reminded("T1", "Call mum");
+    graph_with(
+        &mut env,
+        vec![nagging],
+        vec![("T1", ours(json!({ "nag": 5 })))],
+    )
+    .await;
+    no_quiet_hours(&env);
+    let file = env.home.path().join("notifications.txt");
+    env.json(&["daemon", "stop"]);
+    // A minute of 2 s: the interval is 10 s, and a tick every second.
+    env.cmd()
+        .env("MS_TODO_NAG_NOTIFY_FILE", &file)
+        .env("MS_TODO_NAG_MINUTE_MS", "2000")
+        .args(["--format", "json", "daemon", "start"])
+        .assert()
+        .success();
+    env.synced();
+    let id = env.local_id(&["tasks", "list"], "T1");
+    assert_eq!(wait_for(&file, 1).len(), 1, "the first, at once");
+
+    env.json(&["tasks", "nag", &id, "--off"]);
+    env.json(&["tasks", "nag", &id, "--every", "5m"]);
+    // Well inside the 10 s interval the old time would have waited out.
+    let started = Instant::now();
+    let shown = wait_for(&file, 2);
+    assert_eq!(shown.len(), 2, "{shown:?}");
+    assert!(
+        started.elapsed() < Duration::from_secs(5),
+        "{:?}",
+        started.elapsed()
+    );
+}
