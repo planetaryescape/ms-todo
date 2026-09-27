@@ -706,6 +706,29 @@ fn ctrl_s_in_the_filter_searches_by_meaning_and_back() {
 }
 
 #[test]
+fn a_changed_index_re_runs_only_a_filter_by_meaning() {
+    let mut app = seeded();
+    let index_changed = || Msg::Event(Event::IndexChanged);
+    assert!(app.update(index_changed()).is_empty(), "no filter");
+    act(&mut app, Action::Filter);
+    let effects = app.update(Msg::Char('d'));
+    answer_seed(&mut app, &effects[0], seed(scope_home(), Vec::new()));
+    assert!(app.update(index_changed()).is_empty(), "a filter by words");
+    let effects = act(&mut app, Action::ToggleSemantic);
+    answer_seed(&mut app, &effects[0], seed(scope_home(), Vec::new()));
+    let effects = app.update(index_changed());
+    assert_eq!(
+        effects[0].request,
+        Request::Seed {
+            scope: Some(scope_home()),
+            search: Some("d".into()),
+            include_deferred: false,
+            semantic: true,
+        }
+    );
+}
+
+#[test]
 fn the_filter_matches_the_word_being_typed_as_a_prefix() {
     assert_eq!(search_query("mil"), "mil*");
     assert_eq!(search_query("milk "), "milk");

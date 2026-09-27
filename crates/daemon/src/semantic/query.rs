@@ -41,7 +41,7 @@ pub(crate) async fn search(
         ));
     }
     let embedder = if wait {
-        state.semantic.embedder(&state.store).await?
+        state.semantic.embedder(&state.store, &state.events).await?
     } else {
         state.semantic.ready_embedder()?
     };

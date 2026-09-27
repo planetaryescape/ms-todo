@@ -23,6 +23,7 @@ use ms_todo_protocol::{ErrorPayload, Event, ModelState, SemanticStatus};
 use ms_todo_store::Store;
 use tokio::sync::broadcast::error::{RecvError, TryRecvError};
 
+use crate::events::Events;
 use crate::handlers::{State, error_payload, store_error};
 use config::Setting;
 use model::{Embedder, MODEL_ID, Source};
@@ -79,7 +80,11 @@ impl Semantic {
     /// The model, loaded if it isn't yet: downloaded if needed, then the
     /// first indexing pass run before anyone gets it, so the first search
     /// sees every task. Waits for a load already running.
-    pub async fn embedder(&self, store: &Store) -> Result<Arc<Embedder>, ErrorPayload> {
+    pub async fn embedder(
+        &self,
+        store: &Store,
+        events: &Events,
+    ) -> Result<Arc<Embedder>, ErrorPayload> {
         self.check_enabled()?;
         let mut loaded = self.model.lock().await;
         if let Some(embedder) = loaded.as_ref() {
@@ -97,6 +102,8 @@ impl Semantic {
                 }
                 *loaded = Some(Arc::clone(&embedder));
                 self.set_problem(None);
+                // A filter that was told the model wasn't ready can search now.
+                events.index_changed();
                 Ok(embedder)
             }
             Err(why) => {
@@ -202,12 +209,13 @@ pub(crate) async fn run(state: Arc<State>) {
     }
     let mut events = state.events.subscribe();
     loop {
-        let retry = match state.semantic.embedder(&state.store).await {
+        let retry = match state.semantic.embedder(&state.store, &state.events).await {
             Ok(embedder) => {
                 match index::catch_up(&state.store, &embedder).await {
                     Ok(0) => {}
                     Ok(count) => {
                         eprintln!("ms-todo daemon: embedded {count} task(s) for semantic search");
+                        state.events.index_changed();
                     }
                     Err(why) => eprintln!(
                         "ms-todo daemon: indexing tasks for semantic search failed: {why}"

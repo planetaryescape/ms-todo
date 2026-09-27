@@ -331,7 +331,10 @@ impl App {
                     Vec::new()
                 }
             }
-            Event::SyncProgress(_) | Event::Unknown => Vec::new(),
+            // Only a search by meaning ranks by the index: re-run it, as
+            // the model may have just loaded or the tasks been re-embedded.
+            Event::IndexChanged if self.semantic_filter && self.filter.is_some() => self.reseed(),
+            Event::IndexChanged | Event::SyncProgress(_) | Event::Unknown => Vec::new(),
         }
     }
 }

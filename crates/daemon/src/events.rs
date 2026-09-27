@@ -53,6 +53,12 @@ impl Events {
         let _ = self.sender.send(event);
     }
 
+    /// Semantic search's index changed: its model loaded, or a pass
+    /// embedded tasks.
+    pub fn index_changed(&self) {
+        let _ = self.sender.send(Event::IndexChanged);
+    }
+
     pub fn subscribe(&self) -> broadcast::Receiver<Event> {
         self.sender.subscribe()
     }

@@ -599,6 +599,7 @@ fn every_request_and_response_round_trips() {
             tasks: vec!["t1".into(), "t2".into()],
         })),
         Payload::Event(Event::ResyncNeeded),
+        Payload::Event(Event::IndexChanged),
         Payload::Event(Event::SyncState(SyncActivity {
             generation: 8,
             in_progress: false,
