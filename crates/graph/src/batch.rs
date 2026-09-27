@@ -24,23 +24,23 @@ use crate::retry::{self, RetryDecision};
 const BATCH_LIMIT: usize = 20;
 
 #[derive(Deserialize)]
-struct Responses {
-    responses: Vec<SubResponse>,
+pub(crate) struct Responses {
+    pub(crate) responses: Vec<SubResponse>,
 }
 
 #[derive(Deserialize)]
-struct SubResponse {
-    id: String,
-    status: u16,
+pub(crate) struct SubResponse {
+    pub(crate) id: String,
+    pub(crate) status: u16,
     #[serde(default)]
     headers: Map<String, Value>,
     #[serde(default)]
-    body: Value,
+    pub(crate) body: Value,
 }
 
 impl SubResponse {
     /// The step's own headers (`Retry-After`, `request-id`), as HTTP headers.
-    fn header_map(&self) -> HeaderMap {
+    pub(crate) fn header_map(&self) -> HeaderMap {
         self.headers
             .iter()
             .filter_map(|(name, value)| {

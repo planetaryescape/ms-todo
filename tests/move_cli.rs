@@ -12,7 +12,7 @@ use std::time::Duration;
 use serde_json::{Value, json};
 use support::Env;
 use support::fake_graph::{FakeGraph, list, task};
-use support::fake_moves::{create_task, delete_task, put_chunk};
+use support::fake_moves::{create_task, put_chunk};
 use wiremock::matchers::{method, path_regex};
 use wiremock::{Mock, ResponseTemplate};
 
@@ -129,15 +129,11 @@ fn the_copy(graph: &FakeGraph) -> Value {
     copies[0].clone()
 }
 
-/// The DELETEs of tasks in `list` that reached Graph.
+/// The DELETEs of tasks in `list` that reached Graph, alone or batched.
 async fn deletes_in(graph: &FakeGraph, list: &str) -> usize {
-    let prefix = format!("/v1.0/me/todo/lists/{list}/tasks/");
     graph
-        .requests("DELETE")
+        .task_deletes(&format!("/v1.0/me/todo/lists/{list}/tasks/"))
         .await
-        .iter()
-        .filter(|request| request.url.path().starts_with(&prefix))
-        .count()
 }
 
 fn move_t1(env: &Env) -> Value {
@@ -566,11 +562,13 @@ async fn a_crash_while_checking_the_copy_resumes_the_check() {
 async fn crash_in_delete(effect: bool, setup: impl FnOnce(&FakeGraph)) -> (Env, FakeGraph, String) {
     let mut env = Env::new();
     let graph = rich_graph(&mut env).await;
-    graph
-        .stall("DELETE", TASK, effect.then_some(delete_task as _), SLOW)
-        .await;
+    graph.stall_conditional_delete(effect, SLOW).await;
     let moved = move_t1(&env);
-    until_sent(&graph, "DELETE", "L-tasks/tasks/T1", "").await;
+    let deadline = std::time::Instant::now() + Duration::from_secs(20);
+    while deletes_in(&graph, "L-tasks").await == 0 {
+        assert!(std::time::Instant::now() < deadline, "no delete of T1");
+        tokio::time::sleep(Duration::from_millis(20)).await;
+    }
     env.json(&["daemon", "stop"]);
     setup(&graph);
     (env, graph, op_id(&moved))
@@ -948,4 +946,99 @@ async fn an_edit_after_the_check_but_before_the_delete_stops_the_delete() {
     let source = graph.task("L-tasks", "T1").expect("the source is kept");
     assert_eq!(source["title"], "Renew passport (booked)");
     assert_eq!(graph.tasks_in("L-groc").len(), 1);
+}
+
+/// Issue 004: the phone edits the source right after the last read before
+/// the delete. Graph's task DELETE ignores `If-Match`, so the delete goes
+/// in a batch behind an empty PATCH that honours it (D-070): the PATCH is
+/// a 412, the DELETE never runs, and both tasks are kept.
+#[tokio::test]
+async fn an_edit_right_after_the_last_read_stops_the_conditional_delete() {
+    let mut env = Env::new();
+    let graph = rich_graph(&mut env).await;
+    // Reads 1 and 2 copy and check; the edit lands right after read 3,
+    // the one just before the delete.
+    graph
+        .edit_after_gets(TASK, 3, |data| {
+            if let Some(source) = data
+                .tasks
+                .get_mut("L-tasks")
+                .and_then(|tasks| tasks.iter_mut().find(|task| task["id"] == "T1"))
+            {
+                source["title"] = json!("Renew passport (booked)");
+                source["@odata.etag"] = json!("W/\"phone\"");
+            }
+        })
+        .await;
+    let moved = move_t1(&env);
+    let paused = env.op_in_state(&op_id(&moved), "unknown");
+    assert_eq!(paused["flagged"], true);
+    let note = paused["note"].as_str().unwrap_or_default();
+    assert!(note.contains("just before the delete"), "{note}");
+    assert_eq!(
+        deletes_in(&graph, "L-tasks").await,
+        1,
+        "the batched DELETE was sent"
+    );
+    let source = graph.task("L-tasks", "T1").expect("the source is kept");
+    assert_eq!(source["title"], "Renew passport (booked)");
+    assert_eq!(graph.tasks_in("L-groc").len(), 1, "the copy is kept");
+}
+
+/// Review finding: `fail_ops_in_list` fails the operations queued in a
+/// deleted list by the move's *target*, so a move whose *source* list is
+/// deleted on another device isn't failed then. It mustn't stay pending:
+/// its next attempt finds the source list gone and fails it, the task's
+/// content kept.
+#[tokio::test]
+async fn a_move_whose_source_list_was_deleted_elsewhere_fails_rather_than_waiting() {
+    let mut env = Env::new();
+    let graph = rich_graph(&mut env).await;
+    // Hold the move's first read of the source while the phone deletes
+    // its list and the daemon syncs that.
+    graph.stall("GET", TASK, None, Duration::from_secs(2)).await;
+    let moved = move_t1(&env);
+    graph.edit(|data| {
+        data.lists.retain(|list| list["id"] != "L-tasks");
+        data.tasks.remove("L-tasks");
+    });
+    env.json(&["sync", "--wait"]);
+    let failed = env.op_in_state(&op_id(&moved), "failed");
+    let error = failed["last_error"].to_string();
+    assert!(error.contains("deleted"), "{failed}");
+    assert!(graph.tasks_in("L-groc").is_empty(), "nothing was copied");
+}
+
+/// Review finding, the stuck case: a move queued after an edit of the
+/// task waits on that edit. The phone deletes the source list, which
+/// fails the edit (it was in that list); the move must fail with it,
+/// not wait on it for ever.
+#[tokio::test]
+async fn a_move_waiting_on_an_edit_in_a_deleted_list_fails_with_it() {
+    let mut env = Env::new();
+    let graph = rich_graph(&mut env).await;
+    Mock::given(method("PATCH"))
+        .and(path_regex(TASK))
+        .respond_with(ResponseTemplate::new(503))
+        .with_priority(1)
+        .mount(&graph.server)
+        .await;
+    let edit = env.json(&["tasks", "edit", "T1", "--title", "Renew passport now"]);
+    env.op_in_state(&op_id(&edit), "pending");
+    let deadline = std::time::Instant::now() + Duration::from_secs(20);
+    while env.outbox()[0]["attempts"] == 0 {
+        assert!(
+            std::time::Instant::now() < deadline,
+            "the edit was never tried"
+        );
+        std::thread::sleep(Duration::from_millis(50));
+    }
+    let moved = move_t1(&env);
+    graph.edit(|data| {
+        data.lists.retain(|list| list["id"] != "L-tasks");
+        data.tasks.remove("L-tasks");
+    });
+    env.json(&["sync", "--wait"]);
+    env.op_in_state(&op_id(&edit), "failed");
+    env.op_in_state(&op_id(&moved), "failed");
 }

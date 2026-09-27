@@ -298,3 +298,49 @@ async fn undo_refuses_to_overwrite_a_later_move() {
         "Projects"
     );
 }
+
+/// Another device reorders Finances in the moment right after ms-todo's
+/// folder write lands, from a copy it read before: lists ignore
+/// `If-Match` (S2), so this is only noted (issue 001, D-070).
+fn phone_reorders_finances(
+    data: &mut support::fake_graph::Data,
+    request: &wiremock::Request,
+) -> wiremock::ResponseTemplate {
+    let mut stored: Value = serde_json::from_slice(&request.body).unwrap_or_default();
+    stored["extensionName"] = json!("com.planetaryescape.mstodo");
+    stored["folder"] = json!("Old");
+    stored["order"] = json!(9);
+    data.extensions.insert("L-fin".into(), stored);
+    wiremock::ResponseTemplate::new(200)
+}
+
+#[tokio::test]
+async fn a_folder_write_another_device_raced_is_noted() {
+    let mut env = Env::new();
+    let graph = graph(&mut env).await;
+    graph.edit(|data| {
+        data.extensions.insert(
+            "L-fin".into(),
+            json!({ "extensionName": "com.planetaryescape.mstodo", "folder": "Old", "order": 1 }),
+        );
+    });
+    graph
+        .stall(
+            "PATCH",
+            r"^/v1\.0/me/todo/lists/L-fin/extensions/[^/]+$",
+            Some(phone_reorders_finances),
+            std::time::Duration::ZERO,
+        )
+        .await;
+    env.synced();
+    env.json(&["lists", "move", "Finances", "--folder", "Areas"]);
+    env.settled();
+    let op = env
+        .outbox()
+        .into_iter()
+        .find(|op| op["note"].is_string())
+        .expect("a noted operation");
+    let note = op["note"].as_str().unwrap_or_default();
+    assert!(note.contains("another device changed"), "{note}");
+    assert!(note.contains("folder") && note.contains("order"), "{note}");
+}

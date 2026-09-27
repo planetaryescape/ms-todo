@@ -59,8 +59,13 @@ pub(super) enum Attempt {
         created: Entity,
         task: Option<(Entity, Option<Option<Value>>)>,
     },
-    /// A folder write: our extension on the list as Graph now holds it.
-    ExtensionWritten(Map<String, Value>),
+    /// A folder write: our extension on the list as it was written, and
+    /// the fields another device wrote at about the same moment, with a
+    /// note (issue 001: lists ignore `If-Match`).
+    ExtensionWritten {
+        extension: Map<String, Value>,
+        raced: Option<(Vec<String>, String)>,
+    },
     /// A list created or renamed: the list as Graph now has it.
     ListWritten(Entity),
     /// A list deleted.
@@ -212,7 +217,7 @@ pub(super) async fn send_ready(state: &State) -> bool {
                         log_store(&error);
                     }
                 }
-                Ok(Attempt::ExtensionWritten(extension)) => {
+                Ok(Attempt::ExtensionWritten { extension, raced }) => {
                     // If the cache can't take it, the operation stays
                     // `inflight` until a restart makes it `pending`, and the
                     // resend writes the same document again.
@@ -222,6 +227,16 @@ pub(super) async fn send_ready(state: &State) -> bool {
                         .await
                     {
                         log_store(&error);
+                    } else if let Some((fields, note)) = raced {
+                        if let Err(error) = state.store.set_note(&op.op_id, &note).await {
+                            log_store(&error);
+                        }
+                        state.events.conflict_overwritten(
+                            &op.op_id,
+                            &op.entity_local_id,
+                            fields,
+                            &note,
+                        );
                     }
                 }
                 Err(Failure::Temporary(error)) => {

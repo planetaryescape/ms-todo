@@ -4,7 +4,7 @@
 //! extension, chained the way Graph chains them (a failed step makes the
 //! rest 424), and writes of our extension on a list (folders) or a task
 //! (My Day): PATCH replaces the document and POST upserts it, as S2 found,
-//! and each moves the list's or task's etag. Tests change `data` between syncs, as a phone would,
+//! and each moves the list's or task's etag; a task's honours `If-Match`. Tests change `data` between syncs, as a phone would,
 //! and mount their own mocks for other writes.
 //!
 //! Delta works like Graph's as far as ms-todo can tell: a delta token
@@ -293,6 +293,9 @@ impl FakeGraph {
             .respond_with(move |request: &Request| {
                 let mut data = lock(&shared);
                 let (list, task) = task_of(request);
+                if let Some(stale) = stale_task(&data, &list, &task, request) {
+                    return stale;
+                }
                 if !data.extensions.contains_key(&task) {
                     return not_found();
                 }
@@ -320,6 +323,9 @@ impl FakeGraph {
             .respond_with(move |request: &Request| {
                 let mut data = lock(&shared);
                 let (list, task) = task_of(request);
+                if let Some(stale) = stale_task(&data, &list, &task, request) {
+                    return stale;
+                }
                 if data.extensions.remove(&task).is_some() {
                     bump_task_etag(&mut data, &list, &task);
                 }
@@ -336,6 +342,9 @@ impl FakeGraph {
             .respond_with(move |request: &Request| {
                 let mut data = lock(&shared);
                 let (list, task) = task_of(request);
+                if let Some(stale) = stale_task(&data, &list, &task, request) {
+                    return stale;
+                }
                 let mut body: Value = serde_json::from_slice(&request.body).unwrap_or_default();
                 if let Some(fields) = body.as_object_mut() {
                     fields.remove("@odata.type");
@@ -353,31 +362,7 @@ impl FakeGraph {
         let shared = Arc::clone(&data);
         Mock::given(method("POST"))
             .and(path("/v1.0/$batch"))
-            .respond_with(move |request: &Request| {
-                let body: Value = serde_json::from_slice(&request.body).unwrap_or_default();
-                let data = lock(&shared);
-                let mut failed = false;
-                let responses: Vec<Value> = body["requests"]
-                    .as_array()
-                    .map(Vec::as_slice)
-                    .unwrap_or_default()
-                    .iter()
-                    .map(|sub| {
-                        let id = sub["id"].clone();
-                        let (status, body) = if failed {
-                            (
-                                424,
-                                json!({ "error": { "code": "FailedDependency", "message": "" } }),
-                            )
-                        } else {
-                            answer_get(&data, sub["url"].as_str().unwrap_or_default())
-                        };
-                        failed |= status >= 400;
-                        json!({ "id": id, "status": status, "headers": {}, "body": body })
-                    })
-                    .collect();
-                ResponseTemplate::new(200).set_body_json(json!({ "responses": responses }))
-            })
+            .respond_with(move |request: &Request| answer_batch(&mut lock(&shared), request))
             .mount(&server)
             .await;
 
@@ -663,6 +648,17 @@ fn write_task_extension(data: &mut Data, list: &str, task: &str, fields: Value) 
     stored
 }
 
+/// A task extension write whose `If-Match` isn't the task's etag: Graph
+/// honours it there (S2's follow-up), though not on a list's.
+fn stale_task(data: &Data, list: &str, task: &str, request: &Request) -> Option<ResponseTemplate> {
+    let found = data
+        .tasks
+        .get(list)?
+        .iter()
+        .find(|found| found["id"] == task)?;
+    crate::children::precondition(found, request)
+}
+
 fn bump_task_etag(data: &mut Data, list: &str, task: &str) {
     let etag = format!("W/\"{task}-{}\"", next_write());
     if let Some(found) = data
@@ -685,6 +681,38 @@ fn with_extension(entity: &Value, extensions: &HashMap<String, Value>) -> Value 
 }
 
 // `/me/todo/lists/{l}/tasks/{t}?$expand=…`
+/// A `$batch`: GETs answered from what Graph holds, and a task's PATCH or
+/// DELETE (a move's conditional delete, D-070) applied, each step in turn
+/// and a failed one making the rest 424, as Graph chains them.
+pub fn answer_batch(data: &mut Data, request: &Request) -> ResponseTemplate {
+    let body: Value = serde_json::from_slice(&request.body).unwrap_or_default();
+    let mut failed = false;
+    let responses: Vec<Value> = body["requests"]
+        .as_array()
+        .map(Vec::as_slice)
+        .unwrap_or_default()
+        .iter()
+        .map(|sub| {
+            let id = sub["id"].clone();
+            let url = sub["url"].as_str().unwrap_or_default();
+            let (status, body) = if failed {
+                (
+                    424,
+                    json!({ "error": { "code": "FailedDependency", "message": "" } }),
+                )
+            } else {
+                match sub["method"].as_str() {
+                    Some("PATCH" | "DELETE") => crate::moves::batch_task_write(data, sub),
+                    _ => answer_get(data, url),
+                }
+            };
+            failed |= status >= 400;
+            json!({ "id": id, "status": status, "headers": {}, "body": body })
+        })
+        .collect();
+    ResponseTemplate::new(200).set_body_json(json!({ "responses": responses }))
+}
+
 pub(crate) fn answer_get(data: &Data, url: &str) -> (u16, Value) {
     let path = url.split('?').next().unwrap_or_default();
     let parts: Vec<&str> = path.split('/').collect();
