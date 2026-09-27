@@ -33,6 +33,8 @@ pub(crate) struct Config {
 const MINUTE_ENV: &str = "MS_TODO_NAG_MINUTE_MS";
 /// Debug builds only: where notifications are written instead.
 const NOTIFY_FILE_ENV: &str = "MS_TODO_NAG_NOTIFY_FILE";
+/// Debug builds only: no notifier, whatever the system.
+const NO_NOTIFIER_ENV: &str = "MS_TODO_NAG_NO_NOTIFIER";
 
 const MINUTE: Duration = Duration::from_secs(60);
 
@@ -56,6 +58,12 @@ pub(crate) fn notify_file() -> Option<PathBuf> {
     debug_env(NOTIFY_FILE_ENV).map(PathBuf::from)
 }
 
+/// Debug builds only: behave as a system with no notifier, as Linux is
+/// ([`NO_NOTIFIER_ENV`]).
+pub(crate) fn no_notifier() -> bool {
+    debug_env(NO_NOTIFIER_ENV).is_some()
+}
+
 fn debug_env(name: &str) -> Option<String> {
     cfg!(debug_assertions)
         .then(|| std::env::var(name).ok())
@@ -77,7 +85,8 @@ struct Section {
 impl Config {
     pub fn load(config_file: &Path) -> Self {
         let minute = debug_env(MINUTE_ENV)
-            .and_then(|ms| ms.parse().ok())
+            .and_then(|ms| ms.parse::<u64>().ok())
+            .filter(|ms| *ms > 0)
             .map_or(MINUTE, Duration::from_millis);
         Self {
             minute,

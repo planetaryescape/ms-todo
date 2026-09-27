@@ -32,10 +32,12 @@ const SCRIPT: [&str; 3] = [
 ];
 
 impl Notifier {
-    pub fn for_this_system(notify_file: Option<PathBuf>) -> Self {
+    /// `macos` is whether this system can: tests pass false to stand in
+    /// for Linux on a Mac.
+    pub fn for_this_system(notify_file: Option<PathBuf>, macos: bool) -> Self {
         match notify_file {
             Some(path) => Self::File(path),
-            None if cfg!(target_os = "macos") => Self::Osascript,
+            None if macos => Self::Osascript,
             None => Self::Unavailable(
                 "notifications are only built for macOS so far (S18), so nothing nags here",
             ),

@@ -43,7 +43,10 @@ pub(crate) struct Nagger {
 impl Nagger {
     pub fn load(config_file: &std::path::Path) -> Self {
         let config = Config::load(config_file);
-        let notifier = Notifier::for_this_system(config::notify_file());
+        let notifier = Notifier::for_this_system(
+            config::notify_file(),
+            cfg!(target_os = "macos") && !config::no_notifier(),
+        );
         Self {
             config,
             notifier,
@@ -201,7 +204,9 @@ pub(crate) async fn status(state: &State) -> Result<NagStatus, ErrorPayload> {
         .config
         .problem
         .clone()
-        .or_else(|| unavailable.filter(|_| nagger.config.enabled))
+        // Only a problem when some task wants nagging; `notifier: null`
+        // says it otherwise.
+        .or_else(|| unavailable.filter(|_| nagger.config.enabled && count > 0))
         .or_else(|| nagger.failure());
     Ok(NagStatus {
         active: nagger.config.enabled && nagger.notifier.name().is_some(),

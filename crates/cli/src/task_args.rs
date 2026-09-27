@@ -431,7 +431,7 @@ pub struct EditArgs {
     pub no_someday: bool,
     /// Once its reminder is due, notify me on this machine every so often
     /// until it's done: 15m, 1h, 1h30m (5m to 24h). Needs a reminder
-    #[arg(long, value_name = "EVERY", value_parser = phrases::nag_every, conflicts_with = "clear_nag")]
+    #[arg(long, value_name = "EVERY", value_parser = phrases::nag_every, conflicts_with_all = ["clear_nag", "clear_reminder"])]
     pub nag: Option<u32>,
     /// Stop nagging
     #[arg(long)]

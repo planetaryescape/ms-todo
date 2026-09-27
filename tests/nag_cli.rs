@@ -347,3 +347,29 @@ async fn a_nag_turned_off_and_on_nags_again_at_once() {
         started.elapsed()
     );
 }
+
+#[tokio::test]
+async fn without_a_notifier_doctor_complains_only_once_a_task_nags() {
+    let mut env = Env::new();
+    graph_with(&mut env, vec![reminded("T1", "Call mum")], Vec::new()).await;
+    env.json(&["daemon", "stop"]);
+    // As on Linux, which has no notifier yet.
+    env.cmd()
+        .env("MS_TODO_NAG_NO_NOTIFIER", "1")
+        .args(["--format", "json", "daemon", "start"])
+        .assert()
+        .success();
+    env.synced();
+    let doctor = env.json(&["doctor"]);
+    assert!(doctor["nag"]["notifier"].is_null());
+    assert!(doctor["nag"]["problem"].is_null(), "{doctor}");
+    assert_eq!(doctor["problems"], json!([]));
+
+    let id = env.local_id(&["tasks", "list"], "T1");
+    env.json(&["tasks", "nag", &id, "--every", "15m"]);
+    let doctor = env.json(&["doctor"]);
+    let problem = doctor["nag"]["problem"].as_str().unwrap_or_default();
+    assert!(problem.contains("only built for macOS"), "{doctor}");
+    let failed = env.failure(&["doctor", "--notify-test"], 7);
+    assert_eq!(failed["error"]["kind"], "unsupported");
+}

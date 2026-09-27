@@ -286,7 +286,8 @@ pub async fn notify_test(paths: &Paths, format: OutputFormat) -> Result<(), CliE
     }
 }
 
-const NOTIFY_TEST_SENT: &str = "sent a test notification; if none showed, allow notifications      for Script Editor in System Settings > Notifications, which macOS shows them as";
+const NOTIFY_TEST_SENT: &str = "sent a test notification; if none showed, allow Script Editor's \
+     notifications in System Settings > Notifications (macOS shows them as Script Editor's)";
 
 fn sign_in(paths: &Paths, problems: &mut Vec<String>) -> Result<SignIn, CliError> {
     let auth = Authenticator::new(paths.auth_dir(), Endpoints::default())?;

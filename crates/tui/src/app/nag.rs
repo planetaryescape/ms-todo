@@ -30,7 +30,7 @@ impl App {
             if let Some(task) = quiet.iter().find(|task| task.reminder.is_none()) {
                 let text = format!(
                     "\"{}\" has no reminder, and a nag starts at the reminder; set one first (e)",
-                    task.title
+                    ms_todo_core::one_line_safe(&task.title)
                 );
                 self.show(Level::Error, &text);
                 return Vec::new();
