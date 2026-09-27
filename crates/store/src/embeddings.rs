@@ -58,6 +58,9 @@ pub struct Candidate {
 pub struct Candidates {
     pub tasks: Vec<Candidate>,
     pub pending: u32,
+    /// The list of each task counted in `pending`, so a context can count
+    /// only its own.
+    pub pending_lists: Vec<String>,
 }
 
 /// The text of a task that is embedded: its title, and its plain-text
@@ -203,6 +206,7 @@ impl Store {
             });
             if !current {
                 candidates.pending += 1;
+                candidates.pending_lists.push(task.list_local_id.clone());
             }
             let Some(bytes) = row.try_get::<Option<Vec<u8>>, _>("vector")? else {
                 continue;

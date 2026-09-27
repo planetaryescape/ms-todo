@@ -272,7 +272,8 @@ pub(crate) async fn search_tasks(
         // A context narrows after the search, so the limit waits for it.
         let unlimited = limit.filter(|_| context.is_none());
         let (hits, pending) =
-            crate::semantic::query::search(state, query, &scope, unlimited, true).await?;
+            crate::semantic::query::search(state, query, &scope, unlimited, true, context.as_ref())
+                .await?;
         return Ok(ResponseData::SearchResults {
             items: hits
                 .iter()

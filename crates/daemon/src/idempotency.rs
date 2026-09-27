@@ -38,6 +38,26 @@ pub(crate) fn fingerprint(request: &Request) -> String {
         .collect()
 }
 
+/// `fingerprint` of a change a context narrows, with the context it was
+/// resolved in: its name and list IDs. So the same key reused after a
+/// `ctx` switch, or after config.toml changed the context's lists, is a
+/// different request (exit 2), never a replay aimed at other tasks.
+pub(crate) fn in_context(
+    fingerprint: String,
+    context: Option<&crate::contexts::Resolved>,
+) -> String {
+    let Some(context) = context else {
+        return fingerprint;
+    };
+    let mut ids: Vec<&str> = context.ids.iter().map(String::as_str).collect();
+    ids.sort_unstable();
+    let text = format!("{fingerprint}\ncontext {}: {}", context.name, ids.join(","));
+    Sha256::digest(text.as_bytes())
+        .iter()
+        .map(|byte| format!("{byte:02x}"))
+        .collect()
+}
+
 /// `request` without what differs between two sends of the same change.
 fn without_ids(request: &mut Request) {
     if let Request::AddTask {

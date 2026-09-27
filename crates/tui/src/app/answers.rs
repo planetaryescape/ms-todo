@@ -215,8 +215,15 @@ impl App {
         }
         if error.kind == "not_found" && matches!(self.wanted, Some(Scope::List { .. })) {
             // The list was deleted elsewhere: back to the default list.
+            // Its rows go now, so nothing acts on them before that seed.
             self.show(Level::Info, "That list is gone; showing Tasks");
-            self.wanted = None;
+            if let Some(gone) = self.wanted.take() {
+                self.cache.remove(&gone);
+            }
+            self.shown = None;
+            self.tasks.clear();
+            self.selection.clear();
+            self.task_index = 0;
             return vec![self.seed_now()];
         }
         self.show(Level::Error, &error.message);
@@ -228,6 +235,7 @@ impl App {
         let keep = self.selected().map(|task| task.id.clone());
         let row = self.entries().get(self.sidebar_index).cloned();
         let tasks = seed_tasks(&seed);
+        let before: Vec<String> = sorted_ids(&self.lists);
         self.lists = seed
             .lists
             .iter()
@@ -235,7 +243,11 @@ impl App {
             .collect();
         self.keep_pending_order();
         self.counts = seed.counts;
-        let switched = self.active_context != seed.context;
+        // A context whose lists changed (config.toml swapped one, keeping
+        // its name and count) is left as a switch is: its sidebar is the
+        // context's lists.
+        let switched = self.active_context != seed.context
+            || (seed.context.is_some() && before != sorted_ids(&self.lists));
         if switched {
             // Another context's rows, read before, aren't this one's.
             self.cache.clear();
@@ -398,4 +410,11 @@ fn seed_tasks(seed: &Seed) -> Vec<Task> {
         .chain(suggestions)
         .filter_map(Task::from_entity)
         .collect()
+}
+
+/// The sidebar's list IDs, sorted, to tell whether the set changed.
+fn sorted_ids(lists: &[SidebarList]) -> Vec<String> {
+    let mut ids: Vec<String> = lists.iter().map(|list| list.id.clone()).collect();
+    ids.sort_unstable();
+    ids
 }

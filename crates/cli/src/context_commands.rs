@@ -84,6 +84,10 @@ pub async fn run(paths: &Paths, args: CtxArgs, format: OutputFormat) -> Result<(
     let request = match (args.command, args.name) {
         (Some(CtxCommand::List), _) => {
             let contexts = ask(paths, Request::Contexts).await?;
+            if format == OutputFormat::Ids {
+                // A context's ID is its name.
+                return print_ids(contexts.items.iter().map(|context| context.name.as_str()));
+            }
             let items: Vec<Map<String, Value>> = contexts.items.iter().map(item).collect();
             print_live_collection(format, &items, &CONTEXTS_TABLE)?;
             warn(format, &contexts.problems);
@@ -158,8 +162,15 @@ pub struct Shown {
 impl Shown {
     fn of(contexts: Contexts) -> Self {
         let mut problems = contexts.problems;
-        let active = contexts.items.into_iter().find(|context| context.active);
+        let mut items = contexts.items;
+        let active = items
+            .iter()
+            .position(|context| context.active)
+            .map(|at| items.swap_remove(at));
         let Some(active) = active else {
+            // None active: what's wrong in the configured ones still
+            // shows, as `ctx list` and `doctor` show it.
+            problems.extend(items.into_iter().flat_map(|context| context.problems));
             return Self {
                 active: contexts.active,
                 problems,

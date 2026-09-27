@@ -5,7 +5,7 @@
 
 use ms_todo_core::ErrorKind;
 use ms_todo_protocol::ErrorPayload;
-use ms_todo_store::{Candidate, TaskRow, TaskScope};
+use ms_todo_store::{Candidate, Candidates, TaskRow, TaskScope};
 
 use super::model::MODEL_ID;
 use crate::handlers::{State, error_payload, store_error};
@@ -32,6 +32,7 @@ pub(crate) async fn search(
     scope: &TaskScope<'_>,
     limit: Option<u32>,
     wait: bool,
+    context: Option<&crate::contexts::Resolved>,
 ) -> Result<(Vec<Hit>, u32), ErrorPayload> {
     let query = query.trim();
     if query.is_empty() {
@@ -51,6 +52,7 @@ pub(crate) async fn search(
         .semantic_candidates(MODEL_ID, scope)
         .await
         .map_err(store_error)?;
+    let pending = pending_within(&candidates, context);
     let mut hits: Vec<Hit> = candidates
         .tasks
         .into_iter()
@@ -63,7 +65,23 @@ pub(crate) async fn search(
     if let Some(limit) = limit {
         hits.truncate(usize::try_from(limit).unwrap_or(usize::MAX));
     }
-    Ok((hits, candidates.pending))
+    Ok((hits, pending))
+}
+
+/// How many tasks in scope aren't indexed yet, counting only the
+/// context's: the others can't be results.
+fn pending_within(candidates: &Candidates, context: Option<&crate::contexts::Resolved>) -> u32 {
+    match context {
+        None => candidates.pending,
+        Some(_) => {
+            let within = candidates
+                .pending_lists
+                .iter()
+                .filter(|list| crate::contexts::within(context, list))
+                .count();
+            u32::try_from(within).unwrap_or(u32::MAX)
+        }
+    }
 }
 
 /// The tasks of `search` for a TUI seed: never waits for the model, and
@@ -73,7 +91,7 @@ pub(crate) async fn rows(
     query: &str,
     scope: &TaskScope<'_>,
 ) -> Result<Vec<TaskRow>, ErrorPayload> {
-    let (hits, _) = search(state, query, scope, None, false).await?;
+    let (hits, _) = search(state, query, scope, None, false, None).await?;
     Ok(hits.into_iter().map(|hit| hit.candidate.task).collect())
 }
 
@@ -94,5 +112,23 @@ mod tests {
         assert!((dot(&[0.6, 0.8], &[0.6, 0.8]) - 1.0).abs() < 1e-6);
         assert!(dot(&[1.0, 0.0], &[0.0, 1.0]).abs() < 1e-6);
         assert_eq!(dot(&[1.0], &[1.0, 0.0]), 0.0);
+    }
+
+    #[test]
+    fn a_context_counts_only_its_own_unindexed_tasks() {
+        let candidates = Candidates {
+            pending: 3,
+            pending_lists: vec!["L-work".into(), "L-home".into(), "L-home".into()],
+            ..Candidates::default()
+        };
+        assert_eq!(pending_within(&candidates, None), 3);
+        let work = crate::contexts::Resolved {
+            name: "work".into(),
+            lists: Vec::new(),
+            ids: ["L-work".to_owned()].into(),
+            default_list: None,
+            problems: Vec::new(),
+        };
+        assert_eq!(pending_within(&candidates, Some(&work)), 1);
     }
 }
