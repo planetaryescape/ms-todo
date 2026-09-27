@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.38](https://github.com/planetaryescape/ms-todo/compare/v0.1.37...v0.1.38) (2026-09-27)
+
+
+### Features
+
+* close the move, attachment and task-link gaps (D-067) ([#89](https://github.com/planetaryescape/ms-todo/issues/89)) ([e86ab8d](https://github.com/planetaryescape/ms-todo/commit/e86ab8da3bd6ca6d3d3b19ec2b6a62cf7cdde26d))
+
 ## [0.1.37](https://github.com/planetaryescape/ms-todo/compare/v0.1.36...v0.1.37) (2026-09-27)
 
 
