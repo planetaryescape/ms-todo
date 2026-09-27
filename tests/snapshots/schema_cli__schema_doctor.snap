@@ -277,6 +277,56 @@ expression: pretty
         },
         "type": "array"
       },
+      "semantic": {
+        "description": "Semantic search (rung 9c); null when the daemon didn't report",
+        "properties": {
+          "download_bytes": {
+            "description": "The size of the one-time download",
+            "type": "integer"
+          },
+          "enabled": {
+            "description": "[search] semantic in config.toml",
+            "type": "boolean"
+          },
+          "indexed": {
+            "description": "Live tasks embedded for their current text",
+            "type": "integer"
+          },
+          "model": {
+            "description": "The embedding model, name@revision",
+            "type": "string"
+          },
+          "model_dir": {
+            "description": "Where the model's files are kept",
+            "type": "string"
+          },
+          "pending": {
+            "description": "Live tasks not embedded yet",
+            "type": "integer"
+          },
+          "problem": {
+            "description": "Why it's off or failing",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "state": {
+            "description": "off: nothing downloaded. loading: downloading or reading the model. ready: tasks are embedded as they change. failed: see problem; the next search tries again",
+            "enum": [
+              "off",
+              "loading",
+              "ready",
+              "failed",
+              "unknown"
+            ]
+          }
+        },
+        "type": [
+          "object",
+          "null"
+        ]
+      },
       "sign_in": {
         "properties": {
           "expires_at": {

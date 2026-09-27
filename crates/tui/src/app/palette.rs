@@ -273,6 +273,7 @@ mod tests {
                 scope: Some(Scope::All),
                 search: None,
                 include_deferred: false,
+                semantic: false,
             }
         );
         assert_eq!(app.wanted, Some(Scope::All));

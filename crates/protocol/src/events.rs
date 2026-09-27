@@ -22,6 +22,10 @@ pub enum Event {
     ResyncNeeded,
     /// A sync pass started or finished.
     SyncState(SyncActivity),
+    /// Semantic search's index changed: its model finished loading, or
+    /// tasks were embedded for their new text. A search by meaning shown
+    /// now may rank differently (D-061).
+    IndexChanged,
     #[serde(other)]
     Unknown,
 }

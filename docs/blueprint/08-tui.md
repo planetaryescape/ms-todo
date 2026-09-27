@@ -117,7 +117,7 @@ Copy these from mxr, including its keybinding registry:
 - vim-style navigation (`j`/`k`, `g`/`G`, `h`/`l` between panes)
 - a command palette (`:`)
 - a contextual hint bar
-- `/` for incremental filtering (FTS5)
+- `/` for incremental filtering (FTS5); `Ctrl-s` in the filter switches it to search by meaning with the daemon's local model and back, marked `~` for `/` in the prompt and the list's title. It never waits for the model: while semantic search is off or its model is loading, the reason shows under the filter (D-062)
 - multi-select (`v`)
 - undo of the last mutation (`u`, which queues the inverse operation; the same logic as `ms-todo undo`, see [07](07-cli.md#output-contract)). Undoing a recurring-task completion deletes the completed copy and restores the old due date. The TUI never picks the copy itself: it lists the candidates (title, `createdDateTime`, list) and you choose one. With no candidate yet, it says "can't undo yet". See [04](04-sync-cache.md#completing-a-recurring-task)
 - in-place editing of every field

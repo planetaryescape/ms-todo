@@ -401,8 +401,25 @@ Split into **6a**, the deterministic quick add below, and **6b**, where Jev sugg
 
 **Left out:** the items under "Deferred".
 
+## Rung 9c: semantic search
+
+**Previously:** keyword search across every list (rung 4b). **Now:** the same, plus finding a task by what it's about when no word matches, with a small model that runs on the Mac.
+
+**Promise:** "`mst search "dentist" --semantic` finds 'book teeth cleaning' even though no word matches, and it all runs on my Mac."
+
+- S19 first: the runtime and the model, on a labelled set of invented tasks and synonym queries (Model2Vec's `potion-base-8M` through `model2vec-rs`; D-062).
+- `[search] semantic = true` in config.toml turns it on (off by default, and then `--semantic` exits 2 saying how). The daemon downloads the model once (30.9 MB, pinned revision and SHA-256s) into the instance's data directory; nothing touches the network while it's off.
+- The daemon embeds each task's title and notes in the background after each change to the cache, keeping a vector and the text's hash per task (migration `0008`), so only changed tasks are embedded again.
+- `search QUERY --semantic [--list L] [--status S] [--limit N]`: tasks ranked by cosine similarity, each with `score`, in every output format; the answer says how many tasks aren't indexed yet. `doctor` shows the model's state and the index's.
+- The TUI's `/` filter: `Ctrl-s` switches it to meaning and back.
+
+**Done when:** on the live account, a throwaway list's invented tasks are found by synonym queries that share no word with them, with the model downloaded and checked on first use.
+
+**Left out:** hybrid ranking (the set showed nothing for it to fix), re-ranking, cloud embeddings, searching steps or attachments, and languages other than English (the model is English).
+
+**As built (2026-09-27, D-062):** as above. Protocol 18. Tests: the store's jobs, saves, prunes and candidates against a real SQLite file; the download's checksum, size and keep-on-disk rules against a mock server; config parsing; the CLI end to end against the fake Graph with a made-up four-axis model (off by default with nothing downloaded, found by meaning with no word in common, ranking, `--limit`, `--status`, every format, a task renamed on Graph embedded again after the sync, `doctor`); the TUI's toggle and hint bar. **Driven live** on a fresh `livetest9c` instance (release build, `[search] semantic = true` in a temporary config through `MS_TODO_CONFIG_DIR`): the daemon downloaded and checked the three files (0600, in a 0700 directory) and indexed the account's 627 tasks in the background. In a throwaway list, five invented tasks were each found by a query sharing no word with them, first across the whole account and within the list (`dentist` → "Book teeth cleaning" 0.52, `vehicle insurance` → "Renew car insurance" 0.65, `groceries` → "Buy milk and eggs" 0.31, `pet` → "Take the dog to the vet" 0.66, `retirement` → "Sort out the pension paperwork" 0.45), where keyword search found none; a search took 10 ms end to end. A task renamed in the CLI was found by its new meaning three seconds later and no longer by its old one. The list was deleted, its five vectors pruned (627 indexed again), and the daemon stopped. Only the invented tasks' results were looked at.
+
 ## Deferred (not in v1)
 
 - An optional local-LLM parser behind `QuickAddParser` (D-016).
-- Semantic search, behind the same `search` command (D-042).
 - Windows support.

@@ -181,6 +181,7 @@ fn connecting_asks_for_the_default_list_and_the_seed_fills_every_pane() {
                 scope: None,
                 search: None,
                 include_deferred: false,
+                semantic: false,
             }
         }]
     );
@@ -297,6 +298,7 @@ fn moving_in_the_sidebar_seeds_the_new_scope_and_drops_stale_answers() {
             scope: Some(Scope::Completed),
             search: None,
             include_deferred: false,
+            semantic: false,
         }
     );
     // The answer for Tasks arrives after Completed was asked for: dropped.
@@ -603,6 +605,7 @@ fn slash_filters_as_you_type_and_escape_clears_it() {
             scope: Some(scope_home()),
             search: Some("r*".into()),
             include_deferred: false,
+            semantic: false,
         }
     );
     let effects = app.update(Msg::Char('e'));
@@ -626,6 +629,7 @@ fn slash_filters_as_you_type_and_escape_clears_it() {
             scope: Some(scope_home()),
             search: None,
             include_deferred: false,
+            semantic: false,
         }
     );
     assert_eq!(app.filter, None);
@@ -647,6 +651,81 @@ fn a_filter_mid_typing_that_cant_be_searched_keeps_the_last_results() {
     assert_eq!(app.filter_error.as_deref(), Some("unclosed quote"));
     assert_eq!(app.tasks.len(), 4);
     assert!(app.banner.is_none());
+}
+
+#[test]
+fn ctrl_s_in_the_filter_searches_by_meaning_and_back() {
+    let mut app = seeded();
+    act(&mut app, Action::Filter);
+    app.update(Msg::Char('d'));
+    app.update(Msg::Char('e'));
+    let effects = act(&mut app, Action::ToggleSemantic);
+    // The text as typed, with no prefix `*`: it isn't FTS5's syntax.
+    assert_eq!(
+        effects[0].request,
+        Request::Seed {
+            scope: Some(scope_home()),
+            search: Some("de".into()),
+            include_deferred: false,
+            semantic: true,
+        }
+    );
+    // Off, or still loading its model: said under the filter, with the
+    // last results kept.
+    app.update(Msg::Response {
+        tag: effects[0].tag,
+        result: Err(ErrorPayload {
+            kind: "network".into(),
+            message: "semantic search is getting ready".into(),
+            ..ErrorPayload::default()
+        }),
+    });
+    assert_eq!(
+        app.filter_error.as_deref(),
+        Some("semantic search is getting ready")
+    );
+    assert_eq!(app.tasks.len(), 4);
+    assert!(app.banner.is_none());
+
+    let effects = act(&mut app, Action::ToggleSemantic);
+    assert_eq!(app.filter_error, None);
+    assert_eq!(
+        effects[0].request,
+        Request::Seed {
+            scope: Some(scope_home()),
+            search: Some("de*".into()),
+            include_deferred: false,
+            semantic: false,
+        }
+    );
+    // With nothing typed, it only switches.
+    act(&mut app, Action::Cancel);
+    act(&mut app, Action::Filter);
+    assert!(act(&mut app, Action::ToggleSemantic).is_empty());
+    assert!(app.semantic_filter);
+}
+
+#[test]
+fn a_changed_index_re_runs_only_a_filter_by_meaning() {
+    let mut app = seeded();
+    let index_changed = || Msg::Event(Event::IndexChanged);
+    assert!(app.update(index_changed()).is_empty(), "no filter");
+    act(&mut app, Action::Filter);
+    let effects = app.update(Msg::Char('d'));
+    answer_seed(&mut app, &effects[0], seed(scope_home(), Vec::new()));
+    assert!(app.update(index_changed()).is_empty(), "a filter by words");
+    let effects = act(&mut app, Action::ToggleSemantic);
+    answer_seed(&mut app, &effects[0], seed(scope_home(), Vec::new()));
+    let effects = app.update(index_changed());
+    assert_eq!(
+        effects[0].request,
+        Request::Seed {
+            scope: Some(scope_home()),
+            search: Some("d".into()),
+            include_deferred: false,
+            semantic: true,
+        }
+    );
 }
 
 #[test]
@@ -821,6 +900,7 @@ fn a_deleted_list_falls_back_to_the_default_one() {
             scope: None,
             search: None,
             include_deferred: false,
+            semantic: false,
         }
     );
 }
@@ -838,6 +918,7 @@ fn a_lost_connection_is_shown_and_reconnecting_seeds_again() {
             scope: Some(scope_home()),
             search: None,
             include_deferred: false,
+            semantic: false,
         }
     );
 }
@@ -916,6 +997,7 @@ fn the_views_are_read_ahead_and_a_scope_seen_before_paints_at_once() {
             scope: Some(Scope::Completed),
             search: None,
             include_deferred: false,
+            semantic: false,
         }
     );
 }
@@ -955,6 +1037,7 @@ fn after_switching_to_a_scope_not_loaded_yet_no_action_takes_the_old_rows() {
             scope: Some(tasks),
             search: None,
             include_deferred: false,
+            semantic: false,
         }
     );
     let effects = act(&mut app, Action::ToggleComplete);

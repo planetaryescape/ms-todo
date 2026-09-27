@@ -186,6 +186,15 @@ pub const BINDINGS: &[Binding] = &[
         false,
     ),
     bind(&[Context::Prompt], "Enter", Action::Submit, "Done", true),
+    // The filter's hint bar shows it with the mode it's in; other prompts
+    // ignore it.
+    bind(
+        &[Context::Prompt],
+        "Ctrl-s",
+        Action::ToggleSemantic,
+        "Filter by meaning/words",
+        false,
+    ),
     bind(ADDING, "Enter", Action::Submit, "Add", true),
     bind(ADDING, "Tab", Action::Complete, "Complete", true),
     bind(ADDING, "Ctrl-r", Action::ToggleParse, "Literal", true),

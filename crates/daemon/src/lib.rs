@@ -36,6 +36,7 @@ mod next;
 mod outbox;
 mod reads;
 mod seed;
+mod semantic;
 mod server;
 mod suggest;
 mod sync;

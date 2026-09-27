@@ -182,7 +182,7 @@ In the TUI's add box, a likely list shows as `→ Finances? (Ctrl-l to accept)`.
 | `R` | reschedule every overdue task in the view |
 | `d` | delete, after a `y` / `n` confirmation |
 | `u` | undo the last change |
-| `/` | filter the view as you type |
+| `/` | filter the view as you type; `Ctrl-s` switches the filter to meaning ([search by meaning](docs/usage.md#search-by-meaning)) |
 | `:` | the command palette: any action, list or view by name, and "New list…", "Rename list…", "Delete list…" |
 | `D` | diagnostics: sign-in, daemon, cache, each list's sync and the outbox |
 | `o` / `y` | open or copy the task's link |
@@ -229,6 +229,8 @@ mst search 'renew* NOT passport' --list Finances
 ```
 
 Search looks through titles and notes, ignoring case and accents, from the local cache. It supports prefixes (`renew*`), phrases, `OR`, `NOT` and parentheses. In the TUI, `/` filters the view with the same search.
+
+When no word matches, search by meaning: `mst search dentist --semantic` finds "Book teeth cleaning". It uses a small model that runs on your computer, so task text never leaves it; turn it on with `semantic = true` under `[search]` in `config.toml` (a one-time 31 MB download). In the TUI, `Ctrl-s` in the filter switches to it. See [Search by meaning](docs/usage.md#search-by-meaning).
 
 ### What you finished, and what's overdue
 

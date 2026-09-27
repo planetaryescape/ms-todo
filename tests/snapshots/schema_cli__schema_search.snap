@@ -24,6 +24,11 @@ expression: pretty
         "type": "array",
         "x-cli": "<QUERY>"
       },
+      "semantic": {
+        "description": "Find tasks by meaning, not words (\"dentist\" finds \"Book teeth cleaning\"), with a local model; the query is plain text. Needs `semantic = true` under [search] in config.toml",
+        "type": "boolean",
+        "x-cli": "--semantic"
+      },
       "status": {
         "description": "Which tasks to look through",
         "enum": [
@@ -43,7 +48,7 @@ expression: pretty
     "properties": {
       "items": {
         "items": {
-          "description": "A task that matched, best match first: the task as `tasks list` gives it, with `list` and `snippet`",
+          "description": "A task that matched, best match first: the task as `tasks list` gives it, with `list`, and `snippet` (by words) or `score` (--semantic)",
           "properties": {
             "attachments": {
               "description": "Its attachments' metadata, as `attachments list` gives it without `index`; absent until a sync has fetched it",
@@ -120,8 +125,12 @@ expression: pretty
             "reminderDateTime": {
               "type": "object"
             },
+            "score": {
+              "description": "With --semantic: how close the task is in meaning to the query, its cosine similarity (at least 0.15, at most 1), to three places",
+              "type": "number"
+            },
             "snippet": {
-              "description": "The part of the title or notes that matched, on one line: each match between ** and **, … where it was cut",
+              "description": "Without --semantic: the part of the title or notes that matched, on one line: each match between ** and **, … where it was cut",
               "type": "string"
             },
             "someday": {
@@ -153,8 +162,7 @@ expression: pretty
             "title",
             "defer_until",
             "someday",
-            "list",
-            "snippet"
+            "list"
           ],
           "type": "object"
         },
@@ -162,6 +170,22 @@ expression: pretty
       },
       "schema_version": {
         "const": 2
+      },
+      "semantic": {
+        "description": "With --semantic only: the embedding model, and how many tasks in the search's scope it hasn't embedded for their current text yet (missing from items, or ranked by their old text)",
+        "properties": {
+          "model": {
+            "type": "string"
+          },
+          "pending": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "model",
+          "pending"
+        ],
+        "type": "object"
       },
       "sync": {
         "properties": {

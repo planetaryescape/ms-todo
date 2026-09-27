@@ -184,6 +184,7 @@ impl App {
                 self.mode = Mode::Normal;
                 self.set_filter(None)
             }
+            (Mode::Filtering { .. }, Action::ToggleSemantic) => self.toggle_semantic(),
             (Mode::ConfirmDelete { ids, .. }, Action::Confirm) => {
                 let ids = std::mem::take(ids);
                 self.mode = Mode::Normal;

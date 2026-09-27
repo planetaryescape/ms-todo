@@ -49,6 +49,10 @@ pub const EVERY_LIST_COLUMNS: &[&str] = &[
 /// A search result: enough to recognise the task and where it matched.
 pub const SEARCH_COLUMNS: &[&str] = &["id", "title", "list", "status", "due", "snippet"];
 
+/// A semantic search result: the search's columns, with the score for
+/// the snippet.
+pub const SEMANTIC_COLUMNS: &[&str] = &["id", "title", "list", "status", "due", "score"];
+
 /// A task `done` gives: when, where and what, for a standup or a sheet.
 /// `completed_on` is the local day; Microsoft To Do keeps no time.
 pub const DONE_COLUMNS: &[&str] = &[
@@ -159,6 +163,25 @@ pub fn search_row(task: &Entity) -> Vec<String> {
         local_due(task),
         text(task, "snippet").to_owned(),
     ]
+}
+
+pub fn semantic_row(task: &Entity) -> Vec<String> {
+    vec![
+        text(task, "id").to_owned(),
+        text(task, "title").to_owned(),
+        text(task, "list").to_owned(),
+        text(task, "status").to_owned(),
+        local_due(task),
+        score(task),
+    ]
+}
+
+/// A semantic result's similarity to the query, as the daemon rounded it.
+pub fn score(task: &Entity) -> String {
+    task.get("score")
+        .and_then(Value::as_f64)
+        .map(|score| format!("{score:.3}"))
+        .unwrap_or_default()
 }
 
 pub fn done_row(task: &Entity) -> Vec<String> {

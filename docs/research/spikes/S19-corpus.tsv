@@ -1,0 +1,86 @@
+# S19 corpus: invented task titles (never BK's data). Two record kinds:
+# T<tab>id<tab>title<tab>notes     a task in the index ("-" = no notes)
+# Q<tab>query<tab>expected ids (comma-separated; any one counts as a hit)<tab>kind
+# kind: synonym = no word shared with the expected task; paraphrase = rewording; keyword = a word matches (FTS finds it too)
+T	t01	Book teeth cleaning	-
+T	t02	Renew car insurance	Policy ends on the 30th; compare quotes first
+T	t03	Buy milk and eggs	-
+T	t04	Call the plumber about the leaking tap	-
+T	t05	Pay council tax	-
+T	t06	File the expense report for the Berlin trip	-
+T	t07	Get the boiler serviced	-
+T	t08	Order a birthday present for Sarah	-
+T	t09	Schedule a haircut	-
+T	t10	Submit passport renewal form	-
+T	t11	Book flights to Lisbon	-
+T	t12	Take the dog to the vet for vaccinations	-
+T	t13	Cancel the gym membership	-
+T	t14	Return the library books	-
+T	t15	Pick up dry cleaning	-
+T	t16	Update CV and LinkedIn profile	-
+T	t17	Prepare slides for the quarterly review	-
+T	t18	Water the houseplants	-
+T	t19	Fix the squeaky bedroom door	-
+T	t20	Transfer money to savings account	-
+T	t21	Write thank-you note to grandma	-
+T	t22	Replace the smoke alarm battery	-
+T	t23	Renew the TV licence	-
+T	t24	Book an eye test at the optician	-
+T	t25	Mow the lawn	-
+T	t26	Clean out the fridge	-
+T	t27	Reply to the landlord about the deposit	-
+T	t28	Back up the laptop	-
+T	t29	Buy running shoes	-
+T	t30	Sort out the pension paperwork	-
+T	t31	Refill blood pressure prescription	Ask the pharmacy to send it to the surgery
+T	t32	MOT for the Honda	-
+T	t33	Plan meals for the week	-
+T	t34	Declutter the wardrobe	Take the bags to the charity shop
+T	t35	Change bank password	-
+T	t36	Buy bread	-
+T	t37	Read chapter 4 of the Rust book	-
+T	t38	Email Tom the meeting notes	-
+T	t39	Order new printer ink	-
+T	t40	Vacuum the stairs	-
+T	t41	Research standing desks	-
+T	t42	Book the car in for new tyres	-
+T	t43	Renew home insurance	-
+T	t44	Call mum	-
+T	t45	Send invoice to the client	-
+T	t46	Learn 10 Spanish verbs	-
+T	t47	Defrost the freezer	-
+T	t48	Put the recycling out	Blue bin on Tuesdays
+T	t49	Pay the electricity bill	-
+T	t50	Buy a present for the office secret santa	-
+Q	dentist	t01	synonym
+Q	vehicle insurance	t02	paraphrase
+Q	groceries	t03,t36	synonym
+Q	water leak	t04	paraphrase
+Q	pipes	t04	synonym
+Q	taxes	t05	paraphrase
+Q	reimbursement	t06	synonym
+Q	heating	t07	synonym
+Q	gift	t08,t50	synonym
+Q	hairdresser	t09	synonym
+Q	travel documents	t10	synonym
+Q	holiday	t11	synonym
+Q	pet	t12	synonym
+Q	fitness	t13,t29	synonym
+Q	job application	t16	synonym
+Q	presentation	t17	synonym
+Q	garden	t25,t18	synonym
+Q	rent	t27	synonym
+Q	computer	t28	synonym
+Q	retirement	t30	synonym
+Q	medicine	t31	synonym
+Q	pharmacy	t31	keyword
+Q	car	t32,t42,t02	keyword
+Q	clothes	t34,t15	synonym
+Q	security	t35,t22	synonym
+Q	food shopping	t03,t36	synonym
+Q	programming	t37	synonym
+Q	utilities	t49	synonym
+Q	family	t44,t21	synonym
+Q	bills	t49,t05	synonym
+Q	eyes	t24	synonym
+Q	kitchen	t26,t47	synonym

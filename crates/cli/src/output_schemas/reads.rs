@@ -125,14 +125,18 @@ pub(super) fn search_result() -> Value {
         json!({ "type": "string", "description": "The name of the task's list" });
     schema["properties"]["snippet"] = json!({
         "type": "string",
-        "description": "The part of the title or notes that matched, on one line: each match between ** and **, … where it was cut"
+        "description": "Without --semantic: the part of the title or notes that matched, on one line: each match between ** and **, … where it was cut"
+    });
+    schema["properties"]["score"] = json!({
+        "type": "number",
+        "description": "With --semantic: how close the task is in meaning to the query, its cosine similarity (at least 0.15, at most 1), to three places"
     });
     schema["required"]
         .as_array_mut()
         .expect("task_entity lists required keys")
-        .extend([json!("list"), json!("snippet")]);
+        .push(json!("list"));
     schema["description"] = json!(
-        "A task that matched, best match first: the task as `tasks list` gives it, with `list` and `snippet`"
+        "A task that matched, best match first: the task as `tasks list` gives it, with `list`, and `snippet` (by words) or `score` (--semantic)"
     );
     schema
 }

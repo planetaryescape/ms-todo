@@ -3,7 +3,9 @@
 //! (D-031).
 
 use ms_todo_core::{ErrorKind, Paths};
-use ms_todo_protocol::{Entity, Request, ResponseData, SearchStatus, SyncInfo, TaskFilter};
+use ms_todo_protocol::{
+    Entity, Request, ResponseData, SearchStatus, SemanticIndex, SyncInfo, TaskFilter,
+};
 use serde::Serialize;
 use serde_json::Value;
 
@@ -158,6 +160,24 @@ fn marked_title(task: &Entity) -> String {
     }
 }
 
+/// A semantic search's results: the score where a keyword search has
+/// the match.
+pub const SEMANTIC_TABLE: Table = Table {
+    headings: &["DONE", "DUE", "LIST", "TITLE", "SCORE"],
+    row: |task| {
+        vec![
+            done(task),
+            csv_columns::local_due(task),
+            text(task, "list").to_owned(),
+            marked_title(task),
+            csv_columns::score(task),
+        ]
+    },
+    csv_headings: csv_columns::SEMANTIC_COLUMNS,
+    csv_row: csv_columns::semantic_row,
+    bold_matches: None,
+};
+
 fn done(task: &Entity) -> String {
     if text(task, "status") == "completed" {
         "x".into()
@@ -222,7 +242,14 @@ pub async fn next(
     }
 }
 
-pub async fn search(paths: &Paths, args: SearchArgs) -> Result<(Vec<Entity>, SyncInfo), CliError> {
+/// What a search found, and for a semantic one how complete the index was.
+pub struct Found {
+    pub items: Vec<Entity>,
+    pub sync: SyncInfo,
+    pub semantic: Option<SemanticIndex>,
+}
+
+pub async fn search(paths: &Paths, args: SearchArgs) -> Result<Found, CliError> {
     let request = Request::SearchTasks {
         query: args.query.join(" "),
         list: args.list,
@@ -232,9 +259,18 @@ pub async fn search(paths: &Paths, args: SearchArgs) -> Result<(Vec<Entity>, Syn
             SearchStatusArg::All => SearchStatus::All,
         },
         limit: Some(args.limit),
+        semantic: args.semantic,
     };
     match daemon_client::ask(paths, request).await? {
-        ResponseData::SearchResults { items, sync } => Ok((items, sync)),
+        ResponseData::SearchResults {
+            items,
+            sync,
+            semantic,
+        } => Ok(Found {
+            items,
+            sync,
+            semantic,
+        }),
         _ => Err(crate::unexpected_response()),
     }
 }

@@ -47,10 +47,22 @@ pub fn draw(frame: &mut Frame, area: Rect, app: &App) {
     let key = |keys: &str| Span::styled(keys.to_owned(), theme.key);
     let left = match &app.mode {
         Mode::Filtering { input } => {
-            let mut spans = vec![Span::styled(" / ", theme.accent)];
+            let other = if app.semantic_filter {
+                "By words"
+            } else {
+                "By meaning"
+            };
+            let mut spans = vec![Span::styled(
+                format!(" {} ", app.filter_marker()),
+                theme.accent,
+            )];
             spans.extend(typed(input));
             if let Some(error) = &app.filter_error {
                 spans.push(Span::styled(format!("  {error}"), theme.error));
+            }
+            if let Some(toggle) = key_for(Context::Prompt, Action::ToggleSemantic) {
+                spans.push(key(&format!("  {toggle} ")));
+                spans.push(Span::styled(format!("{other} "), theme.text_dim));
             }
             Line::from(spans)
         }

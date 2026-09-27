@@ -33,13 +33,13 @@ pub use mutation::{Applied, Plan, PlannedList, PlannedTask, Refused, Rolled, Tas
 pub use outbox::{OpError, OutboxDepth, OutboxOp, OutboxState};
 pub use request::{RawWriteMethod, Request, SearchStatus};
 pub use response::{
-    Candidate, DownloadedFile, ErrorPayload, ListSuggestion, Response, ResponseData,
+    Candidate, DownloadedFile, ErrorPayload, ListSuggestion, Response, ResponseData, SemanticIndex,
 };
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
 pub use status::{
-    DaemonStatus, DoctorReport, MyDayStatus, ScopeError, ScopeStatus, SuggestStatus, SyncActivity,
-    SyncInfo, SyncMode, SyncProgress, SyncReport, SyncState,
+    DaemonStatus, DoctorReport, ModelState, MyDayStatus, ScopeError, ScopeStatus, SemanticStatus,
+    SuggestStatus, SyncActivity, SyncInfo, SyncMode, SyncProgress, SyncReport, SyncState,
 };
 pub use task_change::{
     Clearable, Importance, LinkEdit, NewLink, NewTask, TaskChange, TaskEdit, TaskSelect,
@@ -84,7 +84,10 @@ pub use views::{Counts, MyDay, MyDaySeed, Scope, Seed};
 /// `Scope::Next`, `Upcoming` and `Someday`, `Counts.upcoming` and
 /// `someday`, `Seed.include_deferred` and `NextTasks`, so an older daemon
 /// never drops a defer it doesn't know and adds the task in plain view.
-pub const PROTOCOL_VERSION: u32 = 17;
+/// 18: semantic search (rung 9c): `SearchTasks.semantic` and
+/// `Seed.semantic`, so an older daemon never answers a search by meaning
+/// with a keyword search.
+pub const PROTOCOL_VERSION: u32 = 18;
 
 /// The socket buffer both ends ask for: room for a large list's `Seed` in
 /// one write. macOS gives a Unix socket 8 KiB, so a 350 KiB seed crossed

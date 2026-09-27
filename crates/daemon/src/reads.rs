@@ -2,16 +2,16 @@
 //! (D-034) with the scope's sync state beside the items.
 
 use ms_todo_protocol::{
-    DeferredFilter, ErrorPayload, ResponseData, SearchStatus, SyncInfo, SyncState, TaskFilter,
-    TaskSort,
+    DeferredFilter, ErrorPayload, ResponseData, SearchStatus, SemanticIndex, SyncInfo, SyncState,
+    TaskFilter, TaskSort,
 };
-use ms_todo_store::{LISTS_SCOPE, ListRow, StatusFilter, TaskRow, TaskSearch, View};
+use ms_todo_store::{LISTS_SCOPE, ListRow, StatusFilter, TaskRow, TaskScope, TaskSearch, View};
 use std::collections::HashMap;
 
 use serde_json::json;
 
 use crate::assignment::assigned_to;
-use crate::entities::{list_entity, search_entity, task_entity};
+use crate::entities::{list_entity, search_entity, semantic_entity, task_entity};
 use crate::freshness::{all_lists_state, read_state};
 use crate::handlers::{State, store_error};
 use crate::list_resolution::{ListRef, resolve_list};
@@ -55,7 +55,7 @@ pub(crate) async fn list_tasks(
     let mut filter = filter.clone();
     filter.deferred = crate::deferral::searched(filter.deferred, search);
     let (rows, sync) = if !every_list {
-        let (_, rows, sync) = list_rows(state, &lists, wanted, search).await?;
+        let (_, rows, sync) = list_rows(state, &lists, wanted, search, false).await?;
         (rows, sync)
     } else {
         let rows = match (assignee, search) {
@@ -163,16 +163,27 @@ pub(crate) async fn get_tasks(
 }
 
 /// The list `wanted` names among `lists` (the default list for `None`),
-/// its tasks, oldest first, or with `search` those matching it, best
-/// first, and its sync state. `tasks list` and the TUI's `Seed` share it.
+/// its tasks, oldest first, or with `search` those matching it (by
+/// meaning with `semantic`, without waiting for the model), best first,
+/// and its sync state. `tasks list` and the TUI's `Seed` share it.
 pub(crate) async fn list_rows(
     state: &State,
     lists: &[ListRow],
     wanted: Option<&str>,
     search: Option<&str>,
+    semantic: bool,
 ) -> Result<(ListRef, Vec<TaskRow>, SyncInfo), ErrorPayload> {
     let list = resolve_list(lists, wanted)?;
     let sync = crate::freshness::list_read_state(state, &list).await?;
+    if let Some(query) = search.filter(|_| semantic) {
+        let scope = TaskScope {
+            list_local_id: Some(&list.local_id),
+            status: StatusFilter::All,
+            view: None,
+        };
+        let rows = crate::semantic::query::rows(state, query, &scope).await?;
+        return Ok((list, rows, sync));
+    }
     let rows = match search {
         None => state.store.tasks_in_list(&list.local_id).await,
         Some(query) => state
@@ -191,21 +202,28 @@ pub(crate) async fn list_rows(
     Ok((list, rows, sync))
 }
 
-/// `search`: every list's tasks, or one list's, matching `query`. Across
-/// lists the answer is `ready` only once every list has synced; before
-/// that it has what's cached so far.
+/// `search`: every list's tasks, or one list's, matching `query`, or
+/// with `semantic` closest to it in meaning. Across lists the answer is
+/// `ready` only once every list has synced; before that it has what's
+/// cached so far.
 pub(crate) async fn search_tasks(
     state: &State,
     query: &str,
     wanted: Option<&str>,
     status: SearchStatus,
     limit: Option<u32>,
+    semantic: bool,
 ) -> Result<ResponseData, ErrorPayload> {
+    if semantic {
+        // Off is an error even before the first sync.
+        state.semantic.check_enabled()?;
+    }
     let lists_sync = read_state(state, LISTS_SCOPE).await?;
     if lists_sync.state == SyncState::Initial {
         return Ok(ResponseData::SearchResults {
             items: Vec::new(),
             sync: lists_sync,
+            semantic: None,
         });
     }
     let (list, sync) = match wanted {
@@ -217,16 +235,34 @@ pub(crate) async fn search_tasks(
         }
         None => (None, all_lists_state(state, lists_sync).await?),
     };
+    let status = match status {
+        SearchStatus::Open => StatusFilter::Open,
+        SearchStatus::Completed => StatusFilter::Completed,
+        SearchStatus::All => StatusFilter::All,
+    };
+    if semantic {
+        let scope = TaskScope {
+            list_local_id: list.as_deref(),
+            status,
+            view: None,
+        };
+        let (hits, pending) =
+            crate::semantic::query::search(state, query, &scope, limit, true).await?;
+        return Ok(ResponseData::SearchResults {
+            items: hits.iter().map(semantic_entity).collect(),
+            sync,
+            semantic: Some(SemanticIndex {
+                model: crate::semantic::model::MODEL_ID.into(),
+                pending,
+            }),
+        });
+    }
     let hits = state
         .store
         .search_tasks(&TaskSearch {
             query,
             list_local_id: list.as_deref(),
-            status: match status {
-                SearchStatus::Open => StatusFilter::Open,
-                SearchStatus::Completed => StatusFilter::Completed,
-                SearchStatus::All => StatusFilter::All,
-            },
+            status,
             view: None,
             limit,
         })
@@ -235,5 +271,6 @@ pub(crate) async fn search_tasks(
     Ok(ResponseData::SearchResults {
         items: hits.iter().map(search_entity).collect(),
         sync,
+        semantic: None,
     })
 }

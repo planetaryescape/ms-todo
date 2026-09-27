@@ -94,6 +94,50 @@ pub struct DoctorReport {
     /// My Day (rung 7); `None` from a daemon before it.
     #[serde(default)]
     pub my_day: Option<MyDayStatus>,
+    /// Semantic search (rung 9c); `None` from a daemon before it.
+    #[serde(default)]
+    pub semantic: Option<SemanticStatus>,
+}
+
+/// How semantic search stands, for `doctor` (D-062).
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SemanticStatus {
+    /// `[search] semantic` in config.toml.
+    pub enabled: bool,
+    /// The embedding model, as `name@revision`.
+    pub model: String,
+    pub state: ModelState,
+    /// Where the model's files are, or will be once downloaded.
+    pub model_dir: String,
+    /// How many bytes the download is.
+    pub download_bytes: u64,
+    /// Live tasks embedded for their current text, and those not yet.
+    #[serde(default)]
+    pub indexed: u64,
+    #[serde(default)]
+    pub pending: u64,
+    /// Why it's off or failing: a bad `[search]` setting, or the last
+    /// failure to download or load the model.
+    #[serde(default)]
+    pub problem: Option<String>,
+}
+
+/// Where the embedding model is.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ModelState {
+    /// Semantic search is off: nothing is downloaded.
+    #[default]
+    Off,
+    /// On, but not loaded yet: downloading, or reading it from disk.
+    Loading,
+    /// Loaded; the daemon embeds tasks as they change.
+    Ready,
+    /// The last try to download or load it failed (see `problem`); the
+    /// next search, or the next sync's changes, try again.
+    Failed,
+    #[serde(other)]
+    Unknown,
 }
 
 /// How My Day stands, for `doctor`.

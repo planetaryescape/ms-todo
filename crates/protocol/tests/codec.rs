@@ -2,12 +2,13 @@ use bytes::BytesMut;
 use ms_todo_protocol::{
     Anchor, Applied, Candidate, CategoryChange, Clearable, Codec, Counts, DaemonStatus,
     DeferredFilter, DoctorReport, DueFilter, EntityChanged, ErrorPayload, Event, ExtensionChange,
-    ExtensionOwner, Folder, Importance, ListChange, ListSuggestion, Message, MyDay, MyDaySeed,
-    MyDayStatus, NewTask, OpError, OutboxDepth, OutboxOp, OutboxState, OwnerKind, PROTOCOL_VERSION,
-    Payload, Plan, PlannedList, PlannedTask, RawWriteMethod, Refused, Request, Response,
-    ResponseData, Rolled, Scope, ScopeError, ScopeStatus, SearchStatus, Seed, StatusFilter,
-    SuggestStatus, SyncActivity, SyncInfo, SyncMode, SyncProgress, SyncReport, SyncState,
-    TaskAction, TaskChange, TaskEdit, TaskFilter, TaskSelect, TaskSort, WriteRejected,
+    ExtensionOwner, Folder, Importance, ListChange, ListSuggestion, Message, ModelState, MyDay,
+    MyDaySeed, MyDayStatus, NewTask, OpError, OutboxDepth, OutboxOp, OutboxState, OwnerKind,
+    PROTOCOL_VERSION, Payload, Plan, PlannedList, PlannedTask, RawWriteMethod, Refused, Request,
+    Response, ResponseData, Rolled, Scope, ScopeError, ScopeStatus, SearchStatus, Seed,
+    SemanticIndex, SemanticStatus, StatusFilter, SuggestStatus, SyncActivity, SyncInfo, SyncMode,
+    SyncProgress, SyncReport, SyncState, TaskAction, TaskChange, TaskEdit, TaskFilter, TaskSelect,
+    TaskSort, WriteRejected,
 };
 use serde_json::json;
 use tokio_util::codec::{Decoder, Encoder};
@@ -106,6 +107,14 @@ fn every_request_and_response_round_trips() {
             list: Some("Home".into()),
             status: SearchStatus::All,
             limit: Some(10),
+            semantic: false,
+        }),
+        Payload::Request(Request::SearchTasks {
+            query: "dentist".into(),
+            list: None,
+            status: SearchStatus::Open,
+            limit: Some(50),
+            semantic: true,
         }),
         Payload::Request(Request::RawGet { path: "/me".into() }),
         Payload::Request(Request::Bearer),
@@ -146,6 +155,20 @@ fn every_request_and_response_round_trips() {
                     state: SyncState::Ready,
                     generation: 3,
                 },
+                semantic: None,
+            },
+        }),
+        Payload::Response(Response::Ok {
+            data: ResponseData::SearchResults {
+                items: vec![entity.clone()],
+                sync: SyncInfo {
+                    state: SyncState::Ready,
+                    generation: 3,
+                },
+                semantic: Some(SemanticIndex {
+                    model: "potion-base-8M@bf8b056".into(),
+                    pending: 2,
+                }),
             },
         }),
         Payload::Request(Request::Sync { wait: true }),
@@ -201,6 +224,16 @@ fn every_request_and_response_round_trips() {
                     count: 2,
                     rollover_time: "04:00".into(),
                     last_rollover: Some("2026-09-25".into()),
+                    problem: None,
+                }),
+                semantic: Some(SemanticStatus {
+                    enabled: true,
+                    model: "potion-base-8M@bf8b056".into(),
+                    state: ModelState::Ready,
+                    model_dir: "/tmp/models/potion-base-8M-bf8b056".into(),
+                    download_bytes: 30_920_628,
+                    indexed: 640,
+                    pending: 14,
                     problem: None,
                 }),
             }),
@@ -488,26 +521,37 @@ fn every_request_and_response_round_trips() {
             scope: None,
             search: None,
             include_deferred: false,
+            semantic: false,
         }),
         Payload::Request(Request::Seed {
             scope: Some(Scope::List { id: "l1".into() }),
             search: Some("milk*".into()),
             include_deferred: true,
+            semantic: false,
         }),
         Payload::Request(Request::Seed {
             scope: Some(Scope::Planned),
             search: None,
             include_deferred: false,
+            semantic: false,
         }),
         Payload::Request(Request::Seed {
             scope: Some(Scope::Upcoming),
             search: None,
             include_deferred: false,
+            semantic: false,
         }),
         Payload::Request(Request::Seed {
             scope: Some(Scope::Next),
             search: None,
             include_deferred: false,
+            semantic: false,
+        }),
+        Payload::Request(Request::Seed {
+            scope: Some(Scope::Planned),
+            search: Some("teeth".into()),
+            include_deferred: false,
+            semantic: true,
         }),
         Payload::Request(Request::Subscribe),
         Payload::Response(Response::Ok {
@@ -555,6 +599,7 @@ fn every_request_and_response_round_trips() {
             tasks: vec!["t1".into(), "t2".into()],
         })),
         Payload::Event(Event::ResyncNeeded),
+        Payload::Event(Event::IndexChanged),
         Payload::Event(Event::SyncState(SyncActivity {
             generation: 8,
             in_progress: false,
@@ -664,6 +709,7 @@ fn unknown_tags_decode_to_unknown() {
             scope: Some(Scope::Unknown),
             search: None,
             include_deferred: false,
+            semantic: false,
         })
     );
 }
@@ -716,7 +762,8 @@ fn fields_from_a_newer_peer_are_ignored_and_missing_new_fields_default() {
             query: "milk".into(),
             list: None,
             status: SearchStatus::Open,
-            limit: None
+            limit: None,
+            semantic: false,
         })
     );
 

@@ -64,6 +64,11 @@ pub enum Request {
     /// Tasks whose title or notes match `query`, best match first, from the
     /// cache. `query` is FTS5's syntax: words (all must match), `"phrases"`,
     /// `prefix*`, `AND`, `OR`, `NOT` and parentheses.
+    ///
+    /// With `semantic`, `query` is plain text instead, and the tasks are
+    /// those closest to it in meaning by the local embedding model (D-062),
+    /// each with a `score`; an error when `[search] semantic` is off. The
+    /// daemon waits for the model if it's still downloading.
     SearchTasks {
         query: String,
         /// Only this list (a name or ID); `None` is every list.
@@ -74,6 +79,8 @@ pub enum Request {
         /// At most this many; `None` is every match.
         #[serde(default)]
         limit: Option<u32>,
+        #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+        semantic: bool,
     },
     /// Completed tasks from the cache, newest completion first, each with
     /// `completed_on` (its local day, or null while the completion hasn't
@@ -203,6 +210,10 @@ pub enum Request {
         /// Show deferred and Someday tasks in the views that hide them.
         #[serde(default)]
         include_deferred: bool,
+        /// `search` by meaning (see `SearchTasks`). Unlike `SearchTasks`,
+        /// an error rather than a wait while the model isn't ready.
+        #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+        semantic: bool,
     },
     /// Stream events on this connection from now on: `EntityChanged`,
     /// `ResyncNeeded`, `SyncState` and `WriteRejected`, each with this

@@ -1,6 +1,6 @@
 ---
 source: crates/tui/src/ui/tests.rs
-expression: "format!(\"{}\\n{}\", last(&adding), last(&confirming))"
+expression: "format!(\"{}\\n{}\", last(&filtering), last(&confirming))"
 ---
-" / milk█                                                                                                      "
+" / milk█  Ctrl-s By meaning                                                                                   "
 " Delete "Call Sam"?  y Delete  n Keep                                                                         "

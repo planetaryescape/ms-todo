@@ -178,6 +178,8 @@ pub struct App {
     pub tasks_ready: bool,
     /// The applied filter.
     pub filter: Option<String>,
+    /// Whether the filter searches by meaning (D-062) rather than words.
+    pub semantic_filter: bool,
     /// Why the filter as typed can't be searched, such as an unclosed quote.
     pub filter_error: Option<String>,
     pub banner: Option<Banner>,
@@ -241,6 +243,7 @@ impl App {
             diagnostics: Diagnostics::default(),
             tasks_ready: false,
             filter: None,
+            semantic_filter: false,
             filter_error: None,
             banner: None,
             rejections: HashMap::new(),

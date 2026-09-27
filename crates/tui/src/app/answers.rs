@@ -19,6 +19,7 @@ impl App {
                     scope: Some(view.clone()),
                     search: None,
                     include_deferred: self.show_deferred,
+                    semantic: false,
                 },
             })
             .collect()
@@ -33,8 +34,15 @@ impl App {
             tag: Tag::Seed(self.seeds.latest),
             request: Request::Seed {
                 scope: self.wanted.clone(),
-                search: self.filter.as_deref().map(search_query),
                 include_deferred: self.show_deferred,
+                search: self.filter.as_deref().map(|text| {
+                    if self.semantic_filter {
+                        text.trim().to_owned()
+                    } else {
+                        search_query(text)
+                    }
+                }),
+                semantic: self.semantic_filter && self.filter.is_some(),
             },
         }
     }
@@ -62,6 +70,9 @@ impl App {
                 self.seeds.in_flight = false;
                 let mut effects = match result {
                     Ok(ResponseData::Seed(seed)) => {
+                        // The filter as typed searched: any earlier reason
+                        // it couldn't (such as the model loading) is stale.
+                        self.filter_error = None;
                         let first = !self.seeded;
                         self.apply_seed(seed);
                         if first && self.lists_ready {
@@ -174,8 +185,10 @@ impl App {
             self.sign_in_required = true;
             return Vec::new();
         }
-        if self.filter.is_some() && error.kind == "invalid_input" {
-            // Mid-typing, like an unclosed quote: keep the last results.
+        let not_ready = self.semantic_filter && error.kind == "network";
+        if self.filter.is_some() && (error.kind == "invalid_input" || not_ready) {
+            // Mid-typing, like an unclosed quote, semantic search off, or
+            // its model still loading: keep the last results.
             self.filter_error = Some(error.message);
             return Vec::new();
         }
@@ -321,7 +334,10 @@ impl App {
                     Vec::new()
                 }
             }
-            Event::SyncProgress(_) | Event::Unknown => Vec::new(),
+            // Only a search by meaning ranks by the index: re-run it, as
+            // the model may have just loaded or the tasks been re-embedded.
+            Event::IndexChanged if self.semantic_filter && self.filter.is_some() => self.reseed(),
+            Event::IndexChanged | Event::SyncProgress(_) | Event::Unknown => Vec::new(),
         }
     }
 }

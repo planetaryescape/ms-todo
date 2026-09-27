@@ -109,6 +109,11 @@ iana-time-zone = "0.1"
 linkify = "0.11"
 # An attachment's content type, from its file name.
 mime_guess = "2"
+# Semantic search's local embedding model (rung 9c, S19): Model2Vec's
+# static embeddings in pure Rust. No default features: the daemon
+# downloads the pinned files itself (no hf-hub), and the tokenizer's regex
+# engine is picked below.
+model2vec-rs = { version = "0.3", default-features = false }
 futures-util = { version = "0.3", default-features = false, features = ["sink", "std"] }
 # An attachment ID in an upload session's `Location`.
 percent-encoding = "2"
@@ -135,6 +140,9 @@ tokio-util = { version = "0.7", features = ["codec"] }
 toml = "1"
 # Writes the TUI's theme into config.toml, keeping its comments.
 toml_edit = "0.25"
+# Only to pick model2vec-rs's regex engine: fancy-regex is pure Rust,
+# where the default, onig, compiles C (S19).
+tokenizers = { version = "0.21", default-features = false, features = ["fancy-regex"] }
 tracing = "0.1"
 url = "2"
 tracing-subscriber = { version = "0.3", default-features = false, features = ["fmt", "std"] }

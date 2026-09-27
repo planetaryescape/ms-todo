@@ -37,6 +37,17 @@ pub enum StatusFilter {
     All,
 }
 
+impl StatusFilter {
+    /// The condition on `tasks`, as `AND …`, or nothing for every status.
+    pub(crate) fn and_condition(self) -> &'static str {
+        match self {
+            Self::Open => "AND tasks.status <> 'completed'",
+            Self::Completed => "AND tasks.status = 'completed'",
+            Self::All => "",
+        }
+    }
+}
+
 pub struct TaskSearch<'a> {
     /// In FTS5's query syntax; see the module docs.
     pub query: &'a str,
@@ -66,11 +77,7 @@ impl Store {
         search: &TaskSearch<'_>,
     ) -> Result<Vec<SearchHit>, StoreError> {
         let expression = match_expression(search.query)?;
-        let status = match search.status {
-            StatusFilter::Open => "AND tasks.status <> 'completed'",
-            StatusFilter::Completed => "AND tasks.status = 'completed'",
-            StatusFilter::All => "",
-        };
+        let status = search.status.and_condition();
         let view = search
             .view
             .map(|view| format!("AND {}", view.condition()))

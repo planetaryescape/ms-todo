@@ -55,6 +55,34 @@ ms-todo tasks open <TASK> --index 2     # in the browser or mail app; http, http
 
 Search looks through every task's title and notes (html notes as text), ignoring case and accents, and ranks title matches first. Words can end in `*` to match a prefix; `OR`, `NOT` and parentheses work too, in capitals. It shows open tasks by default (`--status completed|all` for the rest) and at most 50 (`--limit`). Each JSON item is the task plus `list`, its list's name, and `snippet`, the passage that matched with each match between `**`; CSV has `id,title,list,status,due,snippet`. A query ms-todo can't read, like `OR milk` or an unclosed quote, exits 2. It answers from the local cache, in a few milliseconds.
 
+### Search by meaning
+
+When you know what a task is about but not the words in it, `--semantic` finds it by meaning: `dentist` finds "Book teeth cleaning", `vehicle` finds "Renew car insurance".
+
+```sh
+mst search dentist --semantic                   # open tasks, closest in meaning first
+mst search "tax paperwork" --semantic --status all --limit 5
+mst search groceries --semantic --list Home --format json
+```
+
+It's off until you turn it on, because it needs a one-time download:
+
+```toml
+# ~/.config/ms-todo/config.toml
+[search]
+semantic = true
+```
+
+Then run `ms-todo daemon stop`: the daemon reads the setting when it starts. With it off, `--semantic` exits 2 and says how to turn it on, and nothing is downloaded.
+
+- **It all runs on your computer.** The daemon downloads a small English model once, [Model2Vec's potion-base-8M](https://huggingface.co/minishlab/potion-base-8M) (about 31 MB, three files from a pinned revision, each checked against a pinned SHA-256), into `models/` in the data directory. Task text never leaves the machine.
+- The daemon turns each task's title and notes into a vector in the background, after each sync or change, and only again when its text changes. The first time takes a moment; on a few thousand tasks, well under a second.
+- The query is plain text (no `*`, quotes or operators). Results are the tasks closest in meaning, best first, down to a minimum similarity, so an unrelated query finds nothing. `--list`, `--status` and `--limit` work as they do for keyword search.
+- Each JSON item has `score` (its similarity to the query, 0.15 to 1) instead of `snippet`, and the envelope has `semantic: {model, pending}`; CSV has `id,title,list,status,due,score`, and the table a `SCORE` column. `pending` counts tasks not yet embedded for their current text: they may be missing. The other formats say so on stderr.
+- The first search after the daemon starts waits for the model to load (and, the first time, to download).
+- `ms-todo doctor` shows whether it's on, the model's state (`loading`, `ready` or `failed`, with why), where it's kept, and how many tasks are indexed and pending.
+- In the TUI, `Ctrl-s` in the `/` filter switches it to meaning (the prompt shows `~`) and back.
+
 ## Quick add
 
 Type a task the way you'd say it, and ms-todo files it:
@@ -421,6 +449,7 @@ Its socket is private to your user (0600, in a 0700 directory), and its log is `
 | Config | `~/.config/ms-todo/config.toml` on macOS and Linux. `$XDG_CONFIG_HOME/ms-todo/` or `$MS_TODO_CONFIG_DIR` move it |
 | Data (cache, sign-in, logs) | `~/Library/Application Support/ms-todo/` on macOS, `$XDG_DATA_HOME/ms-todo/` (`~/.local/share/ms-todo/`) on Linux |
 | Cache | `ms-todo.db` in the data directory (SQLite) |
+| Semantic search's model | `models/` in the data directory, once [search by meaning](#search-by-meaning) is on |
 | Sign-in | `auth/token.json` in the data directory, mode 0600 |
 | Daemon log | `logs/daemon.log` in the data directory |
 | Daemon socket | `$XDG_RUNTIME_DIR/ms-todo/` where there is one, else `run/` in the data directory |

@@ -11,6 +11,8 @@ ms-todo-core = { workspace = true }
 chrono = { workspace = true }
 html2text = { workspace = true }
 serde_json = { workspace = true }
+# A task's embedded text, hashed so only changed tasks are embedded again.
+sha2 = { workspace = true }
 sqlx = { workspace = true }
 thiserror = { workspace = true }
 uuid = { workspace = true }
