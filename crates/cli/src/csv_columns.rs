@@ -27,7 +27,9 @@ pub const TASK_COLUMNS: &[&str] = &[
 ];
 
 /// Tasks from every list (`tasks list` with a filter and no `--list`):
-/// the task columns, then the list's name.
+/// the task columns as they were, the list's name, then the columns added
+/// since. New columns go at the end of every CSV shape, so no column's
+/// position ever moves.
 pub const EVERY_LIST_COLUMNS: &[&str] = &[
     "id",
     "title",
@@ -39,9 +41,9 @@ pub const EVERY_LIST_COLUMNS: &[&str] = &[
     "created",
     "modified",
     "sync_state",
+    "list",
     "defer_until",
     "someday",
-    "list",
 ];
 
 /// A search result: enough to recognise the task and where it matched.
@@ -118,6 +120,16 @@ pub fn task_row(task: &Entity) -> Vec<String> {
         text(task, "defer_until").to_owned(),
         boolean(task, "someday"),
     ]
+}
+
+/// Tasks from every list: [`task_row`] with the list's name before the
+/// columns added after it (rung 9a's `defer_until` and `someday`).
+pub fn every_list_row(task: &Entity) -> Vec<String> {
+    let mut row = task_row(task);
+    let added = row.split_off(row.len() - 2);
+    row.push(text(task, "list").to_owned());
+    row.extend(added);
+    row
 }
 
 pub fn next_row(task: &Entity) -> Vec<String> {

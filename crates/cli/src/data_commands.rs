@@ -66,7 +66,8 @@ pub const TASKS_TABLE: Table = Table {
 };
 
 /// Tasks from every list, as a filter with no `--list` finds them: each
-/// with its list. CSV is the task columns, then `list`.
+/// with its list. CSV is the task columns with `list` before the columns
+/// added after it.
 pub const EVERY_LIST_TABLE: Table = Table {
     headings: &["DONE", "DUE", "IMPORTANT", "LIST", "TITLE"],
     row: |task| {
@@ -84,11 +85,7 @@ pub const EVERY_LIST_TABLE: Table = Table {
         ]
     },
     csv_headings: csv_columns::EVERY_LIST_COLUMNS,
-    csv_row: |task| {
-        let mut row = csv_columns::task_row(task);
-        row.push(text(task, "list").to_owned());
-        row
-    },
+    csv_row: csv_columns::every_list_row,
     bold_matches: None,
 };
 
