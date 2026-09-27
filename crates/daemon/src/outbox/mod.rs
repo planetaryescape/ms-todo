@@ -28,6 +28,7 @@ pub(crate) mod move_job;
 pub(crate) mod prune;
 mod rollback;
 mod send;
+mod series;
 mod unknown;
 
 use std::sync::{Arc, Mutex};

@@ -672,7 +672,10 @@ async fn undoing_a_recurring_completion_needs_the_copy_named() {
     );
     assert_eq!(
         body(2),
-        json!({ "recurrence": { "pattern": { "type": "weekly", "interval": 1 } } })
+        json!({ "recurrence": {
+            "pattern": { "type": "weekly", "interval": 1 },
+            "range": { "startDate": "2026-09-24" }
+        } })
     );
     let restored = &tasks(&env, "Tasks")
         .into_iter()

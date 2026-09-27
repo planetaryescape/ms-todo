@@ -152,20 +152,13 @@ pub(crate) async fn undo(
             OpKind::Update if op.is_recurring_completion() => {
                 let copy = pick_copy(state, op, &row, copy).await?;
                 inverse.push(delete_op(id(inverse.len()), &copy, TaskAction::Delete));
-                // A due date written alone to a recurring task splits it:
-                // Graph moves the series on and makes a new task with that
-                // date (S20). With the recurrence cleared in the same PATCH,
-                // the date goes back on this task, and the recurrence is
-                // then set again, on the same ID.
-                let before = before(op)?;
-                let due = before.get("dueDateTime").cloned().unwrap_or(Value::Null);
-                let recurrence = before.get("recurrence").cloned().unwrap_or(Value::Null);
-                let body = json!({
-                    "dueDateTime": as_written("dueDateTime", due),
-                    "recurrence": null,
-                });
-                inverse.push(update_op(id(inverse.len()), &row, &body, TaskAction::Edit));
-                let body = json!({ "recurrence": recurrence });
+                // Sent as the outbox sends any due date on a recurring
+                // task, so Graph doesn't split it (S20, `outbox::series`).
+                let due = before(op)?
+                    .get("dueDateTime")
+                    .cloned()
+                    .unwrap_or(Value::Null);
+                let body = json!({ "dueDateTime": as_written("dueDateTime", due) });
                 inverse.push(update_op(id(inverse.len()), &row, &body, TaskAction::Edit));
             }
             OpKind::Update => {

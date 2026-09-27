@@ -1,6 +1,6 @@
 # 007: a due-date write to a recurring task makes a second task
 
-**Status:** fixed for undo (D-069): the due date goes back in a PATCH that also clears the recurrence, then a second PATCH sets the recurrence again, on the same task. Found 2026-09-27 while checking the undo picker live (D-065). Evidence: [S20](../research/spikes/S20.md).
+**Status:** fixed (D-069): every due-date write to a recurring task keeps one task, and My Day leaves a recurring task's date alone. Found 2026-09-27 while checking the undo picker live (D-065). Evidence: [S20](../research/spikes/S20.md).
 
 ## What happens
 
@@ -17,6 +17,8 @@ Graph answers a PATCH of `dueDateTime` on a recurring task by moving the series 
 
 ## What was done (D-069)
 
-Three sequences were tried live (S20, part 2): due date and recurrence in one PATCH splits it as before; clearing the recurrence, writing the due date, then setting the recurrence keeps one task; so does the date with the recurrence cleared in one PATCH, then the recurrence. Undo sends the last: two PATCHes, verified live on a daily and a weekly task, each left one task with its ID, its pre-completion day and its recurrence, and a later completion rolled on as usual.
-
-Still open: `tasks edit --due`, `reschedule` and My Day's due date on a recurring task are expected to split it the same way; not checked, and they don't use the fix yet.
+- Tried live (S20, parts 2 and 3): the date and the recurrence in one PATCH still split it; the date with `recurrence: null`, then the recurrence, keeps one task, **if the recurrence's `range.startDate` moves to the new date** (with the old start Graph puts the task back on it).
+- The outbox sends every PATCH that sets a due date on a recurring task (and doesn't set the recurrence itself) that way, as one operation, so `tasks edit --due`, `reschedule`, undo of a completion and the undo of each are covered, with one undo each.
+- My Day's due date: a task that recurs keeps its date when added to a later My Day or taken out, since clearing it dropped the recurrence (S20, part 3).
+- Verified live on daily and weekly tasks for each path, and against a fake Graph that splits as Graph does.
+- Left: if the second PATCH (the recurrence) is rejected for good, the task is left without its recurrence and the write is `failed` in `outbox list`; `outbox retry` sends both again.
