@@ -593,12 +593,22 @@ async fn undoing_a_recurring_completion_needs_the_copy_named() {
         )))
         .mount(&graph.server)
         .await;
+    let mut cleared = recurring("T-r", "W/\"r3\"", "2026-09-24T00:00:00.0000000");
+    cleared["recurrence"] = Value::Null;
     Mock::given(method("PATCH"))
         .and(path(format!("{TASKS}/T-r")))
         .and(body_partial_json(json!({ "dueDateTime": {} })))
+        .respond_with(ResponseTemplate::new(200).set_body_json(cleared))
+        .mount(&graph.server)
+        .await;
+    Mock::given(method("PATCH"))
+        .and(path(format!("{TASKS}/T-r")))
+        .and(body_partial_json(
+            json!({ "recurrence": { "pattern": {} } }),
+        ))
         .respond_with(ResponseTemplate::new(200).set_body_json(recurring(
             "T-r",
-            "W/\"r3\"",
+            "W/\"r4\"",
             "2026-09-24T00:00:00.0000000",
         )))
         .mount(&graph.server)
@@ -648,12 +658,31 @@ async fn undoing_a_recurring_completion_needs_the_copy_named() {
     let deletes = writes_to(&graph, "DELETE").await;
     assert_eq!(deletes.len(), 1);
     assert_eq!(deletes[0].url.path(), format!("{TASKS}/T-copy"));
+    // S20: the date goes back with the recurrence cleared, then the
+    // recurrence is set again, so Graph doesn't split the series.
     let patches = writes_to(&graph, "PATCH").await;
-    let restore: Value = serde_json::from_slice(&patches[1].body).expect("json");
+    assert_eq!(patches.len(), 3, "complete, date, recurrence");
+    let body = |at: usize| -> Value { serde_json::from_slice(&patches[at].body).expect("json") };
     assert_eq!(
-        restore,
-        json!({ "dueDateTime": { "dateTime": "2026-09-24T00:00:00.0000000", "timeZone": "UTC" } })
+        body(1),
+        json!({
+            "dueDateTime": { "dateTime": "2026-09-24T00:00:00.0000000", "timeZone": "UTC" },
+            "recurrence": null
+        })
     );
+    assert_eq!(
+        body(2),
+        json!({ "recurrence": {
+            "pattern": { "type": "weekly", "interval": 1 },
+            "range": { "startDate": "2026-09-24" }
+        } })
+    );
+    let restored = &tasks(&env, "Tasks")
+        .into_iter()
+        .find(|task| task["graph_id"] == "T-r")
+        .expect("the series");
+    assert_eq!(restored["recurrence"]["pattern"]["type"], "weekly");
+    assert_eq!(restored["sync_state"], "synced");
 }
 
 #[tokio::test]

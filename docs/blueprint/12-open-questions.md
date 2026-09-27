@@ -121,7 +121,7 @@ Confidence: high. Evidence: [S11](../research/spikes/S11.md). Changed: [02](02-d
 
 ### S20 result (2026-09-27)
 
-**It splits the task.** A PATCH of `dueDateTime` on a recurring task moves the series on to its next occurrence and creates a new open recurring task with the date asked for, to an earlier day or a later one. So undoing a recurring completion leaves two tasks. Also seen: a new recurring task's etag moves and its due date is written back in UTC within a second of the 201. Confidence: high for what happens, not why. Evidence: [S20](../research/spikes/S20.md). Changed: D-065; open in [issue 007](../issues/007-recurring-due-date-patch-splits.md).
+**It splits the task.** A PATCH of `dueDateTime` on a recurring task moves the series on to its next occurrence and creates a new open recurring task with the date asked for, to an earlier day or a later one. So undoing a recurring completion, `tasks edit --due` and `reschedule` left two tasks; clearing the recurrence with the date, then setting it again with its start moved to that day, keeps one (parts 2 and 3, D-069). Also seen: a new recurring task's etag moves and its due date is written back in UTC within a second of the 201. Confidence: high for what happens, not why. Evidence: [S20](../research/spikes/S20.md). Changed: D-065, D-069; [issue 007](../issues/007-recurring-due-date-patch-splits.md) fixed.
 
 ### S18 result (2026-09-27)
 

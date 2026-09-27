@@ -68,20 +68,27 @@ fn has_due_set(row: &TaskRow) -> bool {
         .is_some_and(|extension| extension.get(DUE_SET).is_some())
 }
 
+/// Whether `row` recurs. Its due date is then the series' (made so after
+/// My Day set it, say): moving it is the recurrence's business, and
+/// clearing it would take the recurrence away with it (S20).
+fn recurs(row: &TaskRow) -> bool {
+    row.raw.get("recurrence").is_some_and(Value::is_object)
+}
+
 pub(crate) fn completed(row: &TaskRow) -> bool {
     row.raw.get("status").and_then(Value::as_str) == Some("completed")
 }
 
 /// Putting `row` in `today`'s My Day, or `None` if it's there already. A
 /// task with no due date, or with the one ms-todo set for an earlier My
-/// Day, becomes due today.
+/// Day and no recurrence since, becomes due today.
 pub(crate) fn add_plan(row: &TaskRow, today: NaiveDate) -> Option<TaskPlan> {
     let current = my_day_of(row);
     if current == Some(today) {
         return None;
     }
     let due = graph_due_date(&row.raw);
-    let ours = due_set(row) && due.is_some() && due == current;
+    let ours = due_set(row) && due.is_some() && due == current && !recurs(row);
     let mut fields = Map::new();
     fields.insert(MY_DAY.into(), json!(today.format(DATE_FORMAT).to_string()));
     let due = if due.is_none() || ours {
@@ -103,7 +110,7 @@ pub(crate) fn add_plan(row: &TaskRow, today: NaiveDate) -> Option<TaskPlan> {
 
 /// Taking `row` out of My Day, or `None` if it isn't in one. The due date
 /// goes too when ms-todo set it, it's still that day, and the task is open
-/// (Q13; the rollover's rule).
+/// and doesn't recur (Q13; the rollover's rule).
 pub(crate) fn remove_plan(row: &TaskRow) -> Option<TaskPlan> {
     let day = my_day_of(row).or_else(|| {
         // A `myDay` that isn't a date is still ours to remove.
@@ -117,7 +124,8 @@ pub(crate) fn remove_plan(row: &TaskRow) -> Option<TaskPlan> {
     if has_due_set(row) {
         fields.insert(DUE_SET.into(), Value::Null);
     }
-    let clears_due = due_set(row) && !completed(row) && graph_due_date(&row.raw) == Some(day);
+    let clears_due =
+        due_set(row) && !completed(row) && !recurs(row) && graph_due_date(&row.raw) == Some(day);
     Some(TaskPlan {
         fields,
         expect: None,
@@ -422,6 +430,28 @@ mod tests {
         assert_eq!(remove_plan(&done).expect("plan").due, None);
 
         assert_eq!(remove_plan(&row(json!({}), None)), None);
+    }
+
+    #[test]
+    fn a_recurring_task_s_due_date_is_the_series_so_my_day_leaves_it() {
+        // Made recurring after My Day set its date: moving it would move
+        // the series, and clearing it would take the recurrence away (S20).
+        let recurring = |status: &str, date: &str| {
+            row(
+                json!({
+                    "status": status,
+                    "dueDateTime": due(date),
+                    "recurrence": { "pattern": { "type": "daily", "interval": 1 } }
+                }),
+                Some(json!({ "myDay": "2026-09-24", "myDayDueSet": true })),
+            )
+        };
+        let plan =
+            add_plan(&recurring("notStarted", "2026-09-24"), day("2026-09-25")).expect("plan");
+        assert_eq!(plan.due, None);
+        assert_eq!(plan.fields["myDayDueSet"], Value::Null);
+        let plan = remove_plan(&recurring("notStarted", "2026-09-24")).expect("plan");
+        assert_eq!(plan.due, None);
     }
 
     #[test]

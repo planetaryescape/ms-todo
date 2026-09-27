@@ -745,13 +745,29 @@ pub fn patch_task(data: &mut Data, request: &Request) -> ResponseTemplate {
         return not_found();
     };
     let mut sent: Value = serde_json::from_slice(&request.body).unwrap_or_default();
-    let Some(task) = data
-        .tasks
-        .get_mut(list)
-        .and_then(|tasks| tasks.iter_mut().find(|task| task["id"] == id))
-    else {
+    let Some(tasks) = data.tasks.get_mut(list) else {
         return not_found();
     };
+    let Some(at) = tasks.iter().position(|task| task["id"] == id) else {
+        return not_found();
+    };
+    // S20: a due date written alone to a recurring task splits it: the
+    // series keeps its date, and a new open recurring task takes the one
+    // sent.
+    let recurring = !tasks[at]["recurrence"].is_null();
+    if recurring
+        && sent.get("recurrence").is_none()
+        && sent.get("dueDateTime").is_some_and(|due| !due.is_null())
+        && let Some(sent) = sent.as_object_mut()
+        && let Some(due) = sent.remove("dueDateTime")
+    {
+        let mut split = tasks[at].clone();
+        split["id"] = json!(format!("{id}-split-{}", next_write()));
+        split["dueDateTime"] = due;
+        split["status"] = json!("notStarted");
+        tasks.push(split);
+    }
+    let task = &mut tasks[at];
     // Read before the merge: only a transition turns the reminder off.
     let completes = sent["status"] == "completed" && task["status"] != "completed";
     if let (Some(task), Some(sent)) = (task.as_object_mut(), sent.as_object_mut()) {

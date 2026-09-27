@@ -44,7 +44,7 @@ use serde_json::{Map, Value, json};
 use crate::assignment::PART_OF;
 use crate::handlers::{State, error_payload, store_error};
 use crate::outbox::move_job;
-use crate::outbox::{fields_not_holding, op_id_for};
+use crate::outbox::{as_landed, fields_not_holding, op_id_for};
 use crate::task_fields::{as_written, creatable_fields, reminder_at, reminder_on, resend_reminder};
 use crate::task_writes::{
     action_name, delete_op, move_op, new_task_raw, our_extension, queue, update_op,
@@ -152,6 +152,8 @@ pub(crate) async fn undo(
             OpKind::Update if op.is_recurring_completion() => {
                 let copy = pick_copy(state, op, &row, copy).await?;
                 inverse.push(delete_op(id(inverse.len()), &copy, TaskAction::Delete));
+                // Sent as the outbox sends any due date on a recurring
+                // task, so Graph doesn't split it (S20, `outbox::series`).
                 let due = before(op)?
                     .get("dueDateTime")
                     .cloned()
@@ -160,7 +162,9 @@ pub(crate) async fn undo(
                 inverse.push(update_op(id(inverse.len()), &row, &body, TaskAction::Edit));
             }
             OpKind::Update => {
-                let moved = fields_not_holding(op.body(), &row.raw);
+                // As it landed: Graph may have moved a recurring task's
+                // date to its pattern's next day (S20).
+                let moved = fields_not_holding(&as_landed(op), &row.raw);
                 if !moved.is_empty() {
                     let reason = format!(
                         "has changed since ({}); undo would overwrite that",

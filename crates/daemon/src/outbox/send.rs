@@ -23,6 +23,7 @@ use super::conflict;
 use super::extension_write;
 use super::move_job;
 use super::rollback::{announce_entity, reconcile_list, reject};
+use super::series;
 use super::{EXPECT_FIELDS, backoff, now};
 use crate::entities::split_extension;
 use crate::handlers::{State, error_payload, graph_error};
@@ -464,11 +465,29 @@ async fn patch(
     graph_id: &str,
     cached: &Entity,
 ) -> Result<Attempt, Failure> {
+    // S20: a due date on a recurring task goes so Graph doesn't split it.
+    if series::applies(op, cached) {
+        return series::patch(state, op, list_graph_id, graph_id, cached).await;
+    }
+    patch_with(state, op, list_graph_id, graph_id, cached, op.body()).await
+}
+
+/// [`patch`]'s one PATCH, sending `sent_body`: the operation's own body,
+/// or that with the recurrence cleared. What the task must hold, and what
+/// counts as touched after a 412, is judged by the operation's body.
+pub(super) async fn patch_with(
+    state: &State,
+    op: &OutboxRow,
+    list_graph_id: &str,
+    graph_id: &str,
+    cached: &Entity,
+    sent_body: &Value,
+) -> Result<Attempt, Failure> {
     let body = op.body();
     let recurring = op.is_recurring_completion();
     let sent = state
         .graph
-        .update_task(list_graph_id, graph_id, body, etag(cached), !recurring)
+        .update_task(list_graph_id, graph_id, sent_body, etag(cached), !recurring)
         .await;
     // What a re-send overwrote, if it did.
     let mut overwrote: Option<(Vec<String>, String)> = None;
@@ -513,7 +532,13 @@ async fn patch(
             }
             let sent = state
                 .graph
-                .update_task(list_graph_id, graph_id, body, etag(&current), !recurring)
+                .update_task(
+                    list_graph_id,
+                    graph_id,
+                    sent_body,
+                    etag(&current),
+                    !recurring,
+                )
                 .await;
             (current, sent)
         }
@@ -654,7 +679,7 @@ fn rejected(message: String) -> Failure {
     Failure::Rejected(error_payload(ErrorKind::Rejected, message))
 }
 
-fn store(error: ms_todo_store::StoreError) -> Failure {
+pub(super) fn store(error: ms_todo_store::StoreError) -> Failure {
     Failure::Temporary(crate::handlers::store_error(error))
 }
 
