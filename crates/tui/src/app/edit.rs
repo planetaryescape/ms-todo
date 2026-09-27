@@ -90,7 +90,13 @@ impl Field {
                 .start
                 .map(|start| start.format(ms_todo_core::DATE_FORMAT).to_string())
                 .unwrap_or_default(),
-            Self::Repeat => task.recurrence.clone().unwrap_or_default(),
+            // Its description when no phrase says it, which Enter leaves
+            // alone rather than clearing.
+            Self::Repeat => task
+                .repeat_phrase
+                .clone()
+                .or_else(|| task.recurrence.clone())
+                .unwrap_or_default(),
             Self::Importance => importance_name(task.importance).to_owned(),
             Self::Reminder => task
                 .reminder

@@ -9,6 +9,7 @@ use ms_todo_protocol::{Clearable, TaskEdit};
 
 use super::{capitalised, clearable, set_value};
 use crate::app::Task;
+use crate::app::edit::Field;
 
 /// The Start field's edit; `None` when it's what the task has. A start
 /// date on a repeating task is refused: Microsoft To Do keeps none of its
@@ -19,6 +20,9 @@ pub(super) fn start_edit(
     now: &ParseContext,
 ) -> Result<Option<TaskEdit>, String> {
     let start = set_value(read_due(typed, now))?;
+    if start == task.start {
+        return Ok(None);
+    }
     if start.is_some() && task.recurrence.is_some() {
         return Err(
             "It repeats, and Microsoft To Do keeps no start date on a repeating task; \
@@ -26,7 +30,7 @@ pub(super) fn start_edit(
                 .into(),
         );
     }
-    Ok((start != task.start).then(|| TaskEdit {
+    Ok(Some(TaskEdit {
         start: Some(clearable(start.map(day))),
         ..TaskEdit::default()
     }))
@@ -35,7 +39,7 @@ pub(super) fn start_edit(
 /// The Repeat field's edit: a recurrence as `--recur` reads it, first due
 /// on the next day it falls on from today, as `tasks edit --recur` without
 /// `--due`; empty or `-` stops it repeating. `None` when it's unchanged,
-/// including the description it was opened with.
+/// including the phrase it was opened with.
 pub(super) fn repeat_edit(
     typed: &str,
     task: &Task,
@@ -46,7 +50,7 @@ pub(super) fn repeat_edit(
             return Ok(None);
         }
         Clearable::Clear
-    } else if task.recurrence.as_deref() == Some(typed) {
+    } else if Field::Repeat.current(task) == typed {
         return Ok(None);
     } else {
         let read = read_recurrence(typed, now, None).map_err(|why| capitalised(&why.0))?;
@@ -131,6 +135,59 @@ mod tests {
         let why = start_edit("fri", &repeating(), &now()).expect_err("refused");
         assert!(why.contains("repeats"), "{why}");
         assert_eq!(start_edit("", &repeating(), &now()), Ok(None));
+        // Its start date left as it was is no change, not a refusal.
+        let mut started = repeating();
+        started.start = chrono::NaiveDate::from_ymd_opt(2026, 9, 28);
+        assert_eq!(start_edit("2026-09-28", &started, &now()), Ok(None));
+    }
+
+    /// Every recurrence the phrases make opens in the Repeat field as a
+    /// phrase that reads back as the same recurrence.
+    #[test]
+    fn every_recurrence_opens_as_a_phrase_that_reads_back_the_same() {
+        for typed in [
+            "daily",
+            "every 3 days",
+            "every weekday",
+            "every weekend",
+            "every mon, wed",
+            "every week",
+            "every other week",
+            "every 2 weeks on fri",
+            "every 3 weeks on tue, thu",
+            "every month",
+            "every 1st",
+            "every month on the 15th",
+            "every 2 months on the 31st",
+            "every last fri",
+            "every second tue",
+            "every 3 months on the first mon",
+            "every year",
+            "every 12 oct",
+            "every 29 feb",
+            "every mon until 31 dec",
+            "every day for 10 times",
+            "every month on the 1st for 1 times",
+        ] {
+            let graph = read_recurrence(typed, &now(), None)
+                .unwrap_or_else(|why| unreachable!("{typed}: {why:?}"))
+                .to_graph();
+            let phrase = crate::app::task::recurrence_phrase(&graph)
+                .unwrap_or_else(|| unreachable!("{typed}: no phrase for {graph}"));
+            let again = read_recurrence(&phrase, &now(), None)
+                .unwrap_or_else(|why| unreachable!("{typed} -> {phrase}: {why:?}"))
+                .to_graph();
+            assert_eq!(again, graph, "{typed} -> {phrase}");
+        }
+        // No words for it: the editor opens on its description, and Enter
+        // on that changes nothing.
+        let every_other_year = task(json!({
+            "recurrence": read_recurrence("every 2 years", &now(), None).expect("read").to_graph()
+        }));
+        assert_eq!(every_other_year.repeat_phrase, None);
+        let shown = Field::Repeat.current(&every_other_year);
+        assert_eq!(Some(&shown), every_other_year.recurrence.as_ref());
+        assert_eq!(repeat_edit(&shown, &every_other_year, &now()), Ok(None));
     }
 
     #[test]
@@ -152,8 +209,9 @@ mod tests {
             stopped.and_then(|edit| edit.recurrence),
             Some(Clearable::Clear)
         );
-        // Opened on its description and left alone: nothing to send.
-        let shown = repeating().recurrence.expect("described");
+        // Opened on its phrase and left alone: nothing to send.
+        let shown = repeating().repeat_phrase.expect("a phrase");
+        assert_eq!(shown, "every mon");
         assert_eq!(repeat_edit(&shown, &repeating(), &now()), Ok(None));
         assert!(repeat_edit("every mon at 9am", &plain, &now()).is_err());
         assert_eq!(
