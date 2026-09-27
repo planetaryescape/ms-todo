@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.33](https://github.com/planetaryescape/ms-todo/compare/v0.1.32...v0.1.33) (2026-09-27)
+
+
+### Features
+
+* nag reminders as Mac notifications (rung 9b) ([#78](https://github.com/planetaryescape/ms-todo/issues/78)) ([c19bf0e](https://github.com/planetaryescape/ms-todo/commit/c19bf0ece2fd589d28eaf505b7517c5c2246007d))
+
 ## [0.1.32](https://github.com/planetaryescape/ms-todo/compare/v0.1.31...v0.1.32) (2026-09-27)
 
 
