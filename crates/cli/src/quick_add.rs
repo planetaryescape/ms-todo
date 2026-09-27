@@ -39,7 +39,7 @@ async fn read(paths: &Paths, text: &str, due: Option<NaiveDate>) -> Result<Readi
         Vec::new()
     };
     let mut ctx = QuickAddContext {
-        when: phrases::now(),
+        when: phrases::now()?,
         lists: &lists,
         categories: None,
         due,
@@ -203,6 +203,7 @@ fn merge(
     );
     overrode("--recur", args.recur.is_some(), parsed.recurrence.is_some());
     overrode("--defer", args.defer.is_some(), parsed.defer.is_some());
+    overrode("--step", !args.steps.is_empty(), !parsed.steps.is_empty());
     let clear_due = matches!(args.due, Some(Clearable::Clear));
     if clear_due && args.recur.is_some() {
         return Err(CliError::message(
@@ -292,6 +293,11 @@ fn merge(
             .or_else(|| parsed.defer.map(|day| day.format(DATE_FORMAT).to_string())),
         someday: parsed.someday || args.someday,
         nag: args.nag.or(parsed.nag),
+        steps: if args.steps.is_empty() {
+            parsed.steps.clone()
+        } else {
+            args.steps.clone()
+        },
     };
     Ok((task, notes))
 }
@@ -330,7 +336,7 @@ impl Render for Parsed {
 /// `tasks parse`: the reading, in every format, and nothing written.
 pub async fn parse(paths: &Paths, args: ParseArgs, format: OutputFormat) -> Result<(), CliError> {
     let Reading { parsed, .. } = read(paths, &args.text, None).await?;
-    let now = phrases::now();
+    let now = phrases::now()?;
     let mut json = parsed.to_json(&args.text);
     json["input"] = json!(args.text);
     let recognised: Vec<String> = parsed
@@ -354,6 +360,7 @@ pub async fn parse(paths: &Paths, args: ParseArgs, format: OutputFormat) -> Resu
                 .map_or_else(|| "Tasks (the default)".into(), |list| list.name.clone()),
         ),
         ("Summary", parsed.summary(&now).join(" \u{b7} ")),
+        ("Steps", parsed.steps.join("; ")),
         ("Recognised", recognised.join(", ")),
         ("Warnings", parsed.warnings.join("; ")),
     ];

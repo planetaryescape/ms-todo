@@ -72,6 +72,13 @@ impl From<InvalidInstanceName> for CliError {
     }
 }
 
+/// A phrase, or the `[dates]` it's read with, that can't be read.
+impl From<ms_todo_nlp::NotUnderstood> for CliError {
+    fn from(error: ms_todo_nlp::NotUnderstood) -> Self {
+        Self::new(ErrorKind::InvalidInput, &error)
+    }
+}
+
 impl From<PathsError> for CliError {
     fn from(error: PathsError) -> Self {
         Self::new(ErrorKind::Internal, &error)

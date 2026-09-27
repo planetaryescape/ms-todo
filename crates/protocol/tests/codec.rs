@@ -394,6 +394,7 @@ fn every_request_and_response_round_trips() {
                 defer_until: Some("2026-10-02".into()),
                 someday: true,
                 nag: Some(15),
+                steps: vec!["Passport".into(), "Charger".into()],
             },
             dry_run: true,
             op_id: None,

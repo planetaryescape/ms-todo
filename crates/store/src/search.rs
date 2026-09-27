@@ -1,12 +1,15 @@
 //! Finding tasks by the words in them (D-041): SQLite FTS5 over each live
-//! task's title and plain-text body (migration 0004), ranked by bm25 with
-//! the title weighted above the body.
+//! task's title and plain-text body (migration 0004), and its steps,
+//! categories and attachment names (0009, D-068), ranked by bm25 with the
+//! title weighted above the rest.
 //!
 //! Queries use FTS5's syntax (words, `"phrases"`, `prefix*`, `AND`, `OR`,
 //! `NOT`, parentheses), but every word is quoted before FTS5 sees it, so
 //! punctuation in a word (`e-mail`, `don't`, `v1.2`) is searched for as
 //! text instead of failing as syntax. A query with no operators is all its
 //! words ANDed.
+
+use std::sync::LazyLock;
 
 use sqlx::sqlite::SqliteRow;
 use sqlx::{AssertSqlSafe, FromRow, Row, SqlitePool};
@@ -24,8 +27,29 @@ const MATCH_MARK: &str = "**";
 /// limit is 64).
 const SNIPPET_TOKENS: i64 = 12;
 
-/// How much more a word in the title counts than one in the body.
+/// How much more a word in the title counts than one anywhere else.
 const TITLE_WEIGHT: f64 = 10.0;
+
+/// The index's columns in order, by the name a result's `matched` gives
+/// each.
+const COLUMNS: [&str; 5] = ["title", "notes", "step", "category", "attachment"];
+
+/// What `highlight()` marks a match with when only finding which columns
+/// matched: a control character no task text holds.
+const FOUND_MARK: &str = "\u{1}";
+
+/// `, <matched> AS in_0, …`: a flag per column of whether the query
+/// matched there, for [`matched`]. The same for every search.
+static FOUND_COLUMNS: LazyLock<String> = LazyLock::new(|| {
+    (0..COLUMNS.len())
+        .map(|column| {
+            format!(
+                ", coalesce(instr(highlight(tasks_fts, {column}, ?7, ''), ?7), 0) > 0 \
+                 AS in_{column}"
+            )
+        })
+        .collect()
+});
 
 /// Which tasks a search considers by status.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -65,9 +89,11 @@ pub struct SearchHit {
     pub task: TaskRow,
     /// The display name of the task's list.
     pub list_name: String,
-    /// A short passage of the title or body that matched, on one line,
-    /// each match between [`MATCH_MARK`]s and `…` where it was cut.
+    /// A short passage that matched, on one line, each match between
+    /// [`MATCH_MARK`]s and `…` where it was cut.
     pub snippet: String,
+    /// Where the query's words were found, in [`COLUMNS`]' order.
+    pub matched: Vec<&'static str>,
 }
 
 impl Store {
@@ -82,15 +108,17 @@ impl Store {
             .view
             .map(|view| format!("AND {}", view.condition()))
             .unwrap_or_default();
+        let found = &*FOUND_COLUMNS;
         let rows: Vec<SqliteRow> = sqlx::query(AssertSqlSafe(format!(
             "SELECT {}, lists.display_name AS list_name, \
-             snippet(tasks_fts, -1, ?1, ?1, '…', ?2) AS snippet \
+             snippet(tasks_fts, -1, ?1, ?1, '…', ?2) AS snippet{found} \
              FROM tasks_fts \
              JOIN tasks ON tasks.rowid = tasks_fts.rowid \
              JOIN lists ON lists.local_id = tasks.list_local_id \
              WHERE tasks_fts MATCH ?3 AND tasks.deleted_at IS NULL AND lists.deleted_at IS NULL \
              AND (?4 IS NULL OR tasks.list_local_id = ?4) {status} {view} \
-             ORDER BY bm25(tasks_fts, ?5, 1.0), tasks.created_at DESC, tasks.rowid \
+             ORDER BY bm25(tasks_fts, ?5, 1.0, 1.0, 1.0, 1.0), tasks.created_at DESC, \
+             tasks.rowid \
              LIMIT ?6",
             task_record_columns()
         )))
@@ -100,6 +128,7 @@ impl Store {
         .bind(search.list_local_id)
         .bind(TITLE_WEIGHT)
         .bind(search.limit.map_or(-1, i64::from))
+        .bind(FOUND_MARK)
         .fetch_all(self.reader())
         .await
         .map_err(|error| query_error(error, search.query))?;
@@ -109,10 +138,22 @@ impl Store {
                     task: TaskRow::try_from(TaskRecord::from_row(row)?)?,
                     list_name: row.try_get("list_name")?,
                     snippet: tidy_snippet(&row.try_get::<String, _>("snippet")?),
+                    matched: matched(row)?,
                 })
             })
             .collect()
     }
+}
+
+/// The columns a result's `in_<n>` flags say the query matched.
+fn matched(row: &SqliteRow) -> Result<Vec<&'static str>, StoreError> {
+    let mut matched = Vec::new();
+    for (column, name) in COLUMNS.iter().enumerate() {
+        if row.try_get::<bool, _>(format!("in_{column}").as_str())? {
+            matched.push(*name);
+        }
+    }
+    Ok(matched)
 }
 
 /// Fill `body_text` for html bodies cached before migration 0004, which SQL

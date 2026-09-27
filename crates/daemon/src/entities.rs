@@ -52,12 +52,13 @@ pub(crate) fn task_entity(row: &TaskRow) -> Entity {
     entity
 }
 
-/// A task a search found: the task, its list's name as `list`, and the
-/// passage that matched as `snippet`.
+/// A task a search found: the task, its list's name as `list`, the
+/// passage that matched as `snippet`, and where as `matched`.
 pub(crate) fn search_entity(hit: &SearchHit) -> Entity {
     let mut entity = task_entity(&hit.task);
     entity.insert("list".into(), json!(hit.list_name));
     entity.insert("snippet".into(), json!(hit.snippet));
+    entity.insert("matched".into(), json!(hit.matched));
     entity
 }
 

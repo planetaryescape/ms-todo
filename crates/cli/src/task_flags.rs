@@ -34,7 +34,8 @@ pub fn body(body: Option<String>, file: Option<&Path>) -> Result<Option<String>,
 
 /// `--recur`, its first time `anchor` when a due date is also given.
 pub fn recurrence(text: &str, anchor: Option<NaiveDate>) -> Result<Recurrence, CliError> {
-    read_recurrence(text, &phrases::now(), anchor).map_err(|error| {
+    let now = phrases::now()?;
+    read_recurrence(text, &now, anchor).map_err(|error| {
         CliError::message(ErrorKind::InvalidInput, format!("--recur: {}", error.0))
     })
 }

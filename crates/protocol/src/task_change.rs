@@ -66,6 +66,10 @@ pub struct NewTask {
     /// `nag`. Needs `reminder`.
     #[serde(default)]
     pub nag: Option<u32>,
+    /// Steps to add with it, in order (Graph's `checklistItems`), each
+    /// its text.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub steps: Vec<String>,
 }
 
 /// The shortest nag interval: more often is noise, not a reminder.

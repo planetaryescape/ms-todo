@@ -149,7 +149,7 @@ fn mark(theme: &Theme, kind: SpanKind) -> Style {
         SpanKind::Label => theme.nlp_label,
         SpanKind::Priority => theme.nlp_priority,
         SpanKind::Recurrence => theme.nlp_recurrence,
-        SpanKind::MyDay | SpanKind::Someday | SpanKind::Nag => theme.text_dim,
+        SpanKind::MyDay | SpanKind::Someday | SpanKind::Nag | SpanKind::Steps => theme.text_dim,
         SpanKind::Syntax => theme.text_muted,
     }
 }

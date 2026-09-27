@@ -170,10 +170,10 @@ Plan trip start monday
   preview: due Mon 28 Sep · start Mon 28 Sep
 
 Plan trip start mon due fri
-  title: "Plan trip due"
+  title: "Plan trip"
   due: 2026-09-25
   start: 2026-09-28
-  spans: start:"start mon" date:"fri"
+  spans: start:"start mon" date:"due fri"
   preview: due Fri 25 Sep · start Mon 28 Sep
 
 Plan trip start monday fri
@@ -295,3 +295,57 @@ p1 #Home
   importance: p1 high
   spans: priority:"p1" list:"#Home"
   preview: p1
+
+Pay rent due fri
+  title: "Pay rent"
+  due: 2026-09-25
+  spans: date:"due fri"
+  preview: due Fri 25 Sep
+
+Pay the dues
+  title: "Pay the dues"
+  spans: 
+  preview: 
+
+Write due diligence notes
+  title: "Write due diligence notes"
+  spans: 
+  preview: 
+
+Gym tomorrow morning
+  title: "Gym"
+  due: 2026-09-25
+  reminder: 2026-09-25 09:00
+  spans: date:"tomorrow morning"
+  preview: due Fri 25 Sep · remind 09:00
+
+Morning pages
+  title: "Morning pages"
+  spans: 
+  preview: 
+
+Ship it eod
+  title: "Ship it"
+  due: 2026-09-24
+  reminder: 2026-09-24 17:00
+  spans: date:"eod"
+  preview: due Thu 24 Sep · remind 17:00
+
+Pack for trip :: passport; charger; socks
+  title: "Pack for trip"
+  steps: ["passport", "charger", "socks"]
+  spans: steps:":: passport; charger; socks"
+  preview: 3 steps
+
+Pack #Home tomorrow :: book taxi fri; "#Work" badge
+  title: "Pack"
+  list: Home
+  due: 2026-09-25
+  steps: ["book taxi fri", "\"#Work\" badge"]
+  spans: list:"#Home" date:"tomorrow" steps:":: book taxi fri; \"#Work\" badge"
+  preview: due Fri 25 Sep · 2 steps
+
+Read std::fs docs
+  title: "Read std::fs docs"
+  spans: 
+  preview:

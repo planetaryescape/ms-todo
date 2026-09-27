@@ -119,7 +119,7 @@ A task's `<id>` is in `mst tasks list --format ids`, or use its exact title with
 
 ### Quick add
 
-`tasks add` reads the list, importance, dates, reminder, recurrence and categories out of the text. What it doesn't recognise stays in the title:
+`tasks add` reads the list, importance, dates, reminder, recurrence, categories and steps out of the text. What it doesn't recognise stays in the title:
 
 ```console
 $ mst tasks parse "Pay rent every 1st #Finances p1 9am"
@@ -133,12 +133,14 @@ Recognised  recurrence "every 1st", list "#Finances", priority "p1", date "9am"
 | --- | --- |
 | `#Finances`, `#"Two words"` | the list, by its name or a prefix only it has. Without one, "Tasks" |
 | `p1` to `p4` | importance: `p1` high, `p2` and `p3` normal, `p4` low |
-| `tomorrow`, `fri 5pm`, `in 3 days`, `12 oct` | the due date. A time also sets a reminder then |
+| `tomorrow`, `fri 5pm`, `in 3 days`, `12 oct`, `due fri` | the due date. A time also sets a reminder then |
+| `eod`, `tomorrow morning`, `fri evening` | a reminder at 17:00, 09:00 or 19:00 on that day |
 | `!9am`, `!tomorrow 8:30` | a reminder only |
 | `every day`, `every weekday`, `every mon, wed`, `every 1st`, `every last friday` | a recurrence |
 | `@errands` | an Outlook category |
 | `+myday` or `*` | today's [My Day](#my-day) |
 | `"quoted text"`, `\#` | kept as typed |
+| `:: passport; charger` | steps, at the end, split on `;` |
 
 Flags win over the text (`--list`, `--due`, `--reminder`, `--importance`), and `--no-parse` takes the text as the title exactly as given: use it for text you didn't type, such as an agent's. The full syntax is in [Quick add](docs/usage.md#quick-add).
 
@@ -232,7 +234,7 @@ mst search '"car insurance"' --status all
 mst search 'renew* NOT passport' --list Finances
 ```
 
-Search looks through titles and notes, ignoring case and accents, from the local cache. It supports prefixes (`renew*`), phrases, `OR`, `NOT` and parentheses. In the TUI, `/` filters the view with the same search.
+Search looks through titles, notes, steps, categories and attachment names, ignoring case and accents, from the local cache, and says where each task matched. It supports prefixes (`renew*`), phrases, `OR`, `NOT` and parentheses. In the TUI, `/` filters the view with the same search.
 
 When no word matches, search by meaning: `mst search dentist --semantic` finds "Book teeth cleaning". It uses a small model that runs on your computer, so task text never leaves it; turn it on with `semantic = true` under `[search]` in `config.toml` (a one-time 31 MB download). In the TUI, `Ctrl-s` in the filter switches to it. See [Search by meaning](docs/usage.md#search-by-meaning).
 
@@ -393,6 +395,7 @@ JSON is `{ "schema_version": 2, "sync": {…}, "items": [...] }`, each item carr
 | `[suggest]` | optional list suggestions from TypeSafe, off by default ([List suggestions](docs/usage.md#list-suggestions)) |
 | `[my_day] rollover_time` | when the day's [My Day](#my-day) is emptied, `"HH:MM"` local; `"00:00"` by default |
 | `[contexts.<name>]` | a [context](#contexts): its `folders`, `lists` and `default_list` |
+| `[dates]` | `date_order = "dmy"` or `"mdy"` (is `12/10` 12 October or 10 December?) and `week_start = "monday"` or `"sunday"` ([How dates are written](docs/usage.md#how-dates-are-written)) |
 
 Environment variables (`MS_TODO_INSTANCE`, `MS_TODO_CLIENT_ID`, `MS_TODO_CONFIG_DIR`, `NO_COLOR`, `COLORTERM` and more) and where ms-todo keeps its data are in [docs/usage.md](docs/usage.md#environment-variables).
 

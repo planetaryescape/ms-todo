@@ -389,17 +389,25 @@ async fn rung_4_database(path: &std::path::Path) {
         ("t4", "Old insurance task", None, None, Some(1_i64)),
     ];
     for (id, title, body, body_type, deleted_at) in rows {
+        let mut raw = json!({ "id": id.to_uppercase(), "title": title });
+        let mut categories = json!([]);
+        if id == "t2" {
+            // For 0009's backfill of steps and categories.
+            raw["checklistItems"] = json!([{ "id": "c1", "displayName": "Drain the radiator" }]);
+            categories = json!(["Plumbing"]);
+        }
         sqlx::query(
             "INSERT INTO tasks (local_id, graph_id, list_local_id, title, body_content, \
-             body_content_type, status, importance, raw_json, deleted_at) \
-             VALUES (?, ?, 'l1', ?, ?, ?, 'notStarted', 'normal', ?, ?)",
+             body_content_type, status, importance, raw_json, categories_json, deleted_at) \
+             VALUES (?, ?, 'l1', ?, ?, ?, 'notStarted', 'normal', ?, ?, ?)",
         )
         .bind(id)
         .bind(id.to_uppercase())
         .bind(title)
         .bind(body)
         .bind(body_type)
-        .bind(json!({ "id": id.to_uppercase(), "title": title }).to_string())
+        .bind(raw.to_string())
+        .bind(categories.to_string())
         .bind(deleted_at)
         .execute(&pool)
         .await
@@ -421,9 +429,82 @@ async fn upgrading_indexes_the_tasks_already_cached() {
         "not the tombstone"
     );
     assert_eq!(found(&store, "boiler").await, ["T2"]);
+    assert_eq!(found(&store, "radiator").await, ["T2"]);
+    assert_eq!(found(&store, "plumbing").await, ["T2"]);
     // An html body is rendered by the store on open, not by the migration.
     assert_eq!(found(&store, "mortgage").await, ["T3"]);
     drop(store);
     let store = Store::open(&path).await.expect("reopen");
     assert_eq!(found(&store, "mortgage offer").await, ["T3"]);
+}
+
+#[tokio::test]
+async fn steps_categories_and_attachment_names_are_searched_and_named() {
+    let (_dir, store) = open().await;
+    let (home, _) = with_lists(&store).await;
+    let mut packing = task("T-pack", "Pack for the trip");
+    packing.insert(
+        "checklistItems".into(),
+        json!([
+            { "id": "c1", "displayName": "Passport", "isChecked": false },
+            { "id": "c2", "displayName": "Phone charger", "isChecked": true }
+        ]),
+    );
+    packing.insert("categories".into(), json!(["Travel"]));
+    packing.insert(
+        "attachments".into(),
+        json!([{ "id": "a1", "name": "boarding-pass.pdf", "size": 10 }]),
+    );
+    sync(
+        &store,
+        "L1",
+        &home,
+        vec![packing, task("T-travel", "Travel insurance")],
+    )
+    .await;
+
+    let hits = search(&store, "charger").await;
+    assert_eq!(hits.len(), 1);
+    assert_eq!(hits[0].matched, ["step"]);
+    assert!(
+        hits[0].snippet.contains("**charger**"),
+        "{}",
+        hits[0].snippet
+    );
+    let hits = search(&store, "boarding").await;
+    assert_eq!(hits.len(), 1);
+    assert_eq!(hits[0].matched, ["attachment"]);
+    // The title outranks a category, and each says where it matched.
+    let hits = search(&store, "travel").await;
+    let found: Vec<_> = hits
+        .iter()
+        .map(|hit| {
+            (
+                hit.task.graph_id.as_deref().expect("id"),
+                hit.matched.clone(),
+            )
+        })
+        .collect();
+    assert_eq!(
+        found,
+        [("T-travel", vec!["title"]), ("T-pack", vec!["category"])]
+    );
+    // Words in two places name both.
+    let hits = search(&store, "pack passport").await;
+    assert_eq!(hits[0].matched, ["title", "step"]);
+
+    // A step edited away leaves the index.
+    let mut edited = task("T-pack", "Pack for the trip");
+    edited.insert(
+        "checklistItems".into(),
+        json!([{ "id": "c1", "displayName": "Passport", "isChecked": false }]),
+    );
+    sync(
+        &store,
+        "L1",
+        &home,
+        vec![edited, task("T-travel", "Travel insurance")],
+    )
+    .await;
+    assert!(search(&store, "charger").await.is_empty());
 }

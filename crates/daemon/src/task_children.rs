@@ -106,10 +106,16 @@ impl ChildWrite {
     }
 
     pub fn into_op(self, op_id: String, row: &ms_todo_store::TaskRow) -> NewOp {
+        self.into_op_on(op_id, &row.local_id, &row.list_local_id)
+    }
+
+    /// On the task `local_id` in `list_local_id`, which may be one the
+    /// same command creates.
+    pub fn into_op_on(self, op_id: String, local_id: &str, list_local_id: &str) -> NewOp {
         NewOp {
             op_id,
-            entity_local_id: row.local_id.clone(),
-            list_local_id: row.list_local_id.clone(),
+            entity_local_id: local_id.to_owned(),
+            list_local_id: list_local_id.to_owned(),
             op: OpKind::Child,
             action: action_name(self.action).to_owned(),
             payload: self.payload(),
@@ -190,9 +196,7 @@ pub(crate) fn plan(
         TaskChange::AddSteps { steps } => {
             let mut writes = Vec::new();
             for text in &steps {
-                let text = step_text(text)?;
-                let body = json!({ "displayName": text, "isChecked": false });
-                writes.push(ChildWrite::create(STEPS, body, TaskAction::StepAdd));
+                writes.push(step_create(text)?);
             }
             if writes.is_empty() {
                 return Err(invalid("give the text of at least one step".into()));
@@ -266,6 +270,12 @@ fn delete(collection: &'static str, item: &Value, action: TaskAction) -> ChildWr
 
 fn child_id(item: &Value) -> &str {
     item["id"].as_str().unwrap_or_default()
+}
+
+/// A new unchecked step with the text `text`.
+pub(crate) fn step_create(text: &str) -> Result<ChildWrite, ErrorPayload> {
+    let body = json!({ "displayName": step_text(text)?, "isChecked": false });
+    Ok(ChildWrite::create(STEPS, body, TaskAction::StepAdd))
 }
 
 fn step_text(text: &str) -> Result<&str, ErrorPayload> {

@@ -24,6 +24,8 @@ pub async fn tui(paths: &Paths, args: TuiArgs, started: Instant) -> Result<(), C
         .map_err(|error| CliError::new(ErrorKind::InvalidInput, &error))?;
     let places = ms_todo_tui::downloads::places(&paths.config_file)
         .map_err(|error| CliError::new(ErrorKind::InvalidInput, &error))?;
+    let locale = crate::dates_config::read(&paths.config_file)
+        .map_err(|error| CliError::message(ErrorKind::InvalidInput, error))?;
     // Started now, or restarted if it's another version; the TUI makes
     // its own connection.
     let (_, status) = daemon_client::connect(paths).await?;
@@ -38,6 +40,7 @@ pub async fn tui(paths: &Paths, args: TuiArgs, started: Instant) -> Result<(), C
         theme,
         places,
         recent_commands: Some(paths.data_dir.join(ms_todo_tui::recent::FILE_NAME)),
+        locale,
         bench_startup: args.bench_startup,
         started,
         trace: std::env::var_os(TRACE_ENV).map(Into::into),

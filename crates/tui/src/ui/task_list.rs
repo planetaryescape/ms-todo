@@ -63,7 +63,13 @@ pub fn draw<'a>(frame: &mut Frame, area: Rect, app: &'a App) {
         |task: &'a Task| task_row(task, app.selection.contains(&task.id), glyphs, theme, today);
     // Planned is grouped by how soon, Completed by day; a header row goes
     // before each group.
-    let groups = task_groups(app.shown.as_ref(), app.filter.is_some(), &app.tasks, today);
+    let groups = task_groups(
+        app.shown.as_ref(),
+        app.filter.is_some(),
+        &app.tasks,
+        today,
+        app.locale.week_start,
+    );
     let (rows, selected) = match groups {
         Some(groups) => {
             let mut rows = Vec::new();

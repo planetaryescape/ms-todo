@@ -6,10 +6,11 @@ use sqlx::SqliteConnection;
 
 use super::operation::{OpKind, OpState, OutboxRow, op_in};
 use super::outcomes::finish;
-use super::task_rows::{replace_row, tombstone_row, write_task_extension};
+use super::task_rows::{replace_row, row_identity, tombstone_row, write_task_extension};
+use crate::children::revert_child;
 use crate::list_extension::restore_list_extension;
 use crate::pool::next_local_rev;
-use crate::{Entity, Store, StoreError, now};
+use crate::{Entity, Store, StoreError, now, parse_object};
 
 /// What a resolved operation does to its task row.
 #[derive(Clone, Debug, PartialEq)]
@@ -49,7 +50,7 @@ impl Store {
             "not sent: it waited on {op_id}, which Graph rejected ({})",
             error.1
         );
-        let cascaded = cascade(&mut tx, op_id, &cause).await?;
+        let cascaded = cascade(&mut tx, op_id, &cause, rev).await?;
         if op.op == OpKind::Create {
             // Nothing queued after it can bring back a task never created.
             tombstone_row(&mut tx, &op.entity_local_id, rev).await?;
@@ -82,7 +83,7 @@ impl Store {
         let rev = next_local_rev(&mut tx).await?;
         apply_restore(&mut tx, &op, restore, rev).await?;
         let cause = format!("not sent: it waited on {op_id}, which was discarded");
-        let cascaded = cascade(&mut tx, op_id, &cause).await?;
+        let cascaded = cascade(&mut tx, op_id, &cause, rev).await?;
         sqlx::query(
             "UPDATE idempotency_keys SET finished_at = ? \
              WHERE op_id = ? AND finished_at IS NOT NULL",
@@ -171,11 +172,15 @@ pub(crate) async fn fail_ops_in_list(
 }
 
 /// Fail every operation not yet sent that waits on `op_id`, directly or
-/// through another, with `cause` as its error and note. Returns them.
+/// through another, with `cause` as its error and note. A step or link
+/// write among them is taken back out of its task too, so a step never
+/// sent doesn't stay on screen (a quick add's later steps, D-068).
+/// Returns them.
 async fn cascade(
     tx: &mut SqliteConnection,
     op_id: &str,
     cause: &str,
+    rev: i64,
 ) -> Result<Vec<String>, StoreError> {
     let waiting: Vec<String> = sqlx::query_scalar(
         "WITH RECURSIVE waiting(op_id) AS ( \
@@ -187,6 +192,19 @@ async fn cascade(
     .bind(op_id)
     .fetch_all(&mut *tx)
     .await?;
+    // Newest first, so a child written twice (A to B, then B to C) goes
+    // back to A, not to B.
+    for waiter in waiting.iter().rev() {
+        let op = op_in(tx, waiter).await?;
+        if op.op == OpKind::Child
+            && let Some(before) = &op.rollback
+            && is_live(tx, &op.entity_local_id).await?
+        {
+            let current = parse_object(&row_identity(tx, &op.entity_local_id).await?.raw_json)?;
+            let reverted = revert_child(&current, &op.payload, before);
+            replace_row(tx, &op.entity_local_id, &reverted, rev).await?;
+        }
+    }
     for waiter in &waiting {
         finish(tx, waiter, OpState::Failed, Some(("rejected", cause))).await?;
         sqlx::query("UPDATE outbox SET note = ? WHERE op_id = ?")
@@ -196,6 +214,17 @@ async fn cascade(
             .await?;
     }
     Ok(waiting)
+}
+
+/// Whether the task `local_id` is cached and not tombstoned.
+async fn is_live(tx: &mut SqliteConnection, local_id: &str) -> Result<bool, StoreError> {
+    Ok(sqlx::query_scalar::<_, i64>(
+        "SELECT 1 FROM tasks WHERE local_id = ? AND deleted_at IS NULL",
+    )
+    .bind(local_id)
+    .fetch_optional(&mut *tx)
+    .await?
+    .is_some())
 }
 
 /// Undo `op`'s local change by `restore`: on its task, or for a list
@@ -222,7 +251,12 @@ async fn apply_restore(
             Restore::Nothing | Restore::Tombstone | Restore::MoveBack { .. } => Ok(()),
         };
     }
-    // A child write's restore is the task's JSON, as an update's is.
+    // A child write's restore is the task's JSON, as an update's is. On a
+    // task deleted since, it's moot, and writing the JSON would bring the
+    // task back.
+    if op.op == OpKind::Child && !is_live(tx, local_id).await? {
+        return Ok(());
+    }
     match restore {
         Restore::Nothing => Ok(()),
         Restore::Tombstone => tombstone_row(tx, local_id, rev).await,

@@ -247,12 +247,19 @@ pub(crate) async fn insert_op(
     tx: &mut SqliteConnection,
     op: &Queued<'_>,
 ) -> Result<(), StoreError> {
+    // Deleting a task takes its steps, link and files with it, so the
+    // delete never waits on a child write: one blocked or unknown would
+    // hold it for good. They're skipped once the delete is done
+    // (`mark_done`), so a rejected delete leaves them to be sent (D-068).
+    let deletes_task = op.op == OpKind::Delete;
     let mut depends_on: Option<String> = sqlx::query_scalar(concat!(
-        "SELECT op_id FROM outbox WHERE entity_local_id = ? AND state IN ",
+        "SELECT op_id FROM outbox WHERE entity_local_id = ? AND (op <> 'child' OR NOT ?) \
+         AND state IN ",
         unresolved!(),
         " ORDER BY seq DESC LIMIT 1"
     ))
     .bind(op.entity_local_id)
+    .bind(deletes_task)
     .fetch_optional(&mut *tx)
     .await?;
     if depends_on.is_none() && !op.op.is_list() {

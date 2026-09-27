@@ -5,6 +5,7 @@
 //! trait is where another could go.
 
 mod passes;
+mod steps;
 
 use chrono::{NaiveDate, NaiveDateTime};
 use serde_json::{Value, json};
@@ -79,6 +80,8 @@ pub struct ParsedTask {
     /// `+nag15m` was typed: nag every this many minutes once the
     /// reminder is due.
     pub nag: Option<u32>,
+    /// ` :: passport; charger`: the steps to add with the task.
+    pub steps: Vec<String>,
     /// The recognised parts, by byte range of the input, in order.
     pub spans: Vec<Span>,
     /// What was typed but not used, and why.
@@ -108,6 +111,8 @@ pub enum SpanKind {
     Defer,
     Someday,
     Nag,
+    /// ` :: ` and the steps after it.
+    Steps,
     /// Escapes and quote marks: taken out, not a field.
     Syntax,
 }
@@ -126,6 +131,7 @@ impl SpanKind {
             Self::Defer => "defer",
             Self::Someday => "someday",
             Self::Nag => "nag",
+            Self::Steps => "steps",
             Self::Syntax => "syntax",
         }
     }
@@ -135,8 +141,8 @@ impl ParsedTask {
     /// The fields read, as a person reads them back, in the order the
     /// preview line shows them: `p1`, `due Thu 1 Oct`, `every month on the
     /// 1st`, `remind 09:00`, `@label`, `My Day`, `deferred to Fri 2 Oct`,
-    /// `Someday`. The list isn't here: the caller knows the target when
-    /// none was typed.
+    /// `Someday`, `nag every 15m`, `3 steps`. The list isn't here: the
+    /// caller knows the target when none was typed.
     pub fn summary(&self, ctx: &ParseContext) -> Vec<String> {
         let mut parts = Vec::new();
         if let Some(priority) = self.priority {
@@ -175,6 +181,11 @@ impl ParsedTask {
         }
         if let Some(minutes) = self.nag {
             parts.push(format!("nag every {}", crate::interval_label(minutes)));
+        }
+        match self.steps.len() {
+            0 => {}
+            1 => parts.push("1 step".into()),
+            count => parts.push(format!("{count} steps")),
         }
         parts
     }
@@ -217,6 +228,7 @@ impl ParsedTask {
             "defer": date(self.defer),
             "someday": self.someday,
             "nag": self.nag,
+            "steps": self.steps,
             "spans": spans,
             "warnings": self.warnings,
         })

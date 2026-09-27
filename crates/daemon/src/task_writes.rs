@@ -23,6 +23,7 @@ use crate::freshness::ensure_ready;
 use crate::handlers::{State, error_payload, store_error};
 use crate::list_resolution::resolve_list;
 use crate::outbox::op_id_for;
+use crate::task_children::{ChildWrite, step_create};
 use crate::task_fields::{
     Field, edit_fields, graph_body, graph_due_date, new_task_fields, reminder_at, reminder_on,
     resend_reminder, user_time_zone,
@@ -66,9 +67,19 @@ pub(crate) async fn add_task(
         None => resolve_list(&lists, task.list.as_deref())?,
     };
     let mut body = graph_body(&fields, &user_time_zone());
+    let steps: Vec<ChildWrite> = task
+        .steps
+        .iter()
+        .map(|text| step_create(text))
+        .collect::<Result<_, _>>()?;
     if dry_run {
         if let Some(ours) = ours {
             body["extensions"] = json!([ours]);
+        }
+        if !steps.is_empty() {
+            // Sent as step creates once the task is made, in this order.
+            let bodies: Vec<Value> = steps.iter().map(|step| step.body.clone()).collect();
+            body["checklistItems"] = json!(bodies);
         }
         return Ok(ResponseData::Plan(Plan {
             action: TaskAction::Add,
@@ -83,10 +94,11 @@ pub(crate) async fn add_task(
         extension.extend(ours);
     }
     body["extensions"] = json!([extension]);
-    let op = NewOp {
+    let local_id = uuid::Uuid::new_v4().to_string();
+    let mut ops = vec![NewOp {
         op_id: op_id.clone(),
-        entity_local_id: uuid::Uuid::new_v4().to_string(),
-        list_local_id: list.local_id,
+        entity_local_id: local_id.clone(),
+        list_local_id: list.local_id.clone(),
         op: OpKind::Create,
         action: action_name(TaskAction::Add).to_owned(),
         change: LocalChange::Insert {
@@ -94,8 +106,12 @@ pub(crate) async fn add_task(
             extension: Some(extension),
         },
         payload: json!({ "body": body }),
-    };
-    queue(state, &op_id, None, vec![op], TaskAction::Add).await
+    }];
+    // Each waits for the create, as any later write to the task does.
+    for (index, step) in steps.into_iter().enumerate() {
+        ops.push(step.into_op_on(op_id_for(&op_id, index + 1), &local_id, &list.local_id));
+    }
+    queue(state, &op_id, None, ops, TaskAction::Add).await
 }
 
 /// The tasks a change names, or with `select` the open tasks it matches
