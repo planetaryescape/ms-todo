@@ -36,7 +36,7 @@ pub(crate) async fn add_task(
     op_id: String,
 ) -> Result<ResponseData, ErrorPayload> {
     let mut fields = new_task_fields(&task)?;
-    // My Day's and the assignee's fields go in the create's own
+    // My Day's, the assignee's and the nag's fields go in the create's own
     // extension, so the task is made with them and nothing more to send.
     let mut ours = task
         .my_day
@@ -49,6 +49,10 @@ pub(crate) async fn add_task(
     let deferred = crate::deferral::new_task_fields(&task)?;
     if !deferred.is_empty() {
         ours.get_or_insert_default().extend(deferred);
+    }
+    if let Some(minutes) = task.nag {
+        let nag = crate::nag::setting::new_task_fields(minutes, task.reminder.as_deref())?;
+        ours.get_or_insert_default().extend(nag);
     }
     ensure_ready(state, LISTS_SCOPE).await?;
     let lists = state.store.lists().await.map_err(store_error)?;
@@ -103,12 +107,14 @@ pub(crate) async fn change_tasks(
 ) -> Result<ResponseData, ErrorPayload> {
     let mut assign = None;
     let mut defer = serde_json::Map::new();
+    let mut nag = None;
     let (action, fields) = match change {
         TaskChange::Complete => (TaskAction::Complete, vec![Field::Status("completed")]),
         TaskChange::Reopen => (TaskAction::Reopen, vec![Field::Status("notStarted")]),
         TaskChange::Edit(edit) => {
             assign = assignee_change(&edit)?;
             defer = crate::deferral::edit_fields(&edit)?;
+            nag = crate::nag::setting::Change::of(&edit)?;
             (TaskAction::Edit, edit_fields(&edit)?)
         }
         TaskChange::Delete => (TaskAction::Delete, Vec::new()),
@@ -145,6 +151,9 @@ pub(crate) async fn change_tasks(
     };
     let bulk = targets.select.is_some();
     let targets = resolve(state, &targets).await?;
+    if let Some(nag) = &nag {
+        nag.check_reminders(targets.iter().map(|target| &target.row))?;
+    }
     if (bulk || targets.len() > 1) && fields.iter().any(Field::one_task_only) {
         return Err(error_payload(
             ms_todo_core::ErrorKind::InvalidInput,
@@ -187,6 +196,9 @@ pub(crate) async fn change_tasks(
         if let Some(changes) = changes.as_object_mut() {
             changes.extend(assignment::dry_run_changes(plans.iter().flatten()));
             changes.extend(defer.clone());
+            if let Some(nag) = &nag {
+                changes.insert(crate::nag::setting::NAG.into(), nag.value());
+            }
         }
         return Ok(ResponseData::Plan(Plan {
             action,
@@ -224,8 +236,20 @@ pub(crate) async fn change_tasks(
                 action,
             ));
         }
+        if let Some(op) = nag
+            .as_ref()
+            .and_then(|nag| nag.op(op_id_for(&op_id, ops.len()), row, action))
+        {
+            ops.push(op);
+        }
     }
-    queue(state, &op_id, None, ops, action).await
+    let answer = queue(state, &op_id, None, ops, action).await?;
+    if nag.is_some() {
+        // A nag set or stopped starts afresh, whenever the nagger next looks.
+        let ids: Vec<&str> = targets.iter().map(Target::local_id).collect();
+        crate::nag::forget(state, &ids).await?;
+    }
+    Ok(answer)
 }
 
 /// An edit's assignee change, the name checked, and whether it keeps the

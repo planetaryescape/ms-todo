@@ -32,6 +32,7 @@ mod messages;
 mod mode;
 pub mod move_tasks;
 pub(crate) mod my_day;
+mod nag;
 mod navigation;
 pub mod palette;
 pub mod quick_add;

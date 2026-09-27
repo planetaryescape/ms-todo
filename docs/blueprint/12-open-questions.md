@@ -23,6 +23,7 @@ For each, record the request, the response (with private data removed), the date
 | S15 | How do step and link writes behave: which fields a link needs, whether its PATCH and DELETE honour `If-Match`, whether a field can be cleared, and whether steps can be reordered? (Rung 8a, 2026-09-25.) | Steps and links through the outbox | [07](07-cli.md), D-055 |
 | S16 | How does an upload session resume, and what does an attachment look like? (Rung 8b, 2026-09-25.) | Uploads that survive a lost answer; safe downloads | [03](03-graph-provider.md), D-056 |
 | S17 | How does Graph set `isReminderOn`? (Issue 005, 2026-09-26.) | Reopen, undo and move keeping a task's reminder | D-060 |
+| S18 | Can a detached daemon show a macOS notification, and with what? (Rung 9b, 2026-09-27.) | Nag reminders | [05](05-custom-features.md#nag-reminders), D-063 |
 | P1 | What is the default page size for task lists and delta, and does `Prefer: odata.maxpagesize` work? (Added during phase 0.) | Pagination, and rung 1's "more than 100 tasks" check | [03](03-graph-provider.md) |
 
 ### S5 result (2026-09-24)
@@ -116,6 +117,10 @@ Confidence: high. Evidence: [S11](../research/spikes/S11.md). Changed: [02](02-d
 ### S17 result (2026-09-26)
 
 **Graph derives `isReminderOn` and ignores a written one.** Writing `reminderDateTime` turns the reminder on (on a create, a PATCH, and with a completion in the same PATCH); a transition to `completed` turns it off and keeps the time; `reminderDateTime: null` turns it off and removes the time. No request turns a reminder off on an open task with its time kept. Confidence: high. Evidence: [S17](../research/spikes/S17.md). Changed: D-060.
+
+### S18 result (2026-09-27)
+
+**`osascript` can; `notify-rust` can't.** On macOS 27, `notify-rust` 4.18 returns `Ok(())` and `usernoted` denies what it sends ("Legacy client com.apple.finder connecting to modern client"), from a terminal and from a detached `setsid` process alike. `/usr/bin/osascript`'s `display notification`, with the text as argv, is delivered and presented as a banner from both, attributed to Script Editor. Confidence: high (read from `usernoted`'s log). Evidence: [S18](../research/spikes/S18.md). Changed: D-063.
 
 ### P1 result (2026-09-24)
 

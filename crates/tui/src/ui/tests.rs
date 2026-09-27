@@ -282,6 +282,13 @@ fn task_list_markers_never_overlap() {
             "Call Sam",
             json!({ "isReminderOn": true, "reminderDateTime": reminder }),
         ),
+        // A nag takes the reminder's place.
+        task(
+            "t5",
+            "Call mum",
+            json!({ "isReminderOn": true, "reminderDateTime": reminder,
+                    "extensions": [{ "nag": 15 }] }),
+        ),
     ];
     let mut app = seeded();
     let effects = app.update(Msg::Connected);

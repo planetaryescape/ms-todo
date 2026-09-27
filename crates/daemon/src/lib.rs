@@ -32,6 +32,7 @@ mod list_scope;
 mod list_undo;
 mod list_writes;
 mod my_day;
+mod nag;
 mod next;
 mod outbox;
 mod reads;

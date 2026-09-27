@@ -25,24 +25,25 @@ The CLI is the canonical surface (spotuify's contract): **every feature has a CL
 auth       login | logout | status | bearer --reveal-secret
 daemon     start | stop | restart | status | logs [--follow]
 sync       [--wait]                     # `--list L` dropped (D-058): `--fresh` and `--wait` cover it
-doctor                                  # sign-in, daemon, db, delta state, outbox, rate-limit state
+doctor [--notify-test]                  # sign-in, daemon, db, delta state, outbox, nag; --notify-test shows one notification first (9b)
 
 lists      list | show L | create NAME [--folder F] | rename L NAME | delete L
            move L --folder F | order L --before/--after L2
 folders    list | rename F NEW | delete F | order F --before/--after F2
 
 tasks      list [--list L] [--status S] [--due before/after/today/overdue] [--importance I]
-                [--category C] [--my-day] [--assignee A] [--completed] [--search Q]
+                [--category C] [--my-day] [--assignee A] [--nagging] [--completed] [--search Q]
                 [--sort due|importance|created|modified|title] [--limit N]
                 [--deferred hide|include|only]   # deferred and Someday tasks: hidden by default (9a)
            show T
            suggest-list "title"                # a likely list, from TypeSafe (opt-in, rung 6b)
            add "text" [--list L] [--no-parse] [--due D] [--start D] [--reminder DT]
                 [--importance I] [--category C]... [--recur "every …"] [--body TEXT|--body-file F]
-                [--my-day] [--assignee A] [--defer D] [--someday]
+                [--my-day] [--assignee A] [--defer D] [--someday] [--nag EVERY]   # `+nag15m` in the text too (9b)
            edit T... [same field flags, plus --clear-due etc.]   # several, `-`, or --overdue / --due-before (5d)
            complete T... | reopen T... | delete T...
            move T... --to L [--list L] [--dry-run] [--yes]   # copy, check, then delete the source (D-051)
+           nag T... (--every 15m | --off) [--list L] [--dry-run] [--yes]   # needs a reminder; notifies on this machine (D-063)
            links T [--list L]           # linked resources' webUrls, then URLs in the notes, deduped (D-050)
            open T [--index N] [--list L]   # http, https, mailto only; several and no --index: listed, exit 2
            parse "text"                 # show how quick add will read the text; no writes

@@ -284,7 +284,12 @@ async fn dispatch(command: Command, paths: &Paths, format: OutputFormat) -> Resu
         Command::Done(args) => done_command::done(paths, args, format).await,
         Command::Reschedule(args) => task_commands::reschedule(paths, args, format).await,
         Command::Sync { wait } => print_success(format, &sync_commands::sync(paths, wait).await?),
-        Command::Doctor => print_success(format, &doctor_commands::doctor(paths).await?),
+        Command::Doctor { notify_test } => {
+            if notify_test {
+                doctor_commands::notify_test(paths, format).await?;
+            }
+            print_success(format, &doctor_commands::doctor(paths).await?)
+        }
         Command::Schema { command } => print_raw(format, &schema_commands::schema(&command)?),
         Command::Tasks(TasksCommand::Add(args)) => task_commands::add(paths, args, format).await,
         Command::Tasks(TasksCommand::Parse(args)) => quick_add::parse(paths, args, format).await,
@@ -311,6 +316,7 @@ async fn dispatch(command: Command, paths: &Paths, format: OutputFormat) -> Resu
         Command::Tasks(TasksCommand::Move(args)) => {
             task_commands::move_tasks(paths, args, format).await
         }
+        Command::Tasks(TasksCommand::Nag(args)) => task_commands::nag(paths, args, format).await,
         Command::Raw(args) => print_raw(format, &task_commands::raw(paths, args).await?),
         Command::Outbox(OutboxCommand::List { state }) => {
             outbox_commands::list(paths, state, format).await

@@ -43,6 +43,8 @@ pub struct Glyphs {
     pub upcoming: &'static str,
     /// The Someday view, and the chip on a task parked there.
     pub someday: &'static str,
+    /// In a task's reminder place, when it nags (rung 9b).
+    pub nag: &'static str,
 }
 
 pub const UNICODE: Glyphs = Glyphs {
@@ -74,6 +76,7 @@ pub const UNICODE: Glyphs = Glyphs {
     next: "\u{00bb}",                // »
     upcoming: "\u{29d6}",            // ⧖
     someday: "\u{2026}",             // …
+    nag: "\u{25c9}",                 // ◉
 };
 
 pub const ASCII: Glyphs = Glyphs {
@@ -105,4 +108,5 @@ pub const ASCII: Glyphs = Glyphs {
     next: ">",
     upcoming: "u",
     someday: "s",
+    nag: "N",
 };

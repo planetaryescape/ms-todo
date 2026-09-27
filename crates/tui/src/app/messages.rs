@@ -43,6 +43,8 @@ pub enum Write {
     Move,
     /// Into My Day, or out of it.
     MyDay,
+    /// Nagging turned on or off.
+    Nag,
 }
 
 /// What goes into [`App::update`](super::App::update). A seed makes `Response` the big one;

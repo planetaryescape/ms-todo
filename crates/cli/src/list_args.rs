@@ -9,12 +9,12 @@ use crate::phrases;
 #[derive(Debug, Args)]
 pub struct TaskListArgs {
     /// The list's exact name or its ID [default: the "Tasks" list, or with
-    /// --status, --due, --importance, --category or --deferred only, every
-    /// list]
+    /// --status, --due, --importance, --category, --deferred only or
+    /// --nagging, every list]
     #[arg(long, value_name = "NAME|ID", conflicts_with = "my_day")]
     pub list: Option<String>,
     /// Today's My Day instead of a list, as `myday list` gives it
-    #[arg(long, conflicts_with_all = ["search", "assignee", "status", "completed", "due", "importance", "category", "sort", "limit", "deferred"])]
+    #[arg(long, conflicts_with_all = ["search", "assignee", "status", "completed", "due", "importance", "category", "nagging", "sort", "limit", "deferred"])]
     pub my_day: bool,
     /// Only tasks whose title or notes match, best match first; the
     /// syntax is `search`'s
@@ -42,6 +42,10 @@ pub struct TaskListArgs {
     /// Only tasks with this category (ignoring case)
     #[arg(long, value_name = "NAME")]
     pub category: Option<String>,
+    /// Only open tasks set to nag (`tasks nag`); each has `nag`, its
+    /// interval in minutes, in its extension
+    #[arg(long)]
+    pub nagging: bool,
     /// Order by: due (soonest first, none last), importance (high first),
     /// created or modified (newest first), title [default: the list's
     /// order; every list's is by due date]
@@ -86,6 +90,7 @@ impl TaskListArgs {
             due: self.due.clone(),
             importance: self.importance,
             category: self.category.clone(),
+            nagging: self.nagging,
             sort: self.sort.map(Into::into),
             limit: self.limit,
             deferred: self.deferred.map(Into::into).unwrap_or_default(),

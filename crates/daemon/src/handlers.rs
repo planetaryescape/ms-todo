@@ -43,6 +43,8 @@ pub(crate) struct State {
     pub my_day: crate::my_day::Config,
     /// Semantic search, when `[search]` turns it on.
     pub semantic: crate::semantic::Semantic,
+    /// Nag reminders: `[nag]`, and how this machine notifies.
+    pub nag: crate::nag::Nagger,
 }
 
 impl State {
@@ -106,6 +108,7 @@ pub(crate) async fn handle(state: &State, request: Request) -> Response {
             sync_outcome(state, &outcome).await
         }
         Request::Doctor => doctor(state).await,
+        Request::NotifyTest => crate::nag::notify_test(state).await,
         Request::RawGet { path } => state
             .graph
             .get_raw(&path)

@@ -6,15 +6,15 @@
 use ms_todo_core::Paths;
 use ms_todo_graph::auth::{Authenticator, Endpoints};
 use ms_todo_protocol::{
-    DoctorReport, ModelState, MyDayStatus, OutboxDepth, Request, ResponseData, ScopeStatus,
-    SemanticStatus, SuggestStatus, SyncMode, SyncState,
+    DoctorReport, ModelState, MyDayStatus, NagStatus, OutboxDepth, Request, ResponseData,
+    ScopeStatus, SemanticStatus, SuggestStatus, SyncMode, SyncState,
 };
 use serde::Serialize;
 
 use crate::daemon_client::{self, Inspection};
 use crate::daemon_commands::DaemonState;
 use crate::error::CliError;
-use crate::output::Render;
+use crate::output::{OutputFormat, Render};
 use crate::time::rfc3339;
 
 #[derive(Serialize)]
@@ -35,6 +35,8 @@ pub struct Doctor {
     pub my_day: Option<MyDayState>,
     /// Semantic search (rung 9c), when the daemon reported.
     pub semantic: Option<SemanticStatus>,
+    /// Nag reminders (rung 9b), when the daemon reported.
+    pub nag: Option<NagStatus>,
     /// What needs attention, for people.
     pub problems: Vec<String>,
 }
@@ -182,6 +184,7 @@ pub async fn doctor(paths: &Paths) -> Result<Doctor, CliError> {
             suggest: None,
             my_day: None,
             semantic: None,
+            nag: None,
             problems,
         });
     };
@@ -194,12 +197,16 @@ pub async fn doctor(paths: &Paths) -> Result<Doctor, CliError> {
         suggest,
         my_day,
         semantic,
+        nag,
     } = report;
     if let Some(problem) = semantic
         .as_ref()
         .and_then(|semantic| semantic.problem.as_ref())
     {
         problems.push(format!("semantic search: {problem}"));
+    }
+    if let Some(problem) = nag.as_ref().and_then(|nag| nag.problem.as_ref()) {
+        problems.push(format!("nag: {problem}"));
     }
     if let Some(problem) = my_day.as_ref().and_then(|my_day| my_day.problem.as_ref()) {
         problems.push(format!("my_day: {problem}"));
@@ -261,9 +268,26 @@ pub async fn doctor(paths: &Paths) -> Result<Doctor, CliError> {
         suggest,
         my_day,
         semantic,
+        nag: nag.map(|nag| *nag),
         problems,
     })
 }
+
+/// `doctor --notify-test`: one notification from the daemon, the way a
+/// nag shows one. Handed to the system isn't seen, so it says what to
+/// check when nothing shows.
+pub async fn notify_test(paths: &Paths, format: OutputFormat) -> Result<(), CliError> {
+    match daemon_client::ask(paths, Request::NotifyTest).await? {
+        ResponseData::Ack => {
+            crate::terminal::note_unless_json(format, NOTIFY_TEST_SENT);
+            Ok(())
+        }
+        _ => Err(crate::unexpected_response()),
+    }
+}
+
+const NOTIFY_TEST_SENT: &str = "sent a test notification; if none showed, allow Script Editor's \
+     notifications in System Settings > Notifications (macOS shows them as Script Editor's)";
 
 fn sign_in(paths: &Paths, problems: &mut Vec<String>) -> Result<SignIn, CliError> {
     let auth = Authenticator::new(paths.auth_dir(), Endpoints::default())?;
@@ -385,6 +409,9 @@ impl Render for Doctor {
         if let Some(semantic) = &self.semantic {
             rows.push(("Semantic", semantic_row(semantic)));
         }
+        if let Some(nag) = &self.nag {
+            rows.push(("Nag", nag_row(nag)));
+        }
         for scope in self
             .scopes
             .iter()
@@ -446,5 +473,22 @@ fn human_bytes(bytes: u64) -> String {
         b if b >= KIB * KIB => format!("{:.1} MiB", b as f64 / (KIB * KIB) as f64),
         b if b >= KIB => format!("{:.1} KiB", b as f64 / KIB as f64),
         b => format!("{b} bytes"),
+    }
+}
+
+/// `doctor`'s line on nag reminders: whether they work here, and how.
+fn nag_row(nag: &NagStatus) -> String {
+    let tasks = match nag.count {
+        1 => "1 task nagging".to_owned(),
+        count => format!("{count} tasks nagging"),
+    };
+    let quiet = nag.quiet_hours.as_deref().map_or_else(
+        || "no quiet hours".to_owned(),
+        |hours| format!("quiet {hours}"),
+    );
+    match (&nag.notifier, nag.active) {
+        (Some(notifier), true) => format!("on, through {notifier}; {tasks}; {quiet}"),
+        (Some(_), false) => format!("off ([nag] enabled = false); {tasks}"),
+        (None, _) => format!("not available on this system; {tasks}"),
     }
 }

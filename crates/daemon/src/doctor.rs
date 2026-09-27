@@ -53,6 +53,7 @@ pub(crate) async fn doctor(state: &State) -> Result<ResponseData, ErrorPayload> 
         suggest: Some(state.suggest.status()),
         my_day: Some(crate::my_day::status(state).await?),
         semantic: Some(state.semantic.status(&state.store).await?),
+        nag: Some(Box::new(crate::nag::status(state).await?)),
     }))
 }
 

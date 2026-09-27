@@ -38,11 +38,13 @@ pub use response::{
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
 pub use status::{
-    DaemonStatus, DoctorReport, ModelState, MyDayStatus, ScopeError, ScopeStatus, SemanticStatus,
-    SuggestStatus, SyncActivity, SyncInfo, SyncMode, SyncProgress, SyncReport, SyncState,
+    DaemonStatus, DoctorReport, ModelState, MyDayStatus, NagStatus, ScopeError, ScopeStatus,
+    SemanticStatus, SuggestStatus, SyncActivity, SyncInfo, SyncMode, SyncProgress, SyncReport,
+    SyncState,
 };
 pub use task_change::{
-    Clearable, Importance, LinkEdit, NewLink, NewTask, TaskChange, TaskEdit, TaskSelect,
+    Clearable, Importance, LinkEdit, NAG_MAX_MINUTES, NAG_MIN_MINUTES, NewLink, NewTask,
+    TaskChange, TaskEdit, TaskSelect,
 };
 pub use task_filter::{DeferredFilter, DueFilter, StatusFilter, TaskFilter, TaskSort};
 pub use views::{Counts, MyDay, MyDaySeed, Scope, Seed};
@@ -86,8 +88,11 @@ pub use views::{Counts, MyDay, MyDaySeed, Scope, Seed};
 /// never drops a defer it doesn't know and adds the task in plain view.
 /// 18: semantic search (rung 9c): `SearchTasks.semantic` and
 /// `Seed.semantic`, so an older daemon never answers a search by meaning
-/// with a keyword search.
-pub const PROTOCOL_VERSION: u32 = 18;
+/// with a keyword search. 19: nag reminders (rung 9b): `NewTask.nag`,
+/// `TaskEdit.nag`, `TaskFilter.nagging`, `NotifyTest` and
+/// `DoctorReport.nag`, so an older daemon never adds or edits a task
+/// without its nag, or lists every task for `--nagging`.
+pub const PROTOCOL_VERSION: u32 = 19;
 
 /// The socket buffer both ends ask for: room for a large list's `Seed` in
 /// one write. macOS gives a Unix socket 8 KiB, so a 350 KiB seed crossed

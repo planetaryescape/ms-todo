@@ -43,6 +43,8 @@ pub(crate) fn apply(
                     .importance
                     .is_none_or(|wanted| text(row, "importance") == importance_name(wanted))
                 && category.is_none_or(|wanted| has_category(row, wanted))
+                && (!filter.nagging
+                    || (status != "completed" && crate::nag::setting::nag_of(row).is_some()))
                 && due
                     .as_ref()
                     .is_none_or(|due| due_matches(due, row, status, today))

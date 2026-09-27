@@ -46,7 +46,7 @@ expression: pretty
         "x-cli": "--limit"
       },
       "list": {
-        "description": "The list's exact name or its ID [default: the \"Tasks\" list, or with --status, --due, --importance, --category or --deferred only, every list]",
+        "description": "The list's exact name or its ID [default: the \"Tasks\" list, or with --status, --due, --importance, --category, --deferred only or --nagging, every list]",
         "type": "string",
         "x-cli": "--list"
       },
@@ -54,6 +54,11 @@ expression: pretty
         "description": "Today's My Day instead of a list, as `myday list` gives it",
         "type": "boolean",
         "x-cli": "--my-day"
+      },
+      "nagging": {
+        "description": "Only open tasks set to nag (`tasks nag`); each has `nag`, its interval in minutes, in its extension",
+        "type": "boolean",
+        "x-cli": "--nagging"
       },
       "search": {
         "description": "Only tasks whose title or notes match, best match first; the syntax is `search`'s",
@@ -129,7 +134,7 @@ expression: pretty
               "type": "object"
             },
             "extensions": {
-              "description": "ms-todo's own open extension (com.planetaryescape.mstodo), when it has one and it has been fetched",
+              "description": "ms-todo's own open extension (com.planetaryescape.mstodo), when it has one and it has been fetched. A task's may hold myDay, myDayDueSet, assignee, assigneeStatusSet and nag (minutes between nag reminders)",
               "items": {
                 "type": "object"
               },

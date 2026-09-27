@@ -96,6 +96,8 @@ pub struct Task {
     pub someday: bool,
     /// Why the Next view puts it where it is: "overdue 2d, high".
     pub why: Option<String>,
+    /// Minutes between nags (`nag` in our extension), when it nags.
+    pub nag: Option<u32>,
 }
 
 impl Task {
@@ -204,6 +206,10 @@ impl Task {
                 .and_then(|day| NaiveDate::parse_from_str(day, ms_todo_core::DATE_FORMAT).ok()),
             someday: entity.get("someday").and_then(Value::as_bool) == Some(true),
             why: text("why").map(ms_todo_core::one_line_safe),
+            nag: entity
+                .get("extensions")
+                .and_then(|extensions| extensions.get(0)?.get("nag")?.as_u64())
+                .and_then(|minutes| u32::try_from(minutes).ok()),
         })
     }
 

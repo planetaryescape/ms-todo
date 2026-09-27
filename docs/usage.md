@@ -247,6 +247,38 @@ A defer date and Someday are ms-todo's own, in its data on the task: the due dat
 - **`next`** puts each open task in the first tier that fits it: overdue (most overdue first), due today, in today's My Day, high importance, due within 3 days (soonest first), then the rest. Ties go to the oldest task. The order is fixed, with no weights to tune. `why` lists every reason that applies (`overdue 2d, in My Day, high`), or `added 12d ago` when none does. The table is `DUE, LIST, TITLE, WHY`; CSV `id,title,list,why,due,importance,sync_state`.
 - **In the TUI**, the sidebar has Next (after My Day), and Upcoming and Someday (before Completed). Upcoming groups tasks by the day they come back. `z` shows deferred and Someday tasks in every view, or hides them again. The detail pane's Defer field (`e` then `f`) takes a date, `someday`, or empty to show the task again.
 
+## Nag reminders
+
+A nag keeps reminding you: once a task's reminder time passes, this machine shows a notification every so often until you complete the task, turn the nag off, or delete the task.
+
+```sh
+ms-todo tasks nag <TASK>... --every 15m      # 15m, 1h, 1h30m: from 5 minutes to 24 hours
+ms-todo tasks nag <TASK>... --off
+ms-todo tasks add "Call mum" --reminder 6pm --nag 15m
+ms-todo tasks add "Call mum !6pm +nag15m"      # the same, read from the text
+ms-todo tasks edit <TASK> --nag 1h             # or --clear-nag
+ms-todo tasks list --nagging                   # open tasks set to nag, every list
+ms-todo doctor --notify-test                   # show one notification, then the report
+```
+
+- **A reminder is needed.** A nag starts at the task's reminder, so setting one on a task without a reminder is refused (exit 2), naming the tasks; give it one in the same edit with `--reminder`. A task whose reminder is later removed keeps its nag setting but doesn't nag until it has a reminder again.
+- **What syncs.** The interval is `nag` (minutes) in ms-todo's own data on the task, so every ms-todo you sign in to sees it after its next sync, and `undo` puts it back like any other change. Nothing else goes to Microsoft To Do: the notifications come from the ms-todo daemon on each machine, so only machines running it nag, and the phone shows only the task's own reminder.
+- **When.** The first notification comes as the reminder time passes (the To Do app shows its own reminder then too), then one every interval. The notification's title is the task's title and its text the list's name. A daemon that was stopped owes each task at most one notification when it's back, not one per interval missed: it keeps when each task last nagged. Moving the reminder later starts the nag again from the new time, and reopening a completed task that nags starts it again at once if its reminder has passed.
+- **Deferred or Someday**, a task doesn't nag: it waits until it shows again.
+- **Quiet hours** hold notifications back; the next one comes when they end.
+
+  ```toml
+  # ~/.config/ms-todo/config.toml
+  [nag]
+  enabled = true                # the default; false stops this machine nagging
+  quiet_hours = "22:00-07:00"   # local; the default. "" for none
+  ```
+
+  A setting that can't be read keeps the defaults and says why in `doctor`.
+- **macOS only, for now.** Notifications are shown with `osascript`, so macOS lists them under Script Editor: if `doctor --notify-test` shows nothing, allow notifications for Script Editor in System Settings > Notifications. On Linux, `doctor` says nagging isn't available on this system ([S18](research/spikes/S18.md)).
+- **`doctor`** has a Nag line: on or off, how notifications are shown, how many tasks nag, and the quiet hours.
+- **In the TUI**, `n` sets the task under the cursor, or the selection, to nag every 15 minutes, or stops them when they all nag already; `u` undoes it. A nagging task shows `◉` (`N` in ASCII) where the reminder's `◷` would be. Another interval is `tasks nag --every`.
+
 ## Move tasks between lists
 
 ```sh
@@ -349,7 +381,7 @@ ms-todo extensions delete task <TASK> com.example.app --yes
 ms-todo extensions list task <TASK>         # ms-todo's own
 ```
 
-Open extensions are named JSON documents other apps (or you) keep on a list or a task. `set` makes the extension hold exactly the object given, creating it if it's missing; `get` reads one by name; `delete` removes one (asks first, or `--yes`). Microsoft To Do can't list a list's or a task's extensions, so `list` shows ms-todo's own, `com.planetaryescape.mstodo`, which can be read but not written here: My Day, folders and assignees change it. Like categories, these go straight to Microsoft To Do, take `--dry-run` and `--idempotency-key`, and `undo` puts the document back as it was (or removes one `set` made) while nobody has changed it since.
+Open extensions are named JSON documents other apps (or you) keep on a list or a task. `set` makes the extension hold exactly the object given, creating it if it's missing; `get` reads one by name; `delete` removes one (asks first, or `--yes`). Microsoft To Do can't list a list's or a task's extensions, so `list` shows ms-todo's own, `com.planetaryescape.mstodo`, which can be read but not written here: My Day, folders, assignees and nags change it. Like categories, these go straight to Microsoft To Do, take `--dry-run` and `--idempotency-key`, and `undo` puts the document back as it was (or removes one `set` made) while nobody has changed it since.
 
 ## Offline, and never lose a write
 

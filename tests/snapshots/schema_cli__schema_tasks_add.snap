@@ -74,6 +74,11 @@ expression: pretty
         "type": "boolean",
         "x-cli": "--my-day"
       },
+      "nag": {
+        "description": "Once its reminder is due, notify me on this machine every so often until it's done, as +nag15m in the text does: 15m, 1h, 1h30m (5m to 24h). Needs a reminder",
+        "type": "string",
+        "x-cli": "--nag"
+      },
       "no_parse": {
         "description": "Take the text as the title, exactly as given: for text you didn't type yourself, such as an agent's, with flags for the fields",
         "type": "boolean",
@@ -179,7 +184,7 @@ expression: pretty
                   "type": "object"
                 },
                 "extensions": {
-                  "description": "ms-todo's own open extension (com.planetaryescape.mstodo), when it has one and it has been fetched",
+                  "description": "ms-todo's own open extension (com.planetaryescape.mstodo), when it has one and it has been fetched. A task's may hold myDay, myDayDueSet, assignee, assigneeStatusSet and nag (minutes between nag reminders)",
                   "items": {
                     "type": "object"
                   },

@@ -1,11 +1,11 @@
 ---
 name: ms-todo
-description: Read, find, filter, add, complete, reopen, edit, reschedule, move and delete Microsoft To Do tasks, make them repeat or give them a start date, break them into steps, attach a link or files, plan My Day, and make, rename or delete lists and Outlook categories, from the terminal by driving the `ms-todo` CLI. Use when the user wants to capture a task, tick one off, change a due date or reminder, move overdue tasks, move tasks to another list, add or tick off a task's steps, attach a link or a file to a task, download a task's files, plan today (My Day), mark a task as waiting on someone and see what they're waiting on, see what's in a list or what's overdue across lists, make a task repeat, create, rename or delete a list, create or recolour a category, find a task by what it says, summarise what they finished (for a standup or a weekly review), or otherwise work with their Microsoft To Do lists and tasks.
+description: Read, find, filter, add, complete, reopen, edit, reschedule, move and delete Microsoft To Do tasks, make them repeat or give them a start date, break them into steps, attach a link or files, plan My Day, nag the user about a task until it's done, and make, rename or delete lists and Outlook categories, from the terminal by driving the `ms-todo` CLI. Use when the user wants to capture a task, tick one off, change a due date or reminder, move overdue tasks, move tasks to another list, add or tick off a task's steps, attach a link or a file to a task, download a task's files, plan today (My Day), mark a task as waiting on someone and see what they're waiting on, get nagged about a task until it's done, see what's in a list or what's overdue across lists, make a task repeat, create, rename or delete a list, create or recolour a category, find a task by what it says, summarise what they finished (for a standup or a weekly review), or otherwise work with their Microsoft To Do lists and tasks.
 ---
 
 # ms-todo
 
-**Skill v14, for ms-todo rung 9c, defer, Someday, next and search by meaning** (instant reads from a local cache kept live by delta sync; search across every list, by words or, when it's turned on, by meaning; what was completed, by day; instant writes that queue offline and are never dropped; bulk reschedules and edits; moving tasks between lists without losing anything; undo; quick add, which reads a task's text for its list, dates, recurrence and importance, and which agents turn off with `--no-parse`; optional list suggestions for inbox tasks; My Day, ms-todo's plan for today, mirrored on the phone through the due date; a task's steps and its one link; its files, attached and downloaded by path; who a task is waiting on; filters across lists; start dates and recurrences; lists made, renamed and deleted; Outlook categories; open extensions; and tasks deferred to a day or parked as Someday, with `next` for what to do now).
+**Skill v15, for ms-todo rung 9b, nag reminders, on top of defer, Someday, next and search by meaning** (instant reads from a local cache kept live by delta sync; search across every list, by words or, when it's turned on, by meaning; what was completed, by day; instant writes that queue offline and are never dropped; bulk reschedules and edits; moving tasks between lists without losing anything; undo; quick add, which reads a task's text for its list, dates, recurrence and importance, and which agents turn off with `--no-parse`; optional list suggestions for inbox tasks; My Day, ms-todo's plan for today, mirrored on the phone through the due date; a task's steps and its one link; its files, attached and downloaded by path; who a task is waiting on; nag reminders, repeated notifications on this machine until a task is done; filters across lists; start dates and recurrences; lists made, renamed and deleted; Outlook categories; open extensions; and tasks deferred to a day or parked as Someday, with `next` for what to do now).
 
 `ms-todo tui` (`mst tui`) is a full-screen view for people at a keyboard. Don't use it: it needs a terminal, and everything it does is a command below. Always pass a subcommand: a bare `ms-todo` opens the TUI in a terminal, and elsewhere only prints help and exits 2.
 
@@ -250,6 +250,21 @@ ms-todo tasks edit <ID> --clear-assignee --format json
 - Assigning an open task sets the status to `waitingOnOthers` (which the apps do show); clearing sets it back to `notStarted` only if ms-todo set it and it's still waiting. A status the user chose is left alone. `--keep-status` skips the status; use it when the user asks for the name only.
 - Quick add has no assignee token (`@` is a category): pass `--assignee`. `undo` reverses an assignment unless it changed since.
 
+## Nag reminders
+
+```bash
+ms-todo tasks nag <ID> [<ID>...] --every 15m --format json   # 5m to 24h; each task needs a reminder
+ms-todo tasks add "Call mum" --no-parse --reminder 6pm --nag 15m --format json
+ms-todo tasks edit <ID> --reminder "tomorrow 9am" --nag 1h --format json
+ms-todo tasks list --nagging --format json                   # open tasks set to nag, every list
+ms-todo tasks nag <ID> --off --format json
+```
+
+- The interval is `items[].extensions[0].nag`, in minutes. Once the task's reminder time passes, **this Mac** shows a notification every interval until the task is completed, the nag is off, or the task is deleted. Only machines running the ms-todo daemon nag; the phone shows only the task's own reminder, and nothing else goes to Microsoft.
+- A task with no reminder is refused (exit 2, `invalid_input`, naming the tasks): ask the user when to start, then pass `--reminder` with `--nag` in one `tasks edit`.
+- Nothing shows in quiet hours (22:00-07:00 unless `[nag] quiet_hours` in config.toml says otherwise). `doctor` has `nag` (`active`, `notifier`, `count`, `quiet_hours`, `problem`); `doctor --notify-test` shows one notification first. Nagging is macOS only for now.
+- Quick add reads `+nag15m` (one word) with a `!time` reminder. `undo` reverses a nag change unless it changed since.
+
 ## Suggest a list for an inbox task
 
 ```bash
@@ -306,7 +321,7 @@ ms-todo extensions delete task <ID> com.example.app --yes --format json
 
 - These go straight to Microsoft To Do (they need the network) and aren't cached; `undo` still reverses each while nothing changed it since.
 - Category names are unique ignoring case, and there's no rename (Graph ignores one): create the new one, re-tag tasks with `tasks edit --category`, delete the old one. The iPhone app shows no categories.
-- `extensions list` shows only ms-todo's own extension (Graph can't list the others); don't write `com.planetaryescape.mstodo` (it's refused): `myday`, folders and `--assignee` change it.
+- `extensions list` shows only ms-todo's own extension (Graph can't list the others); don't write `com.planetaryescape.mstodo` (it's refused): `myday`, folders, `--assignee` and `tasks nag` change it.
 
 ## `sync_state`: has the change reached Microsoft To Do?
 

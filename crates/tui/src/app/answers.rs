@@ -128,6 +128,9 @@ impl App {
                 if write == Write::MyDay {
                     self.my_day_changed(&applied);
                 }
+                if write == Write::Nag {
+                    self.nag_changed(&applied);
+                }
                 if write == Write::Edit && applied.items.len() > 1 {
                     let count = applied.items.len();
                     self.show(

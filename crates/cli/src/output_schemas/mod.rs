@@ -114,7 +114,7 @@ pub fn output_schema(command: &str) -> Option<Value> {
         }
         "done" => collection(done_result()),
         "tasks add" | "tasks complete" | "tasks reopen" | "tasks edit" | "tasks move"
-        | "tasks delete" | "reschedule" => json!({ "oneOf": [applied(), plan()] }),
+        | "tasks nag" | "tasks delete" | "reschedule" => json!({ "oneOf": [applied(), plan()] }),
         "undo" => json!({ "oneOf": [applied(), list_applied(), catalog_applied()] }),
         "lists move" | "lists order" | "folders rename" | "folders delete" | "folders order" => {
             json!({ "oneOf": [list_applied(), list_plan()] })

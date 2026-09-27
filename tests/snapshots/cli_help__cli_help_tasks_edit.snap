@@ -2,7 +2,7 @@
 source: tests/cli_help.rs
 expression: help_output(args)
 ---
-Change a task's title, dates, importance, reminder, notes, recurrence, categories, assignee, defer date or Someday; or all but the title and notes of several at once
+Change a task's title, dates, importance, reminder, notes, recurrence, categories, assignee, defer date, Someday or nag; or all but the title and notes of several at once
 
 Usage: ms-todo tasks edit [OPTIONS] [TASK]...
 
@@ -40,6 +40,8 @@ Options:
       --clear-defer            Show it again now: remove its defer date
       --someday                Park it as Someday: hidden until --no-someday
       --no-someday             Take it out of Someday
+      --nag <EVERY>            Once its reminder is due, notify me on this machine every so often until it's done: 15m, 1h, 1h30m (5m to 24h). Needs a reminder
+      --clear-nag              Stop nagging
       --dry-run                Show what would change without changing anything
       --yes                    Change several tasks without asking. Off a terminal, changing more than one needs it
       --idempotency-key <KEY>  Run this change at most once: repeating the command with the same key returns the first result for 24 hours, and the same key with a different change exits 2

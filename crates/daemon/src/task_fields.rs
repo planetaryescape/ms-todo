@@ -207,15 +207,19 @@ pub(crate) fn edit_fields(edit: &TaskEdit) -> Result<Vec<Field>, ErrorPayload> {
     if let Some(names) = &edit.categories {
         fields.push(Field::Categories(categories(names)?));
     }
-    // An assignee, a defer date and Someday live in our extension, not in
-    // these fields.
-    let ours = edit.assignee.is_some() || edit.defer_until.is_some() || edit.someday.is_some();
+    // An assignee, a defer date, Someday and a nag live in our extension,
+    // not in these fields.
+    let ours = edit.assignee.is_some()
+        || edit.defer_until.is_some()
+        || edit.someday.is_some()
+        || edit.nag.is_some();
     if fields.is_empty() && !ours {
         return Err(invalid(
             "nothing to change; pass at least one of --title, --due, --clear-due, \
              --importance, --reminder, --clear-reminder, --body, --start, --clear-start, \
              --recur, --clear-recur, --category, --clear-categories, --assignee, \
-             --clear-assignee, --defer, --clear-defer, --someday or --no-someday"
+             --clear-assignee, --defer, --clear-defer, --someday, --no-someday, --nag or \
+             --clear-nag"
                 .into(),
         ));
     }

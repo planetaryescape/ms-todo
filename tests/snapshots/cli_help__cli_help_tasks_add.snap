@@ -81,6 +81,9 @@ Options:
       --someday
           Park it as Someday, as +someday in the text does: hidden until you take it out with `tasks edit --no-someday`
 
+      --nag <EVERY>
+          Once its reminder is due, notify me on this machine every so often until it's done, as +nag15m in the text does: 15m, 1h, 1h30m (5m to 24h). Needs a reminder
+
       --dry-run
           Show what would be sent without changing anything
 

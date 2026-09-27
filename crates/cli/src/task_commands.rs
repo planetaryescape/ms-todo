@@ -12,7 +12,7 @@ use ms_todo_protocol::{
 use serde_json::Value;
 
 use crate::args::{
-    AddArgs, EditArgs, MoveArgs, RawArgs, RawMethod, RescheduleArgs, TargetArgs, UndoArgs,
+    AddArgs, EditArgs, MoveArgs, NagArgs, RawArgs, RawMethod, RescheduleArgs, TargetArgs, UndoArgs,
 };
 use crate::bulk_commands::{self, Bulk};
 use crate::confirm::{can_prompt, confirm};
@@ -114,6 +114,7 @@ fn literal_task(args: &AddArgs, format: OutputFormat) -> Result<NewTask, CliErro
         keep_status: args.keep_status,
         defer_until: args.defer.clone(),
         someday: args.someday,
+        nag: args.nag,
     })
 }
 
@@ -148,6 +149,7 @@ pub async fn edit(paths: &Paths, args: EditArgs, format: OutputFormat) -> Result
         body: task_flags::body(args.body, args.body_file.as_deref())?,
         assignee: clearable(args.assignee.map(Clearable::Set), args.clear_assignee),
         keep_status: args.keep_status,
+        nag: clearable(args.nag.map(Clearable::Set), args.clear_nag),
         start: clearable(args.start, args.clear_start),
         recurrence,
         categories: task_flags::edit_categories(args.categories, args.clear_categories),
@@ -190,6 +192,27 @@ pub async fn move_tasks(
         yes: args.yes,
         idempotency_key: args.idempotency.idempotency_key,
         verb: "Move",
+    };
+    bulk_commands::apply(paths, bulk, format).await
+}
+
+/// `tasks nag`: a nag edit, to the tasks named.
+pub async fn nag(paths: &Paths, args: NagArgs, format: OutputFormat) -> Result<(), CliError> {
+    let (tasks, from_stdin) = expand_stdin(args.tasks)?;
+    let nag = args.every.map_or(Clearable::Clear, Clearable::Set);
+    let bulk = Bulk {
+        tasks,
+        from_stdin,
+        list: args.list,
+        select: None,
+        change: TaskChange::Edit(TaskEdit {
+            nag: Some(nag),
+            ..TaskEdit::default()
+        }),
+        dry_run: args.dry_run,
+        yes: args.yes,
+        idempotency_key: args.idempotency.idempotency_key,
+        verb: "Change",
     };
     bulk_commands::apply(paths, bulk, format).await
 }
@@ -445,7 +468,7 @@ pub(crate) fn expand_stdin(tasks: Vec<String>) -> Result<(Vec<String>, bool), Cl
     Ok((expanded, true))
 }
 
-fn clearable(value: Option<Clearable<String>>, clear: bool) -> Option<Clearable<String>> {
+fn clearable<T>(value: Option<Clearable<T>>, clear: bool) -> Option<Clearable<T>> {
     match (value, clear) {
         (Some(value), _) => Some(value),
         (None, true) => Some(Clearable::Clear),

@@ -76,6 +76,9 @@ pub struct ParsedTask {
     pub defer: Option<NaiveDate>,
     /// `+someday` was typed: park it as Someday.
     pub someday: bool,
+    /// `+nag15m` was typed: nag every this many minutes once the
+    /// reminder is due.
+    pub nag: Option<u32>,
     /// The recognised parts, by byte range of the input, in order.
     pub spans: Vec<Span>,
     /// What was typed but not used, and why.
@@ -104,6 +107,7 @@ pub enum SpanKind {
     /// `^<date>`: when the task comes back into view.
     Defer,
     Someday,
+    Nag,
     /// Escapes and quote marks: taken out, not a field.
     Syntax,
 }
@@ -121,6 +125,7 @@ impl SpanKind {
             Self::MyDay => "my_day",
             Self::Defer => "defer",
             Self::Someday => "someday",
+            Self::Nag => "nag",
             Self::Syntax => "syntax",
         }
     }
@@ -168,6 +173,9 @@ impl ParsedTask {
         if self.someday {
             parts.push("Someday".into());
         }
+        if let Some(minutes) = self.nag {
+            parts.push(format!("nag every {}", crate::interval_label(minutes)));
+        }
         parts
     }
 
@@ -208,6 +216,7 @@ impl ParsedTask {
             "my_day": self.my_day,
             "defer": date(self.defer),
             "someday": self.someday,
+            "nag": self.nag,
             "spans": spans,
             "warnings": self.warnings,
         })

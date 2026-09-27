@@ -35,6 +35,8 @@ pub enum Action {
     ToggleComplete,
     /// `t`: put the tasks in today's My Day, or take them out.
     ToggleMyDay,
+    /// Nag about the targets, or stop when they all nag.
+    ToggleNag,
     /// Delete, after an inline confirmation.
     Delete,
     Undo,

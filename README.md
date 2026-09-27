@@ -103,6 +103,7 @@ Every command in the tour and the recipes works in it. The seed data is `demo/se
 | Add a task the way you'd say it | `mst tasks add "Call mum in 2 days p1"` |
 | Plan today | `mst myday suggest`, `mst myday add <id>`, `mst myday list` |
 | Track who you're waiting on | `mst tasks edit <id> --assignee Sam`, `mst waiting` |
+| Get nagged until it's done | `mst tasks nag <id> --every 15m`, `mst tasks add "Call mum !6pm +nag15m"` |
 | Preview how it would be read | `mst tasks parse "Call mum in 2 days p1"` |
 | Complete, reopen, edit or delete | `mst tasks complete <id>`, `reopen`, `edit`, `delete` |
 | Make a task repeat, or give it a start date | `mst tasks edit <id> --recur "every mon"`, `--start fri` |
@@ -176,6 +177,7 @@ In the TUI's add box, a likely list shows as `→ Finances? (Ctrl-l to accept)`.
 | `t` | put the task or the selection in My Day, or take it out; on a suggestion in the My Day view, add it |
 | `W` | assign the task or the selection to someone; empty clears it |
 | `z` | show deferred and Someday tasks in every view, or hide them again |
+| `n` | nag about the task or the selection every 15 minutes once its reminder is due, or stop; a nagging task shows `◉` (`N` in ASCII) in its reminder's place |
 | `m` | move the task or the selection to another list |
 | `M` | move the current list into a folder |
 | `S` | set one due date on the selection |
@@ -318,6 +320,20 @@ mst next                                   # the 5 open tasks to do now, each wi
 ```
 
 `tasks list` leaves them out and says how many; a search still finds them. `next` puts overdue tasks first, then due today, My Day, high importance, due within 3 days, then the oldest. In the TUI, Next, Upcoming and Someday are views in the sidebar, and `z` shows put-off tasks everywhere. [Put tasks off, and what's next](docs/usage.md#put-tasks-off-and-whats-next) has the rest.
+
+### Nag me until it's done
+
+Set a task to nag, and once its reminder time passes your Mac notifies you every so often until you complete it:
+
+```sh
+mst tasks nag <id> --every 15m       # 5m to 24h; the task needs a reminder
+mst tasks add "Call mum !6pm +nag15m"
+mst tasks list --nagging
+mst tasks nag <id> --off
+mst doctor --notify-test             # check notifications reach you
+```
+
+The setting syncs with the task; the notifications come from the ms-todo daemon on each machine that runs one, so only those machines nag. Nothing is shown in quiet hours (22:00-07:00 unless `[nag] quiet_hours` says otherwise). [Nag reminders](docs/usage.md#nag-reminders) has the rest.
 
 ### Undo and the outbox
 
