@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.1.31](https://github.com/planetaryescape/ms-todo/compare/v0.1.30...v0.1.31) (2026-09-27)
+
+
+### Features
+
+* defer and Someday, and mst next (rung 9a) ([#75](https://github.com/planetaryescape/ms-todo/issues/75)) ([fb50a40](https://github.com/planetaryescape/ms-todo/commit/fb50a40010b14782ba547ad9b75e54e87d9134f7))
+
+
+### Documentation
+
+* S4 deltaLinks at 3 days ([#73](https://github.com/planetaryescape/ms-todo/issues/73)) ([6995690](https://github.com/planetaryescape/ms-todo/commit/69956903a813a52dba975ec5b6e2512d5b8d82e9))
+
 ## [0.1.30](https://github.com/planetaryescape/ms-todo/compare/v0.1.29...v0.1.30) (2026-09-26)
 
 
