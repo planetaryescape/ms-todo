@@ -465,47 +465,17 @@ async fn patch(
     graph_id: &str,
     cached: &Entity,
 ) -> Result<Attempt, Failure> {
-    let Some((first, recurrence)) = series::keep(op.body(), cached) else {
-        return patch_with(state, op, list_graph_id, graph_id, cached, op.body()).await;
-    };
-    // S20: the date goes with the recurrence cleared, then the recurrence
-    // again, so Graph moves this task rather than splitting it.
-    let attempt = patch_with(state, op, list_graph_id, graph_id, cached, &first).await?;
-    let (task, extension) = match &attempt {
-        Attempt::Changed(task, extension)
-        | Attempt::Overwrote {
-            task, extension, ..
-        } => (task, extension),
-        _ => return Ok(attempt),
-    };
-    let sent = state
-        .graph
-        .update_task(list_graph_id, graph_id, &recurrence, etag(task), true)
-        .await
-        .map_err(classify)?;
-    let (updated, again) = split_extension(sent);
-    let extension = again.or_else(|| extension.clone());
-    Ok(match attempt {
-        Attempt::Overwrote {
-            fields,
-            note,
-            theirs,
-            ..
-        } => Attempt::Overwrote {
-            task: updated,
-            extension,
-            fields,
-            note,
-            theirs,
-        },
-        _ => Attempt::Changed(updated, extension),
-    })
+    // S20: a due date on a recurring task goes so Graph doesn't split it.
+    if series::applies(op, cached) {
+        return series::patch(state, op, list_graph_id, graph_id, cached).await;
+    }
+    patch_with(state, op, list_graph_id, graph_id, cached, op.body()).await
 }
 
 /// [`patch`]'s one PATCH, sending `sent_body`: the operation's own body,
 /// or that with the recurrence cleared. What the task must hold, and what
 /// counts as touched after a 412, is judged by the operation's body.
-async fn patch_with(
+pub(super) async fn patch_with(
     state: &State,
     op: &OutboxRow,
     list_graph_id: &str,
@@ -709,7 +679,7 @@ fn rejected(message: String) -> Failure {
     Failure::Rejected(error_payload(ErrorKind::Rejected, message))
 }
 
-fn store(error: ms_todo_store::StoreError) -> Failure {
+pub(super) fn store(error: ms_todo_store::StoreError) -> Failure {
     Failure::Temporary(crate::handlers::store_error(error))
 }
 

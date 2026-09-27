@@ -82,6 +82,25 @@ impl Store {
     }
 
     /// What was seen while looking for an `unknown` operation's outcome.
+    /// Set `key` in operation `op_id`'s payload to `value`: what the
+    /// daemon learns while sending it and needs again on a retry or undo.
+    pub async fn set_payload(
+        &self,
+        op_id: &str,
+        key: &str,
+        value: &Value,
+    ) -> Result<(), StoreError> {
+        sqlx::query(
+            "UPDATE outbox SET payload_json = json_set(payload_json, ?, json(?)) WHERE op_id = ?",
+        )
+        .bind(format!("$.{key}"))
+        .bind(value.to_string())
+        .bind(op_id)
+        .execute(self.writer())
+        .await?;
+        Ok(())
+    }
+
     pub async fn set_note(&self, op_id: &str, note: &str) -> Result<(), StoreError> {
         sqlx::query("UPDATE outbox SET note = ? WHERE op_id = ?")
             .bind(note)

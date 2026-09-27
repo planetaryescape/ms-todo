@@ -42,6 +42,7 @@ use crate::handlers::State;
 pub(crate) use commands::{discard, list, retry};
 pub(crate) use config::Config;
 pub(crate) use send::fields_not_holding;
+pub(crate) use series::as_landed;
 
 /// The longest the worker sleeps with nothing due, in case a wake-up was
 /// missed.

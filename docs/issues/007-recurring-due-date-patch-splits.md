@@ -21,4 +21,5 @@ Graph answers a PATCH of `dueDateTime` on a recurring task by moving the series 
 - The outbox sends every PATCH that sets a due date on a recurring task (and doesn't set the recurrence itself) that way, as one operation, so `tasks edit --due`, `reschedule`, undo of a completion and the undo of each are covered, with one undo each.
 - My Day's due date: a task that recurs keeps its date when added to a later My Day or taken out, since clearing it dropped the recurrence (S20, part 3).
 - Verified live on daily and weekly tasks for each path, and against a fake Graph that splits as Graph does.
-- Left: if the second PATCH (the recurrence) is rejected for good, the task is left without its recurrence and the write is `failed` in `outbox list`; `outbox retry` sends both again.
+- The recurrence set again is Graph's, read before the first PATCH, and it's kept in the operation, so a retry after the second PATCH was refused sets it from there; where Graph put an off-pattern date is kept for undo (review of b58f9fe).
+- Left: if the second PATCH (the recurrence) is rejected for good, the task has no recurrence until `outbox retry`.
