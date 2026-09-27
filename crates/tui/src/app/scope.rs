@@ -123,13 +123,18 @@ pub fn sidebar_entries(
     entries
 }
 
-/// The smart views, in sidebar order (docs/blueprint/08-tui.md#layout).
-pub const VIEWS: [Scope; 6] = [
+/// The smart views, in sidebar order (docs/blueprint/08-tui.md#layout):
+/// what to do now first, then the open views, then what's put off, and
+/// the archive last.
+pub const VIEWS: [Scope; 9] = [
     Scope::MyDay,
+    Scope::Next,
     Scope::Important,
     Scope::Planned,
     Scope::All,
     Scope::Assigned,
+    Scope::Upcoming,
+    Scope::Someday,
     Scope::Completed,
 ];
 
@@ -141,16 +146,35 @@ pub fn view_name(scope: &Scope) -> &'static str {
         Scope::All => "All",
         Scope::Completed => "Completed",
         Scope::Assigned => "Assigned",
+        Scope::Next => "Next",
+        Scope::Upcoming => "Upcoming",
+        Scope::Someday => "Someday",
         Scope::List { .. } | Scope::Unknown => "",
     }
 }
 
-/// Whether `task`, as it is now, is in `scope`; `my_day` is My Day's day.
-/// The My Day view also holds its suggestions while they're open and out
-/// of it.
-pub fn belongs(scope: &Scope, task: &Task, my_day: NaiveDate) -> bool {
-    match scope {
-        Scope::MyDay if task.suggestion.is_some() => !task.completed && task.my_day != Some(my_day),
+/// What a task's place in a view is read against.
+#[derive(Clone, Copy, Debug)]
+pub struct Shown {
+    /// My Day's day.
+    pub my_day: NaiveDate,
+    /// The local day deferral reads against.
+    pub today: NaiveDate,
+    /// Deferred and Someday tasks are shown in every view (`z`).
+    pub deferred: bool,
+}
+
+/// Whether `task`, as it is now, is in `scope`. The My Day view also
+/// holds its suggestions while they're open and out of it. Deferred and
+/// Someday tasks are out of the everyday views unless `shown.deferred`.
+pub fn belongs(scope: &Scope, task: &Task, shown: Shown) -> bool {
+    let my_day = shown.my_day;
+    let hidden = task.hidden(shown.today);
+    let everyday = shown.deferred || !hidden;
+    let member = match scope {
+        Scope::MyDay if task.suggestion.is_some() => {
+            !task.completed && task.my_day != Some(my_day) && !hidden
+        }
         Scope::MyDay => task.my_day == Some(my_day),
         Scope::Important => task.important() && !task.completed,
         Scope::Planned => task.due.is_some() && !task.completed,
@@ -158,8 +182,12 @@ pub fn belongs(scope: &Scope, task: &Task, my_day: NaiveDate) -> bool {
         Scope::Completed => task.completed,
         Scope::Assigned => task.assignee.is_some() && !task.completed,
         Scope::List { id } => task.list_id == *id,
+        Scope::Next => !task.completed && !hidden,
+        Scope::Upcoming => hidden && !task.someday,
+        Scope::Someday => hidden && task.someday,
         Scope::Unknown => false,
-    }
+    };
+    member && (everyday || !scope.hides_deferred())
 }
 
 /// A list shows its open tasks in the cache's order, then its completed
@@ -206,6 +234,7 @@ pub fn task_groups(
         Scope::Completed => Some(completed_groups(tasks, today)),
         Scope::MyDay => Some(my_day_groups(tasks)),
         Scope::Assigned => Some(assigned_groups(tasks)),
+        Scope::Upcoming => Some(upcoming_groups(tasks, today)),
         _ => None,
     }
 }
@@ -293,19 +322,53 @@ pub fn assigned_groups(tasks: &[Task]) -> Vec<(String, Vec<usize>)> {
     groups
 }
 
+/// The Upcoming view's groups: each day's heading ("Tomorrow", "Fri 2
+/// Oct") with the tasks that come back on it, as indexes into `tasks`,
+/// which the daemon sorts by that day.
+pub fn upcoming_groups(tasks: &[Task], today: NaiveDate) -> Vec<(String, Vec<usize>)> {
+    runs_by(tasks, |task| task.defer_until)
+        .into_iter()
+        .map(|(day, members)| {
+            (
+                day.map_or_else(String::new, |day| back_on(day, today)),
+                members,
+            )
+        })
+        .collect()
+}
+
+/// Neighbouring tasks with the same `key`, in order, as indexes into
+/// `tasks`: the daemon sorts a grouped view by that key.
+fn runs_by<K: PartialEq>(tasks: &[Task], key: impl Fn(&Task) -> K) -> Vec<(K, Vec<usize>)> {
+    let mut groups: Vec<(K, Vec<usize>)> = Vec::new();
+    for (index, task) in tasks.iter().enumerate() {
+        let this = key(task);
+        match groups.last_mut() {
+            Some((last, members)) if *last == this => members.push(index),
+            _ => groups.push((this, vec![index])),
+        }
+    }
+    groups
+}
+
+/// The day a deferred task comes back, as a heading or a chip:
+/// "Tomorrow", else "Fri 2 Oct", with the year when it isn't this one.
+pub fn back_on(day: NaiveDate, today: NaiveDate) -> String {
+    if day == today + Duration::days(1) {
+        "Tomorrow".into()
+    } else if day.year() == today.year() {
+        day.format("%a %-d %b").to_string()
+    } else {
+        day.format("%a %-d %b %Y").to_string()
+    }
+}
+
 /// The Completed view's groups, newest day first: each day's heading
 /// ("Today", "Yesterday", "Mon 21 Sep") with its tasks, as indexes into
 /// `tasks`, which the daemon sorts newest first. A completion Graph hasn't
 /// answered yet has no day, and the daemon puts it first.
 pub fn completed_groups(tasks: &[Task], today: NaiveDate) -> Vec<(String, Vec<usize>)> {
-    let mut groups: Vec<(Option<NaiveDate>, Vec<usize>)> = Vec::new();
-    for (index, task) in tasks.iter().enumerate() {
-        match groups.last_mut() {
-            Some((day, members)) if *day == task.completed_on => members.push(index),
-            _ => groups.push((task.completed_on, vec![index])),
-        }
-    }
-    groups
+    runs_by(tasks, |task| task.completed_on)
         .into_iter()
         .map(|(day, members)| (ms_todo_core::completion_heading(day, today), members))
         .collect()
@@ -337,6 +400,54 @@ mod tests {
             entity["completedDateTime"] = serde_json::json!({ "dateTime": format!("{day}T00:00:00.0000000"), "timeZone": "UTC" });
         }
         Task::from_entity(entity.as_object().expect("object")).expect("task")
+    }
+
+    fn deferred(id: &str, day: Option<&str>, someday: bool) -> Task {
+        let entity = serde_json::json!({ "id": id, "defer_until": day, "someday": someday });
+        Task::from_entity(entity.as_object().expect("object")).expect("task")
+    }
+
+    #[test]
+    fn deferred_tasks_leave_the_everyday_views_until_shown() {
+        let today = date("2026-09-24");
+        let shown = Shown {
+            my_day: today,
+            today,
+            deferred: false,
+        };
+        let later = deferred("a", Some("2026-09-26"), false);
+        let parked = deferred("b", None, true);
+        let back = deferred("c", Some("2026-09-24"), false);
+        for scope in [Scope::All, Scope::List { id: String::new() }] {
+            assert!(!belongs(&scope, &later, shown));
+            assert!(!belongs(&scope, &parked, shown));
+            assert!(belongs(&scope, &back, shown), "its day has come");
+        }
+        assert!(belongs(&Scope::Upcoming, &later, shown));
+        assert!(!belongs(&Scope::Upcoming, &parked, shown));
+        assert!(belongs(&Scope::Someday, &parked, shown));
+        assert!(!belongs(&Scope::Next, &later, shown));
+        assert!(belongs(&Scope::Next, &back, shown));
+        let all = Shown {
+            deferred: true,
+            ..shown
+        };
+        assert!(belongs(&Scope::All, &later, all));
+        assert_eq!(
+            upcoming_groups(
+                &[
+                    later.clone(),
+                    later,
+                    deferred("d", Some("2026-10-02"), false)
+                ],
+                today
+            ),
+            [
+                ("Sat 26 Sep".to_owned(), vec![0, 1]),
+                ("Fri 2 Oct".to_owned(), vec![2])
+            ]
+        );
+        assert_eq!(back_on(date("2026-09-25"), today), "Tomorrow");
     }
 
     fn assigned(id: &str, who: &str) -> Task {

@@ -37,8 +37,8 @@ pub enum TasksCommand {
     /// Mark completed tasks as not started again
     Reopen(TargetArgs),
     /// Change a task's title, dates, importance, reminder, notes,
-    /// recurrence, categories or assignee; or the dates, importance,
-    /// reminder, recurrence, categories or assignee of several at once
+    /// recurrence, categories, assignee, defer date or Someday; or all but
+    /// the title and notes of several at once
     Edit(EditArgs),
     /// Move tasks to another list, keeping everything they hold: steps,
     /// link, attachments and ms-todo's own fields. Each is copied, the copy
@@ -132,9 +132,10 @@ pub struct RescheduleArgs {
 pub struct AddArgs {
     /// The task, as you'd say it. Read out of it: #List or #"Two words"
     /// (its name or a prefix only it has), @category, p1–p4, every …
-    /// (a recurrence), !time-or-date (a reminder), start <date>, and a
-    /// date and time (the due date; a time also sets a reminder then).
-    /// "Quoted text" and \# \@ \! stay as typed. What's left is the title
+    /// (a recurrence), !time-or-date (a reminder), ^date (hidden until
+    /// then), +someday, +myday, start <date>, and a date and time (the due
+    /// date; a time also sets a reminder then). "Quoted text" and \# \@
+    /// \! \^ stay as typed. What's left is the title
     pub text: String,
     /// Take the text as the title, exactly as given: for text you didn't
     /// type yourself, such as an agent's, with flags for the fields
@@ -198,6 +199,15 @@ pub struct AddArgs {
     /// With --assignee: don't make it "waiting on others"
     #[arg(long, requires = "assignee")]
     pub keep_status: bool,
+    /// Hide it until this day, over any ^date in the text, in the forms
+    /// --due takes: fri, next week, in 3 days, 2026-10-02. Only ms-todo
+    /// hides it; the due date stays the deadline
+    #[arg(long, value_name = "WHEN", value_parser = phrases::day, allow_hyphen_values = true)]
+    pub defer: Option<String>,
+    /// Park it as Someday, as +someday in the text does: hidden until you
+    /// take it out with `tasks edit --no-someday`
+    #[arg(long)]
+    pub someday: bool,
     /// Show what would be sent without changing anything
     #[arg(long)]
     pub dry_run: bool,
@@ -359,6 +369,25 @@ pub struct EditArgs {
     /// With --assignee or --clear-assignee: leave the status as it is
     #[arg(long, requires = "assignee_change")]
     pub keep_status: bool,
+    /// Hide it until this day, in the forms --due takes; empty or `-`
+    /// shows it again, as --clear-defer does. The due date isn't touched
+    #[arg(
+        long,
+        value_name = "WHEN",
+        value_parser = phrases::due,
+        allow_hyphen_values = true,
+        conflicts_with = "clear_defer"
+    )]
+    pub defer: Option<Clearable<String>>,
+    /// Show it again now: remove its defer date
+    #[arg(long)]
+    pub clear_defer: bool,
+    /// Park it as Someday: hidden until --no-someday
+    #[arg(long, conflicts_with = "no_someday")]
+    pub someday: bool,
+    /// Take it out of Someday
+    #[arg(long)]
+    pub no_someday: bool,
     /// Show what would change without changing anything
     #[arg(long)]
     pub dry_run: bool,

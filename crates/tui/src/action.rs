@@ -100,4 +100,7 @@ pub enum Action {
     RenameList,
     /// "Delete list…", after an inline confirmation.
     DeleteList,
+    /// `z`: show deferred and Someday tasks in every view, or hide them
+    /// again.
+    ToggleDeferred,
 }

@@ -66,6 +66,7 @@ pub(crate) async fn completed_tasks(
         return Ok(ResponseData::Tasks {
             items: Vec::new(),
             sync: lists_sync,
+            deferred_hidden: None,
         });
     }
     let lists = state.store.lists().await.map_err(store_error)?;
@@ -92,7 +93,11 @@ pub(crate) async fn completed_tasks(
         })
         .take(limit)
         .collect();
-    Ok(ResponseData::Tasks { items, sync })
+    Ok(ResponseData::Tasks {
+        items,
+        sync,
+        deferred_hidden: None,
+    })
 }
 
 #[cfg(test)]

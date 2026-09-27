@@ -112,6 +112,8 @@ fn literal_task(args: &AddArgs, format: OutputFormat) -> Result<NewTask, CliErro
         my_day: args.my_day,
         assignee: args.assignee.clone(),
         keep_status: args.keep_status,
+        defer_until: args.defer.clone(),
+        someday: args.someday,
     })
 }
 
@@ -149,6 +151,12 @@ pub async fn edit(paths: &Paths, args: EditArgs, format: OutputFormat) -> Result
         start: clearable(args.start, args.clear_start),
         recurrence,
         categories: task_flags::edit_categories(args.categories, args.clear_categories),
+        defer_until: clearable(args.defer, args.clear_defer),
+        someday: match (args.someday, args.no_someday) {
+            (true, _) => Some(true),
+            (_, true) => Some(false),
+            _ => None,
+        },
     };
     let (tasks, from_stdin) = expand_stdin(args.task)?;
     let bulk = Bulk {

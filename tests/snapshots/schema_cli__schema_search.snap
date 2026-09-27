@@ -64,6 +64,13 @@ expression: pretty
             "createdDateTime": {
               "type": "string"
             },
+            "defer_until": {
+              "description": "YYYY-MM-DD, a local day: the task is hidden from everyday views until then (ms-todo's own; the To Do apps don't hide it). On its day it shows again",
+              "type": [
+                "string",
+                "null"
+              ]
+            },
             "dueDateTime": {
               "description": "Graph's dateTimeTimeZone; a date only",
               "type": "object"
@@ -117,6 +124,10 @@ expression: pretty
               "description": "The part of the title or notes that matched, on one line: each match between ** and **, … where it was cut",
               "type": "string"
             },
+            "someday": {
+              "description": "Parked as Someday: hidden from everyday views until taken out (ms-todo's own)",
+              "type": "boolean"
+            },
             "status": {
               "description": "notStarted, waitingOnOthers or completed, among Graph's values",
               "type": "string"
@@ -140,6 +151,8 @@ expression: pretty
             "sync_state",
             "list_id",
             "title",
+            "defer_until",
+            "someday",
             "list",
             "snippet"
           ],

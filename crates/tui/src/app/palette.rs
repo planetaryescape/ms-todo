@@ -240,8 +240,8 @@ mod tests {
         // A word's start, then anywhere, then the letters in order.
         assert_eq!(labels(&app, "home")[0], "Go to Home");
         assert_eq!(labels(&app, "gthm"), ["Go to Home"]);
-        // A key finds its action.
-        assert_eq!(labels(&app, "x"), ["Done"]);
+        // A key finds its action (after "Go to Next", a word with it).
+        assert!(labels(&app, "x").contains(&"Done".to_owned()));
         assert!(labels(&app, "zzz").is_empty());
     }
 
@@ -271,11 +271,12 @@ mod tests {
             effects[0].request,
             Request::Seed {
                 scope: Some(Scope::All),
-                search: None
+                search: None,
+                include_deferred: false,
             }
         );
         assert_eq!(app.wanted, Some(Scope::All));
-        assert_eq!(app.sidebar_index, 3);
+        assert_eq!(app.sidebar_index, 4);
     }
 
     #[test]

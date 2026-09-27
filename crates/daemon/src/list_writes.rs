@@ -24,7 +24,13 @@ pub(crate) async fn list_folders(state: &State) -> Result<ResponseData, ErrorPay
     let sync = read_state(state, LISTS_SCOPE).await?;
     let (lists, counts) = tokio::try_join!(
         async { state.store.lists().await.map_err(store_error) },
-        async { state.store.task_counts().await.map_err(store_error) },
+        async {
+            state
+                .store
+                .task_counts(crate::deferral::today())
+                .await
+                .map_err(store_error)
+        },
     )?;
     let items = folders::groups(&lists)
         .into_iter()

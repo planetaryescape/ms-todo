@@ -24,16 +24,19 @@ pub enum Field {
     Importance,
     /// Who the task waits on (rung 8d).
     Assignee,
+    /// When the task comes back into view, or Someday (rung 9a).
+    Defer,
     Notes,
 }
 
 impl Field {
-    pub const ALL: [Self; 6] = [
+    pub const ALL: [Self; 7] = [
         Self::Title,
         Self::Due,
         Self::Reminder,
         Self::Importance,
         Self::Assignee,
+        Self::Defer,
         Self::Notes,
     ];
 
@@ -44,6 +47,7 @@ impl Field {
             Self::Importance => "Importance",
             Self::Reminder => "Reminder",
             Self::Assignee => "Assignee",
+            Self::Defer => "Defer",
             Self::Notes => "Notes",
         }
     }
@@ -57,6 +61,7 @@ impl Field {
             Self::Importance => "1 high, 2 or 3 normal, 4 low",
             Self::Reminder => "17:30, tomorrow 9am or fri 5:30pm; empty clears",
             Self::Assignee => "who it waits on, a name or an email; empty clears",
+            Self::Defer => "hide it until fri, next week or 2026-10-02; someday; empty shows it",
             Self::Notes => "plain text, or empty to clear",
         }
     }
@@ -75,10 +80,18 @@ impl Field {
                 .map(|at| at.format("%Y-%m-%d %H:%M").to_string())
                 .unwrap_or_default(),
             Self::Assignee => task.assignee.clone().unwrap_or_default(),
+            Self::Defer if task.someday => SOMEDAY.to_owned(),
+            Self::Defer => task
+                .defer_until
+                .map(|day| day.format(ms_todo_core::DATE_FORMAT).to_string())
+                .unwrap_or_default(),
             Self::Notes => task.notes().unwrap_or_default(),
         }
     }
 }
+
+/// What the Defer field takes to park a task as Someday.
+const SOMEDAY: &str = "someday";
 
 pub fn importance_name(importance: Importance) -> &'static str {
     match importance {
@@ -137,6 +150,7 @@ pub fn parse(
         // Set by level in the picker, never typed.
         Field::Importance => None,
         Field::Assignee => assignee_edit(typed, task.assignee.as_deref()),
+        Field::Defer => defer_edit(typed, task, now)?,
         // Compared as rendered, so html notes left alone stay html.
         Field::Notes => (typed != task.notes().unwrap_or_default()).then(|| TaskEdit {
             body: Some(typed.to_owned()),
@@ -160,6 +174,27 @@ pub(super) fn assignee_edit(typed: &str, current: Option<&str>) -> Option<TaskEd
         assignee: Some(assignee),
         ..TaskEdit::default()
     })
+}
+
+/// The Defer field's edit: `someday` parks the task, a date defers it to
+/// that day (and out of Someday), and empty shows it again; `None` when
+/// that's what it has.
+fn defer_edit(typed: &str, task: &Task, now: &ParseContext) -> Result<Option<TaskEdit>, String> {
+    let (defer_until, someday) = if typed.eq_ignore_ascii_case(SOMEDAY) {
+        (None, (!task.someday).then_some(true))
+    } else {
+        let day = set_value(read_due(typed, now))?;
+        let defer_until = (day != task.defer_until)
+            .then(|| clearable(day.map(|day| day.format(ms_todo_core::DATE_FORMAT).to_string())));
+        (defer_until, task.someday.then_some(false))
+    };
+    Ok(
+        (defer_until.is_some() || someday.is_some()).then(|| TaskEdit {
+            defer_until,
+            someday,
+            ..TaskEdit::default()
+        }),
+    )
 }
 
 pub(super) fn set_value<T>(
@@ -213,7 +248,10 @@ impl App {
         let now = self.parse_context();
         let text = input.text();
         let resolved = match field {
-            Field::Due => read_due(&text, &now).map(preview_line),
+            Field::Defer if text.trim().eq_ignore_ascii_case(SOMEDAY) => {
+                Ok("\u{2192} Someday: hidden until you take it out".to_owned())
+            }
+            Field::Due | Field::Defer => read_due(&text, &now).map(preview_line),
             Field::Reminder => read_reminder(&text, &now).map(preview_line),
             _ => return None,
         };

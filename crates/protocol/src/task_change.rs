@@ -54,6 +54,13 @@ pub struct NewTask {
     /// With `assignee`: leave the status as it would be.
     #[serde(default)]
     pub keep_status: bool,
+    /// `YYYY-MM-DD`, a local day: hide the task until then (ms-todo's
+    /// `deferUntil`; the due date stays the deadline).
+    #[serde(default)]
+    pub defer_until: Option<String>,
+    /// Park it as Someday (ms-todo's `someday`): hidden until taken out.
+    #[serde(default)]
+    pub someday: bool,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -202,6 +209,12 @@ pub struct TaskEdit {
     /// The task's categories, replacing those it has; empty clears them.
     #[serde(default)]
     pub categories: Option<Vec<String>>,
+    /// `YYYY-MM-DD`: hide the task until then (`NewTask.defer_until`).
+    #[serde(default)]
+    pub defer_until: Option<Clearable<String>>,
+    /// Park it as Someday, or take it out.
+    #[serde(default)]
+    pub someday: Option<bool>,
 }
 
 /// A field an edit either sets or clears.

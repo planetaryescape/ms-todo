@@ -34,6 +34,11 @@ expression: pretty
         "type": "boolean",
         "x-cli": "--create-categories"
       },
+      "defer": {
+        "description": "Hide it until this day, over any ^date in the text, in the forms --due takes: fri, next week, in 3 days, 2026-10-02. Only ms-todo hides it; the due date stays the deadline",
+        "type": "string",
+        "x-cli": "--defer"
+      },
       "dry_run": {
         "description": "Show what would be sent without changing anything",
         "type": "boolean",
@@ -84,6 +89,11 @@ expression: pretty
         "type": "string",
         "x-cli": "--reminder"
       },
+      "someday": {
+        "description": "Park it as Someday, as +someday in the text does: hidden until you take it out with `tasks edit --no-someday`",
+        "type": "boolean",
+        "x-cli": "--someday"
+      },
       "start": {
         "description": "Start date, over any `start <date>` in the text, in the forms --due takes. With no due date, Microsoft To Do makes it the due date too",
         "type": "string",
@@ -95,7 +105,7 @@ expression: pretty
         "x-cli": "--strict"
       },
       "text": {
-        "description": "The task, as you'd say it. Read out of it: #List or #\"Two words\" (its name or a prefix only it has), @category, p1–p4, every … (a recurrence), !time-or-date (a reminder), start <date>, and a date and time (the due date; a time also sets a reminder then). \"Quoted text\" and \\# \\@ \\! stay as typed. What's left is the title",
+        "description": "The task, as you'd say it. Read out of it: #List or #\"Two words\" (its name or a prefix only it has), @category, p1–p4, every … (a recurrence), !time-or-date (a reminder), ^date (hidden until then), +someday, +myday, start <date>, and a date and time (the due date; a time also sets a reminder then). \"Quoted text\" and \\# \\@ \\! \\^ stay as typed. What's left is the title",
         "type": "string",
         "x-cli": "<TEXT>"
       }
@@ -157,6 +167,13 @@ expression: pretty
                 "createdDateTime": {
                   "type": "string"
                 },
+                "defer_until": {
+                  "description": "YYYY-MM-DD, a local day: the task is hidden from everyday views until then (ms-todo's own; the To Do apps don't hide it). On its day it shows again",
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
                 "dueDateTime": {
                   "description": "Graph's dateTimeTimeZone; a date only",
                   "type": "object"
@@ -202,6 +219,10 @@ expression: pretty
                 "reminderDateTime": {
                   "type": "object"
                 },
+                "someday": {
+                  "description": "Parked as Someday: hidden from everyday views until taken out (ms-todo's own)",
+                  "type": "boolean"
+                },
                 "status": {
                   "description": "notStarted, waitingOnOthers or completed, among Graph's values",
                   "type": "string"
@@ -224,7 +245,9 @@ expression: pretty
                 "graph_id",
                 "sync_state",
                 "list_id",
-                "title"
+                "title",
+                "defer_until",
+                "someday"
               ],
               "type": "object"
             },

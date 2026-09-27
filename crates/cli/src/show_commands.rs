@@ -2,7 +2,7 @@
 //! every field, from the daemon's cache.
 
 use ms_todo_core::{ErrorKind, Paths};
-use ms_todo_protocol::{Entity, Request, ResponseData, TaskFilter};
+use ms_todo_protocol::{DeferredFilter, Entity, Request, ResponseData, TaskFilter};
 use serde::Serialize;
 use serde_json::{Value, json};
 
@@ -108,6 +108,15 @@ fn task_rows(task: &Entity) -> Vec<(&'static str, String)> {
         ),
         ("Waiting on", csv_columns::assignee(task).to_owned()),
         ("My Day", ours("myDay")),
+        ("Deferred to", text(task, "defer_until").to_owned()),
+        (
+            "Someday",
+            if task.get("someday").and_then(Value::as_bool) == Some(true) {
+                "yes".to_owned()
+            } else {
+                String::new()
+            },
+        ),
         (
             "Notes",
             task.get("body")
@@ -170,7 +179,11 @@ pub async fn list(paths: &Paths, args: ShowListArgs, format: OutputFormat) -> Re
         list: Some(text(&list, "id").to_owned()),
         search: None,
         assignee: None,
-        filter: TaskFilter::default(),
+        // Its open tasks are open, whether they're deferred or not.
+        filter: TaskFilter {
+            deferred: DeferredFilter::Include,
+            ..TaskFilter::default()
+        },
     };
     let tasks = match daemon_client::ask(paths, request).await? {
         ResponseData::Tasks { items, .. } => items,

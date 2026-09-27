@@ -55,7 +55,7 @@ fn the_cursor_runs_through_the_steps_and_the_link_before_the_notes() {
     let mut app = painted();
     act(&mut app, Action::JumpTop);
     let mut seen = vec![app.detail_row_now().expect("row")];
-    for _ in 0..10 {
+    for _ in 0..11 {
         act(&mut app, Action::MoveDown);
         seen.push(app.detail_row_now().expect("row"));
     }
@@ -68,6 +68,7 @@ fn the_cursor_runs_through_the_steps_and_the_link_before_the_notes() {
             DetailRow::Field(Field::Reminder),
             DetailRow::Field(Field::Importance),
             DetailRow::Field(Field::Assignee),
+            DetailRow::Field(Field::Defer),
             DetailRow::Steps,
             DetailRow::Step(0),
             DetailRow::Step(1),

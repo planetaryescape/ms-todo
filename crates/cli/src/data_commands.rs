@@ -57,7 +57,7 @@ pub const TASKS_TABLE: Table = Table {
             due,
             important.to_owned(),
             sync.to_owned(),
-            text(task, "title").to_owned(),
+            marked_title(task),
         ]
     },
     csv_headings: csv_columns::TASK_COLUMNS,
@@ -80,7 +80,7 @@ pub const EVERY_LIST_TABLE: Table = Table {
             csv_columns::local_due(task),
             important.to_owned(),
             text(task, "list").to_owned(),
-            text(task, "title").to_owned(),
+            marked_title(task),
         ]
     },
     csv_headings: csv_columns::EVERY_LIST_COLUMNS,
@@ -102,7 +102,7 @@ pub const WAITING_TABLE: Table = Table {
             csv_columns::assignee(task).to_owned(),
             csv_columns::local_due(task),
             text(task, "list").to_owned(),
-            text(task, "title").to_owned(),
+            marked_title(task),
         ]
     },
     csv_headings: csv_columns::ASSIGNED_COLUMNS,
@@ -117,7 +117,7 @@ pub const SEARCH_TABLE: Table = Table {
             done(task),
             csv_columns::local_due(task),
             text(task, "list").to_owned(),
-            text(task, "title").to_owned(),
+            marked_title(task),
             text(task, "snippet").to_owned(),
         ]
     },
@@ -125,6 +125,41 @@ pub const SEARCH_TABLE: Table = Table {
     csv_row: csv_columns::search_row,
     bold_matches: Some(4),
 };
+
+/// What `next` gives: each task with why it's there, most urgent first.
+pub const NEXT_TABLE: Table = Table {
+    headings: &["DUE", "LIST", "TITLE", "WHY"],
+    row: |task| {
+        vec![
+            csv_columns::local_due(task),
+            text(task, "list").to_owned(),
+            text(task, "title").to_owned(),
+            text(task, "why").to_owned(),
+        ]
+    },
+    csv_headings: csv_columns::NEXT_COLUMNS,
+    csv_row: csv_columns::next_row,
+    bold_matches: None,
+};
+
+/// A task's title, and when it's out of the everyday views (with
+/// `--deferred include|only`, or found by a search), until when:
+/// `Plan the trip (deferred to 2026-10-02)`, `Learn the cello (someday)`.
+fn marked_title(task: &Entity) -> String {
+    let title = text(task, "title");
+    let completed = text(task, "status") == "completed";
+    let someday = task.get("someday").and_then(Value::as_bool) == Some(true);
+    let until = text(task, "defer_until");
+    let day = chrono::NaiveDate::parse_from_str(until, ms_todo_core::DATE_FORMAT).ok();
+    let today = chrono::Local::now().date_naive();
+    if !ms_todo_core::deferral::hidden(day, someday, completed, today) {
+        title.to_owned()
+    } else if someday {
+        format!("{title} (someday)")
+    } else {
+        format!("{title} (deferred to {until})")
+    }
+}
 
 fn done(task: &Entity) -> String {
     if text(task, "status") == "completed" {
@@ -141,13 +176,15 @@ pub async fn lists(paths: &Paths) -> Result<(Vec<Entity>, SyncInfo), CliError> {
     }
 }
 
+/// Tasks `tasks list` asks for, and how many deferred and Someday tasks
+/// the daemon left out.
 pub async fn tasks(
     paths: &Paths,
     list: Option<String>,
     search: Option<String>,
     assignee: Option<String>,
     filter: TaskFilter,
-) -> Result<(Vec<Entity>, SyncInfo), CliError> {
+) -> Result<(Vec<Entity>, SyncInfo, Option<u64>), CliError> {
     if assignee
         .as_deref()
         .is_some_and(|name| name.trim().is_empty())
@@ -164,7 +201,26 @@ pub async fn tasks(
         filter,
     };
     match daemon_client::ask(paths, request).await? {
-        ResponseData::Tasks { items, sync } => Ok((items, sync)),
+        ResponseData::Tasks {
+            items,
+            sync,
+            deferred_hidden,
+        } => Ok((items, sync, deferred_hidden)),
+        _ => Err(crate::unexpected_response()),
+    }
+}
+
+/// `next`: the tasks to do now, each with `why` and `list`.
+pub async fn next(
+    paths: &Paths,
+    args: crate::args::NextArgs,
+) -> Result<(Vec<Entity>, SyncInfo), CliError> {
+    let request = Request::NextTasks {
+        list: args.list,
+        limit: Some(args.limit),
+    };
+    match daemon_client::ask(paths, request).await? {
+        ResponseData::Tasks { items, sync, .. } => Ok((items, sync)),
         _ => Err(crate::unexpected_response()),
     }
 }

@@ -46,6 +46,10 @@ pub(crate) async fn add_task(
         let assigned = assignment::new_task_fields(&name, task.keep_status, &mut fields);
         ours.get_or_insert_default().extend(assigned);
     }
+    let deferred = crate::deferral::new_task_fields(&task)?;
+    if !deferred.is_empty() {
+        ours.get_or_insert_default().extend(deferred);
+    }
     ensure_ready(state, LISTS_SCOPE).await?;
     let lists = state.store.lists().await.map_err(store_error)?;
     let list = resolve_list(&lists, task.list.as_deref())?;
@@ -98,11 +102,13 @@ pub(crate) async fn change_tasks(
     op_id: String,
 ) -> Result<ResponseData, ErrorPayload> {
     let mut assign = None;
+    let mut defer = serde_json::Map::new();
     let (action, fields) = match change {
         TaskChange::Complete => (TaskAction::Complete, vec![Field::Status("completed")]),
         TaskChange::Reopen => (TaskAction::Reopen, vec![Field::Status("notStarted")]),
         TaskChange::Edit(edit) => {
             assign = assignee_change(&edit)?;
+            defer = crate::deferral::edit_fields(&edit)?;
             (TaskAction::Edit, edit_fields(&edit)?)
         }
         TaskChange::Delete => (TaskAction::Delete, Vec::new()),
@@ -180,6 +186,7 @@ pub(crate) async fn change_tasks(
     if dry_run {
         if let Some(changes) = changes.as_object_mut() {
             changes.extend(assignment::dry_run_changes(plans.iter().flatten()));
+            changes.extend(defer.clone());
         }
         return Ok(ResponseData::Plan(Plan {
             action,
@@ -208,6 +215,14 @@ pub(crate) async fn change_tasks(
         if let Some(plan) = plan {
             let mut more = assignment::plan_ops(&op_id, ops.len(), row, plan, action);
             ops.append(&mut more);
+        }
+        if let Some(fields) = crate::deferral::plan(row, &defer) {
+            ops.push(task_extension_op(
+                op_id_for(&op_id, ops.len()),
+                row,
+                fields,
+                action,
+            ));
         }
     }
     queue(state, &op_id, None, ops, action).await

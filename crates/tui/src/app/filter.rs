@@ -1,7 +1,8 @@
-//! The filter: `/` narrows the task list as each key is typed, by the
-//! daemon's search.
+//! What a view leaves out: `/` narrows the task list as each key is
+//! typed, by the daemon's search, and `z` shows or hides deferred and
+//! Someday tasks.
 
-use super::{App, Effect, Mode};
+use super::{App, Effect, Level, Mode};
 
 impl App {
     /// After the filter's text changed, search again.
@@ -22,6 +23,20 @@ impl App {
         }
         self.filter = text;
         self.filter_error = None;
+        vec![self.seed_now()]
+    }
+
+    /// `z`: every view shows deferred and Someday tasks, or leaves them
+    /// out again. Each view's rows read before are for the other way.
+    pub(super) fn toggle_deferred(&mut self) -> Vec<Effect> {
+        self.show_deferred = !self.show_deferred;
+        self.cache.clear();
+        let said = if self.show_deferred {
+            "Showing deferred and Someday tasks; z hides them"
+        } else {
+            "Hiding deferred and Someday tasks"
+        };
+        self.show(Level::Info, said);
         vec![self.seed_now()]
     }
 }

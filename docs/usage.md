@@ -198,6 +198,27 @@ An assignee is `assignee` in ms-todo's own data on the task: free text, trimmed,
 - **In the TUI**, the Assigned view (after All) groups open assigned tasks under each person's name, and a task's row carries a person chip, `◔ Sam` (`w Sam` in ASCII). The detail pane shows the Assignee field and "waiting on others" as the status. `e` on the Assignee field edits it, as does `e` then `a`; empty clears it. `W`, or "Assign to…" in the palette, asks for one name for the selection, or the task under the cursor. Each is one change, so `u` undoes it.
 - **Quick add** has no token for an assignee: `@` is a category. Use `--assignee`.
 
+## Put tasks off, and what's next
+
+```sh
+ms-todo tasks add "Plan the trip ^fri"          # hidden until Friday; ^next week, ^in 3 days work too
+ms-todo tasks add "Learn the cello +someday"    # parked until you take it out
+ms-todo tasks edit <TASK>... --defer 2026-10-02 # or --clear-defer (--defer - too)
+ms-todo tasks edit <TASK>... --someday          # or --no-someday
+ms-todo tasks list --deferred include           # show them with the rest
+ms-todo tasks list --deferred only              # only them, every list: by the day they come back, then Someday
+ms-todo next                                    # the 5 open tasks to do now, each with why
+ms-todo next --limit 10 --list Work
+```
+
+A defer date and Someday are ms-todo's own, in its data on the task: the due date stays the deadline the phone shows, and the To Do apps don't hide the task.
+
+- **Hidden until its day.** An open task deferred to a day after today (your local date), or parked as Someday, is left out of `tasks list`, `waiting`, `next`, My Day's suggestions, and the TUI's views and counts. On its day it shows again by itself; nothing is written. A table ends with `note: 2 deferred hidden, --deferred include to show`, and JSON has `deferred_hidden` in its envelope. Every task in JSON has `defer_until` (`YYYY-MM-DD` or null) and `someday`, and CSV has both columns.
+- **Search still finds them.** `search`, `tasks list --search` and the TUI's `/` include deferred and Someday tasks, and a table marks them: `Plan the trip (deferred to 2026-10-02)`, `Learn the cello (someday)`. My Day shows a task you put there, deferred or not.
+- **Undo** puts a defer date or Someday back as it was, unless it has changed since. `--dry-run` shows the fields it would write.
+- **`next`** puts each open task in the first tier that fits it: overdue (most overdue first), due today, in today's My Day, high importance, due within 3 days (soonest first), then the rest. Ties go to the oldest task. The order is fixed, with no weights to tune. `why` lists every reason that applies (`overdue 2d, in My Day, high`), or `added 12d ago` when none does. The table is `DUE, LIST, TITLE, WHY`; CSV `id,title,list,why,due,importance,sync_state`.
+- **In the TUI**, the sidebar has Next (after My Day), and Upcoming and Someday (before Completed). Upcoming groups tasks by the day they come back. `z` shows deferred and Someday tasks in every view, or hides them again. The detail pane's Defer field (`e` then `f`) takes a date, `someday`, or empty to show the task again.
+
 ## Move tasks between lists
 
 ```sh
@@ -338,7 +359,7 @@ mst tui --theme nord # draw with a theme (mst tui --list-themes names them)
 
 `mst` with no command opens the TUI only when both its input and output are a terminal; from a script, a pipe or an agent it prints help and exits 2, as before. Global flags still work (`mst --instance work`); TUI flags such as `--ascii` need `tui`.
 
-A title bar with the version and the view you're in, a sidebar of smart views (My Day, Important, Planned, All, Assigned, Completed), then your folders, each with its lists under it and their total, then the lists in no folder, all with their counts, the task list, and a detail pane. The focused task list shows the cursor's position and its task count in the top border (`3/42`). It opens from the local cache, and changes made anywhere, the phone included, show up as the daemon syncs them. A change you make shows at once, marked pending (dim) until it reaches Microsoft To Do; unknown outcomes are amber and rejected changes red, with a banner saying why.
+A title bar with the version and the view you're in, a sidebar of smart views (My Day, Next, Important, Planned, All, Assigned, Upcoming, Someday, Completed), then your folders, each with its lists under it and their total, then the lists in no folder, all with their counts, the task list, and a detail pane. The focused task list shows the cursor's position and its task count in the top border (`3/42`). It opens from the local cache, and changes made anywhere, the phone included, show up as the daemon syncs them. A change you make shows at once, marked pending (dim) until it reaches Microsoft To Do; unknown outcomes are amber and rejected changes red, with a banner saying why.
 
 The keys are in the README's [TUI keys](../README.md#tui-keys) table; `?` inside the TUI lists them all. The palette (`:`) also has "New list…", "Rename list…" and "Delete list…" (the list under the sidebar's cursor, or the one shown), and a task's categories show on its row as `@label`.
 

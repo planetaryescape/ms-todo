@@ -178,6 +178,13 @@ pub const BINDINGS: &[Binding] = &[
     bind(TASKS, "t", Action::ToggleMyDay, "My Day", true),
     bind(TASKS, "A", Action::Attach, "Attach a file\u{2026}", false),
     bind(TASKS, "W", Action::Assign, "Assign to\u{2026}", false),
+    bind(
+        BROWSE,
+        "z",
+        Action::ToggleDeferred,
+        "Show or hide deferred",
+        false,
+    ),
     bind(&[Context::Prompt], "Enter", Action::Submit, "Done", true),
     bind(ADDING, "Enter", Action::Submit, "Add", true),
     bind(ADDING, "Tab", Action::Complete, "Complete", true),
@@ -226,6 +233,13 @@ pub const BINDINGS: &[Binding] = &[
         "a",
         Action::EditField(Field::Assignee),
         "Edit assignee",
+        false,
+    ),
+    bind(
+        FIELDS,
+        "f",
+        Action::EditField(Field::Defer),
+        "Edit defer (or someday)",
         false,
     ),
     bind(

@@ -27,6 +27,16 @@ fn assigned(mut seen: SeenTask, who: &str) -> SeenTask {
     seen
 }
 
+/// `seen` with ms-todo's extension holding `fields`.
+fn ours(mut seen: SeenTask, fields: Value) -> SeenTask {
+    seen.hydration = Hydration::Fetched(Some(fields));
+    seen
+}
+
+fn today() -> chrono::NaiveDate {
+    chrono::NaiveDate::from_ymd_opt(2026, 9, 25).expect("day")
+}
+
 fn due(date: &str) -> Value {
     json!({ "dateTime": format!("{date}T00:00:00.0000000"), "timeZone": "Europe/London" })
 }
@@ -141,7 +151,7 @@ async fn each_view_holds_its_tasks_in_its_order() {
 #[tokio::test]
 async fn counts_cover_every_view_and_each_lists_open_tasks() {
     let (_dir, store, home, work) = filled().await;
-    let counts = store.task_counts().await.expect("counts");
+    let counts = store.task_counts(today()).await.expect("counts");
     assert_eq!(
         (
             counts.important,
@@ -171,8 +181,67 @@ async fn counts_cover_every_view_and_each_lists_open_tasks() {
         })
         .await
         .expect("lists");
-    let counts = store.task_counts().await.expect("counts");
+    let counts = store.task_counts(today()).await.expect("counts");
     assert_eq!(counts.all, 3);
     assert_eq!(counts.open_by_list.get(&work), None);
     assert_eq!(titles(&store, View::All).await, ["T1", "T2", "T3"]);
+}
+
+#[tokio::test]
+async fn deferred_and_someday_tasks_have_their_own_views_and_leave_the_counts() {
+    let (_dir, store, _, work) = filled().await;
+    let rev = store.local_rev().await.expect("rev");
+    store
+        .apply_tasks(TasksPass {
+            scope: tasks_scope("L2"),
+            list_local_id: work.clone(),
+            rev,
+            seen: vec![
+                assigned(task("T6", json!({})), "Ada"),
+                task("T7", json!({ "status": "completed" })),
+                ours(task("T8", json!({})), json!({ "deferUntil": "2026-10-05" })),
+                ours(
+                    task("T9", json!({})),
+                    json!({ "someday": true, "deferUntil": "2026-09-26" }),
+                ),
+                // Its day has come: back in view.
+                ours(
+                    task("T10", json!({ "importance": "high" })),
+                    json!({ "deferUntil": "2026-09-25" }),
+                ),
+                ours(
+                    task("T11", json!({})),
+                    json!({ "deferUntil": "2026-09-27" }),
+                ),
+                // Not a day: ignored, as the daemon ignores it.
+                ours(task("T13", json!({})), json!({ "deferUntil": "soon" })),
+                ours(
+                    task("T12", json!({ "status": "completed" })),
+                    json!({ "deferUntil": "2026-10-05" }),
+                ),
+            ],
+            gone: Vec::new(),
+            failure: None,
+            cursor: Cursor {
+                delta_link: "link".into(),
+                replayed: false,
+            },
+        })
+        .await
+        .expect("tasks");
+    assert_eq!(
+        titles(&store, View::Upcoming(today())).await,
+        ["T11", "T8"],
+        "soonest back first; Someday and completed tasks aren't upcoming"
+    );
+    assert_eq!(titles(&store, View::Someday).await, ["T9"]);
+    let counts = store.task_counts(today()).await.expect("counts");
+    assert_eq!((counts.upcoming, counts.someday), (2, 1));
+    assert_eq!(counts.all, 6, "T1, T2, T3, T6, T10 and T13");
+    assert_eq!(counts.important, 3);
+    assert_eq!(counts.open_by_list.get(&work), Some(&3));
+    // On T11's day it's back, and counted.
+    let later = chrono::NaiveDate::from_ymd_opt(2026, 9, 27).expect("day");
+    let counts = store.task_counts(later).await.expect("counts");
+    assert_eq!((counts.upcoming, counts.all), (1, 7));
 }

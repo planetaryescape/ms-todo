@@ -25,6 +25,13 @@ expression: pretty
         },
         "type": "array"
       },
+      "defer": {
+        "description": "YYYY-MM-DD from ^date: the task is hidden until then",
+        "type": [
+          "string",
+          "null"
+        ]
+      },
       "due": {
         "description": "YYYY-MM-DD",
         "type": [
@@ -86,6 +93,10 @@ expression: pretty
       "schema_version": {
         "const": 2
       },
+      "someday": {
+        "description": "+someday was typed: the task is parked as Someday",
+        "type": "boolean"
+      },
       "spans": {
         "items": {
           "properties": {
@@ -102,6 +113,8 @@ expression: pretty
                 "start",
                 "date",
                 "my_day",
+                "defer",
+                "someday",
                 "syntax"
               ]
             },
@@ -154,6 +167,8 @@ expression: pretty
       "priority",
       "categories",
       "my_day",
+      "defer",
+      "someday",
       "spans",
       "warnings"
     ],

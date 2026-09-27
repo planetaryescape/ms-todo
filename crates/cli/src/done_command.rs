@@ -43,7 +43,7 @@ pub async fn done(paths: &Paths, args: DoneArgs, format: OutputFormat) -> Result
         limit: args.limit,
     };
     let (items, sync) = match daemon_client::ask(paths, request).await? {
-        ResponseData::Tasks { items, sync } => (items, sync),
+        ResponseData::Tasks { items, sync, .. } => (items, sync),
         _ => return Err(crate::unexpected_response()),
     };
     if format != OutputFormat::Table {

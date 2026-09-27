@@ -1,13 +1,13 @@
 use bytes::BytesMut;
 use ms_todo_protocol::{
     Anchor, Applied, Candidate, CategoryChange, Clearable, Codec, Counts, DaemonStatus,
-    DoctorReport, DueFilter, EntityChanged, ErrorPayload, Event, ExtensionChange, ExtensionOwner,
-    Folder, Importance, ListChange, ListSuggestion, Message, MyDay, MyDaySeed, MyDayStatus,
-    NewTask, OpError, OutboxDepth, OutboxOp, OutboxState, OwnerKind, PROTOCOL_VERSION, Payload,
-    Plan, PlannedList, PlannedTask, RawWriteMethod, Refused, Request, Response, ResponseData,
-    Rolled, Scope, ScopeError, ScopeStatus, SearchStatus, Seed, StatusFilter, SuggestStatus,
-    SyncActivity, SyncInfo, SyncMode, SyncProgress, SyncReport, SyncState, TaskAction, TaskChange,
-    TaskEdit, TaskFilter, TaskSelect, TaskSort, WriteRejected,
+    DeferredFilter, DoctorReport, DueFilter, EntityChanged, ErrorPayload, Event, ExtensionChange,
+    ExtensionOwner, Folder, Importance, ListChange, ListSuggestion, Message, MyDay, MyDaySeed,
+    MyDayStatus, NewTask, OpError, OutboxDepth, OutboxOp, OutboxState, OwnerKind, PROTOCOL_VERSION,
+    Payload, Plan, PlannedList, PlannedTask, RawWriteMethod, Refused, Request, Response,
+    ResponseData, Rolled, Scope, ScopeError, ScopeStatus, SearchStatus, Seed, StatusFilter,
+    SuggestStatus, SyncActivity, SyncInfo, SyncMode, SyncProgress, SyncReport, SyncState,
+    TaskAction, TaskChange, TaskEdit, TaskFilter, TaskSelect, TaskSort, WriteRejected,
 };
 use serde_json::json;
 use tokio_util::codec::{Decoder, Encoder};
@@ -62,7 +62,12 @@ fn every_request_and_response_round_trips() {
                 category: Some("Errands".into()),
                 sort: Some(TaskSort::Due),
                 limit: Some(5),
+                deferred: DeferredFilter::Only,
             },
+        }),
+        Payload::Request(Request::NextTasks {
+            list: Some("Home".into()),
+            limit: Some(3),
         }),
         Payload::Request(Request::ListCategories),
         Payload::Request(Request::ChangeCategory {
@@ -131,6 +136,7 @@ fn every_request_and_response_round_trips() {
                     state: SyncState::Ready,
                     generation: 3,
                 },
+                deferred_hidden: Some(2),
             },
         }),
         Payload::Response(Response::Ok {
@@ -292,6 +298,8 @@ fn every_request_and_response_round_trips() {
                 my_day: true,
                 assignee: Some("Sam".into()),
                 keep_status: false,
+                defer_until: Some("2026-10-02".into()),
+                someday: true,
             },
             dry_run: true,
             op_id: None,
@@ -305,6 +313,8 @@ fn every_request_and_response_round_trips() {
                 title: Some("New".into()),
                 due: Some(Clearable::Clear),
                 reminder: Some(Clearable::Set("2026-09-26T09:00".into())),
+                defer_until: Some(Clearable::Clear),
+                someday: Some(false),
                 ..TaskEdit::default()
             }),
             dry_run: false,
@@ -477,14 +487,27 @@ fn every_request_and_response_round_trips() {
         Payload::Request(Request::Seed {
             scope: None,
             search: None,
+            include_deferred: false,
         }),
         Payload::Request(Request::Seed {
             scope: Some(Scope::List { id: "l1".into() }),
             search: Some("milk*".into()),
+            include_deferred: true,
         }),
         Payload::Request(Request::Seed {
             scope: Some(Scope::Planned),
             search: None,
+            include_deferred: false,
+        }),
+        Payload::Request(Request::Seed {
+            scope: Some(Scope::Upcoming),
+            search: None,
+            include_deferred: false,
+        }),
+        Payload::Request(Request::Seed {
+            scope: Some(Scope::Next),
+            search: None,
+            include_deferred: false,
         }),
         Payload::Request(Request::Subscribe),
         Payload::Response(Response::Ok {
@@ -502,6 +525,8 @@ fn every_request_and_response_round_trips() {
                     all: 3,
                     completed: 4,
                     assigned: 6,
+                    upcoming: 7,
+                    someday: 8,
                     lists: [("l1".to_owned(), 3)].into_iter().collect(),
                 },
                 tasks: vec![entity.clone()],
@@ -637,7 +662,8 @@ fn unknown_tags_decode_to_unknown() {
         seed.payload,
         Payload::Request(Request::Seed {
             scope: Some(Scope::Unknown),
-            search: None
+            search: None,
+            include_deferred: false,
         })
     );
 }

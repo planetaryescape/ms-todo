@@ -26,6 +26,10 @@ pub fn draw(frame: &mut Frame, area: Rect, app: &App) {
                         Scope::Planned => (glyphs.planned, app.counts.planned),
                         Scope::All => (glyphs.all, app.counts.all),
                         Scope::Assigned => (glyphs.assigned, app.counts.assigned),
+                        // Next is a handful by design: no count.
+                        Scope::Next => (glyphs.next, 0),
+                        Scope::Upcoming => (glyphs.upcoming, app.counts.upcoming),
+                        Scope::Someday => (glyphs.someday, app.counts.someday),
                         _ => (glyphs.completed, app.counts.completed),
                     };
                     (icon.to_owned(), view_name(scope).to_owned(), count, false)

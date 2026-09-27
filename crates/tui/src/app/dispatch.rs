@@ -323,6 +323,7 @@ impl App {
                 Vec::new()
             }
             Action::Diagnostics => self.open_diagnostics(),
+            Action::ToggleDeferred => self.toggle_deferred(),
             Action::Undo => vec![Effect {
                 tag: Tag::Undo,
                 request: Request::Undo {

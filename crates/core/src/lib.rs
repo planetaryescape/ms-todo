@@ -3,6 +3,7 @@
 //! enforces that.
 
 mod dates;
+pub mod deferral;
 mod display;
 mod error;
 pub mod links;

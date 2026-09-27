@@ -164,7 +164,7 @@ fn reads_cache(command: &Command) -> bool {
         Command::Steps(command) => matches!(command, StepsCommand::List(_)),
         Command::Links(command) => matches!(command, LinksCommand::List(_)),
         Command::Attachments(command) => matches!(command, AttachmentsCommand::List(_)),
-        Command::Waiting { .. } | Command::Search(_) | Command::Done(_) => true,
+        Command::Waiting { .. } | Command::Search(_) | Command::Done(_) | Command::Next(_) => true,
         _ => false,
     }
 }
@@ -237,16 +237,26 @@ async fn dispatch(command: Command, paths: &Paths, format: OutputFormat) -> Resu
                 (None, None) if filter.narrows() => &data_commands::EVERY_LIST_TABLE,
                 (None, _) => &data_commands::TASKS_TABLE,
             };
-            let (items, sync) =
+            let (items, sync, hidden) =
                 data_commands::tasks(paths, args.list, args.search, args.assignee, filter).await?;
-            print_collection(format, &items, sync, table)
+            output::print_task_collection(format, &items, sync, hidden, table)
         }
         Command::Tasks(TasksCommand::Show(args)) => show_commands::task(paths, args, format).await,
         Command::Waiting { person } => {
             let assignee = Some(person.unwrap_or_else(|| "*".to_owned()));
-            let (items, sync) =
+            let (items, sync, hidden) =
                 data_commands::tasks(paths, None, None, assignee, Default::default()).await?;
-            print_collection(format, &items, sync, &data_commands::WAITING_TABLE)
+            output::print_task_collection(
+                format,
+                &items,
+                sync,
+                hidden,
+                &data_commands::WAITING_TABLE,
+            )
+        }
+        Command::Next(args) => {
+            let (items, sync) = data_commands::next(paths, args).await?;
+            print_collection(format, &items, sync, &data_commands::NEXT_TABLE)
         }
         Command::Categories(command) => catalog_commands::categories(paths, command, format).await,
         Command::Extensions(command) => catalog_commands::extensions(paths, command, format).await,

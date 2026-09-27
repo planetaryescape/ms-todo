@@ -67,6 +67,30 @@ As built (rung 8d, D-057):
 - **Undo** reverses each operation by the changed-since rule, and a status edit or flag only with its assignee (`part_of`): when another machine reassigned the task, all three are left alone.
 - **Sync:** the extension write moves the task's etag, so another machine's assignment arrives by hydration with no new sync code.
 
+## Defer and Someday
+
+Rung 9a (D-061). Hide a task until the day you want to think about it, or park it as Someday.
+
+- **Fields:** `deferUntil` (`YYYY-MM-DD`, a local day) and `someday: true` in the task's extension, written through the same GET, merge and whole-document write (`task_extension`) as `myDay` and `assignee`, so each write carries only its own fields. Taking a task out of Someday or clearing its defer date removes the field. A new task gets them in its own create.
+- **Not Graph's start date:** `startDateTime` moves the due date with it (S11, D-058), so it can't be a "when" that leaves the deadline alone. Graph's due date stays the deadline the phone shows. The phone doesn't hide deferred tasks; that's accepted.
+- **The rule** (`ms_todo_core::deferral::hidden`, with the same condition in SQL for the counts): an open task is out of the everyday views while it's Someday, or its `deferUntil` is after today's local date. On its day it's back, with nothing written. A completed task is never hidden. Someday wins over a defer date.
+- **Hidden from:** `tasks list` and `waiting` (with a count, `deferred_hidden`), the TUI's lists and smart views but My Day, the sidebar's counts, My Day's suggestions, and `next`. **Not hidden from:** a search (`search`, `tasks list --search`, the TUI's `/`), which marks them; My Day itself, where a task was put by hand; `lists show`'s counts; Completed.
+- **Views:** Upcoming (open tasks deferred to a later day, soonest back first, grouped by that day) and Someday. The CLI has `tasks list --deferred hide|include|only`; `only` is both, deferred by day then Someday, from every list unless `--list`.
+- **Undo** is the extension write's own: put back what was there, unless it has changed since.
+
+## Next
+
+Rung 9a (D-061). `next` answers "what should I do now?" with a few open tasks in one fixed urgency order. There are no weights to tune: each task falls in the first tier that fits it.
+
+1. Overdue, most overdue first.
+2. Due today.
+3. In today's My Day.
+4. High importance.
+5. Due within the next 3 days, soonest first.
+6. Everything else.
+
+Ties go to the oldest task (Graph's `createdDateTime`). Completed, deferred and Someday tasks are never next. Due dates are read against today's local date, My Day against My Day's day. Each task comes with `why`: every reason that applies, in the order above (`overdue 2d, in My Day, high`), or `added 12d ago` when none does. `next` gives 5 by default (`--limit`), from every list or one (`--list`); the TUI's Next view gives the same 5. Contexts, a later rung, will narrow it by one more predicate beside the defer rule.
+
 ## Move between lists
 
 Graph has no move operation. ms-todo implements `task move` as **a copy that checks its work and loses nothing:**

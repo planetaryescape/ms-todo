@@ -7,6 +7,7 @@ use super::task_list::{due_label, sync_marker};
 use super::{focused, line_input, pane, selection};
 use crate::app::edit::{Field, importance_name};
 use crate::app::line_editor::LineEditor;
+use crate::app::scope::back_on;
 use crate::app::steps::{ChildTarget, DetailRow};
 use crate::app::{App, Mode, Pane, SyncMarker, Task};
 use crate::theme::Theme;
@@ -126,6 +127,19 @@ pub fn draw(frame: &mut Frame, area: Rect, app: &App) {
         vec![task.assignee.as_ref().map_or_else(none, |name| {
             Span::styled(format!("{} {name}", app.glyphs.assigned), theme.accent)
         })],
+    ));
+    let today = app.clock.today();
+    lines.extend(editable(
+        Field::Defer,
+        vec![match (task.someday, task.defer_until) {
+            (true, _) => Span::styled(format!("{} Someday", app.glyphs.someday), theme.text_muted),
+            (false, Some(day)) if day > today => Span::styled(
+                format!("{} until {}", app.glyphs.upcoming, back_on(day, today)),
+                theme.text_muted,
+            ),
+            // Its day has come: it's back, whatever the field says.
+            _ => none(),
+        }],
     ));
     if let Some(recurrence) = &task.recurrence {
         lines.push(field("Repeats", recurrence.clone()));

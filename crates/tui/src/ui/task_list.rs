@@ -7,7 +7,7 @@ use ratatui::widgets::{Cell, Paragraph, Row, Table, TableState};
 use unicode_width::UnicodeWidthStr;
 
 use super::{focused, pane, selection};
-use crate::app::scope::task_groups;
+use crate::app::scope::{back_on, task_groups};
 use crate::app::{App, Connection, Mode, Pane, SyncMarker, Task};
 use crate::glyphs::Glyphs;
 use crate::theme::Theme;
@@ -117,6 +117,13 @@ fn empty_text(app: &App) -> String {
             (None, Some(Scope::Assigned)) => {
                 "Nobody to wait on: W on a task assigns it to someone".into()
             }
+            (None, Some(Scope::Next)) => "Nothing to do now".into(),
+            (None, Some(Scope::Upcoming)) => {
+                "Nothing deferred: ^fri in quick add hides a task until Friday".into()
+            }
+            (None, Some(Scope::Someday)) => {
+                "Nothing parked: +someday in quick add puts a task here".into()
+            }
             (None, _) => "Nothing here".into(),
         },
     }
@@ -190,6 +197,19 @@ fn task_row<'a>(
             format!("  {} {name}", glyphs.assigned),
             theme.accent,
         ));
+    }
+    // Put off: until when, or Someday (rung 9a). Shown wherever such a
+    // task is, as in a search or with `z`.
+    if task.hidden(today) {
+        let chip = match task.defer_until.filter(|_| !task.someday) {
+            Some(day) => format!("  {} {}", glyphs.upcoming, back_on(day, today)),
+            None => format!("  {} Someday", glyphs.someday),
+        };
+        title.push(Span::styled(chip, theme.text_muted));
+    }
+    // Why Next puts it here.
+    if let Some(why) = &task.why {
+        title.push(Span::styled(format!("  {why}"), theme.accent));
     }
     // Its categories, as quick add's `@label` types them (rung 8e).
     for category in &task.categories {

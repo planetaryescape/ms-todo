@@ -21,8 +21,8 @@ use entities::{
     outbox_op, step, task_entity,
 };
 use reads::{
-    done_result, every_list_task, parsed_task, search_result, shown_list, suggestion,
-    waiting_result,
+    done_result, every_list_task, next_result, parsed_task, search_result, shown_list, suggestion,
+    task_collection, waiting_result,
 };
 use writes::{applied, catalog_applied, catalog_plan, list_applied, list_plan, plan};
 
@@ -75,7 +75,7 @@ pub fn output_schema(command: &str) -> Option<Value> {
             schema["properties"]["schema_version"] = json!({ "const": SCHEMA_VERSION });
             schema
         }
-        "tasks list" => collection(every_list_task()),
+        "tasks list" => task_collection(every_list_task()),
         "myday list" => collection(task_entity()),
         "lists create" | "lists rename" | "lists delete" => {
             json!({ "oneOf": [list_applied(), list_plan()] })
@@ -95,7 +95,8 @@ pub fn output_schema(command: &str) -> Option<Value> {
             }),
             &["path", "lines"],
         ),
-        "waiting" => collection(waiting_result()),
+        "waiting" => task_collection(waiting_result()),
+        "next" => collection(next_result()),
         "myday suggest" => collection(suggestion()),
         "myday add" | "myday remove" | "myday rollover" => json!({ "oneOf": [applied(), plan()] }),
         "search" => collection(search_result()),

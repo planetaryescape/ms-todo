@@ -168,13 +168,14 @@ In the TUI's add box, a likely list shows as `→ Finances? (Ctrl-l to accept)`.
 | `Enter` / `Space` in the sidebar | open a list or view; on a folder, fold or unfold it |
 | `a` | quick add, in a box in the middle of the screen: each part it reads is coloured as you type, with the task it makes underneath. `Tab` completes a `#List` or `@label`, `Ctrl-r` takes the text literally, `Ctrl-l` takes a suggested list, `Enter` adds |
 | `x` | complete, or reopen a completed task |
-| `e` | edit a field: `t` title, `d` due date, `r` reminder, `i` importance, `a` assignee, `n` notes, `I` cycles importance; in the detail pane, edits the field under the cursor |
+| `e` | edit a field: `t` title, `d` due date, `r` reminder, `i` importance, `a` assignee, `f` defer date (or `someday`), `n` notes, `I` cycles importance; in the detail pane, edits the field under the cursor |
 | `Enter` in the detail pane | edit the field under the cursor |
 | `Space` on a step in the detail pane | check or uncheck it; `a` adds steps, `e` / `Enter` edits a step or the link, `d` deletes one |
 | `A` | attach a file by its path; on a file in the detail pane, `Enter`, `e` or `o` saves it to `~/Downloads` and opens it, `d` deletes it |
 | `v` / `V` | select a task, or every task in the view; `Esc` clears the selection |
 | `t` | put the task or the selection in My Day, or take it out; on a suggestion in the My Day view, add it |
 | `W` | assign the task or the selection to someone; empty clears it |
+| `z` | show deferred and Someday tasks in every view, or hide them again |
 | `m` | move the task or the selection to another list |
 | `M` | move the current list into a folder |
 | `S` | set one due date on the selection |
@@ -302,6 +303,19 @@ mst tasks edit <id> --clear-assignee
 ```
 
 The name is ms-todo's own: nobody is told, and the To Do apps don't show it, but the status they do show. In the TUI, the Assigned view groups tasks by person and each row carries a person chip. [Waiting on someone](docs/usage.md#waiting-on-someone) has the rest.
+
+### Put tasks off, and what's next
+
+Hide a task until the day you want to think about it, or park it as Someday, then ask what to do now:
+
+```sh
+mst tasks add "Plan the trip ^fri"         # hidden until Friday; the due date is untouched
+mst tasks add "Learn the cello +someday"   # parked until `mst tasks edit <id> --no-someday`
+mst tasks list --deferred only             # what's put off: by the day it comes back, then Someday
+mst next                                   # the 5 open tasks to do now, each with why
+```
+
+`tasks list` leaves them out and says how many; a search still finds them. `next` puts overdue tasks first, then due today, My Day, high importance, due within 3 days, then the oldest. In the TUI, Next, Upcoming and Someday are views in the sidebar, and `z` shows put-off tasks everywhere. [Put tasks off, and what's next](docs/usage.md#put-tasks-off-and-whats-next) has the rest.
 
 ### Undo and the outbox
 

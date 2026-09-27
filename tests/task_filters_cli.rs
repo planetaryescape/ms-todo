@@ -193,7 +193,7 @@ async fn every_list_output_names_the_list_in_table_and_csv() {
     };
     let csv = output("csv");
     let header = csv.lines().next().unwrap_or_default();
-    assert!(header.ends_with(",sync_state,list"), "{header}");
+    assert!(header.ends_with(",defer_until,someday,list"), "{header}");
     assert!(
         csv.contains("Quarterly plan") && csv.contains(",Work"),
         "{csv}"

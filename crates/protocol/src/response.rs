@@ -46,6 +46,10 @@ pub enum ResponseData {
     Tasks {
         items: Vec<Entity>,
         sync: SyncInfo,
+        /// For `ListTasks`: how many deferred and Someday tasks matched
+        /// but were left out.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        deferred_hidden: Option<u64>,
     },
     /// Tasks a search matched, best first: each task entity with `list`,
     /// its list's name, and `snippet`, the passage that matched on one

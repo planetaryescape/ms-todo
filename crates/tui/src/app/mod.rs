@@ -204,6 +204,9 @@ pub struct App {
     pub places: attachments::Places,
     /// The terminal's size, for what scrolls by the screenful.
     pub screen: Size,
+    /// `z`: deferred and Someday tasks shown in every view, for this
+    /// session.
+    pub show_deferred: bool,
 }
 
 impl App {
@@ -251,6 +254,7 @@ impl App {
             my_day_date: None,
             places: attachments::Places::default(),
             screen: Size::new(80, 24),
+            show_deferred: false,
         }
     }
 

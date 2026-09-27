@@ -22,6 +22,8 @@ pub const TASK_COLUMNS: &[&str] = &[
     "created",
     "modified",
     "sync_state",
+    "defer_until",
+    "someday",
 ];
 
 /// Tasks from every list (`tasks list` with a filter and no `--list`):
@@ -37,6 +39,8 @@ pub const EVERY_LIST_COLUMNS: &[&str] = &[
     "created",
     "modified",
     "sync_state",
+    "defer_until",
+    "someday",
     "list",
 ];
 
@@ -63,6 +67,17 @@ pub const ASSIGNED_COLUMNS: &[&str] = &[
     "list",
     "status",
     "due",
+    "sync_state",
+];
+
+/// A task `next` gives: what, why, where and when it's due.
+pub const NEXT_COLUMNS: &[&str] = &[
+    "id",
+    "title",
+    "list",
+    "why",
+    "due",
+    "importance",
     "sync_state",
 ];
 
@@ -99,6 +114,20 @@ pub fn task_row(task: &Entity) -> Vec<String> {
             .unwrap_or_default(),
         text(task, "createdDateTime").to_owned(),
         text(task, "lastModifiedDateTime").to_owned(),
+        text(task, "sync_state").to_owned(),
+        text(task, "defer_until").to_owned(),
+        boolean(task, "someday"),
+    ]
+}
+
+pub fn next_row(task: &Entity) -> Vec<String> {
+    vec![
+        text(task, "id").to_owned(),
+        text(task, "title").to_owned(),
+        text(task, "list").to_owned(),
+        text(task, "why").to_owned(),
+        local_due(task),
+        text(task, "importance").to_owned(),
         text(task, "sync_state").to_owned(),
     ]
 }

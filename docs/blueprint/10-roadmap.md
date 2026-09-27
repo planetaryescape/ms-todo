@@ -394,6 +394,11 @@ Split into **6a**, the deterministic quick add below, and **6b**, where Jev sugg
 
 **The ladder is complete:** every rung from 1 to 8e is built.
 
+## Rung 9: Past the API: planning on top of it
+
+- **9a: defer, Someday and next.** Promise: "I can hide a task until the day I want to think about it, or park it as Someday, and ask `mst next` what to do now." Demo: add a task `^tomorrow`, one `+someday` and one due today; `tasks list` shows only the last with a note that two are hidden, and `next` gives it with "due today". **Done when:** a deferred task leaves every everyday view and comes back on its day with nothing written, Someday waits for the user, search still finds both, and `next`'s order is the documented one.
+  **As built (2026-09-27, D-061):** `deferUntil` and `someday` in the task's extension through the `task_extension` merge write, with undo; `--defer`, `--clear-defer`, `--someday`, `--no-someday` on `tasks add` and `tasks edit`, `^date` and `+someday` in quick add; `defer_until` and `someday` on every task entity and in CSV; `tasks list --deferred hide|include|only` with `deferred_hidden` in JSON and a note under a table; search includes and marks them; My Day's suggestions and the counts leave them out; `next [--limit N] [--list L]` with `why`. The TUI: Next, Upcoming (grouped by day) and Someday in the sidebar, `z` to show deferred tasks everywhere, chips, and a Defer field (`f` in the picker). Protocol 17. Tests: the rule and the store's views and counts, the daemon's filter, plan and `next` order (unit), the parser's tokens, the TUI's membership, groups and toggle, and the CLI end to end against the fake Graph (add with tokens and a dry run, hide with the count and the note, include and only, search, edits, undo, a day that has come, `next`'s order, reasons, limit, list and CSV).
+
 **Left out:** the items under "Deferred".
 
 ## Deferred (not in v1)

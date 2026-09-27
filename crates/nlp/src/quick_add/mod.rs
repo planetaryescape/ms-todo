@@ -72,6 +72,10 @@ pub struct ParsedTask {
     pub categories: Vec<String>,
     /// `+myday` or `*` was typed: put the task in today's My Day.
     pub my_day: bool,
+    /// `^<date>`: hide the task until that day (rung 9a).
+    pub defer: Option<NaiveDate>,
+    /// `+someday` was typed: park it as Someday.
+    pub someday: bool,
     /// The recognised parts, by byte range of the input, in order.
     pub spans: Vec<Span>,
     /// What was typed but not used, and why.
@@ -97,6 +101,9 @@ pub enum SpanKind {
     /// The due date, and a time that goes with it.
     Date,
     MyDay,
+    /// `^<date>`: when the task comes back into view.
+    Defer,
+    Someday,
     /// Escapes and quote marks: taken out, not a field.
     Syntax,
 }
@@ -112,6 +119,8 @@ impl SpanKind {
             Self::Start => "start",
             Self::Date => "date",
             Self::MyDay => "my_day",
+            Self::Defer => "defer",
+            Self::Someday => "someday",
             Self::Syntax => "syntax",
         }
     }
@@ -120,8 +129,9 @@ impl SpanKind {
 impl ParsedTask {
     /// The fields read, as a person reads them back, in the order the
     /// preview line shows them: `p1`, `due Thu 1 Oct`, `every month on the
-    /// 1st`, `remind 09:00`, `@label`, `My Day`. The list isn't here: the caller knows the
-    /// target when none was typed.
+    /// 1st`, `remind 09:00`, `@label`, `My Day`, `deferred to Fri 2 Oct`,
+    /// `Someday`. The list isn't here: the caller knows the target when
+    /// none was typed.
     pub fn summary(&self, ctx: &ParseContext) -> Vec<String> {
         let mut parts = Vec::new();
         if let Some(priority) = self.priority {
@@ -148,6 +158,15 @@ impl ParsedTask {
         }
         if self.my_day {
             parts.push("My Day".into());
+        }
+        if let Some(defer) = self.defer {
+            parts.push(format!(
+                "deferred to {}",
+                preview(DueSpec::Date(defer), ctx)
+            ));
+        }
+        if self.someday {
+            parts.push("Someday".into());
         }
         parts
     }
@@ -187,6 +206,8 @@ impl ParsedTask {
             "priority": self.priority,
             "categories": self.categories,
             "my_day": self.my_day,
+            "defer": date(self.defer),
+            "someday": self.someday,
             "spans": spans,
             "warnings": self.warnings,
         })

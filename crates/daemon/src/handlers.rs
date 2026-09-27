@@ -74,6 +74,9 @@ pub(crate) async fn handle(state: &State, request: Request) -> Response {
             )
             .await
         }
+        Request::NextTasks { list, limit } => {
+            crate::next::next_tasks(state, list.as_deref(), limit).await
+        }
         Request::SearchTasks {
             query,
             list,
@@ -118,7 +121,11 @@ pub(crate) async fn handle(state: &State, request: Request) -> Response {
         | Request::ChangeCategory { .. }
         | Request::ChangeExtension { .. }
         | Request::Undo { .. }) => mutate(state, request).await,
-        Request::Seed { scope, search } => crate::seed::seed(state, scope, search.as_deref()).await,
+        Request::Seed {
+            scope,
+            search,
+            include_deferred,
+        } => crate::seed::seed(state, scope, search.as_deref(), include_deferred).await,
         // The connection loop answers `Subscribe` itself, and starts the
         // stream.
         Request::Subscribe => Ok(ResponseData::Ack),

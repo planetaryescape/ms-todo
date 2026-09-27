@@ -90,6 +90,12 @@ pub struct Task {
     pub suggestion: Option<String>,
     /// Who it waits on (`assignee` in our extension), on one line.
     pub assignee: Option<String>,
+    /// The day it comes back into view (`defer_until`), a local day.
+    pub defer_until: Option<NaiveDate>,
+    /// Parked as Someday.
+    pub someday: bool,
+    /// Why the Next view puts it where it is: "overdue 2d, high".
+    pub why: Option<String>,
 }
 
 impl Task {
@@ -194,7 +200,17 @@ impl Task {
                 .and_then(|extensions| extensions.get(0)?.get("assignee")?.as_str())
                 .map(|name| ms_todo_core::one_line_safe(name.trim()))
                 .filter(|name| !name.is_empty()),
+            defer_until: text("defer_until")
+                .and_then(|day| NaiveDate::parse_from_str(day, ms_todo_core::DATE_FORMAT).ok()),
+            someday: entity.get("someday").and_then(Value::as_bool) == Some(true),
+            why: text("why").map(ms_todo_core::one_line_safe),
         })
+    }
+
+    /// Whether it's out of the everyday views on `today`: Someday, or
+    /// deferred to a later day, and open.
+    pub fn hidden(&self, today: NaiveDate) -> bool {
+        ms_todo_core::deferral::hidden(self.defer_until, self.someday, self.completed, today)
     }
 }
 
