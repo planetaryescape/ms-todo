@@ -117,7 +117,7 @@ impl Store {
     }
 
     /// Save `vectors`, made by `model`, in one transaction. A task deleted
-    /// since its job was read is skipped.
+    /// or tombstoned since its job was read is skipped, so a prune stays done.
     pub async fn save_embeddings(
         &self,
         model: &str,
@@ -127,7 +127,7 @@ impl Store {
         for embedded in vectors {
             sqlx::query(
                 "INSERT INTO task_embeddings (task_local_id, model, text_hash, vector) \
-                 SELECT local_id, ?2, ?3, ?4 FROM tasks WHERE local_id = ?1 \
+                 SELECT local_id, ?2, ?3, ?4 FROM tasks WHERE local_id = ?1 AND deleted_at IS NULL \
                  ON CONFLICT (task_local_id) DO UPDATE SET \
                  model = excluded.model, text_hash = excluded.text_hash, vector = excluded.vector",
             )

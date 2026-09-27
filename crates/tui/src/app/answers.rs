@@ -70,6 +70,9 @@ impl App {
                 self.seeds.in_flight = false;
                 let mut effects = match result {
                     Ok(ResponseData::Seed(seed)) => {
+                        // The filter as typed searched: any earlier reason
+                        // it couldn't (such as the model loading) is stale.
+                        self.filter_error = None;
                         let first = !self.seeded;
                         self.apply_seed(seed);
                         if first && self.lists_ready {

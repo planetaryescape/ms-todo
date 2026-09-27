@@ -205,3 +205,23 @@ async fn candidates_carry_their_vectors_and_count_what_is_pending() {
     assert!(other.tasks.is_empty());
     assert_eq!(other.pending, 2);
 }
+
+#[tokio::test]
+async fn a_vector_for_a_task_tombstoned_meanwhile_is_not_saved() {
+    let (_dir, store) = open().await;
+    let list = with_list(&store).await;
+    sync(&store, &list, vec![task("T1", "Buy milk")]).await;
+    let jobs = store.embedding_jobs(MODEL).await.expect("jobs");
+    // The task goes before its vector is saved.
+    sync(&store, &list, Vec::new()).await;
+    let late: Vec<Embedded> = jobs
+        .into_iter()
+        .map(|job| Embedded {
+            local_id: job.local_id,
+            text_hash: job.text_hash,
+            vector: vec![1.0, 0.0],
+        })
+        .collect();
+    store.save_embeddings(MODEL, &late).await.expect("save");
+    assert_eq!(store.prune_embeddings(MODEL).await.expect("prune"), 0);
+}
