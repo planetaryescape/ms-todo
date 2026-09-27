@@ -453,6 +453,16 @@ async fn an_idempotency_key_covers_the_active_context_and_its_lists() {
         &CONFIG.replace("\"Contentful\", \"Nope\"", "\"Contentful\", \"Books\""),
     );
     env.failure(&add, 2);
+
+    // The same lists, but a new task would go elsewhere.
+    write_config(&env, CONFIG);
+    let key = ["tasks", "add", "Call Bo", "--idempotency-key", "k-default"];
+    env.json(&key);
+    write_config(
+        &env,
+        &CONFIG.replace("default_list = \"Contentful\"", "default_list = \"Money\""),
+    );
+    env.failure(&key, 2);
 }
 
 /// Issue 006: `ctx list --format ids` prints each context's name, and

@@ -266,6 +266,15 @@ impl App {
             self.left_context();
         }
         self.place_sidebar_cursor(row.filter(|row| matches!(row, Entry::Folder { .. })));
+        if switched && seed.scope.is_some() && self.wanted.is_none() {
+            // The list read is outside the new context: its rows aren't
+            // shown, so nothing acts on them before the fallback seed.
+            self.shown = None;
+            self.tasks.clear();
+            self.selection.clear();
+            self.task_index = 0;
+            return;
+        }
         let changed_scope = self.shown != seed.scope;
         if changed_scope {
             self.selection.clear();

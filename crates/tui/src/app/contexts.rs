@@ -189,6 +189,9 @@ mod tests {
             effects.first().map(|effect| &effect.request),
             Some(Request::Seed { scope: None, .. })
         ));
+        // Its rows aren't shown or actionable while the fallback loads.
+        assert!(app.tasks.is_empty());
+        assert!(act(&mut app, crate::action::Action::ToggleComplete).is_empty());
     }
 
     #[test]

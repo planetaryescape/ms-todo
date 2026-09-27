@@ -39,8 +39,9 @@ pub(crate) fn fingerprint(request: &Request) -> String {
 }
 
 /// `fingerprint` of a change a context narrows, with the context it was
-/// resolved in: its name and list IDs. So the same key reused after a
-/// `ctx` switch, or after config.toml changed the context's lists, is a
+/// resolved in: its name, list IDs and default list. So the same key reused
+/// after a `ctx` switch, or after config.toml changed the context's lists
+/// or where a new task goes, is a
 /// different request (exit 2), never a replay aimed at other tasks.
 pub(crate) fn in_context(
     fingerprint: String,
@@ -51,7 +52,15 @@ pub(crate) fn in_context(
     };
     let mut ids: Vec<&str> = context.ids.iter().map(String::as_str).collect();
     ids.sort_unstable();
-    let text = format!("{fingerprint}\ncontext {}: {}", context.name, ids.join(","));
+    let default_list = context
+        .default_list
+        .as_ref()
+        .map_or("", |list| list.local_id.as_str());
+    let text = format!(
+        "{fingerprint}\ncontext {}: {}; default {default_list}",
+        context.name,
+        ids.join(",")
+    );
     Sha256::digest(text.as_bytes())
         .iter()
         .map(|byte| format!("{byte:02x}"))
