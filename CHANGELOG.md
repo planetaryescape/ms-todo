@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.37](https://github.com/planetaryescape/ms-todo/compare/v0.1.36...v0.1.37) (2026-09-27)
+
+
+### Features
+
+* close the daemon gaps (D-065) ([#87](https://github.com/planetaryescape/ms-todo/issues/87)) ([408b258](https://github.com/planetaryescape/ms-todo/commit/408b258e9a9a7ce428988339f802182bb486d859))
+
 ## [0.1.36](https://github.com/planetaryescape/ms-todo/compare/v0.1.35...v0.1.36) (2026-09-27)
 
 
