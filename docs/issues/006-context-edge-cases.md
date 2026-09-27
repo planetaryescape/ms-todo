@@ -1,6 +1,6 @@
 # 006: Context edge cases left after rung 9d
 
-**Status:** open, minor. Found by review bots on PR #80 (2026-09-27); accepted at merge under the stop-at-diminishing-returns rule.
+**Status:** closed (D-070), all six fixed. Found by review bots on PR #80 (2026-09-27); accepted at merge under the stop-at-diminishing-returns rule.
 
 ## Problems
 
@@ -14,3 +14,12 @@
 ## Fix sketch
 
 Put the resolved context (name plus list IDs) in the fingerprint; re-home the TUI when the resolved IDs change; compute `pending` over the context's lists; make `ids` print the context names; carry problems through; add the sentence to 07.
+
+## Resolution (D-070)
+
+- The fingerprint of `tasks add` and every task change covers the context it was resolved in, active or `--context`: its name and list IDs (`idempotency::in_context`). The same key after a `ctx` switch, or after config.toml changed the context's lists, exits 2. Test `an_idempotency_key_covers_the_active_context_and_its_lists`.
+- The TUI treats a seed whose context has other lists (same name, count and default) as a switch: it drops the old context's cached rows and leaves a list the sidebar no longer has. Test `a_context_whose_lists_changed_leaves_a_list_it_lost`.
+- A search by meaning in a context counts `pending` over the context's lists only (`semantic::query::pending_within`).
+- `ctx list --format ids` prints each context's name; `ctx` with none active shows the configured contexts' problems. Test `ctx_names_its_contexts_as_ids_and_warns_with_none_active`.
+- 07-cli's context section says bulk selections are narrowed too.
+

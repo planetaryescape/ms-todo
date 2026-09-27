@@ -1,6 +1,6 @@
 # 005: A reopened task's reminder stays off, and moving it then fails
 
-**Status:** fixed in the next release (D-060). Found by the rung 8e live smoke test on 2026-09-25.
+**Status:** fixed in v0.1.30 (D-060). Found by the rung 8e live smoke test on 2026-09-25.
 
 ## Problem
 
