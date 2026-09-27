@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.32](https://github.com/planetaryescape/ms-todo/compare/v0.1.31...v0.1.32) (2026-09-27)
+
+
+### Features
+
+* semantic search with a local model (rung 9c) ([#76](https://github.com/planetaryescape/ms-todo/issues/76)) ([1a9ce09](https://github.com/planetaryescape/ms-todo/commit/1a9ce09dd0723385c04845088c20557dbe6d9038))
+
 ## [0.1.31](https://github.com/planetaryescape/ms-todo/compare/v0.1.30...v0.1.31) (2026-09-27)
 
 
