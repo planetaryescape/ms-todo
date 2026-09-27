@@ -265,6 +265,15 @@ async fn mutate(
         }),
         None => fingerprint(&request),
     };
+    // Only a new task's list and a selection depend on the context.
+    let fingerprint = match &request {
+        Request::AddTask { .. } | Request::ChangeTasks { .. } => {
+            let lists = state.store.lists().await.map_err(store_error)?;
+            let context = crate::contexts::applied(state, choice, None, &lists)?;
+            crate::idempotency::in_context(fingerprint, context.as_ref())
+        }
+        _ => fingerprint,
+    };
     match request {
         Request::AddTask {
             task,

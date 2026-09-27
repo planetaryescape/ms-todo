@@ -1,6 +1,6 @@
 # 007: a due-date write to a recurring task makes a second task
 
-**Status:** fixed (D-069): every due-date write to a recurring task keeps one task, and My Day leaves a recurring task's date alone. Found 2026-09-27 while checking the undo picker live (D-065). Evidence: [S20](../research/spikes/S20.md).
+**Status:** fixed in v0.1.38 (D-069): every due-date write to a recurring task keeps one task, and My Day leaves a recurring task's date alone. Found 2026-09-27 while checking the undo picker live (D-065). Evidence: [S20](../research/spikes/S20.md).
 
 ## What happens
 

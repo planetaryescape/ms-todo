@@ -29,7 +29,7 @@ pub(crate) mod progress;
 pub(crate) mod spool;
 
 use ms_todo_core::ErrorKind;
-use ms_todo_graph::{GraphError, MAX_ATTACHMENT_BYTES};
+use ms_todo_graph::{ConditionalDelete, GraphError, MAX_ATTACHMENT_BYTES};
 use ms_todo_protocol::ErrorPayload;
 use ms_todo_store::{Entity, OutboxRow, Restore, StoreError};
 use serde_json::Value;
@@ -698,9 +698,10 @@ impl Job<'_> {
     }
 
     /// Delete the source, if it's still as it was when the copy was
-    /// checked (`verified`, its etag then): read it once more first. Task
-    /// DELETE ignores `If-Match` (S6), so an edit in the moment between
-    /// that read and the DELETE can still be lost (docs/issues/004).
+    /// checked (`verified`, its etag then): read it once more first, then
+    /// delete it in a batch Graph checks against that etag (S6, D-070). An
+    /// edit landing between the batch's two steps inside Graph can still
+    /// be lost (docs/issues/004).
     async fn delete_source(
         &self,
         progress: &mut Progress,
@@ -724,14 +725,27 @@ impl Job<'_> {
             Err(error) if error.status() == Some(404) => return self.finish(progress).await,
             Err(error) => return Err(read_failure(error)),
         }
-        // A 404 counts as deleted.
-        match self
-            .state
-            .graph
-            .delete_task(&source.list_graph_id, source_id)
-            .await
-        {
-            Ok(()) => self.finish(progress).await,
+        let deleted = match verified.and_then(Value::as_str) {
+            Some(etag) => {
+                self.state
+                    .graph
+                    .delete_task_if_unchanged(&source.list_graph_id, source_id, etag)
+                    .await
+            }
+            // A source Graph gave no etag can only be deleted as it is.
+            None => self
+                .state
+                .graph
+                .delete_task(&source.list_graph_id, source_id)
+                .await
+                .map(|()| ConditionalDelete::Deleted),
+        };
+        match deleted {
+            Ok(ConditionalDelete::Deleted | ConditionalDelete::Gone) => self.finish(progress).await,
+            Ok(ConditionalDelete::Changed) => {
+                self.source_changed(progress, &["an edit just before the delete".to_owned()])
+                    .await
+            }
             Err(error) => {
                 self.refused(progress, error, |why| {
                     format!(

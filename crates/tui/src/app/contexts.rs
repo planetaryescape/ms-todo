@@ -174,6 +174,27 @@ mod tests {
     }
 
     #[test]
+    fn a_context_whose_lists_changed_leaves_a_list_it_lost() {
+        // Issue 006: config.toml swaps the open list out of "work",
+        // keeping its name, count and default list.
+        let mut app = in_context(Some(work()));
+        assert_eq!(app.wanted, Some(Scope::List { id: "home".into() }));
+        let effects = app.update(Msg::Event(ms_todo_protocol::Event::ResyncNeeded));
+        let mut answer = seed(Scope::List { id: "home".into() }, home_tasks());
+        answer.lists.retain(|list| list["id"] != "home");
+        answer.context = Some(work());
+        let effects = answer_seed(&mut app, &effects[0], answer);
+        assert_eq!(app.wanted, None);
+        assert!(matches!(
+            effects.first().map(|effect| &effect.request),
+            Some(Request::Seed { scope: None, .. })
+        ));
+        // Its rows aren't shown or actionable while the fallback loads.
+        assert!(app.tasks.is_empty());
+        assert!(act(&mut app, crate::action::Action::ToggleComplete).is_empty());
+    }
+
+    #[test]
     fn a_switch_made_elsewhere_leaves_a_list_the_context_lacks() {
         let mut app = seeded();
         assert_eq!(app.wanted, Some(Scope::List { id: "home".into() }));

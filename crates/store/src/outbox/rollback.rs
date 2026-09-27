@@ -168,7 +168,19 @@ pub(crate) async fn fail_ops_in_list(
         .execute(&mut *tx)
         .await?;
     }
-    Ok(failed.into_iter().map(|(op_id, _)| op_id).collect())
+    // What waits on them (a move of the task out of the list, queued
+    // after an edit there) can never be sent either: a dependency that
+    // isn't `done` would hold it `pending` for good.
+    let mut all: Vec<String> = failed.into_iter().map(|(op_id, _)| op_id).collect();
+    for op_id in all.clone() {
+        let cause = format!("not sent: the list of the change it waited on ({op_id}) was deleted");
+        for waiter in cascade(tx, &op_id, &cause, rev).await? {
+            if !all.contains(&waiter) {
+                all.push(waiter);
+            }
+        }
+    }
+    Ok(all)
 }
 
 /// Fail every operation not yet sent that waits on `op_id`, directly or

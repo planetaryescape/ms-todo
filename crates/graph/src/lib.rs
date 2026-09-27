@@ -12,6 +12,7 @@ mod batch;
 mod catalog;
 mod children;
 mod client;
+mod conditional_delete;
 mod error;
 pub mod private_file;
 pub mod retry;
@@ -22,6 +23,7 @@ pub use attachments::{
     metadata as attachment_metadata,
 };
 pub use client::{Delta, Entity, GraphClient};
+pub use conditional_delete::ConditionalDelete;
 pub use error::GraphError;
 /// The HTTP method of a `raw` write.
 pub use reqwest::Method;

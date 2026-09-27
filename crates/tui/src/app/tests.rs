@@ -926,6 +926,25 @@ fn a_deleted_list_falls_back_to_the_default_one() {
 }
 
 #[test]
+fn a_deleted_lists_rows_are_not_actionable_while_the_default_one_loads() {
+    let mut app = seeded();
+    assert!(!app.tasks.is_empty());
+    let effects = app.update(Msg::Event(Event::ResyncNeeded));
+    app.update(Msg::Response {
+        tag: effects[0].tag,
+        result: Err(ErrorPayload {
+            kind: "not_found".into(),
+            message: "no list".into(),
+            ..ErrorPayload::default()
+        }),
+    });
+    // The default seed hasn't come back: nothing of the gone list can be
+    // completed meanwhile.
+    assert!(act(&mut app, Action::ToggleComplete).is_empty());
+    assert!(app.tasks.is_empty(), "{:?}", titles(&app));
+}
+
+#[test]
 fn a_lost_connection_is_shown_and_reconnecting_seeds_again() {
     let mut app = seeded();
     app.update(Msg::Disconnected("the daemon closed the connection".into()));

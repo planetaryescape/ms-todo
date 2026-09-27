@@ -430,3 +430,64 @@ async fn a_context_with_no_lists_shows_an_empty_view_not_tasks() {
     assert!(home.lists.is_empty());
     assert_eq!(home.context.as_ref().map(|context| context.lists), Some(0));
 }
+
+/// Issue 006: an `--idempotency-key` covers the context a change was
+/// resolved in, the active one too, so after a `ctx` switch or an edit of
+/// the context's lists the same key is a different request (exit 2), not
+/// a replay of a task added elsewhere.
+#[tokio::test]
+async fn an_idempotency_key_covers_the_active_context_and_its_lists() {
+    let (env, _graph) = setup().await;
+    env.json(&["ctx", "work"]);
+    let add = ["tasks", "add", "Call Ada", "--idempotency-key", "k-ctx"];
+    let first = env.json(&add);
+    assert_eq!(env.json(&add), first, "the same context replays");
+
+    env.json(&["ctx", "home"]);
+    env.failure(&add, 2);
+
+    // Back in work, but config.toml swapped one of its lists.
+    env.json(&["ctx", "work"]);
+    write_config(
+        &env,
+        &CONFIG.replace("\"Contentful\", \"Nope\"", "\"Contentful\", \"Books\""),
+    );
+    env.failure(&add, 2);
+
+    // The same lists, but a new task would go elsewhere.
+    write_config(&env, CONFIG);
+    let key = ["tasks", "add", "Call Bo", "--idempotency-key", "k-default"];
+    env.json(&key);
+    write_config(
+        &env,
+        &CONFIG.replace("default_list = \"Contentful\"", "default_list = \"Money\""),
+    );
+    env.failure(&key, 2);
+}
+
+/// Issue 006: `ctx list --format ids` prints each context's name, and
+/// `ctx` with none active still shows what doesn't resolve.
+#[tokio::test]
+async fn ctx_names_its_contexts_as_ids_and_warns_with_none_active() {
+    let (env, _graph) = setup().await;
+    let output = env
+        .cmd()
+        .args(["--format", "ids", "ctx", "list"])
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+    let mut ids: Vec<String> = String::from_utf8(output)
+        .expect("utf8")
+        .lines()
+        .map(str::to_owned)
+        .collect();
+    ids.sort();
+    assert_eq!(ids, ["home", "work"]);
+
+    let shown = env.json(&["ctx"]);
+    assert_eq!(shown["active"], Value::Null);
+    let problems = shown["problems"].to_string();
+    assert!(problems.contains("Nope"), "{shown}");
+}

@@ -168,15 +168,19 @@ impl GraphClient {
     /// `owner` being a list's path (`["lists", L]`) or a task's
     /// (`["lists", L, "tasks", T]`): Graph replaces the extension with
     /// `data` (S2), so a resend writes the same thing and it's idempotent.
+    /// `if_match` is the task's etag: a task's extension honours it, a
+    /// list's ignores it (S2's follow-up).
     pub async fn replace_extension(
         &self,
         owner: &[&str],
         name: &str,
         data: &Value,
+        if_match: Option<&str>,
     ) -> Result<(), GraphError> {
         let url = self.extension_url(owner, Some(name));
         self.send(Call {
             body: Some(data),
+            if_match,
             ..Call::new(Method::PATCH, url)
         })
         .await
@@ -188,9 +192,20 @@ impl GraphClient {
     /// `RequestBroker--ParseUri`). A 404 or a repeat means it's gone,
     /// which counts as success (S2: a delete of one that doesn't exist is
     /// 204 anyway).
-    pub async fn delete_extension(&self, owner: &[&str], name: &str) -> Result<(), GraphError> {
+    pub async fn delete_extension(
+        &self,
+        owner: &[&str],
+        name: &str,
+        if_match: Option<&str>,
+    ) -> Result<(), GraphError> {
         let url = self.extension_url(owner, Some(name));
-        match self.send(Call::new(Method::DELETE, url)).await {
+        match self
+            .send(Call {
+                if_match,
+                ..Call::new(Method::DELETE, url)
+            })
+            .await
+        {
             Ok(_) => Ok(()),
             Err(error) if error.status() == Some(404) => Ok(()),
             Err(error) => Err(error),
@@ -201,10 +216,16 @@ impl GraphClient {
     /// extension yet. POST of a name that exists acts as an upsert (S2), so
     /// unlike other creates a resend is harmless, and it's sent as
     /// idempotent.
-    pub async fn create_extension(&self, owner: &[&str], body: &Value) -> Result<(), GraphError> {
+    pub async fn create_extension(
+        &self,
+        owner: &[&str],
+        body: &Value,
+        if_match: Option<&str>,
+    ) -> Result<(), GraphError> {
         let url = self.extension_url(owner, None);
         self.send(Call {
             body: Some(body),
+            if_match,
             ..Call::new(Method::POST, url)
         })
         .await
@@ -300,7 +321,7 @@ impl GraphClient {
         .await
     }
 
-    fn task_url(&self, list_id: &str, task_id: &str) -> Url {
+    pub(crate) fn task_url(&self, list_id: &str, task_id: &str) -> Url {
         self.url(&["me", "todo", "lists", list_id, "tasks", task_id])
     }
 

@@ -611,3 +611,58 @@ async fn an_assignee_set_on_another_machine_arrives_by_sync() {
     env.settled();
     assert_eq!(status(&graph, "T1"), "notStarted");
 }
+
+/// Another device puts T1 in My Day right after ms-todo's extension write
+/// has read the task: our extension (and the task's etag) changed.
+fn phone_adds_t1_to_my_day(data: &mut support::fake_graph::Data) {
+    data.extensions
+        .insert("T1".into(), ours(json!({ "myDay": "2026-09-20" })));
+    if let Some(task) = data
+        .tasks
+        .get_mut("L-tasks")
+        .and_then(|tasks| tasks.iter_mut().find(|task| task["id"] == "T1"))
+    {
+        task["@odata.etag"] = json!("W/\"phone\"");
+    }
+}
+
+/// Issue 001: an extension write is conditional on the task's etag
+/// (D-070), so the other device's My Day makes it a 412, and the write
+/// reads, merges and writes again, keeping both.
+#[tokio::test]
+async fn an_extension_field_another_device_wrote_meanwhile_is_kept() {
+    let mut env = Env::new();
+    let graph = graph_with(
+        &mut env,
+        vec![task("T1", "Get the quote", "W/\"1\"")],
+        Vec::new(),
+    )
+    .await;
+    graph
+        .edit_after_gets(
+            r"^/v1\.0/me/todo/lists/L-tasks/tasks/T1$",
+            1,
+            phone_adds_t1_to_my_day,
+        )
+        .await;
+    env.synced();
+    let id = env.local_id(&["tasks", "list"], "T1");
+    env.json(&["tasks", "edit", &id, "--assignee", "Sam"]);
+    env.settled();
+    let extension = graph.extension("T1").expect("extension");
+    assert_eq!(extension["assignee"], "Sam");
+    assert_eq!(extension["myDay"], "2026-09-20", "{extension}");
+    let stale = graph
+        .writes()
+        .await
+        .iter()
+        .filter(|request| {
+            request.url.path().contains("/extensions")
+                && request
+                    .headers
+                    .get("if-match")
+                    .is_some_and(|etag| etag == "W/\"1\"")
+        })
+        .count();
+    assert_eq!(stale, 1, "the first write carried the etag it read");
+}

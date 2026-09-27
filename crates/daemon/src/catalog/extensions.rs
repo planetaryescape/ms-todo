@@ -277,7 +277,7 @@ async fn write_extension(
         (Some(data), true) => {
             state
                 .graph
-                .replace_extension(path, name, &Value::Object(data.clone()))
+                .replace_extension(path, name, &Value::Object(data.clone()), None)
                 .await
         }
         (Some(data), false) => {
@@ -289,10 +289,10 @@ async fn write_extension(
             body.insert("extensionName".into(), json!(name));
             state
                 .graph
-                .create_extension(path, &Value::Object(body))
+                .create_extension(path, &Value::Object(body), None)
                 .await
         }
-        (None, _) => state.graph.delete_extension(path, name).await,
+        (None, _) => state.graph.delete_extension(path, name, None).await,
     };
     written.map_err(graph_error)
 }

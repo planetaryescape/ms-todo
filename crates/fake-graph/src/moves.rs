@@ -11,7 +11,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use serde_json::{Value, json};
-use wiremock::matchers::{method, path_regex};
+use wiremock::matchers::{body_string_contains, method, path_regex};
 use wiremock::{Mock, Request, ResponseTemplate};
 
 pub use crate::attachments::{Attachment, post_attachment, put_chunk};
@@ -62,6 +62,54 @@ impl FakeGraph {
             .with_priority(1)
             .mount(&self.server)
             .await;
+    }
+
+    /// Make the next move's conditional delete (a `$batch` carrying a
+    /// DELETE, D-070) take `delay` to answer, having first applied it if
+    /// `effect`, or not (as a request that never arrived).
+    pub async fn stall_conditional_delete(&self, effect: bool, delay: Duration) {
+        let shared = Arc::clone(&self.data);
+        Mock::given(method("POST"))
+            .and(path_regex(r"^/v1\.0/\$batch$"))
+            .and(body_string_contains("\"DELETE\""))
+            .respond_with(move |request: &Request| {
+                let answer = if effect {
+                    crate::graph::answer_batch(&mut lock(&shared), request)
+                } else {
+                    ResponseTemplate::new(503)
+                };
+                answer.set_delay(delay)
+            })
+            .up_to_n_times(1)
+            .with_priority(1)
+            .mount(&self.server)
+            .await;
+    }
+
+    /// The task DELETEs under `prefix` (a path from `/v1.0/`) that reached
+    /// Graph, sent alone or as a `$batch` step.
+    pub async fn task_deletes(&self, prefix: &str) -> usize {
+        let requests = self.server.received_requests().await.unwrap_or_default();
+        let alone = requests
+            .iter()
+            .filter(|request| {
+                request.method.as_str() == "DELETE" && request.url.path().starts_with(prefix)
+            })
+            .count();
+        let step_prefix = prefix.trim_start_matches("/v1.0");
+        let batched = requests
+            .iter()
+            .filter(|request| request.url.path() == "/v1.0/$batch")
+            .filter_map(|request| serde_json::from_slice::<Value>(&request.body).ok())
+            .flat_map(|body| body["requests"].as_array().cloned().unwrap_or_default())
+            .filter(|step| {
+                step["method"] == "DELETE"
+                    && step["url"]
+                        .as_str()
+                        .is_some_and(|url| url.starts_with(step_prefix))
+            })
+            .count();
+        alone + batched
     }
 
     /// Answer GETs of `path` from what Graph holds, and right after the
@@ -143,6 +191,43 @@ impl FakeGraph {
 
 /// What one request does to what Graph holds, and its answer.
 pub type Handler = fn(&mut Data, &Request) -> ResponseTemplate;
+
+/// A task's PATCH or DELETE as a `$batch` step: the empty PATCH that
+/// checks `If-Match` (412 when it isn't the task's etag, which a PATCH
+/// then moves, S6) and the DELETE after it.
+pub(crate) fn batch_task_write(data: &mut Data, sub: &Value) -> (u16, Value) {
+    let path = sub["url"].as_str().unwrap_or_default();
+    let parts: Vec<&str> = path.split('/').collect();
+    let (Some(list), Some(task)) = (parts.get(4), parts.get(6)) else {
+        return (
+            400,
+            json!({ "error": { "code": "BadRequest", "message": path } }),
+        );
+    };
+    let Some(tasks) = data.tasks.get_mut(*list) else {
+        return (404, json!({ "error": { "code": "ErrorItemNotFound" } }));
+    };
+    let Some(index) = tasks.iter().position(|found| found["id"] == *task) else {
+        return (404, json!({ "error": { "code": "ErrorItemNotFound" } }));
+    };
+    if sub["method"] == "DELETE" {
+        tasks.remove(index);
+        data.attachments.remove(*task);
+        data.extensions.remove(*task);
+        return (204, Value::Null);
+    }
+    let found = &mut tasks[index];
+    if let Some(sent) = sub["headers"]["If-Match"].as_str()
+        && found["@odata.etag"] != sent
+    {
+        return (
+            412,
+            json!({ "error": { "code": "ErrorIrresolvableConflict" } }),
+        );
+    }
+    found["@odata.etag"] = json!(format!("W/\"{task}-{}\"", next_write()));
+    (200, found.clone())
+}
 
 /// A task's DELETE; a task already gone is a 404.
 pub fn delete_task(data: &mut Data, request: &Request) -> ResponseTemplate {
