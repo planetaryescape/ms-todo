@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.36](https://github.com/planetaryescape/ms-todo/compare/v0.1.35...v0.1.36) (2026-09-27)
+
+
+### Features
+
+* close the quick-add, search and locale gaps (D-068) ([#85](https://github.com/planetaryescape/ms-todo/issues/85)) ([6c6c651](https://github.com/planetaryescape/ms-todo/commit/6c6c65134ae2a7cb894d9b5229f624d68d30e1f0))
+
 ## [0.1.35](https://github.com/planetaryescape/ms-todo/compare/v0.1.34...v0.1.35) (2026-09-27)
 
 
