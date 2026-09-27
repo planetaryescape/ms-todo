@@ -23,3 +23,8 @@ Graph answers a PATCH of `dueDateTime` on a recurring task by moving the series 
 - Verified live on daily and weekly tasks for each path, and against a fake Graph that splits as Graph does.
 - The recurrence set again is Graph's, read before the first PATCH, and it's kept in the operation, so a retry after the second PATCH was refused sets it from there; where Graph put an off-pattern date is kept for undo (review of b58f9fe).
 - Left: if the second PATCH (the recurrence) is rejected for good, the task has no recurrence until `outbox retry`.
+
+## Known limits (accepted)
+
+- If the second PATCH (restoring the recurrence) is refused for good, the task has no recurrence until `outbox retry`, which rebuilds both requests from the operation. It shows as `failed` in `outbox list` until then.
+- My Day decides whether to clear a due date when it plans the clear. If another device makes the task recurring before the clear is sent, the clear can drop the new recurrence. That window is between planning and sending, usually seconds. (Found by a review bot on PR #90.)
