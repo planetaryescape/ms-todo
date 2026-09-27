@@ -53,10 +53,14 @@ pub enum ResponseData {
     },
     /// Tasks a search matched, best first: each task entity with `list`,
     /// its list's name, and `snippet`, the passage that matched on one
-    /// line with each match between `**`s.
+    /// line with each match between `**`s. A semantic search's have
+    /// `score` instead, their cosine similarity to the query, and
+    /// `semantic` says how complete the index was.
     SearchResults {
         items: Vec<Entity>,
         sync: SyncInfo,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        semantic: Option<SemanticIndex>,
     },
     Sync(SyncReport),
     Doctor(DoctorReport),
@@ -165,4 +169,14 @@ pub struct ErrorPayload {
     /// retry with the chosen copy undoes that one and no other.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub undo_target: Option<String>,
+}
+
+/// How complete the semantic index was for a search (D-062).
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SemanticIndex {
+    /// The embedding model, as `name@revision`.
+    pub model: String,
+    /// Tasks in the search's scope not yet embedded for their current
+    /// text: they're missing from the results, or ranked by their old text.
+    pub pending: u32,
 }

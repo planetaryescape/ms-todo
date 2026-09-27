@@ -1,6 +1,6 @@
 //! What a view leaves out: `/` narrows the task list as each key is
-//! typed, by the daemon's search, and `z` shows or hides deferred and
-//! Someday tasks.
+//! typed, by the daemon's search (by words, or by meaning after `Ctrl-s`,
+//! D-062), and `z` shows or hides deferred and Someday tasks.
 
 use super::{App, Effect, Level, Mode};
 
@@ -14,6 +14,24 @@ impl App {
             }
             _ => Vec::new(),
         }
+    }
+
+    /// Search by meaning instead of words, or back; a filter already
+    /// typed searches again the new way.
+    pub(super) fn toggle_semantic(&mut self) -> Vec<Effect> {
+        self.semantic_filter = !self.semantic_filter;
+        self.filter_error = None;
+        if self.filter.is_some() {
+            vec![self.seed_now()]
+        } else {
+            Vec::new()
+        }
+    }
+
+    /// How the prompt and the list's title mark the filter: `/` by
+    /// words, `~` by meaning.
+    pub fn filter_marker(&self) -> &'static str {
+        if self.semantic_filter { "~" } else { "/" }
     }
 
     pub(super) fn set_filter(&mut self, text: Option<String>) -> Vec<Effect> {

@@ -22,6 +22,11 @@ pub struct SearchArgs {
     /// At most this many results
     #[arg(long, value_name = "N", default_value_t = 50, value_parser = clap::value_parser!(u32).range(1..))]
     pub limit: u32,
+    /// Find tasks by meaning, not words ("dentist" finds "Book teeth
+    /// cleaning"), with a local model; the query is plain text. Needs
+    /// `semantic = true` under [search] in config.toml
+    #[arg(long)]
+    pub semantic: bool,
 }
 
 #[derive(Debug, Args)]

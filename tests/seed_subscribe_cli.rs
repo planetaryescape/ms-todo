@@ -73,6 +73,7 @@ impl Client {
                 scope,
                 search: search.map(str::to_owned),
                 include_deferred: false,
+                semantic: false,
             })
             .await
         {

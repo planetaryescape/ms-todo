@@ -16,7 +16,10 @@ fs2 = { workspace = true }
 futures-util = { workspace = true }
 iana-time-zone = { workspace = true }
 mime_guess = { workspace = true }
-# TypeSafe, for list suggestions (rung 6b).
+# Semantic search's embedding model (rung 9c).
+model2vec-rs = { workspace = true }
+# TypeSafe, for list suggestions (rung 6b), and the embedding model's
+# download (rung 9c).
 reqwest = { workspace = true }
 rustix = { workspace = true }
 serde = { workspace = true }
@@ -26,7 +29,9 @@ shlex = { workspace = true }
 thiserror = { workspace = true }
 toml = { workspace = true }
 socket2 = { workspace = true }
-tokio = { workspace = true, features = ["net", "process", "rt-multi-thread", "signal", "sync"] }
+tokio = { workspace = true, features = ["net", "process", "rt-multi-thread", "signal", "sync", "fs"] }
+# Not used directly: picks model2vec-rs's pure-Rust regex engine.
+tokenizers = { workspace = true }
 tokio-util = { workspace = true }
 uuid = { workspace = true }
 

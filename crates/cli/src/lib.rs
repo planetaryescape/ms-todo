@@ -264,8 +264,22 @@ async fn dispatch(command: Command, paths: &Paths, format: OutputFormat) -> Resu
         Command::Links(command) => child_commands::links(paths, command, format).await,
         Command::Attachments(command) => attachment_commands::run(paths, command, format).await,
         Command::Search(args) => {
-            let (items, sync) = data_commands::search(paths, args).await?;
-            print_collection(format, &items, sync, &data_commands::SEARCH_TABLE)
+            let found = data_commands::search(paths, args).await?;
+            match &found.semantic {
+                Some(index) => output::print_semantic_results(
+                    format,
+                    &found.items,
+                    found.sync,
+                    index,
+                    &data_commands::SEMANTIC_TABLE,
+                ),
+                None => print_collection(
+                    format,
+                    &found.items,
+                    found.sync,
+                    &data_commands::SEARCH_TABLE,
+                ),
+            }
         }
         Command::Done(args) => done_command::done(paths, args, format).await,
         Command::Reschedule(args) => task_commands::reschedule(paths, args, format).await,

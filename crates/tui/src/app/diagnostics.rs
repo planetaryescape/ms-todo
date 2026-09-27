@@ -234,6 +234,7 @@ pub(crate) mod tests {
             },
             suggest: None,
             my_day: None,
+            semantic: None,
         }
     }
 

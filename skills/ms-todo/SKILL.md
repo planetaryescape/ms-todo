@@ -5,7 +5,7 @@ description: Read, find, filter, add, complete, reopen, edit, reschedule, move a
 
 # ms-todo
 
-**Skill v13, for ms-todo rung 9a, defer, Someday and next** (instant reads from a local cache kept live by delta sync; search across every list; what was completed, by day; instant writes that queue offline and are never dropped; bulk reschedules and edits; moving tasks between lists without losing anything; undo; quick add, which reads a task's text for its list, dates, recurrence and importance, and which agents turn off with `--no-parse`; optional list suggestions for inbox tasks; My Day, ms-todo's plan for today, mirrored on the phone through the due date; a task's steps and its one link; its files, attached and downloaded by path; who a task is waiting on; filters across lists; start dates and recurrences; lists made, renamed and deleted; Outlook categories; open extensions; and tasks deferred to a day or parked as Someday, with `next` for what to do now).
+**Skill v14, for ms-todo rung 9c, defer, Someday, next and search by meaning** (instant reads from a local cache kept live by delta sync; search across every list, by words or, when it's turned on, by meaning; what was completed, by day; instant writes that queue offline and are never dropped; bulk reschedules and edits; moving tasks between lists without losing anything; undo; quick add, which reads a task's text for its list, dates, recurrence and importance, and which agents turn off with `--no-parse`; optional list suggestions for inbox tasks; My Day, ms-todo's plan for today, mirrored on the phone through the due date; a task's steps and its one link; its files, attached and downloaded by path; who a task is waiting on; filters across lists; start dates and recurrences; lists made, renamed and deleted; Outlook categories; open extensions; and tasks deferred to a day or parked as Someday, with `next` for what to do now).
 
 `ms-todo tui` (`mst tui`) is a full-screen view for people at a keyboard. Don't use it: it needs a terminal, and everything it does is a command below. Always pass a subcommand: a bare `ms-todo` opens the TUI in a terminal, and elsewhere only prints help and exits 2.
 
@@ -58,6 +58,17 @@ ms-todo tasks list --list "Home" --search boiler --format json   # one list, any
 - Operators are FTS5's, in capitals: `OR`, `NOT`, parentheses, `"phrases"` and `prefix*`. Anything else is a word, punctuation included. A query ms-todo can't read (`OR milk`, an unclosed quote) exits 2 with `invalid_input`: fix the query, don't retry it as is.
 - Search reads the cache. If a task the user just made elsewhere is missing, run `ms-todo sync --wait --format json` and search again. `sync.state: "initial"` means some lists haven't synced yet, so the results may be incomplete.
 - Several matches and the user meant one? Show them the titles and lists and let them pick; never act on the first result on your own. Then use its `id`.
+
+When keyword search finds nothing because the user describes the task in other words ("the dentist thing" for "Book teeth cleaning"), search by meaning:
+
+```bash
+ms-todo search dentist --semantic --format json            # closest in meaning first, each with `score`
+ms-todo search "car stuff" --semantic --status all --limit 5 --format json
+```
+
+- The query is plain text: no operators, quotes or `*`. Items have `score` (0.15 to 1, higher is closer) instead of `snippet`, and the envelope has `semantic.pending`: tasks not embedded yet, which may be missing. Treat a low score as a guess, and confirm with the user before acting on it.
+- It runs a local model in the daemon; task text never leaves the machine. It's off unless the user set `semantic = true` under `[search]` in `~/.config/ms-todo/config.toml`: then `--semantic` exits 2 with `invalid_input` saying how. Don't turn it on yourself: it downloads a 31 MB model. Tell the user, and fall back to keyword searches with other words.
+- `ms-todo doctor --format json` shows its state under `semantic` (`off`, `loading`, `ready`, `failed` with `problem`).
 
 Filter and sort instead of reading everything:
 

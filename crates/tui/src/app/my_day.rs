@@ -101,6 +101,7 @@ pub(crate) mod tests {
                 scope: Some(Scope::MyDay),
                 search: None,
                 include_deferred: false,
+                semantic: false,
             }
         );
         answer_seed(&mut app, &effects[0], my_day_seed());

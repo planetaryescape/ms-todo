@@ -99,7 +99,19 @@ pub fn output_schema(command: &str) -> Option<Value> {
         "next" => collection(next_result()),
         "myday suggest" => collection(suggestion()),
         "myday add" | "myday remove" | "myday rollover" => json!({ "oneOf": [applied(), plan()] }),
-        "search" => collection(search_result()),
+        "search" => {
+            let mut schema = collection(search_result());
+            schema["properties"]["semantic"] = json!({
+                "type": "object",
+                "description": "With --semantic only: the embedding model, and how many tasks in the search's scope it hasn't embedded for their current text yet (missing from items, or ranked by their old text)",
+                "properties": {
+                    "model": { "type": "string" },
+                    "pending": { "type": "integer" }
+                },
+                "required": ["model", "pending"]
+            });
+            schema
+        }
         "done" => collection(done_result()),
         "tasks add" | "tasks complete" | "tasks reopen" | "tasks edit" | "tasks move"
         | "tasks delete" | "reschedule" => json!({ "oneOf": [applied(), plan()] }),

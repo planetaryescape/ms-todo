@@ -19,6 +19,7 @@ impl App {
                     scope: Some(view.clone()),
                     search: None,
                     include_deferred: self.show_deferred,
+                    semantic: false,
                 },
             })
             .collect()
@@ -33,8 +34,15 @@ impl App {
             tag: Tag::Seed(self.seeds.latest),
             request: Request::Seed {
                 scope: self.wanted.clone(),
-                search: self.filter.as_deref().map(search_query),
                 include_deferred: self.show_deferred,
+                search: self.filter.as_deref().map(|text| {
+                    if self.semantic_filter {
+                        text.trim().to_owned()
+                    } else {
+                        search_query(text)
+                    }
+                }),
+                semantic: self.semantic_filter && self.filter.is_some(),
             },
         }
     }
@@ -174,8 +182,10 @@ impl App {
             self.sign_in_required = true;
             return Vec::new();
         }
-        if self.filter.is_some() && error.kind == "invalid_input" {
-            // Mid-typing, like an unclosed quote: keep the last results.
+        let not_ready = self.semantic_filter && error.kind == "network";
+        if self.filter.is_some() && (error.kind == "invalid_input" || not_ready) {
+            // Mid-typing, like an unclosed quote, semantic search off, or
+            // its model still loading: keep the last results.
             self.filter_error = Some(error.message);
             return Vec::new();
         }

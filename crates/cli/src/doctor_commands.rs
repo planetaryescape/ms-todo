@@ -6,8 +6,8 @@
 use ms_todo_core::Paths;
 use ms_todo_graph::auth::{Authenticator, Endpoints};
 use ms_todo_protocol::{
-    DoctorReport, MyDayStatus, OutboxDepth, Request, ResponseData, ScopeStatus, SuggestStatus,
-    SyncMode, SyncState,
+    DoctorReport, ModelState, MyDayStatus, OutboxDepth, Request, ResponseData, ScopeStatus,
+    SemanticStatus, SuggestStatus, SyncMode, SyncState,
 };
 use serde::Serialize;
 
@@ -33,6 +33,8 @@ pub struct Doctor {
     pub suggest: Option<Suggest>,
     /// My Day (rung 7), when the daemon reported.
     pub my_day: Option<MyDayState>,
+    /// Semantic search (rung 9c), when the daemon reported.
+    pub semantic: Option<SemanticStatus>,
     /// What needs attention, for people.
     pub problems: Vec<String>,
 }
@@ -179,6 +181,7 @@ pub async fn doctor(paths: &Paths) -> Result<Doctor, CliError> {
             outbox: None,
             suggest: None,
             my_day: None,
+            semantic: None,
             problems,
         });
     };
@@ -190,7 +193,14 @@ pub async fn doctor(paths: &Paths) -> Result<Doctor, CliError> {
         outbox,
         suggest,
         my_day,
+        semantic,
     } = report;
+    if let Some(problem) = semantic
+        .as_ref()
+        .and_then(|semantic| semantic.problem.as_ref())
+    {
+        problems.push(format!("semantic search: {problem}"));
+    }
     if let Some(problem) = my_day.as_ref().and_then(|my_day| my_day.problem.as_ref()) {
         problems.push(format!("my_day: {problem}"));
     }
@@ -250,6 +260,7 @@ pub async fn doctor(paths: &Paths) -> Result<Doctor, CliError> {
         outbox: Some(outbox),
         suggest,
         my_day,
+        semantic,
         problems,
     })
 }
@@ -371,6 +382,9 @@ impl Render for Doctor {
             ));
             rows.push(("Phone", my_day.phone.to_owned()));
         }
+        if let Some(semantic) = &self.semantic {
+            rows.push(("Semantic", semantic_row(semantic)));
+        }
         for scope in self
             .scopes
             .iter()
@@ -402,6 +416,27 @@ impl Render for Doctor {
             rows.push(("Status", "all good".into()));
         }
         rows
+    }
+}
+
+/// Semantic search's line: off, or the model's state and the index's.
+fn semantic_row(semantic: &SemanticStatus) -> String {
+    if !semantic.enabled {
+        return "off".into();
+    }
+    let model = &semantic.model;
+    match semantic.state {
+        ModelState::Ready => format!(
+            "on; {model} ready, {} task(s) indexed, {} pending",
+            semantic.indexed, semantic.pending
+        ),
+        ModelState::Loading => format!(
+            "on; loading {model} (a {} download the first time) into {}",
+            human_bytes(semantic.download_bytes),
+            semantic.model_dir
+        ),
+        ModelState::Failed => format!("on; {model} failed to load"),
+        ModelState::Off | ModelState::Unknown => "on".into(),
     }
 }
 

@@ -8,6 +8,7 @@
 //! daemon's business; this crate applies it atomically.
 
 mod children;
+mod embeddings;
 mod graph_columns;
 mod idempotency;
 mod list_extension;
@@ -29,6 +30,7 @@ pub use children::{
     ATTACHMENTS, ChildVerb, LINKS, LOCAL_CHILD_PREFIX, STEPS, apply_child, child_payload, children,
     find_child, revert_child,
 };
+pub use embeddings::{Candidate, Candidates, Embedded, EmbeddingJob, TaskScope, text_hash};
 pub use idempotency::{Claim, IDEMPOTENCY_WINDOW_SECS};
 pub use list_extension::{ListExtensionOp, merge_extension};
 pub use list_lifecycle::{ListLifecycleOp, ListOp, ListWrite};

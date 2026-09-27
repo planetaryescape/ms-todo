@@ -111,6 +111,23 @@ pub(super) fn doctor() -> Value {
                     "phone": { "type": "string", "description": "What the phone's own My Day depends on" }
                 }
             },
+            "semantic": {
+                "type": ["object", "null"],
+                "description": "Semantic search (rung 9c); null when the daemon didn't report",
+                "properties": {
+                    "enabled": { "type": "boolean", "description": "[search] semantic in config.toml" },
+                    "model": { "type": "string", "description": "The embedding model, name@revision" },
+                    "state": {
+                        "enum": ["off", "loading", "ready", "failed", "unknown"],
+                        "description": "off: nothing downloaded. loading: downloading or reading the model. ready: tasks are embedded as they change. failed: see problem; the next search tries again"
+                    },
+                    "model_dir": { "type": "string", "description": "Where the model's files are kept" },
+                    "download_bytes": { "type": "integer", "description": "The size of the one-time download" },
+                    "indexed": { "type": "integer", "description": "Live tasks embedded for their current text" },
+                    "pending": { "type": "integer", "description": "Live tasks not embedded yet" },
+                    "problem": nullable("string", "Why it's off or failing")
+                }
+            },
             "problems": { "type": "array", "items": { "type": "string" } }
         }),
         &["sign_in", "daemon", "database", "scopes", "problems"],

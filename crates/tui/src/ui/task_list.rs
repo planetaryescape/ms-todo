@@ -17,7 +17,7 @@ pub fn draw<'a>(frame: &mut Frame, area: Rect, app: &'a App) {
     let name = app.view_name();
     let title = match &app.filter {
         Some(filter) => Line::from(vec![
-            Span::raw(format!(" {name} / ")),
+            Span::raw(format!(" {name} {} ", app.filter_marker())),
             Span::styled(filter.clone(), app.theme.search_match),
             Span::raw(" "),
         ]),

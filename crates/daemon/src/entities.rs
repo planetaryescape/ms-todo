@@ -61,6 +61,16 @@ pub(crate) fn search_entity(hit: &SearchHit) -> Entity {
     entity
 }
 
+/// A task a semantic search found: the task, its list's name as `list`,
+/// and `score`, its similarity to the query, to three places.
+pub(crate) fn semantic_entity(hit: &crate::semantic::query::Hit) -> Entity {
+    let mut entity = task_entity(&hit.candidate.task);
+    entity.insert("list".into(), json!(hit.candidate.list_name));
+    let score = (f64::from(hit.score) * 1000.0).round() / 1000.0;
+    entity.insert("score".into(), json!(score));
+    entity
+}
+
 /// A completed task for `done`: the task, its list's name as `list`, and
 /// `completed_on`, its local day as `YYYY-MM-DD`, or null while the
 /// completion hasn't reached Microsoft To Do.

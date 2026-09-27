@@ -41,6 +41,8 @@ pub(crate) struct State {
     pub suggest: crate::suggest::Suggester,
     /// `[my_day]`: when a day's My Day ends.
     pub my_day: crate::my_day::Config,
+    /// Semantic search, when `[search]` turns it on.
+    pub semantic: crate::semantic::Semantic,
 }
 
 impl State {
@@ -82,7 +84,8 @@ pub(crate) async fn handle(state: &State, request: Request) -> Response {
             list,
             status,
             limit,
-        } => search_tasks(state, &query, list.as_deref(), status, limit).await,
+            semantic,
+        } => search_tasks(state, &query, list.as_deref(), status, limit, semantic).await,
         Request::CompletedTasks {
             since,
             until,
@@ -125,7 +128,11 @@ pub(crate) async fn handle(state: &State, request: Request) -> Response {
             scope,
             search,
             include_deferred,
-        } => crate::seed::seed(state, scope, search.as_deref(), include_deferred).await,
+            semantic,
+        } => {
+            let search = search.as_deref();
+            crate::seed::seed(state, scope, search, include_deferred, semantic).await
+        }
         // The connection loop answers `Subscribe` itself, and starts the
         // stream.
         Request::Subscribe => Ok(ResponseData::Ack),

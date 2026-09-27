@@ -40,6 +40,9 @@ pub enum Action {
     Undo,
     /// Filter the current scope by search (D-041).
     Filter,
+    /// `Ctrl-s` in the filter: search by meaning with the daemon's local
+    /// model (D-062), or by words again.
+    ToggleSemantic,
     /// Esc in the list: drop the selection, else the filter.
     Clear,
     /// `e`: pick which field of the task to edit.

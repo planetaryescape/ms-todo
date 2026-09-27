@@ -9,7 +9,7 @@ use std::io::{IsTerminal, Write};
 use std::sync::LazyLock;
 
 use ms_todo_core::{ErrorKind, display_safe};
-use ms_todo_protocol::{Entity, SyncInfo, SyncState};
+use ms_todo_protocol::{Entity, SemanticIndex, SyncInfo, SyncState};
 use serde::Serialize;
 use serde_json::Value;
 
@@ -136,6 +136,10 @@ struct CollectionEnvelope<'a> {
     schema_version: u32,
     #[serde(skip_serializing_if = "Option::is_none")]
     sync: Option<SyncInfo>,
+    /// A semantic search's index: the model, and how many tasks it hasn't
+    /// embedded yet.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    semantic: Option<&'a SemanticIndex>,
     items: &'a [Entity],
     /// `tasks list`: how many deferred and Someday tasks matched but were
     /// left out.
@@ -152,7 +156,7 @@ pub fn print_collection(
     sync: SyncInfo,
     table: &Table,
 ) -> Result<(), CliError> {
-    print_items(format, items, Some(sync), None, table)
+    print_items(format, items, Some(sync), None, None, table)
 }
 
 /// Tasks `tasks list` found, and how many deferred and Someday tasks it
@@ -164,7 +168,7 @@ pub fn print_task_collection(
     deferred_hidden: Option<u64>,
     table: &Table,
 ) -> Result<(), CliError> {
-    print_items(format, items, Some(sync), deferred_hidden, table)?;
+    print_items(format, items, Some(sync), deferred_hidden, None, table)?;
     if format == OutputFormat::Table
         && let Some(hidden @ 1..) = deferred_hidden
     {
@@ -175,6 +179,26 @@ pub fn print_task_collection(
     Ok(())
 }
 
+/// A semantic search's results. JSON carries how complete the index was
+/// in its envelope; the other formats say on stderr when tasks are still
+/// waiting to be embedded, since they're missing from the results.
+pub fn print_semantic_results(
+    format: OutputFormat,
+    items: &[Entity],
+    sync: SyncInfo,
+    index: &SemanticIndex,
+    table: &Table,
+) -> Result<(), CliError> {
+    if index.pending > 0 && format != OutputFormat::Json && !crate::terminal::quiet() {
+        eprintln!(
+            "{} task(s) aren't indexed for semantic search yet, so they may be missing; \
+             the daemon is embedding them",
+            index.pending
+        );
+    }
+    print_items(format, items, Some(sync), None, Some(index), table)
+}
+
 /// A collection read from Graph as it is now, not from the cache: it has
 /// no sync state (categories, open extensions).
 pub fn print_live_collection(
@@ -182,7 +206,7 @@ pub fn print_live_collection(
     items: &[Entity],
     table: &Table,
 ) -> Result<(), CliError> {
-    print_items(format, items, None, None, table)
+    print_items(format, items, None, None, None, table)
 }
 
 fn print_items(
@@ -190,6 +214,7 @@ fn print_items(
     items: &[Entity],
     sync: Option<SyncInfo>,
     deferred_hidden: Option<u64>,
+    semantic: Option<&SemanticIndex>,
     table: &Table,
 ) -> Result<(), CliError> {
     let initial = sync.is_some_and(|sync| sync.state == SyncState::Initial);
@@ -206,6 +231,7 @@ fn print_items(
             &CollectionEnvelope {
                 schema_version: SCHEMA_VERSION,
                 sync,
+                semantic,
                 items,
                 deferred_hidden,
             },

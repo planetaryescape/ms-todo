@@ -43,6 +43,9 @@ Options:
       --quiet
           Print nothing on stderr but errors: no notes and no progress
 
+      --semantic
+          Find tasks by meaning, not words ("dentist" finds "Book teeth cleaning"), with a local model; the query is plain text. Needs `semantic = true` under [search] in config.toml
+
       --no-color
           No colour or bold in tables (also NO_COLOR)
 

@@ -7,7 +7,7 @@ use ms_todo_core::{DATE_FORMAT, ErrorKind};
 use ms_todo_protocol::{
     Counts, DeferredFilter, ErrorPayload, MyDaySeed, ResponseData, Scope, Seed, SyncState,
 };
-use ms_todo_store::{LISTS_SCOPE, StatusFilter, TaskSearch, View};
+use ms_todo_store::{LISTS_SCOPE, StatusFilter, TaskScope, TaskSearch, View};
 
 use crate::doctor::outbox_depth;
 use crate::entities::{list_entity, task_entity};
@@ -22,6 +22,7 @@ pub(crate) async fn seed(
     scope: Option<Scope>,
     search: Option<&str>,
     include_deferred: bool,
+    semantic: bool,
 ) -> Result<ResponseData, ErrorPayload> {
     let today = state.my_day.today();
     let local = crate::deferral::today();
@@ -46,11 +47,19 @@ pub(crate) async fn seed(
                 Some(Scope::List { id }) => Some(id.as_str()),
                 _ => None,
             };
-            let (list, rows, sync) = list_rows(state, &lists, wanted, search).await?;
+            let (list, rows, sync) = list_rows(state, &lists, wanted, search, semantic).await?;
             (Some(Scope::List { id: list.local_id }), rows, sync)
         }
         Some(Scope::Next) => {
             let rows = match search {
+                Some(query) if semantic => {
+                    let scope = TaskScope {
+                        list_local_id: None,
+                        status: StatusFilter::All,
+                        view: Some(View::All),
+                    };
+                    Ok(crate::semantic::query::rows(state, query, &scope).await?)
+                }
                 None => state.store.tasks_in_view(View::All).await,
                 Some(query) => crate::reads::search_every_list(state, query).await,
             }
@@ -70,6 +79,14 @@ pub(crate) async fn seed(
                 )
             })?;
             let rows = match search {
+                Some(query) if semantic => {
+                    let scope = TaskScope {
+                        list_local_id: None,
+                        status: StatusFilter::All,
+                        view: Some(view),
+                    };
+                    Ok(crate::semantic::query::rows(state, query, &scope).await?)
+                }
                 None => state.store.tasks_in_view(view).await,
                 Some(query) => state
                     .store

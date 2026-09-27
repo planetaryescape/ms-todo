@@ -7,6 +7,7 @@
 
 pub mod fake_graph;
 pub mod fake_moves;
+pub mod tiny_model;
 
 use std::path::PathBuf;
 
@@ -20,6 +21,9 @@ pub struct Env {
     pub graph_url: Option<String>,
     /// A mock TypeSafe for list suggestions, set before the daemon starts.
     pub typesafe_url: Option<String>,
+    /// A ready embedding model for semantic search (`tiny_model`), set
+    /// before the daemon starts.
+    pub semantic_model_dir: Option<PathBuf>,
 }
 
 impl Env {
@@ -34,6 +38,7 @@ impl Env {
             home,
             graph_url: None,
             typesafe_url: None,
+            semantic_model_dir: None,
         }
     }
 
@@ -56,6 +61,8 @@ impl Env {
             // List suggestions reach TypeSafe only when a test says so.
             .env_remove("MS_TODO_TYPESAFE_URL")
             .env_remove("TYPESAFE_API_KEY")
+            // Never the pinned model's download.
+            .env_remove("MS_TODO_SEMANTIC_MODEL_DIR")
             // Due dates and reminders are written in this zone.
             .env("TZ", "Europe/London");
         if let Some(url) = &self.graph_url {
@@ -63,6 +70,9 @@ impl Env {
         }
         if let Some(url) = &self.typesafe_url {
             command.env("MS_TODO_TYPESAFE_URL", url);
+        }
+        if let Some(dir) = &self.semantic_model_dir {
+            command.env("MS_TODO_SEMANTIC_MODEL_DIR", dir);
         }
         command
     }

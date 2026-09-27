@@ -26,7 +26,7 @@
 
 mod copy;
 pub(crate) mod progress;
-mod spool;
+pub(crate) mod spool;
 
 use ms_todo_core::ErrorKind;
 use ms_todo_graph::{GraphError, MAX_ATTACHMENT_BYTES};

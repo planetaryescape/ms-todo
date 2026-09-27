@@ -401,8 +401,25 @@ Split into **6a**, the deterministic quick add below, and **6b**, where Jev sugg
 
 **Left out:** the items under "Deferred".
 
+## Rung 9c: semantic search
+
+**Previously:** keyword search across every list (rung 4b). **Now:** the same, plus finding a task by what it's about when no word matches, with a small model that runs on the Mac.
+
+**Promise:** "`mst search "dentist" --semantic` finds 'book teeth cleaning' even though no word matches, and it all runs on my Mac."
+
+- S19 first: the runtime and the model, on a labelled set of invented tasks and synonym queries (Model2Vec's `potion-base-8M` through `model2vec-rs`; D-062).
+- `[search] semantic = true` in config.toml turns it on (off by default, and then `--semantic` exits 2 saying how). The daemon downloads the model once (30.9 MB, pinned revision and SHA-256s) into the instance's data directory; nothing touches the network while it's off.
+- The daemon embeds each task's title and notes in the background after each change to the cache, keeping a vector and the text's hash per task (migration `0008`), so only changed tasks are embedded again.
+- `search QUERY --semantic [--list L] [--status S] [--limit N]`: tasks ranked by cosine similarity, each with `score`, in every output format; the answer says how many tasks aren't indexed yet. `doctor` shows the model's state and the index's.
+- The TUI's `/` filter: `Ctrl-s` switches it to meaning and back.
+
+**Done when:** on the live account, a throwaway list's invented tasks are found by synonym queries that share no word with them, with the model downloaded and checked on first use.
+
+**Left out:** hybrid ranking (the set showed nothing for it to fix), re-ranking, cloud embeddings, searching steps or attachments, and languages other than English (the model is English).
+
+**As built (2026-09-27, D-062):** as above. Protocol 18. Tests: the store's jobs, saves, prunes and candidates against a real SQLite file; the download's checksum, size and keep-on-disk rules against a mock server; config parsing; the CLI end to end against the fake Graph with a made-up four-axis model (off by default with nothing downloaded, found by meaning with no word in common, ranking, `--limit`, `--status`, every format, a task renamed on Graph embedded again after the sync, `doctor`); the TUI's toggle and hint bar. **Driven live:** see the rung's report.
+
 ## Deferred (not in v1)
 
 - An optional local-LLM parser behind `QuickAddParser` (D-016).
-- Semantic search, behind the same `search` command (D-042).
 - Windows support.
