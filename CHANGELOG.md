@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.39](https://github.com/planetaryescape/ms-todo/compare/v0.1.38...v0.1.39) (2026-09-27)
+
+
+### Bug Fixes
+
+* close every open issue (001, 004, 006) and two review findings (D-070) ([#93](https://github.com/planetaryescape/ms-todo/issues/93)) ([e1281cb](https://github.com/planetaryescape/ms-todo/commit/e1281cb7e742b4af294bf24fbd059addb4fff6e6))
+
 ## [0.1.38](https://github.com/planetaryescape/ms-todo/compare/v0.1.37...v0.1.38) (2026-09-27)
 
 
