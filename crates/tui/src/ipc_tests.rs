@@ -103,12 +103,12 @@ async fn a_silent_seed_or_write_times_out_with_correct_uncertainty() {
         settle().await;
         assert!(task.is_finished(), "silent request must time out");
         task.await.expect("task");
-        let Msg::Response {
-            result: Err(error), ..
-        } = messages.recv().await.expect("failed response")
-        else {
-            panic!("expected failed request");
-        };
+        let error = match messages.recv().await.expect("failed response") {
+            Msg::Response { result, .. } => Some(result),
+            _ => None,
+        }
+        .expect("request response")
+        .expect_err("silent request failed");
         assert_eq!(
             error.message.contains("may or may not"),
             is_write,
@@ -209,13 +209,13 @@ async fn reconnect_subscribes_again_without_replaying_an_uncertain_write() {
         Payload::Request(Request::ChangeTasks { .. })
     ));
     drop(peer); // The write might have landed; the answer was lost.
-    let Msg::Response {
-        tag: Tag::TaskStatus(1, _),
-        result: Err(error),
-    } = messages.recv().await.expect("lost answer")
-    else {
-        panic!("expected write failure");
-    };
+    let (tag, result) = match messages.recv().await.expect("lost answer") {
+        Msg::Response { tag, result } => Some((tag, result)),
+        _ => None,
+    }
+    .expect("write response");
+    assert!(matches!(tag, Tag::TaskStatus(1, _)));
+    let error = result.expect_err("uncertain write failed");
     assert!(error.message.contains("may or may not"));
     assert!(matches!(messages.recv().await, Some(Msg::Disconnected(_))));
     tokio::time::advance(RECONNECT_EVERY).await;
