@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.41](https://github.com/planetaryescape/ms-todo/compare/v0.1.40...v0.1.41) (2026-09-29)
+
+
+### Bug Fixes
+
+* improve task and sync reliability ([#95](https://github.com/planetaryescape/ms-todo/issues/95)) ([4f97009](https://github.com/planetaryescape/ms-todo/commit/4f9700998c69855265502675fc334f656fd5f52d))
+
 ## [0.1.40](https://github.com/planetaryescape/ms-todo/compare/v0.1.39...v0.1.40) (2026-09-28)
 
 
