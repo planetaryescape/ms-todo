@@ -295,7 +295,7 @@ async fn a_next_link_to_another_host_is_refused() {
         .and(path(TASKS))
         .respond_with(page(
             tasks(0, 1),
-            Some("https://attacker.example/v1.0/me/todo/lists/L1/tasks?$skip=1".into()),
+            Some("https://attacker.example/v1.0/me/todo/lists/L1/tasks?temporary-secret=1".into()),
         ))
         .mount(&graph.server)
         .await;
@@ -303,6 +303,7 @@ async fn a_next_link_to_another_host_is_refused() {
     let error = graph.client.list_tasks("L1").await.expect_err("refused");
 
     assert_eq!(error.kind(), ErrorKind::Decode);
+    assert!(!format!("{error:?}: {error}").contains("temporary-secret"));
 }
 
 #[tokio::test]
