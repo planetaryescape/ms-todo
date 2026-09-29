@@ -799,31 +799,32 @@ fn recurring(etag: &str, due: &str) -> Value {
 #[tokio::test]
 async fn completing_a_recurring_task_reports_the_rolled_due_date() {
     let mut env = Env::new();
-    let graph = graph(&mut env).await;
+    let graph = std::sync::Arc::new(graph(&mut env).await);
     tasks_in_default_list(
         &graph,
         vec![recurring("W/\"r1\"", "2026-09-24T00:00:00.0000000")],
     )
     .await;
-    // Each completion moves the due date on a week (S12).
-    Mock::given(method("PATCH"))
-        .and(path(format!("{LIST}/T-r")))
-        .and(header("If-Match", "W/\"r1\""))
-        .respond_with(
-            ResponseTemplate::new(200)
-                .set_body_json(recurring("W/\"r2\"", "2026-10-01T00:00:00.0000000")),
-        )
-        .mount(&graph.server)
-        .await;
-    Mock::given(method("PATCH"))
-        .and(path(format!("{LIST}/T-r")))
-        .and(header("If-Match", "W/\"r2\""))
-        .respond_with(
-            ResponseTemplate::new(200)
-                .set_body_json(recurring("W/\"r3\"", "2026-10-08T00:00:00.0000000")),
-        )
-        .mount(&graph.server)
-        .await;
+    // GETs and enumeration must see the same rollover that PATCH returned (S12).
+    for (before, after, due) in [
+        ("W/\"r1\"", "W/\"r2\"", "2026-10-01T00:00:00.0000000"),
+        ("W/\"r2\"", "W/\"r3\"", "2026-10-08T00:00:00.0000000"),
+    ] {
+        let remote = std::sync::Arc::downgrade(&graph);
+        Mock::given(method("PATCH"))
+            .and(path(format!("{LIST}/T-r")))
+            .and(header("If-Match", before))
+            .respond_with(move |_request: &Request| {
+                let rolled = recurring(after, due);
+                remote.upgrade().expect("fixture alive").edit(|data| {
+                    data.tasks.insert("L-tasks".into(), vec![rolled.clone()]);
+                });
+                ResponseTemplate::new(200).set_body_json(rolled)
+            })
+            .expect(1)
+            .mount(&graph.server)
+            .await;
+    }
 
     let due =
         |env: &Env| env.json(&["tasks", "list"])["items"][0]["dueDateTime"]["dateTime"].clone();
@@ -846,6 +847,10 @@ async fn completing_a_recurring_task_reports_the_rolled_due_date() {
     let listed = env.json(&["tasks", "list"]);
     assert_eq!(listed["items"][0]["status"], "notStarted");
     assert_eq!(listed["items"][0]["sync_state"], "synced");
+    assert_eq!(
+        graph.task("L-tasks", "T-r").expect("series")["dueDateTime"]["dateTime"],
+        "2026-10-08T00:00:00.0000000"
+    );
 }
 
 #[tokio::test]
