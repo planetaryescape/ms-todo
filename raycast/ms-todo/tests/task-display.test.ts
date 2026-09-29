@@ -1,6 +1,25 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { graphDate, notesMarkdown, plainNotes } from "../src/task-display";
+import {
+  deferredLabel,
+  graphDate,
+  notesMarkdown,
+  plainNotes,
+} from "../src/task-display";
+
+test("deferred results explain their schedule or Someday state", () => {
+  const task = { id: "local", title: "Plan trip", status: "notStarted" };
+  assert.equal(deferredLabel(task), undefined);
+  assert.equal(
+    deferredLabel({ ...task, defer_until: null, someday: false }),
+    undefined,
+  );
+  assert.equal(
+    deferredLabel({ ...task, defer_until: "2030-10-01" }),
+    "Deferred until 2030-10-01",
+  );
+  assert.equal(deferredLabel({ ...task, someday: true }), "Someday");
+});
 
 test("HTML notes become readable literal text", () => {
   const task = {

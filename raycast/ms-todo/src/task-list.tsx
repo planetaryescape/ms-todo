@@ -24,7 +24,7 @@ import {
 import QuickAdd from "./quick-add";
 import { CliSetup } from "./cli-setup";
 import { TaskDetail } from "./task-detail";
-import { graphDate, plainNotes } from "./task-display";
+import { deferredLabel, graphDate, plainNotes } from "./task-display";
 
 type Mode = "search" | "my-day" | "browse";
 
@@ -128,7 +128,9 @@ function LoadedTaskList({ mode }: { mode: Mode }) {
       mode === "my-day"
         ? myDay(cliPath)
         : listTasks(
-            mode === "search" ? { status: "all" } : browseQuery(selection),
+            mode === "search"
+              ? { status: "all", deferred: "include" }
+              : browseQuery(selection),
             cliPath,
           );
     void load
@@ -290,6 +292,7 @@ function LoadedTaskList({ mode }: { mode: Mode }) {
       {visibleResult?.sync.state !== "initial" &&
         items.map((task) => {
           const listName = task.list ?? selectedList?.displayName;
+          const deferred = deferredLabel(task);
           return (
             <List.Item
               key={task.id}
@@ -300,6 +303,7 @@ function LoadedTaskList({ mode }: { mode: Mode }) {
                 task.status === "completed" ? Icon.CheckCircle : Icon.Circle
               }
               accessories={[
+                ...(deferred ? [{ tag: deferred }] : []),
                 ...(task.dueDateTime
                   ? [{ text: graphDate(task.dueDateTime, true) }]
                   : []),

@@ -22,7 +22,12 @@ import {
   showTask,
 } from "./cli";
 import { EditTask } from "./edit-task";
-import { graphDate, literalMarkdown, notesMarkdown } from "./task-display";
+import {
+  deferredLabel,
+  graphDate,
+  literalMarkdown,
+  notesMarkdown,
+} from "./task-display";
 
 type Props = { id: string; listName?: string; onChanged: () => void };
 
@@ -140,6 +145,9 @@ export function TaskDetail({ id, listName, onChanged }: Props) {
       <Detail.Metadata.Label title="Title" text={task.title} />
       {listName && <Detail.Metadata.Label title="List" text={listName} />}
       <Detail.Metadata.Label title="Status" text={task.status} />
+      {deferredLabel(task) && (
+        <Detail.Metadata.Label title="Deferred" text={deferredLabel(task)} />
+      )}
       <Detail.Metadata.Label
         title="Importance"
         text={task.importance ?? "normal"}

@@ -1,6 +1,12 @@
 import { convert } from "html-to-text";
 import { Task } from "./cli";
 
+export function deferredLabel(task: Task): string | undefined {
+  if (task.someday) return "Someday";
+  if (task.defer_until) return `Deferred until ${task.defer_until}`;
+  return undefined;
+}
+
 export function plainNotes(task: Task): string {
   const body = task.body;
   if (!body?.content) return "";
