@@ -571,10 +571,13 @@ ms-todo is built in rungs, each a usable release; [Releases](https://github.com/
 ## Contributing
 
 ```sh
-cargo nextest run --workspace                              # the tests, against a fake Graph
-cargo clippy --workspace --all-targets -- -D warnings
-demo/run.sh                                                # try a change by hand, safely
+scripts/check.sh rust       # formatting, Clippy and tests against a fake Graph
+scripts/check.sh raycast    # typecheck, tests, lint and build
+scripts/check.sh            # both, using the same commands as CI
+demo/run.sh                 # try a change by hand, safely
 ```
+
+Install Rust with rustfmt, Clippy and cargo-nextest for the Rust checks. Raycast checks need Node.js and npm; install its dependencies with `cd raycast/ms-todo && npm ci` first. The check script installs nothing and can run from any directory.
 
 A debug build uses its own `dev` instance, so it never touches an installed ms-todo's sign-in or cache. Read [AGENTS.md](AGENTS.md) and the [blueprint](docs/blueprint/README.md) before a larger change. Issues are tracked as markdown in [docs/issues/](docs/issues/README.md). Commits use `type: description`.
 
