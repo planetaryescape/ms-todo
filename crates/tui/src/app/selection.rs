@@ -128,6 +128,17 @@ mod tests {
     }
 
     #[test]
+    fn reselecting_a_pending_mixed_batch_does_not_reopen_completed_tasks() {
+        let mut app = seeded();
+        act(&mut app, Action::SelectAll);
+        let (_, tasks, change) = one_change(&act(&mut app, Action::ToggleComplete));
+        assert_eq!(tasks, ["t1", "t2", "t4"]);
+        assert_eq!(change, TaskChange::Complete);
+        act(&mut app, Action::SelectAll);
+        assert!(act(&mut app, Action::ToggleComplete).is_empty());
+    }
+
+    #[test]
     fn bulk_delete_asks_with_the_count_then_sends_one_request() {
         let mut app = seeded();
         for _ in 0..3 {

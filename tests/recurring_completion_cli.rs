@@ -4,7 +4,7 @@
 
 mod support;
 
-use std::sync::Arc;
+use std::sync::{Arc, Mutex, mpsc};
 use std::time::Duration;
 
 use serde_json::{Value, json};
@@ -15,7 +15,10 @@ use wiremock::{Mock, Request, ResponseTemplate};
 
 const TASK: &str = "/v1.0/me/todo/lists/L-tasks/tasks/T-r";
 
-async fn daily(env: &mut Env) -> Arc<FakeGraph> {
+async fn daily(
+    env: &mut Env,
+    first_response: Option<(mpsc::Sender<()>, mpsc::Receiver<()>)>,
+) -> Arc<FakeGraph> {
     let graph =
         Arc::new(FakeGraph::start(env, vec![list("L-tasks", "Tasks", "defaultList")]).await);
     let mut recurring = task("T-r", "Water plants", "W/\"r1\"");
@@ -27,11 +30,13 @@ async fn daily(env: &mut Env) -> Arc<FakeGraph> {
     graph.edit(|data| {
         data.tasks.insert("L-tasks".into(), vec![recurring]);
     });
-    let responding = Arc::clone(&graph);
+    let responding = Arc::downgrade(&graph);
+    let first_response = Mutex::new(first_response);
     Mock::given(method("PATCH"))
         .and(path(TASK))
         .and(body_partial_json(json!({ "status": "completed" })))
         .respond_with(move |request: &Request| {
+            let responding = responding.upgrade().expect("Graph fixture is live");
             let mut response = ResponseTemplate::new(500);
             responding.edit(|data| {
                 let tasks = data.tasks.get_mut("L-tasks").expect("list");
@@ -63,11 +68,15 @@ async fn daily(env: &mut Env) -> Arc<FakeGraph> {
                 current["dueDateTime"]["dateTime"] = json!(format!("{next}T00:00:00"));
                 current["@odata.etag"] = json!(format!("W/\"{next}\""));
                 current["status"] = json!("notStarted");
-                response = ResponseTemplate::new(200)
-                    .set_body_json(current.clone())
-                    .set_delay(Duration::from_millis(350));
+                response = ResponseTemplate::new(200).set_body_json(current.clone());
                 tasks.push(copy);
             });
+            if let Some((arrived, release)) = first_response.lock().expect("response gate").take() {
+                let _ = arrived.send(());
+                if release.recv_timeout(Duration::from_secs(20)).is_err() {
+                    return ResponseTemplate::new(500);
+                }
+            }
             response
         })
         .mount(&graph.server)
@@ -85,9 +94,19 @@ fn state(graph: &FakeGraph) -> Vec<Value> {
 #[tokio::test]
 async fn duplicate_completions_advance_one_occurrence_and_a_later_command_advances_the_next() {
     let mut env = Env::new();
-    let graph = daily(&mut env).await;
-    env.json(&["tasks", "complete", "T-r"]);
-    env.json(&["tasks", "complete", "T-r"]);
+    let (arrived, first_patch) = mpsc::channel();
+    let (release, response_gate) = mpsc::channel();
+    let graph = daily(&mut env, Some((arrived, response_gate))).await;
+    let first = env.json(&["tasks", "complete", "T-r"]);
+    first_patch
+        .recv_timeout(Duration::from_secs(10))
+        .expect("first PATCH is waiting for its response");
+    let duplicate = env.json(&["tasks", "complete", "T-r"]);
+    let outbox = env.outbox();
+    assert_eq!(outbox.len(), 1, "duplicate creates no extra operation");
+    assert_eq!(outbox[0]["op_id"], first["op_id"]);
+    assert_eq!(duplicate["items"][0]["status"], "completed");
+    release.send(()).expect("release first PATCH response");
     env.settled();
     let tasks = state(&graph);
     assert_eq!(
@@ -107,7 +126,7 @@ async fn duplicate_completions_advance_one_occurrence_and_a_later_command_advanc
 #[tokio::test]
 async fn a_completion_planned_before_an_external_rollover_leaves_the_new_occurrence_alone() {
     let mut env = Env::new();
-    let graph = daily(&mut env).await;
+    let graph = daily(&mut env, None).await;
     graph.edit(|data| {
         let series = &mut data.tasks.get_mut("L-tasks").expect("list")[0];
         series["dueDateTime"]["dateTime"] = json!("2026-09-25T00:00:00");
