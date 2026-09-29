@@ -99,7 +99,10 @@ impl Store {
             .await?;
         let mut rows = Vec::with_capacity(ops.len());
         for op in ops {
-            if op.op == OpKind::Update && op.action == "complete" {
+            if op.op == OpKind::Update
+                && op.action == "complete"
+                && op.payload["recurring"] == Value::Bool(true)
+            {
                 // Check inside the writer transaction: two clients may have
                 // resolved the same open snapshot before either queued it.
                 let current = fetch_task(&mut tx, &op.entity_local_id)
@@ -107,21 +110,17 @@ impl Store {
                     .ok_or_else(|| {
                         StoreError::Corrupt(format!("task {} isn't cached", op.entity_local_id))
                     })?;
-                let pending: bool = if op.payload["recurring"] == Value::Bool(true) {
-                    sqlx::query_scalar(concat!(
-                        "SELECT EXISTS(SELECT 1 FROM outbox WHERE entity_local_id = ? ",
-                        "AND state IN ",
-                        unresolved!(),
-                        " AND json_extract(payload_json, '$.recurring') = 1 ",
-                        "AND json_extract(payload_json, '$.due_before') IS ?)"
-                    ))
-                    .bind(&op.entity_local_id)
-                    .bind(op.payload["due_before"].as_str())
-                    .fetch_one(&mut *tx)
-                    .await?
-                } else {
-                    false
-                };
+                let pending: bool = sqlx::query_scalar(concat!(
+                    "SELECT EXISTS(SELECT 1 FROM outbox WHERE entity_local_id = ? ",
+                    "AND state IN ",
+                    unresolved!(),
+                    " AND json_extract(payload_json, '$.recurring') = 1 ",
+                    "AND json_extract(payload_json, '$.due_before') IS ?)"
+                ))
+                .bind(&op.entity_local_id)
+                .bind(op.payload["due_before"].as_str())
+                .fetch_one(&mut *tx)
+                .await?;
                 if current.raw.get("status").and_then(Value::as_str) == Some("completed") || pending
                 {
                     rows.push(current);

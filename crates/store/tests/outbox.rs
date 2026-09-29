@@ -1089,3 +1089,52 @@ async fn concurrent_completions_queue_one_operation_per_recurring_occurrence() {
         .expect("next occurrence");
     assert!(store.outbox_op("next").await.expect("read").is_some());
 }
+
+#[tokio::test]
+async fn an_ordinary_completion_still_applies_its_reminder_change() {
+    let (_dir, store, list) = open().await;
+    store
+        .enqueue("c", None, vec![create("c", "local-c", &list, "Buy milk")])
+        .await
+        .expect("add");
+    let mut completed = task("T1", "Buy milk", "e1");
+    completed.insert("status".into(), json!("completed"));
+    completed.insert("isReminderOn".into(), json!(true));
+    store
+        .record_sent("c", &completed, None, true)
+        .await
+        .expect("created");
+    store
+        .enqueue(
+            "complete",
+            None,
+            vec![NewOp {
+                op_id: "complete".into(),
+                entity_local_id: "local-c".into(),
+                list_local_id: list,
+                op: OpKind::Update,
+                action: "complete".into(),
+                payload: json!({ "body": { "status": "completed", "isReminderOn": false } }),
+                change: LocalChange::Update,
+            }],
+        )
+        .await
+        .expect("complete");
+    assert!(
+        store
+            .outbox_op("complete")
+            .await
+            .expect("operation")
+            .is_some()
+    );
+    assert_eq!(
+        store
+            .task_any("local-c")
+            .await
+            .expect("read")
+            .expect("task")
+            .0
+            .raw["isReminderOn"],
+        false
+    );
+}
