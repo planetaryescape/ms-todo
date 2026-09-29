@@ -6,6 +6,16 @@ use tokio::task::JoinHandle;
 
 const STALL: Duration = Duration::from_secs(3);
 
+fn manual_clock() -> std::sync::mpsc::Sender<()> {
+    // Tokio otherwise auto-advances a paused clock while the real socket's
+    // readiness is pending, racing its acknowledgement against the timeout.
+    let (guard, release) = std::sync::mpsc::channel();
+    tokio::task::spawn_blocking(move || {
+        let _ = release.recv();
+    });
+    guard
+}
+
 async fn settle() {
     // Socket readiness and the connection task each need a scheduler turn.
     for _ in 0..10 {
@@ -63,6 +73,7 @@ fn seed() -> Effect {
 
 #[tokio::test(start_paused = true)]
 async fn a_silent_subscribe_is_bounded() {
+    let _clock = manual_clock();
     let (mut peer, _outgoing, _messages, task) = fixture();
     peer.next().await.expect("subscribe").expect("frame");
     settle().await;
@@ -79,6 +90,7 @@ async fn a_silent_subscribe_is_bounded() {
 
 #[tokio::test(start_paused = true)]
 async fn a_silent_seed_or_write_times_out_with_correct_uncertainty() {
+    let _clock = manual_clock();
     for effect in [
         seed(),
         Effect {
@@ -120,6 +132,7 @@ async fn a_silent_seed_or_write_times_out_with_correct_uncertainty() {
 
 #[tokio::test(start_paused = true)]
 async fn relevant_progress_extends_only_its_request_and_idle_subscriptions_survive() {
+    let _clock = manual_clock();
     let (mut peer, outgoing, mut messages, task) = fixture();
     let subscription = subscribed(&mut peer, &mut messages).await;
     tokio::time::advance(STALL * 3).await;
@@ -165,6 +178,7 @@ async fn relevant_progress_extends_only_its_request_and_idle_subscriptions_survi
 
 #[tokio::test(start_paused = true)]
 async fn a_socket_that_stops_reading_cannot_block_a_send_forever() {
+    let _clock = manual_clock();
     let (mut peer, outgoing, mut messages, task) = fixture();
     subscribed(&mut peer, &mut messages).await;
     let mut effect = seed();
@@ -182,6 +196,7 @@ async fn a_socket_that_stops_reading_cannot_block_a_send_forever() {
 
 #[tokio::test(start_paused = true)]
 async fn reconnect_subscribes_again_without_replaying_an_uncertain_write() {
+    let _clock = manual_clock();
     let directory = tempfile::Builder::new()
         .prefix("mt-ipc")
         .tempdir_in("/tmp")

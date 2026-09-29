@@ -69,7 +69,7 @@ Place capture flags before `--`, with text after it; send edits as `--title=<val
 
 ## Verification and limits
 
-- GitHub CI succeeded for the exact audited commit: [run 36507195215](https://github.com/planetaryescape/ms-todo/actions/runs/36507195215). Linux and macOS Rust checks and Raycast checks passed.
+- GitHub CI succeeded for the pre-implementation audit base, `main` at `30693961074bdcfe91bd1099522c96fbab1596c5`: [run 36507195215](https://github.com/planetaryescape/ms-todo/actions/runs/36507195215). Linux and macOS Rust checks and Raycast checks passed. This run does not verify the fixes; their results are in the handover below.
 - Locally: `cargo nextest run --locked -p ms-todo-core -p ms-todo-nlp`: 86 passed, zero skipped, in the disposable audit checkout.
 - `cargo audit --no-fetch --file Cargo.lock`: no vulnerability advisories in the cached database; one allowed unmaintained warning for transitive `paste` through tokenizers. This is not a fresh advisory-database check.
 - Survey covered daemon/store recovery, Graph/auth/error handling, TUI/CLI IPC and writes, Raycast, CI/release/install and relevant decisions/tests. It was weighted toward critical paths, not an exhaustive line-by-line audit. No new fault-injection tests, live-account reproduction, phone UI checks, performance benchmarks or full local workspace suite were run. Third-party processor contracts were not assessed.
@@ -77,7 +77,7 @@ Place capture flags before `--`, with text after it; send edits as `--title=<val
 
 ## Handover
 
-Current state: implementation complete in `/tmp/ms-todo-improvements-clones/ms-todo`, branch `codex/reliability-improvements`. Verified code commit: `e17813ee530d6d9b21f24d7947c8998dfddcadc8`; documentation closeout is committed at `285ebd8b70a0ecdc9a272423902a746b76bfbcb2`. Fresh final fetch confirmed GitHub `origin/main` and the merge base remain `30693961074bdcfe91bd1099522c96fbab1596c5`. The original checkout and its existing edits remain untouched. BK authorised shipping on 2026-09-29. Pre-push review is complete; push, PR checks, main merge, release-please merge and published-artifact verification are next.
+Current state: implementation complete in `/tmp/ms-todo-improvements-clones/ms-todo`, branch `codex/reliability-improvements`. Verified code commit: `e17813ee530d6d9b21f24d7947c8998dfddcadc8`; documentation closeout is committed at `285ebd8b70a0ecdc9a272423902a746b76bfbcb2`. Fresh final fetch confirmed GitHub `origin/main` and the merge base remain `30693961074bdcfe91bd1099522c96fbab1596c5`. The original checkout and its existing edits remain untouched. BK authorised shipping on 2026-09-29. Pre-push review is complete and [PR #95](https://github.com/planetaryescape/ms-todo/pull/95) is open. Main merge, release-please merge and published-artifact verification follow successful checks.
 
 Verification:
 
@@ -89,7 +89,7 @@ Verification:
 
 The regressions demonstrated the original failures before their fixes. Tests cover SQLite failure/reopen, S12 series rollover and deliberate next completion, concurrent enqueue, external rollover conflicts, filename search after attachment recovery, silent/blocked sockets, relevant progress, idle subscriptions and reconnect without replay. Real CLI tests verify Raycast's cross-list deferred search and literal leading-hyphen capture/rename. Review narrowed completion coalescing to recurring tasks, preserving ordinary completion/reminder writes; the existing recurrence fixture now updates remote state on PATCH rather than returning stale GET data.
 
-Exact next action: push `codex/reliability-improvements`, open its PR and wait for remote CI and review. Merge after checks pass, then merge the updated release-please PR, wait for all release jobs and verify the three published archives and Homebrew formula. Before any push, fetch GitHub main again and rebase if it moved, then run any checks invalidated by the rebase. The audit clone's `origin/main` is stale; use this implementation checkout's remote ref for provenance. Local checks and full branch review are complete; the branch has not run remote CI.
+Exact next action: push the deterministic-clock test repair and documentation clarifications to PR #95, then wait for remote CI and review. Merge after checks pass, then merge the updated release-please PR, wait for all release jobs and verify the three published archives and Homebrew formula. Before any push, fetch GitHub main again and rebase if it moved, then run any checks invalidated by the rebase. The audit clone's `origin/main` is stale; use this implementation checkout's remote ref for provenance. Local checks and full branch review are complete. [First PR CI run 36629466372](https://github.com/planetaryescape/ms-todo/actions/runs/36629466372) passed Linux and Raycast but failed one new macOS socket test: Tokio auto-advanced the paused clock while waiting for the acknowledgement. The test repair inhibits automatic advancement while retaining explicit deadline advancement; production behavior is unchanged.
 
 Blocker: none for implementation. Live-account write/failure tests have no BK-named throwaway list, so they remain untested. The live smoke uses the installed daemon; the changed daemon paths were verified through fake Graph integration. No manual Raycast UI or phone test was performed.
 

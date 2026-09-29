@@ -577,7 +577,7 @@ scripts/check.sh            # both, using the same commands as CI
 demo/run.sh                 # try a change by hand, safely
 ```
 
-Install Rust with rustfmt, Clippy and cargo-nextest for the Rust checks. Raycast checks need Node.js and npm; install its dependencies with `cd raycast/ms-todo && npm ci` first. The check script installs nothing and can run from any directory.
+Run these commands from the repository root. Install Rust with rustfmt, Clippy and cargo-nextest for the Rust checks. Raycast checks need Node.js and npm; install its dependencies with `cd raycast/ms-todo && npm ci` first. The check script installs nothing. From another directory, invoke it by its absolute path.
 
 A debug build uses its own `dev` instance, so it never touches an installed ms-todo's sign-in or cache. Read [AGENTS.md](AGENTS.md) and the [blueprint](docs/blueprint/README.md) before a larger change. Issues are tracked as markdown in [docs/issues/](docs/issues/README.md). Commits use `type: description`.
 
