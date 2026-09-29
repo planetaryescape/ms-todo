@@ -514,7 +514,7 @@ A title bar with the version and the view you're in, a sidebar of smart views (M
 
 The keys are in the README's [TUI keys](../README.md#tui-keys) table; `?` inside the TUI lists them all. The palette (`:`) also has "New list…", "Rename list…", "Delete list…", "Merge list into…" (the list under the sidebar's cursor, or the one shown), "Context: …" for each [context](#contexts), and "Suggest lists for inbox" ([List suggestions](#list-suggestions)); with nothing typed, the last ten commands run from it come first. A task's categories show on its row as `@label`.
 
-Pressing `x` again on a task whose completion or reopening is awaiting a daemon reply sends nothing. Other tasks remain actionable. Once the reply arrives, a recurring task's next occurrence can be completed deliberately.
+Pressing `x` again on a task whose completion or reopening is awaiting a daemon reply sends nothing. Other tasks remain actionable. After sync advances a recurring task to its next occurrence, it can be completed again. A duplicate CLI completion of an occurrence already being completed keeps a skipped outbox receipt; it sends no extra Graph write, and undoing that receipt leaves the original completion alone.
 
 The TUI reconnects if the daemon fails to acknowledge its subscription within 3 seconds, or a request receives no reply or progress for 300 seconds. Progress extends only its own request's deadline; an idle subscription stays open. An interrupted write may already have been applied: check the task and `ms-todo outbox list` before trying again. Reconnecting refreshes the view without resending that write.
 

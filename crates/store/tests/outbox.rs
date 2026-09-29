@@ -1067,14 +1067,36 @@ async fn concurrent_completions_queue_one_operation_per_recurring_occurrence() {
     );
     first.expect("first");
     second.expect("second");
-    let first = store.outbox_op("first").await.expect("first");
-    let second = store.outbox_op("second").await.expect("second");
+    let first = store
+        .outbox_op("first")
+        .await
+        .expect("first")
+        .expect("receipt");
+    let second = store
+        .outbox_op("second")
+        .await
+        .expect("second")
+        .expect("receipt");
     assert_ne!(
-        first.is_some(),
-        second.is_some(),
+        first.state == OpState::Pending,
+        second.state == OpState::Pending,
         "one pending completion per occurrence"
     );
-    let queued = first.or(second).expect("completion");
+    let (queued, skipped) = if first.state == OpState::Pending {
+        (first, second)
+    } else {
+        (second, first)
+    };
+    assert!(skipped.was_skipped());
+    assert_eq!(skipped.attempts, 0);
+    assert_eq!(
+        store
+            .command_ops(&skipped.command_id)
+            .await
+            .expect("history")
+            .len(),
+        1
+    );
     recurring.insert(
         "dueDateTime".into(),
         json!({ "dateTime": "2026-09-25T00:00:00", "timeZone": "UTC" }),

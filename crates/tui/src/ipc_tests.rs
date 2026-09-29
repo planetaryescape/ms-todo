@@ -32,6 +32,9 @@ fn fixture() -> (
     JoinHandle<Option<String>>,
 ) {
     let (client, server) = UnixStream::pair().expect("socket pair");
+    socket2::SockRef::from(&client)
+        .set_send_buffer_size(4096)
+        .expect("bounded client send buffer");
     let (outgoing, mut requests) = mpsc::unbounded_channel();
     let (incoming, messages) = mpsc::unbounded_channel();
     let task =
@@ -156,16 +159,28 @@ async fn relevant_progress_extends_only_its_request_and_idle_subscriptions_survi
     settle().await;
     tokio::time::advance(STALL / 2 + Duration::from_millis(1)).await;
     assert!(!task.is_finished(), "its progress extends the deadline");
-    // Subscription traffic cannot keep a silent Seed alive forever.
+    // Neither an unknown request's progress nor subscription progress can
+    // keep a silent Seed alive. The subscribed frame is an I/O barrier.
+    let unrelated = Event::SyncProgress(ms_todo_protocol::SyncProgress {
+        scopes_done: 1,
+        scopes_total: 2,
+        doing: "other request".into(),
+    });
+    peer.send(Message {
+        id: request.id + 100,
+        payload: Payload::Event(unrelated.clone()),
+    })
+    .await
+    .expect("unrelated request progress");
     peer.send(Message {
         id: subscription,
-        payload: Payload::Event(Event::ResyncNeeded),
+        payload: Payload::Event(unrelated),
     })
     .await
     .expect("unrelated event");
     assert!(matches!(
         messages.recv().await,
-        Some(Msg::Event(Event::ResyncNeeded))
+        Some(Msg::Event(Event::SyncProgress(_)))
     ));
     tokio::time::advance(STALL / 2 + Duration::from_millis(1)).await;
     settle().await;
@@ -181,6 +196,9 @@ async fn a_socket_that_stops_reading_cannot_block_a_send_forever() {
     let _clock = manual_clock();
     let (mut peer, outgoing, mut messages, task) = fixture();
     subscribed(&mut peer, &mut messages).await;
+    socket2::SockRef::from(peer.get_ref())
+        .set_recv_buffer_size(4096)
+        .expect("bounded peer receive buffer");
     let mut effect = seed();
     let Request::Seed { search, .. } = &mut effect.request else {
         unreachable!()
@@ -191,7 +209,10 @@ async fn a_socket_that_stops_reading_cannot_block_a_send_forever() {
     tokio::time::advance(STALL + Duration::from_secs(1)).await;
     settle().await;
     assert!(task.is_finished(), "blocked send must time out");
-    task.await.expect("task");
+    assert_eq!(
+        task.await.expect("task").as_deref(),
+        Some("the daemon stalled while sending a request")
+    );
 }
 
 #[tokio::test(start_paused = true)]

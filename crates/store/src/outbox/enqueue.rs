@@ -4,6 +4,7 @@
 use serde_json::Value;
 use sqlx::SqliteConnection;
 
+use super::SKIPPED_NOTE;
 use super::operation::{OpKind, OpState};
 use super::outcomes::finish;
 use super::task_rows::{
@@ -123,6 +124,34 @@ impl Store {
                 .await?;
                 if current.raw.get("status").and_then(Value::as_str) == Some("completed") || pending
                 {
+                    // Keep the command's receipt: callers can look up its
+                    // reported ID, and undo must leave the original write alone.
+                    seq += 1;
+                    insert_op(
+                        &mut tx,
+                        &Queued {
+                            op_id: &op.op_id,
+                            seq,
+                            command_id,
+                            undoes,
+                            created_at: now,
+                            entity_local_id: &op.entity_local_id,
+                            list_local_id: &op.list_local_id,
+                            op: op.op,
+                            action: &op.action,
+                            payload: &op.payload,
+                            rollback: None,
+                        },
+                    )
+                    .await?;
+                    finish(&mut tx, &op.op_id, OpState::Done, None).await?;
+                    sqlx::query("UPDATE outbox SET note = ? WHERE op_id = ?")
+                        .bind(format!(
+                            "{SKIPPED_NOTE} this recurring occurrence is already completing"
+                        ))
+                        .bind(&op.op_id)
+                        .execute(&mut *tx)
+                        .await?;
                     rows.push(current);
                     continue;
                 }

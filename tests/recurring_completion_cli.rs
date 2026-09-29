@@ -103,8 +103,22 @@ async fn duplicate_completions_advance_one_occurrence_and_a_later_command_advanc
         .expect("first PATCH is waiting for its response");
     let duplicate = env.json(&["tasks", "complete", "T-r"]);
     let outbox = env.outbox();
-    assert_eq!(outbox.len(), 1, "duplicate creates no extra operation");
-    assert_eq!(outbox[0]["op_id"], first["op_id"]);
+    assert_eq!(outbox.len(), 2, "both commands retain their receipts");
+    let receipt = env.op_in_state(duplicate["op_id"].as_str().expect("duplicate ID"), "done");
+    assert_eq!(receipt["attempts"], 0, "duplicate is never sent");
+    assert!(
+        receipt["note"]
+            .as_str()
+            .expect("skipped receipt")
+            .starts_with("skipped:")
+    );
+    let original = env.op_in_state(first["op_id"].as_str().expect("first ID"), "inflight");
+    assert_eq!(original["state"], "inflight");
+    let undo = env.failure(
+        &["undo", duplicate["op_id"].as_str().expect("duplicate ID")],
+        2,
+    );
+    assert_eq!(undo["error"]["kind"], "invalid_input", "{undo}");
     assert_eq!(duplicate["items"][0]["status"], "completed");
     release.send(()).expect("release first PATCH response");
     env.settled();
@@ -116,6 +130,7 @@ async fn duplicate_completions_advance_one_occurrence_and_a_later_command_advanc
     );
     assert_eq!(tasks[0]["dueDateTime"]["dateTime"], "2026-09-25T00:00:00");
     assert_eq!(tasks[0]["status"], "notStarted");
+    assert_eq!(graph.requests("PATCH").await.len(), 1, "one Graph write");
     env.json(&["tasks", "complete", "T-r"]);
     env.settled();
     let tasks = state(&graph);
