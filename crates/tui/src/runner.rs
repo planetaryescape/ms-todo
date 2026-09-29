@@ -91,7 +91,7 @@ where
                         if let Some(msg) = key_msg(&app, &key) {
                             for effect in app.update(msg) {
                                 let cached = matches!(effect.tag, Tag::Seed(_)) && app.painted_from_cache;
-                                if matches!(effect.tag, Tag::Seed(_) | Tag::Write(_)) && !cached {
+                                if matches!(effect.tag, Tag::Seed(_) | Tag::Write(_) | Tag::TaskStatus(_, _)) && !cached {
                                     pressed.insert(effect.tag, at);
                                 }
                                 link.send(effect);

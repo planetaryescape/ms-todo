@@ -10,7 +10,16 @@ impl App {
     /// `x`: complete the open tasks among the targets in one request, or
     /// reopen them when all are completed.
     pub(super) fn toggle_complete(&mut self) -> Vec<Effect> {
-        let targets = self.targets();
+        let targets: Vec<_> = self
+            .targets()
+            .into_iter()
+            .filter(|task| {
+                !self
+                    .status_pending
+                    .values()
+                    .any(|ids| ids.contains(&task.id))
+            })
+            .collect();
         if targets.is_empty() {
             return Vec::new();
         }
@@ -19,12 +28,20 @@ impl App {
             .filter(|task| !task.completed)
             .map(|task| task.id.clone())
             .collect();
-        let effect = if open.is_empty() {
+        let mut effect = if open.is_empty() {
             let ids = targets.iter().map(|task| task.id.clone()).collect();
             change(Write::Reopen, ids, TaskChange::Reopen)
         } else {
             change(Write::Complete, open, TaskChange::Complete)
         };
+        self.status_requests += 1;
+        if let (Tag::Write(write), Request::ChangeTasks { tasks, .. }) =
+            (&effect.tag, &effect.request)
+        {
+            self.status_pending
+                .insert(self.status_requests, tasks.clone());
+            effect.tag = Tag::TaskStatus(self.status_requests, *write);
+        }
         self.selection.clear();
         vec![effect]
     }

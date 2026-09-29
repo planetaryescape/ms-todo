@@ -18,6 +18,8 @@ pub enum Tag {
     /// A smart view's seed read ahead, so switching to it paints at once.
     Prefetch,
     Write(Write),
+    /// A status toggle, numbered so failures release only its pending tasks.
+    TaskStatus(u64, Write),
     /// A change to lists' folders.
     Folders,
     /// A list made, renamed or deleted (rung 8e).

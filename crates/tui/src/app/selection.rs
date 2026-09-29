@@ -106,7 +106,7 @@ mod tests {
         assert_eq!(
             (tag, tasks, change),
             (
-                Tag::Write(Write::Complete),
+                Tag::TaskStatus(1, Write::Complete),
                 vec!["t1".into(), "t2".into(), "t4".into()],
                 TaskChange::Complete
             )
@@ -120,7 +120,7 @@ mod tests {
         assert_eq!(
             (tag, tasks, change),
             (
-                Tag::Write(Write::Reopen),
+                Tag::TaskStatus(2, Write::Reopen),
                 vec!["t3".into()],
                 TaskChange::Reopen
             )
