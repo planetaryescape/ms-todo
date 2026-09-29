@@ -522,3 +522,77 @@ async fn a_delete_whose_copy_cannot_be_kept_deletes_nothing_unless_told() {
         "{refused}"
     );
 }
+
+#[tokio::test]
+async fn a_failed_attachment_batch_retries_the_same_task_etag_until_metadata_converges() {
+    use wiremock::matchers::{method, path};
+    use wiremock::{Mock, ResponseTemplate};
+    let mut env = Env::new();
+    let graph = graph(&mut env).await;
+    graph.attach("L-tasks", "T1", "old.pdf", b"old");
+    env.synced();
+    let id = taxes(&env);
+    assert_eq!(names(&listed(&env, &id)), ["old.pdf"]);
+    graph.attach("L-tasks", "T1", "new.pdf", b"new");
+    let failing = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(true));
+    let enabled = std::sync::Arc::clone(&failing);
+    Mock::given(method("POST"))
+        .and(path("/v1.0/$batch"))
+        .and(move |request: &Request| {
+            if !enabled.load(std::sync::atomic::Ordering::SeqCst) {
+                return false;
+            }
+            let body: Value = serde_json::from_slice(&request.body).expect("batch");
+            body["requests"]
+                .as_array()
+                .expect("requests")
+                .iter()
+                .any(|item| {
+                    item["url"]
+                        .as_str()
+                        .unwrap_or_default()
+                        .ends_with("/attachments")
+                })
+        })
+        .respond_with(ResponseTemplate::new(400).set_body_json(json!({
+            "error": { "code": "BadRequest", "message": "attachment batch unavailable" }
+        })))
+        .with_priority(1)
+        .mount(&graph.server)
+        .await;
+    let failed = env.failure(&["sync", "--wait"], 5);
+    assert!(
+        failed["error"]["message"]
+            .as_str()
+            .unwrap_or_default()
+            .contains("attachment batch unavailable"),
+        "{failed}"
+    );
+    assert_eq!(
+        names(&listed(&env, &id)),
+        ["old.pdf"],
+        "keep last complete metadata"
+    );
+    failing.store(false, std::sync::atomic::Ordering::SeqCst);
+    env.synced();
+    let mut names = names(&listed(&env, &id));
+    names.sort();
+    assert_eq!(names, ["new.pdf", "old.pdf"], "retry without another edit");
+    let tasks = env.json(&["tasks", "list", "--search", "new"]);
+    assert_eq!(tasks["items"].as_array().expect("matches").len(), 1);
+    let found = env.json(&["search", "new"]);
+    assert_eq!(found["items"][0]["matched"], json!(["attachment"]));
+    assert_eq!(
+        tasks["items"][0]["attachments"]
+            .as_array()
+            .expect("metadata")
+            .len(),
+        2
+    );
+    env.synced(); // The cursor advances and no failed hydration remains.
+    let doctor = env.json(&["doctor"]);
+    assert!(
+        !doctor.to_string().contains("attachment batch unavailable"),
+        "{doctor}"
+    );
+}

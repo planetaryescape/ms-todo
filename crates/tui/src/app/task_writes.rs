@@ -11,20 +11,34 @@ impl App {
     /// reopen them when all are completed.
     pub(super) fn toggle_complete(&mut self) -> Vec<Effect> {
         let targets = self.targets();
-        if targets.is_empty() {
-            return Vec::new();
-        }
-        let open: Vec<String> = targets
-            .iter()
-            .filter(|task| !task.completed)
+        let reopen = targets.iter().all(|task| task.completed);
+        let ids: Vec<String> = targets
+            .into_iter()
+            .filter(|task| task.completed == reopen)
+            .filter(|task| {
+                !self
+                    .status_pending
+                    .values()
+                    .any(|ids| ids.contains(&task.id))
+            })
             .map(|task| task.id.clone())
             .collect();
-        let effect = if open.is_empty() {
-            let ids = targets.iter().map(|task| task.id.clone()).collect();
+        if ids.is_empty() {
+            return Vec::new();
+        }
+        let mut effect = if reopen {
             change(Write::Reopen, ids, TaskChange::Reopen)
         } else {
-            change(Write::Complete, open, TaskChange::Complete)
+            change(Write::Complete, ids, TaskChange::Complete)
         };
+        self.status_requests += 1;
+        if let (Tag::Write(write), Request::ChangeTasks { tasks, .. }) =
+            (&effect.tag, &effect.request)
+        {
+            self.status_pending
+                .insert(self.status_requests, tasks.clone());
+            effect.tag = Tag::TaskStatus(self.status_requests, *write);
+        }
         self.selection.clear();
         vec![effect]
     }

@@ -100,6 +100,12 @@ async fn attachments(graph: &GraphClient, list_graph_id: &str, hydrated: &mut Hy
     let results = match graph.get_each(&urls).await {
         Ok(results) => results,
         Err(error) => {
+            // The extension fetch alone isn't a hydrated task. Keeping it
+            // would checkpoint its etag beside stale attachment metadata,
+            // preventing the next pass from fetching the missing children.
+            for id in &ids {
+                hydrated.fetched.remove(id);
+            }
             hydrated.failure.get_or_insert(graph_error(error));
             return;
         }

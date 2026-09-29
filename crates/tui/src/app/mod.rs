@@ -238,6 +238,8 @@ pub struct App {
     /// the old order back.
     pub(super) order_pending: Option<Vec<String>>,
     orders_in_flight: u32,
+    pub(super) status_requests: u64,
+    pub(super) status_pending: std::collections::HashMap<u64, Vec<String>>,
     /// `[dates]` from config.toml: how typed dates read, and where
     /// Planned's "This week" ends (D-068).
     pub locale: Locale,
@@ -303,6 +305,8 @@ impl App {
             recent_unsaved: false,
             triage_requests: 0,
             order_pending: None,
+            status_requests: 0,
+            status_pending: std::collections::HashMap::new(),
             orders_in_flight: 0,
             locale: Locale::default(),
             upload: None,

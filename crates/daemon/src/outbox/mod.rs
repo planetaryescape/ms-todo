@@ -26,6 +26,7 @@ mod extension_write;
 mod list_write;
 pub(crate) mod move_job;
 pub(crate) mod prune;
+mod recurring_completion;
 mod rollback;
 mod send;
 mod series;

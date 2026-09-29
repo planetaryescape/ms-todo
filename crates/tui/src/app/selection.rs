@@ -106,7 +106,7 @@ mod tests {
         assert_eq!(
             (tag, tasks, change),
             (
-                Tag::Write(Write::Complete),
+                Tag::TaskStatus(1, Write::Complete),
                 vec!["t1".into(), "t2".into(), "t4".into()],
                 TaskChange::Complete
             )
@@ -120,11 +120,22 @@ mod tests {
         assert_eq!(
             (tag, tasks, change),
             (
-                Tag::Write(Write::Reopen),
+                Tag::TaskStatus(2, Write::Reopen),
                 vec!["t3".into()],
                 TaskChange::Reopen
             )
         );
+    }
+
+    #[test]
+    fn reselecting_a_pending_mixed_batch_does_not_reopen_completed_tasks() {
+        let mut app = seeded();
+        act(&mut app, Action::SelectAll);
+        let (_, tasks, change) = one_change(&act(&mut app, Action::ToggleComplete));
+        assert_eq!(tasks, ["t1", "t2", "t4"]);
+        assert_eq!(change, TaskChange::Complete);
+        act(&mut app, Action::SelectAll);
+        assert!(act(&mut app, Action::ToggleComplete).is_empty());
     }
 
     #[test]

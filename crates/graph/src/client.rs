@@ -425,7 +425,7 @@ impl GraphClient {
         Url::parse(link)
             .ok()
             .filter(|url| self.is_under_base(url))
-            .ok_or_else(|| GraphError::Decode(format!("refusing a nextLink outside Graph: {link}")))
+            .ok_or_else(|| GraphError::Decode("refusing a nextLink outside Graph".into()))
     }
 
     async fn get(&self, url: Url, paged: bool) -> Result<Value, GraphError> {

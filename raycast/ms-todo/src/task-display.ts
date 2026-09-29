@@ -1,6 +1,18 @@
 import { convert } from "html-to-text";
 import { Task } from "./cli";
 
+export function deferredLabel(
+  task: Task,
+  today = isoDay(new Date(), Intl.DateTimeFormat().resolvedOptions().timeZone),
+): string | undefined {
+  const labels: string[] = [];
+  if (task.someday) labels.push("Someday");
+  if (task.defer_until && task.defer_until > today) {
+    labels.push(`Deferred until ${task.defer_until}`);
+  }
+  return labels.length ? labels.join("; ") : undefined;
+}
+
 export function plainNotes(task: Task): string {
   const body = task.body;
   if (!body?.content) return "";

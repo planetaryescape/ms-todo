@@ -134,30 +134,70 @@ async fn serve(
     requests: &mut mpsc::UnboundedReceiver<Effect>,
     incoming: &mpsc::UnboundedSender<Msg>,
 ) -> Option<String> {
+    serve_with_stall(stream, requests, incoming, Duration::from_secs(300)).await
+}
+
+async fn serve_with_stall(
+    stream: UnixStream,
+    requests: &mut mpsc::UnboundedReceiver<Effect>,
+    incoming: &mpsc::UnboundedSender<Msg>,
+    stall: Duration,
+) -> Option<String> {
     let mut framed = Framed::new(stream, Codec::new());
     let mut next_id: u64 = 1;
     let subscribe_id = next_id;
-    let subscribed = framed
-        .send(Message {
+    let subscribed = tokio::time::timeout(
+        CONNECT_TIMEOUT,
+        framed.send(Message {
             id: subscribe_id,
             payload: Payload::Request(Request::Subscribe),
-        })
-        .await;
-    if let Err(error) = subscribed {
-        return Some(format!("cannot subscribe to the daemon: {error}"));
+        }),
+    )
+    .await;
+    match subscribed {
+        Ok(Ok(())) => {}
+        Ok(Err(error)) => return Some(format!("cannot subscribe to the daemon: {error}")),
+        Err(_) => return Some("the daemon stalled while sending Subscribe".into()),
     }
-    let mut waiting: HashMap<u64, Tag> = HashMap::new();
+    let mut subscription_deadline = Some(tokio::time::Instant::now() + CONNECT_TIMEOUT);
+    let mut waiting: HashMap<u64, (Tag, tokio::time::Instant)> = HashMap::new();
     let why = loop {
+        let deadline = subscription_deadline
+            .into_iter()
+            .chain(waiting.values().map(|(_, deadline)| *deadline))
+            .min();
         tokio::select! {
+            _ = async {
+                match deadline {
+                    Some(deadline) => tokio::time::sleep_until(deadline).await,
+                    None => std::future::pending::<()>().await,
+                }
+            } => {
+                break if subscription_deadline.is_some_and(|deadline| deadline <= tokio::time::Instant::now()) {
+                    "the daemon didn't acknowledge Subscribe before its deadline".to_owned()
+                } else {
+                    "the daemon stalled before answering a request".to_owned()
+                };
+            }
             effect = requests.recv() => {
                 let effect = effect?;
                 next_id += 1;
                 let message = Message { id: next_id, payload: Payload::Request(effect.request) };
-                if let Err(error) = framed.send(message).await {
-                    let _ = incoming.send(lost(effect.tag, "the daemon connection broke"));
-                    break format!("the daemon connection broke: {error}");
+                // A blocked send must not hide an older unanswered request's deadline.
+                let send_deadline = (tokio::time::Instant::now() + stall)
+                    .min(deadline.unwrap_or(tokio::time::Instant::now() + stall));
+                match tokio::time::timeout_at(send_deadline, framed.send(message)).await {
+                    Ok(Ok(())) => {},
+                    Ok(Err(error)) => {
+                        let _ = incoming.send(lost(effect.tag, "the daemon connection broke"));
+                        break format!("the daemon connection broke: {error}");
+                    }
+                    Err(_) => {
+                        let _ = incoming.send(lost(effect.tag, "the daemon stalled while sending a request"));
+                        break "the daemon stalled while sending a request".into();
+                    }
                 }
-                waiting.insert(next_id, effect.tag);
+                waiting.insert(next_id, (effect.tag, tokio::time::Instant::now() + stall));
             }
             frame = framed.next() => {
                 let message = match frame {
@@ -168,7 +208,10 @@ async fn serve(
                 let msg = match message.payload {
                     Payload::Event(event) if message.id == subscribe_id => Some(Msg::Event(event)),
                     Payload::Response(Response::Ok { data: ResponseData::Ack })
-                        if message.id == subscribe_id => Some(Msg::Connected),
+                        if message.id == subscribe_id => {
+                            subscription_deadline = None;
+                            Some(Msg::Connected)
+                        },
                     // Anything but `Ack` is a daemon that doesn't know
                     // `Subscribe`: without events the TUI would go stale.
                     Payload::Response(response) if message.id == subscribe_id => {
@@ -183,9 +226,13 @@ async fn serve(
                     }
                     Payload::Response(response) => waiting
                         .remove(&message.id)
-                        .map(|tag| Msg::Response { tag, result: result(response) }),
-                    // Progress of a request's own sync, or what a newer
-                    // daemon adds.
+                        .map(|(tag, _)| Msg::Response { tag, result: result(response) }),
+                    Payload::Event(ms_todo_protocol::Event::SyncProgress(_)) => {
+                        if let Some((_, deadline)) = waiting.get_mut(&message.id) {
+                            *deadline = tokio::time::Instant::now() + stall;
+                        }
+                        None
+                    }
                     _ => None,
                 };
                 if let Some(msg) = msg
@@ -196,8 +243,8 @@ async fn serve(
             }
         }
     };
-    for (_, tag) in waiting {
-        let _ = incoming.send(lost(tag, "the daemon connection broke before it answered"));
+    for (_, (tag, _)) in waiting {
+        let _ = incoming.send(lost(tag, &why));
     }
     Some(why)
 }
@@ -219,7 +266,12 @@ fn result(response: Response) -> Result<ResponseData, ErrorPayload> {
 /// been made, so it says to check rather than to retry.
 fn lost(tag: Tag, why: &str) -> Msg {
     let message = match tag {
-        Tag::Write(_) | Tag::Folders | Tag::Lists | Tag::Order | Tag::Undo => {
+        Tag::Write(_)
+        | Tag::TaskStatus(_, _)
+        | Tag::Folders
+        | Tag::Lists
+        | Tag::Order
+        | Tag::Undo => {
             format!("{why}; the change may or may not have been made, so check before trying again")
         }
         Tag::Seed(_)
@@ -243,3 +295,7 @@ fn lost(tag: Tag, why: &str) -> Msg {
         }),
     }
 }
+
+#[cfg(test)]
+#[path = "ipc_tests.rs"]
+mod tests;

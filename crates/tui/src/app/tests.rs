@@ -422,7 +422,7 @@ fn x_completes_an_open_task_and_reopens_a_completed_one() {
     assert_eq!(
         effects,
         [Effect {
-            tag: Tag::Write(Write::Complete),
+            tag: Tag::TaskStatus(1, Write::Complete),
             request: Request::ChangeTasks {
                 tasks: vec!["t1".into()],
                 list: None,
@@ -442,7 +442,7 @@ fn x_completes_an_open_task_and_reopens_a_completed_one() {
         json!({ "status": "completed", "sync_state": "pending" }),
     );
     app.update(Msg::Response {
-        tag: Tag::Write(Write::Complete),
+        tag: effects[0].tag,
         result: Ok(applied(TaskAction::Complete, vec![done])),
     });
     assert_eq!(
@@ -460,7 +460,7 @@ fn x_completes_an_open_task_and_reopens_a_completed_one() {
         (tasks.as_slice(), change),
         (["t3".to_owned()].as_slice(), &TaskChange::Reopen)
     );
-    assert_eq!(effects[0].tag, Tag::Write(Write::Reopen));
+    assert_eq!(effects[0].tag, Tag::TaskStatus(2, Write::Reopen));
 }
 
 #[test]
@@ -1169,5 +1169,30 @@ fn a_new_day_reads_the_view_again_and_a_tick_within_the_day_does_not() {
             Request::Seed { scope, .. } if *scope == app.wanted
         )),
         "{next_day:?}"
+    );
+}
+
+#[test]
+fn repeated_completion_waits_for_its_own_answer() {
+    let mut app = seeded();
+    let first = act(&mut app, Action::ToggleComplete);
+    assert_eq!(first.len(), 1);
+    assert!(act(&mut app, Action::ToggleComplete).is_empty());
+    act(&mut app, Action::MoveDown);
+    let second = act(&mut app, Action::ToggleComplete);
+    assert_eq!(second.len(), 1, "another task is still actionable");
+    app.update(Msg::Response {
+        tag: first[0].tag,
+        result: Err(ms_todo_protocol::ErrorPayload::default()),
+    });
+    assert!(
+        act(&mut app, Action::ToggleComplete).is_empty(),
+        "second request stays pending"
+    );
+    act(&mut app, Action::MoveUp);
+    assert_eq!(
+        act(&mut app, Action::ToggleComplete).len(),
+        1,
+        "failure releases only its tasks"
     );
 }

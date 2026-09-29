@@ -62,6 +62,13 @@ impl App {
         tag: Tag,
         result: Result<ResponseData, ErrorPayload>,
     ) -> Vec<Effect> {
+        let tag = match tag {
+            Tag::TaskStatus(number, write) => {
+                self.status_pending.remove(&number);
+                Tag::Write(write)
+            }
+            tag => tag,
+        };
         match (tag, result) {
             (Tag::Seed(number), result) => {
                 if number != self.seeds.latest {

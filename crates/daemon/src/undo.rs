@@ -401,7 +401,7 @@ pub(crate) fn rejected(op: &OutboxRow) -> Result<bool, ErrorPayload> {
 pub(crate) fn nothing_to_undo(target: &str) -> ErrorPayload {
     error_payload(
         ErrorKind::InvalidInput,
-        format!("nothing to undo: Microsoft To Do rejected {target}, so it changed nothing"),
+        format!("nothing to undo: {target} changed nothing"),
     )
 }
 

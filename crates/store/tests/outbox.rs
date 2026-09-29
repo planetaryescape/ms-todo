@@ -952,3 +952,211 @@ async fn an_overwrite_is_recorded_whole_or_not_at_all() {
         Some(json!("Almond milk"))
     );
 }
+
+#[tokio::test]
+async fn a_skipped_write_is_recorded_whole_or_not_at_all_after_reopen() {
+    let (dir, store, list) = open().await;
+    store
+        .enqueue("c", None, vec![create("c", "local-c", &list, "Buy milk")])
+        .await
+        .expect("add");
+    store
+        .record_sent("c", &task("T1", "Buy milk", "e1"), None, true)
+        .await
+        .expect("created");
+    store
+        .enqueue("e", None, vec![edit("e", "local-c", &list, "Oat milk")])
+        .await
+        .expect("edit");
+    store.mark_inflight("e").await.expect("claim");
+    let theirs = task("T1", "Almond milk", "e2");
+    let pool = pool(&dir).await;
+    sqlx::query("CREATE TRIGGER refuse_skip BEFORE UPDATE OF note ON outbox BEGIN SELECT RAISE(ABORT, 'refused'); END")
+        .execute(&pool).await.expect("trigger");
+    assert!(
+        store
+            .record_skipped("e", &theirs, None, "changed elsewhere")
+            .await
+            .is_err()
+    );
+    drop(store);
+    let store = Store::open(&dir.path().join("ms-todo.db"))
+        .await
+        .expect("reopen");
+    let op = store.outbox_op("e").await.expect("read").expect("op");
+    assert_eq!(
+        op.state,
+        OpState::Inflight,
+        "done must never appear without its skipped reason"
+    );
+    assert_eq!(op.note, None);
+    assert_eq!(
+        store
+            .task_any("local-c")
+            .await
+            .expect("read")
+            .expect("task")
+            .0
+            .raw["title"],
+        "Oat milk"
+    );
+    sqlx::query("DROP TRIGGER refuse_skip")
+        .execute(&pool)
+        .await
+        .expect("drop");
+    store
+        .record_skipped("e", &theirs, None, "changed elsewhere")
+        .await
+        .expect("record");
+    drop(store);
+    let store = Store::open(&dir.path().join("ms-todo.db"))
+        .await
+        .expect("reopen");
+    let op = store.outbox_op("e").await.expect("read").expect("op");
+    assert_eq!(op.state, OpState::Done);
+    assert_eq!(op.note.as_deref(), Some("skipped: changed elsewhere"));
+    assert!(op.was_skipped());
+    assert_eq!(
+        store
+            .task_any("local-c")
+            .await
+            .expect("read")
+            .expect("task")
+            .0
+            .raw["title"],
+        "Almond milk"
+    );
+}
+
+#[tokio::test]
+async fn concurrent_completions_queue_one_operation_per_recurring_occurrence() {
+    let (_dir, store, list) = open().await;
+    store
+        .enqueue(
+            "c",
+            None,
+            vec![create("c", "local-c", &list, "Water plants")],
+        )
+        .await
+        .expect("add");
+    let mut recurring = task("T1", "Water plants", "e1");
+    recurring.insert(
+        "recurrence".into(),
+        json!({ "pattern": { "type": "daily", "interval": 1 } }),
+    );
+    recurring.insert(
+        "dueDateTime".into(),
+        json!({ "dateTime": "2026-09-24T00:00:00", "timeZone": "UTC" }),
+    );
+    store
+        .record_sent("c", &recurring, None, true)
+        .await
+        .expect("created");
+    let complete = |id: &str, due: &str| NewOp {
+        op_id: id.into(),
+        entity_local_id: "local-c".into(),
+        list_local_id: list.clone(),
+        op: OpKind::Update,
+        action: "complete".into(),
+        payload: json!({ "body": { "status": "completed" }, "recurring": true, "due_before": due }),
+        change: LocalChange::Update,
+    };
+    let (first, second) = tokio::join!(
+        store.enqueue("first", None, vec![complete("first", "2026-09-24")]),
+        store.enqueue("second", None, vec![complete("second", "2026-09-24")]),
+    );
+    first.expect("first");
+    second.expect("second");
+    let first = store
+        .outbox_op("first")
+        .await
+        .expect("first")
+        .expect("receipt");
+    let second = store
+        .outbox_op("second")
+        .await
+        .expect("second")
+        .expect("receipt");
+    assert_ne!(
+        first.state == OpState::Pending,
+        second.state == OpState::Pending,
+        "one pending completion per occurrence"
+    );
+    let (queued, skipped) = if first.state == OpState::Pending {
+        (first, second)
+    } else {
+        (second, first)
+    };
+    assert!(skipped.was_skipped());
+    assert_eq!(skipped.attempts, 0);
+    assert_eq!(
+        store
+            .command_ops(&skipped.command_id)
+            .await
+            .expect("history")
+            .len(),
+        1
+    );
+    recurring.insert(
+        "dueDateTime".into(),
+        json!({ "dateTime": "2026-09-25T00:00:00", "timeZone": "UTC" }),
+    );
+    store
+        .record_sent(&queued.op_id, &recurring, None, true)
+        .await
+        .expect("rolled");
+    store
+        .enqueue("next", None, vec![complete("next", "2026-09-25")])
+        .await
+        .expect("next occurrence");
+    assert!(store.outbox_op("next").await.expect("read").is_some());
+}
+
+#[tokio::test]
+async fn an_ordinary_completion_still_applies_its_reminder_change() {
+    let (_dir, store, list) = open().await;
+    store
+        .enqueue("c", None, vec![create("c", "local-c", &list, "Buy milk")])
+        .await
+        .expect("add");
+    let mut completed = task("T1", "Buy milk", "e1");
+    completed.insert("status".into(), json!("completed"));
+    completed.insert("isReminderOn".into(), json!(true));
+    store
+        .record_sent("c", &completed, None, true)
+        .await
+        .expect("created");
+    store
+        .enqueue(
+            "complete",
+            None,
+            vec![NewOp {
+                op_id: "complete".into(),
+                entity_local_id: "local-c".into(),
+                list_local_id: list,
+                op: OpKind::Update,
+                action: "complete".into(),
+                payload: json!({ "body": { "status": "completed", "isReminderOn": false } }),
+                change: LocalChange::Update,
+            }],
+        )
+        .await
+        .expect("complete");
+    assert!(
+        store
+            .outbox_op("complete")
+            .await
+            .expect("operation")
+            .is_some()
+    );
+    assert_eq!(
+        store
+            .task_any("local-c")
+            .await
+            .expect("read")
+            .expect("task")
+            .0
+            .raw["isReminderOn"],
+        false
+    );
+}

@@ -120,6 +120,9 @@ impl GraphError {
 
 impl From<reqwest::Error> for GraphError {
     fn from(error: reqwest::Error) -> Self {
+        // Upload sessions and delta links carry temporary authorization.
+        // Remove the URL before either Display or the source chain can retain it.
+        let error = error.without_url();
         if error.is_decode() {
             Self::Decode(error.to_string())
         } else {
@@ -131,6 +134,64 @@ impl From<reqwest::Error> for GraphError {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[tokio::test]
+    async fn request_errors_never_expose_signed_urls() {
+        use std::error::Error;
+        let server = wiremock::MockServer::start().await;
+        let url = format!(
+            "{}/attachmentSessions/temporary-secret?token=secret",
+            server.uri()
+        );
+        wiremock::Mock::given(wiremock::matchers::method("GET"))
+            .respond_with(wiremock::ResponseTemplate::new(200).set_body_string("not json"))
+            .mount(&server)
+            .await;
+        let client = reqwest::Client::new();
+        let decode = client
+            .get(&url)
+            .send()
+            .await
+            .expect("response")
+            .json::<serde_json::Value>()
+            .await
+            .expect_err("decode");
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").expect("listen");
+        let port = listener.local_addr().expect("address").port();
+        drop(listener);
+        let network = client
+            .get(format!(
+                "http://127.0.0.1:{port}/temporary-secret?token=secret"
+            ))
+            .send()
+            .await
+            .expect_err("closed server");
+        for error in [decode, network] {
+            let (is_decode, is_connect, is_timeout) =
+                (error.is_decode(), error.is_connect(), error.is_timeout());
+            let error = GraphError::from(error);
+            assert_eq!(
+                error.kind(),
+                if is_decode {
+                    ErrorKind::Decode
+                } else {
+                    ErrorKind::Network
+                }
+            );
+            if let GraphError::Network(source) = &error {
+                assert_eq!(source.is_connect(), is_connect);
+                assert_eq!(source.is_timeout(), is_timeout);
+            }
+            let mut rendered = format!("{error:?}: {error}");
+            let mut cause = error.source();
+            while let Some(source) = cause {
+                rendered.push_str(&source.to_string());
+                cause = source.source();
+            }
+            assert!(!rendered.contains("temporary-secret"), "{rendered}");
+            assert!(!rendered.contains("token=secret"), "{rendered}");
+        }
+    }
 
     fn api(status: u16) -> GraphError {
         GraphError::Api(ApiError::parse(status, Some("rid".into()), "{}"))

@@ -72,6 +72,38 @@ test("search loads all cached tasks once for local fuzzy filtering", async () =>
     "all",
   ]);
 });
+test("search includes deferred and Someday tasks and retains their state", async () => {
+  const cli = fakeCli(
+    JSON.stringify({
+      ...ready,
+      items: [
+        { ...task, defer_until: "2030-10-01", someday: false },
+        { ...task, id: "someday", defer_until: null, someday: true },
+      ],
+    }),
+  );
+  const result = await listTasks(
+    { status: "all", deferred: "include" },
+    cli.path,
+  );
+  assert.deepEqual(
+    result.items.map((item) => [item.defer_until, item.someday]),
+    [
+      ["2030-10-01", false],
+      [null, true],
+    ],
+  );
+  assert.deepEqual(cli.args(), [
+    "--format",
+    "json",
+    "tasks",
+    "list",
+    "--status",
+    "all",
+    "--deferred",
+    "include",
+  ]);
+});
 test("My Day preserves initial sync state", async () => {
   const cli = fakeCli(
     JSON.stringify({
@@ -98,8 +130,9 @@ test("add and complete use one argv value and local ID", async () => {
     "json",
     "tasks",
     "add",
-    "Call mum #Home tomorrow",
     "--strict",
+    "--",
+    "Call mum #Home tomorrow",
   ]);
   const done = fakeCli(
     JSON.stringify({
@@ -272,8 +305,7 @@ test("core mutations keep values in argv and confirm action", async () => {
     "tasks",
     "edit",
     "local-id",
-    "--title",
-    "Buy milk; $(touch /tmp/bad)",
+    "--title=Buy milk; $(touch /tmp/bad)",
     "--due",
     "tomorrow",
     "--importance",
@@ -326,10 +358,52 @@ test("quick add can target a list ID", async () => {
     "json",
     "tasks",
     "add",
-    "Buy milk",
     "--list",
     "list-local",
     "--strict",
+    "--",
+    "Buy milk",
+  ]);
+});
+
+test("hyphen-prefixed titles stay literal during capture and rename", async () => {
+  const title = "--help with the garden";
+  const add = fakeCli(
+    JSON.stringify({
+      schema_version: 2,
+      action: "add",
+      op_id: "op",
+      items: [task],
+    }),
+  );
+  await addTask(title, add.path, "list-local");
+  assert.deepEqual(add.args(), [
+    "--format",
+    "json",
+    "tasks",
+    "add",
+    "--list",
+    "list-local",
+    "--strict",
+    "--",
+    title,
+  ]);
+  const edit = fakeCli(
+    JSON.stringify({
+      schema_version: 2,
+      action: "edit",
+      op_id: "op",
+      items: [task],
+    }),
+  );
+  await editTask(task.id, { title }, edit.path);
+  assert.deepEqual(edit.args(), [
+    "--format",
+    "json",
+    "tasks",
+    "edit",
+    task.id,
+    `--title=${title}`,
   ]);
 });
 

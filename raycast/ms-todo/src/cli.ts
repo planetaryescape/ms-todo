@@ -27,6 +27,8 @@ const taskSchema = z.object({
   reminderDateTime: dateTimeSchema.nullable().optional(),
   body: bodySchema.nullable().optional(),
   categories: z.array(z.string()).optional(),
+  defer_until: z.string().nullable().optional(),
+  someday: z.boolean().optional(),
 });
 const collectionSchema = z.object({
   schema_version: z.literal(2),
@@ -79,6 +81,7 @@ export type TaskListQuery = {
   listId?: string;
   due?: "today" | "overdue";
   importance?: "high";
+  deferred?: "hide" | "include" | "only";
 };
 export type TaskEdit = {
   title?: string;
@@ -233,6 +236,7 @@ export async function listTasks(
   if (query.listId) args.push("--list", query.listId);
   if (query.due) args.push("--due", query.due);
   if (query.importance) args.push("--importance", query.importance);
+  if (query.deferred) args.push("--deferred", query.deferred);
   return runCli(args, collectionSchema, COLLECTION_ERROR, preferredPath);
 }
 
@@ -303,7 +307,14 @@ export async function addTask(
   listId?: string,
 ): Promise<void> {
   await write(
-    ["tasks", "add", text, ...(listId ? ["--list", listId] : []), "--strict"],
+    [
+      "tasks",
+      "add",
+      ...(listId ? ["--list", listId] : []),
+      "--strict",
+      "--",
+      text,
+    ],
     "add",
     preferredPath,
   );
@@ -329,7 +340,7 @@ export async function editTask(
   preferredPath = "",
 ): Promise<void> {
   const args = ["tasks", "edit", id];
-  if (edit.title !== undefined) args.push("--title", edit.title);
+  if (edit.title !== undefined) args.push(`--title=${edit.title}`);
   if (edit.due !== undefined) {
     if (edit.due === "-") args.push("--clear-due");
     else args.push("--due", edit.due);
