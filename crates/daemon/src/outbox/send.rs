@@ -15,13 +15,14 @@ use std::collections::BTreeMap;
 use ms_todo_core::{DATE_FORMAT, ErrorKind, local_date_time, local_due_date, message_with_causes};
 use ms_todo_graph::GraphError;
 use ms_todo_protocol::ErrorPayload;
-use ms_todo_store::{Entity, OpKind, OutboxRow, SKIPPED_NOTE};
+use ms_todo_store::{Entity, OpKind, OutboxRow};
 use serde_json::{Map, Value};
 
 use super::child_write;
 use super::conflict;
 use super::extension_write;
 use super::move_job;
+use super::recurring_completion;
 use super::rollback::{announce_entity, reconcile_list, reject};
 use super::series;
 use super::{EXPECT_FIELDS, backoff, now};
@@ -168,14 +169,11 @@ pub(super) async fn send_ready(state: &State) -> bool {
                     extension,
                     why,
                 }) => {
-                    if record(state, &op, &task, extension, true).await
-                        && let Err(error) = state
-                            .store
-                            .set_note(&op.op_id, &format!("{SKIPPED_NOTE} {why}"))
-                            .await
-                    {
-                        log_store(&error);
-                    }
+                    let recorded = state
+                        .store
+                        .record_skipped(&op.op_id, &task, extension, why)
+                        .await;
+                    check_recorded(state, &op, recorded).await;
                 }
                 Ok(Attempt::ChildCreated { created, task }) => {
                     if let Err(error) = state
@@ -434,7 +432,7 @@ async fn attempt(state: &State, op: &OutboxRow) -> Result<Attempt, Failure> {
     }
     let expect_due = op.payload.get("expect_due");
     let expect_fields = op.payload.get(EXPECT_FIELDS);
-    if expect_due.is_some() || expect_fields.is_some() {
+    if expect_due.is_some() || expect_fields.is_some() || op.is_recurring_completion() {
         // My Day's due-date edit, or an assignment's status edit: made
         // only while Graph's value is the one it was planned from (a day,
         // or null for none; each field in `expect_fields`).
@@ -444,6 +442,7 @@ async fn attempt(state: &State, op: &OutboxRow) -> Result<Attempt, Failure> {
             .await
             .map_err(classify)?;
         let (current, extension) = split_extension(fetched);
+        recurring_completion::ensure_occurrence(op, &current)?;
         let due = graph_due_date(&current).map(|day| day.format(DATE_FORMAT).to_string());
         let why = if expect_due.is_some_and(|expected| expected.as_str() != due.as_deref()) {
             Some("the due date changed on another device meanwhile, so it was left alone")
@@ -515,6 +514,7 @@ pub(super) async fn patch_with(
                 .await
                 .map_err(classify)?;
             let (current, extension) = split_extension(fetched);
+            recurring_completion::ensure_occurrence(op, &current)?;
             if !recurring && is_applied(body, &current) {
                 if claims_ownership(op) {
                     // Another device got there first: the value is there,

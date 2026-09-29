@@ -137,6 +137,26 @@ impl Store {
         Ok(())
     }
 
+    /// Record a skipped write and its reason together with Graph's unchanged task.
+    pub async fn record_skipped(
+        &self,
+        op_id: &str,
+        raw: &Entity,
+        extension: Option<Option<Value>>,
+        why: &str,
+    ) -> Result<(), StoreError> {
+        let mut tx = self.writer().begin().await?;
+        record_in(&mut tx, op_id, raw, extension).await?;
+        finish(&mut tx, op_id, OpState::Done, None).await?;
+        sqlx::query("UPDATE outbox SET note = ? WHERE op_id = ?")
+            .bind(format!("{SKIPPED_NOTE} {why}"))
+            .bind(op_id)
+            .execute(&mut *tx)
+            .await?;
+        tx.commit().await?;
+        Ok(())
+    }
+
     /// Graph answered operation `op_id` with the task `raw` (and our
     /// extension, when the answer said): write it to the operation's task,
     /// with the fields of its later unresolved operations on top, and, if

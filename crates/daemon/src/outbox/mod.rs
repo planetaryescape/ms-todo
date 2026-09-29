@@ -20,6 +20,7 @@
 mod attachment_write;
 mod child_write;
 mod commands;
+mod recurring_completion;
 mod config;
 mod conflict;
 mod extension_write;
