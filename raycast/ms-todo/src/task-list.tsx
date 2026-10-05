@@ -156,6 +156,7 @@ function LoadedTaskList({ mode }: { mode: Mode }) {
 
   function refresh() {
     setResult(undefined);
+    setError(undefined);
     setRevision((value) => value + 1);
   }
 
@@ -234,6 +235,8 @@ function LoadedTaskList({ mode }: { mode: Mode }) {
       : suggestionError && mode === "my-day"
         ? `Could not load suggestions: ${suggestionError}`
         : undefined;
+  const isLoading =
+    loading || (visibleResult === undefined && error === undefined);
 
   const dropdown =
     mode === "search" ? (
@@ -285,7 +288,7 @@ function LoadedTaskList({ mode }: { mode: Mode }) {
   return (
     <List
       filtering={true}
-      isLoading={loading || (!visibleResult && !error)}
+      isLoading={isLoading}
       searchBarPlaceholder="Filter tasks by title, list, or notes"
       searchBarAccessory={dropdown}
     >
@@ -406,9 +409,12 @@ function LoadedTaskList({ mode }: { mode: Mode }) {
             ))}
           </List.Section>
         )}
-      {!loading &&
+      {!isLoading &&
         (visibleResult?.sync.state === "initial" || items.length === 0) &&
-        (mode !== "my-day" || suggestions.length === 0) && (
+        (mode !== "my-day" ||
+          visibleResult?.sync.state === "initial" ||
+          suggestions.length === 0 ||
+          error !== undefined) && (
           <List.EmptyView
             title={emptyTitle}
             description={emptyDescription}
