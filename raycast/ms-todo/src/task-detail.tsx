@@ -27,6 +27,7 @@ import {
   graphDate,
   literalMarkdown,
   notesMarkdown,
+  statusLabel,
 } from "./task-display";
 
 type Props = { id: string; listName?: string; onChanged: () => void };
@@ -144,7 +145,7 @@ export function TaskDetail({ id, listName, onChanged }: Props) {
     <Detail.Metadata>
       <Detail.Metadata.Label title="Title" text={task.title} />
       {listName && <Detail.Metadata.Label title="List" text={listName} />}
-      <Detail.Metadata.Label title="Status" text={task.status} />
+      <Detail.Metadata.Label title="Status" text={statusLabel(task.status)} />
       {deferredLabel(task) && (
         <Detail.Metadata.Label title="Deferred" text={deferredLabel(task)} />
       )}
