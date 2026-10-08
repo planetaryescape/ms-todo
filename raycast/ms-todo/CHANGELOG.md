@@ -1,6 +1,6 @@
 # Microsoft To Do via ms-todo Changelog
 
-## Unreleased
+## [Guided Setup] - {PR_MERGE_DATE}
 
 - Guide each command through CLI installation, Microsoft sign-in, and initial cache sync before showing task UI.
 - Keep Quick Add unavailable until the local cache has completed its initial sync.
