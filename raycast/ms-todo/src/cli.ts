@@ -279,10 +279,7 @@ export function setupPhase(
 
   const lists = doctor.scopes.find(({ scope }) => scope === "lists");
   if (!lists || lists.state === "initial") return "sync";
-  if (
-    taskScopes.length === 0 ||
-    taskScopes.some(({ state }) => state === "initial")
-  ) {
+  if (taskScopes.some(({ state }) => state === "initial")) {
     return "sync";
   }
   return "ready";

@@ -201,6 +201,19 @@ test("setup guides first sync and preserves an existing task cache", () => {
     "unavailable",
   );
 });
+test("setup opens for a synced account with no task lists", () => {
+  assert.equal(
+    setupPhase({
+      schema_version: 2,
+      sign_in: { signed_in: true },
+      daemon: { running: true, ready: true },
+      database: { path: "/tmp/ms-todo.db", bytes: 1 },
+      syncing: false,
+      scopes: [{ scope: "lists", state: "ready" }],
+    }),
+    "ready",
+  );
+});
 test("setup checks the local doctor contract and can start a waited sync", async () => {
   const cli = fakeCli(
     JSON.stringify({
