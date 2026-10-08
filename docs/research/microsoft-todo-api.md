@@ -125,7 +125,7 @@ All of the following are unofficial or reverse-engineered relative to the Graph 
 
 ## A minimal TypeScript example (untested)
 
-This sketches device-code auth via `@azure/msal-node` and a task listing via `@microsoft/microsoft-graph-client`, `/common` authority so it works with either a personal Microsoft account or a work/school account. It has not been run — no captured output is claimed. Treat it as a shape to adapt, not a verified working script.
+This sketches device-code auth via `@azure/msal-node` and a task listing via `@microsoft/microsoft-graph-client`. Select `consumers` for a personal Microsoft account or `organizations` for a work/school account before starting sign-in. It has not been run — no captured output is claimed. Treat it as a shape to adapt, not a verified working script.
 
 ```typescript
 import "isomorphic-fetch"; // Node 18+ often doesn't need this; harmless if unused.
@@ -137,11 +137,12 @@ import type { TodoTask } from "@microsoft/microsoft-graph-types";
 // "Any Entra ID Tenant + Personal Microsoft accounts" so this works for both
 // account types. Public client, no secret needed for device code / PKCE.
 const CLIENT_ID = process.env.MS_TODO_CLIENT_ID!;
+const TENANT = "consumers"; // Use "organizations" for work or school accounts.
 
 const msalConfig: Configuration = {
   auth: {
     clientId: CLIENT_ID,
-    authority: "https://login.microsoftonline.com/common",
+    authority: `https://login.microsoftonline.com/${TENANT}`,
   },
 };
 
