@@ -1,5 +1,15 @@
 # Changelog
 
+## [0.1.42](https://github.com/planetaryescape/ms-todo/compare/v0.1.41...v0.1.42) (2026-10-08)
+
+
+### Bug Fixes
+
+* address Raycast store review feedback ([#97](https://github.com/planetaryescape/ms-todo/issues/97)) ([329fade](https://github.com/planetaryescape/ms-todo/commit/329fade3b3887c9dd1d3daf1cf3991b216cf5582))
+* guide Raycast commands through first-run setup ([020e0c1](https://github.com/planetaryescape/ms-todo/commit/020e0c156289cf0853e5f9e7f34eb6647663f1f3))
+* keep Raycast task list states visible ([#99](https://github.com/planetaryescape/ms-todo/issues/99)) ([f753d66](https://github.com/planetaryescape/ms-todo/commit/f753d6644a79096ba5586711d8fc557f71eb725a))
+* route personal and work account sign-in explicitly ([bae8e93](https://github.com/planetaryescape/ms-todo/commit/bae8e93af5cc2e5c201d72d891ecd7a1d8bf6fc9))
+
 ## [0.1.41](https://github.com/planetaryescape/ms-todo/compare/v0.1.40...v0.1.41) (2026-09-29)
 
 
