@@ -8,11 +8,11 @@ A controlled personal-account probe requested and polled a device code through `
 {"personal_route_login":"credential_received","common_refresh":"success","graph_account_read":true,"scopes":"Tasks.ReadWrite MailboxSettings.ReadWrite User.Read"}
 ```
 
-This confirms consumers login and common refresh for the tested personal account and registration. It does not establish the cause of Microsoft's common-route browser error or verify a live work/school account. The patched CLI's live journey is a separate release check. Device codes, tokens, account IDs and full session URLs are omitted.
+This confirms consumers login and common refresh for the tested personal account and registration. It does not establish the cause of Microsoft's common-route browser error or verify a live work/school account. The patched CLI's live journey is recorded below. Device codes, tokens, account IDs and full session URLs are omitted.
 
 [Microsoft's device-code protocol](https://learn.microsoft.com/en-us/entra/identity-platform/v2-oauth2-device-code) requires initiation and polling to use the same tenant. [Its refresh-token documentation](https://learn.microsoft.com/en-us/entra/identity-platform/refresh-tokens) says refresh tokens are bound to user and client rather than tenant. D-072 applies these boundaries: account selection affects device-code login; refresh retains common and the existing token format.
 
-## CLI candidate passed local checks; its live journey is pending
+## Patched CLI sign-in and first sync passed
 
 Implementation source: `codex/personal-work-login` at `07754e2e9825d733e8ec3a6dae40c17a0fb6bd6b`, based on freshly fetched `origin/main` at `f753d6644a79096ba5586711d8fc557f71eb725a`. Login chooses its authority in `crates/cli/src/lib.rs:185`; the stderr selector is in `crates/cli/src/auth_commands.rs:127`, and the endpoints are in `crates/graph/src/auth/mod.rs:56`. Status uses the default common endpoint. Daemon construction, refresh and token storage have no diff from the base.
 
@@ -22,6 +22,8 @@ The binary regression first failed on the base: piped login without an account t
 
 Durable verification: [PR #100 checks](https://github.com/planetaryescape/ms-todo/pull/100/checks) passed Linux, macOS and Raycast CI for [source commit `07754e2e9825d733e8ec3a6dae40c17a0fb6bd6b`](https://github.com/planetaryescape/ms-todo/commit/07754e2e9825d733e8ec3a6dae40c17a0fb6bd6b). The source SHA identifies the implementation and tests behind the local results above.
 
-The orchestrator ran the patched CLI in a terminal against the default instance and selected personal. Microsoft reached the consumers sign-in and passkey prompt; completion is pending BK's biometric approval. Next: finish browser sign-in, verify refresh and an account read, and complete first sync. Then land the source and release through release-please, verifying GitHub archives and Homebrew. The parent orchestrator owns those actions; this worker did not push, publish, or use the live account. Work/school routing has HTTP contract coverage; no live work/school credentials were available. Cross-provider review was explicitly waived while unavailable.
+The patched debug CLI completed a real default-instance login after selecting personal in its terminal prompt. Microsoft returned its consumers verification URL, the user approved the passkey, and the CLI reported `signed_in: true` after its Graph account read. The installed 0.1.41 CLI also read the new credential successfully. `ms-todo sync --wait` completed with 31 scopes; doctor reported all 31 ready, no last sync error, and every outbox count zero. No cloud task writes ran. Common refresh was separately verified by the controlled probe above.
+
+Integration and release-please/Homebrew verification remain next. Work/school routing has HTTP contract coverage; no live work/school credentials were available. Cross-provider review was explicitly waived while unavailable.
 
 The scoped code-simplifier review found no additional changes to make. Anti-slop and TypeScript review were inapplicable because this slice changes no JavaScript or TypeScript. Documentation closeout updated login examples, setup, the authority decision and probe evidence. The daemon/refresh boundary is the durable constraint: selecting a tenant for device login does not require persisting that tenant or migrating credentials when common refresh already works.
