@@ -35,7 +35,7 @@ Research behind these decisions:
 - **Runtime:** a daemon owns sign-in, the cache, sync and the outbox of local writes waiting to be pushed to Graph. The CLI and TUI are clients over a Unix socket.
 - **Speed:** the TUI reads the daemon's cache over IPC, never the network. Writes show up immediately and are pushed to Graph in the background. Every client uses the daemon protocol only (D-031).
 - **Sync:** Graph delta queries for lists and tasks. No webhooks.
-- **Sign-in:** device code, through BK's own Entra app registration, `/common` authority, no client secret.
+- **Sign-in:** device code, through BK's own Entra app registration, `/consumers` for personal accounts and `/organizations` for work/school accounts; refresh uses `/common` (D-072), no client secret.
 - **Scope:** everything the Graph To Do API offers, plus features the API lacks, built on top of it:
   - My Day, kept in our extension and mirrored on the phone through the due date (D-037)
   - folders, stored as list extensions

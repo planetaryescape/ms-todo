@@ -26,8 +26,8 @@ Sources: [Register an app](https://learn.microsoft.com/en-us/entra/identity-plat
 2. Go to **Entra ID** → **App registrations**, and choose **New registration**.
 3. **Name:** `ms-todo`. People see this name on the consent screen, and you can change it later.
 4. **Supported account types:** choose **Any Entra ID Tenant + Personal Microsoft accounts**.
-   - This is what lets ms-todo use the `/common` endpoint and work with personal and work accounts alike. Pick anything else and a personal account fails at sign-in with an error saying the app isn't configured for Microsoft accounts.
-   - Want the tightest scope instead? Choose **Personal accounts only**. You'd then have to set `auth.authority = "consumers"` in ms-todo's config. The blueprint assumes `/common`, so stick with the first option unless you have a reason.
+   - This registration supports both choices in `ms-todo auth login`: personal accounts use `/consumers`, and work/school accounts use `/organizations`.
+   - For a registration limited to personal accounts, choose **Personal accounts only** and sign in with `ms-todo auth login --account-type personal`. ms-todo has no `auth.authority` config key.
 5. **Redirect URI:** leave it empty. Device-code sign-in doesn't use one.
 6. Choose **Register**.
 7. On the **Overview** page, copy the **Application (client) ID**, a GUID. You'll need it in step 4. The Directory (tenant) ID isn't needed.
@@ -80,21 +80,24 @@ ms-todo takes it from any of these, highest priority first:
 2. `auth.client_id` in `~/.config/ms-todo/config.toml` (or `$XDG_CONFIG_HOME/ms-todo/config.toml`, or `$MS_TODO_CONFIG_DIR/config.toml`)
 3. the ID built into release builds
 
-## Step 5: Check it works (before any ms-todo code exists)
+## Step 5: Check sign-in
 
-Try the device code flow with `curl`. It's also the start of spike S5:
+Run `ms-todo auth login`, choose your account type, and enter the printed code at the printed URL. For a script, use `ms-todo auth login --account-type personal` or `ms-todo auth login --account-type work`. `ms-todo auth status` shows the account after sign-in.
+
+To probe device-code sign-in directly with `curl`, use the same tenant for the code request and token poll. Set `TENANT=consumers` for a personal account or `TENANT=organizations` for a work/school account:
 
 ```sh
 umask 077
 CID=48d9179b-67f3-4969-985e-9690aff42435
-curl -fsS https://login.microsoftonline.com/common/oauth2/v2.0/devicecode \
+TENANT=consumers
+curl -fsS "https://login.microsoftonline.com/$TENANT/oauth2/v2.0/devicecode" \
   --data-urlencode "client_id=$CID" \
   --data-urlencode 'scope=offline_access Tasks.ReadWrite MailboxSettings.ReadWrite User.Read' \
   -o /tmp/dc.json
 jq '{user_code, verification_uri, expires_in, interval}' /tmp/dc.json
-# Open https://microsoft.com/devicelogin, enter the user_code, sign in, and consent.
+# Open the returned verification_uri, enter the user_code, sign in, and consent.
 # Personal accounts are asked to sign in twice. That's expected (Microsoft's docs note it).
-curl -sS https://login.microsoftonline.com/common/oauth2/v2.0/token \
+curl -sS "https://login.microsoftonline.com/$TENANT/oauth2/v2.0/token" \
   --data-urlencode 'grant_type=urn:ietf:params:oauth:grant-type:device_code' \
   --data-urlencode "client_id=$CID" \
   --data-urlencode "device_code=$(jq -r .device_code /tmp/dc.json)" \

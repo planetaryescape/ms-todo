@@ -5,7 +5,16 @@ expression: pretty
 {
   "input": {
     "additionalProperties": false,
-    "properties": {},
+    "properties": {
+      "account_type": {
+        "description": "Microsoft account type; prompted in a terminal, required otherwise",
+        "enum": [
+          "personal",
+          "work"
+        ],
+        "x-cli": "--account-type"
+      }
+    },
     "required": [],
     "type": "object"
   },

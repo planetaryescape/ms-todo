@@ -6,7 +6,11 @@ use clap::{Args, Subcommand, ValueEnum};
 #[derive(Debug, Subcommand)]
 pub enum AuthCommand {
     /// Sign in with a device code: open the printed URL and enter the code
-    Login,
+    Login {
+        /// Microsoft account type; prompted in a terminal, required otherwise
+        #[arg(long, value_enum)]
+        account_type: Option<AccountType>,
+    },
     /// Show the signed-in account, token expiry, client ID and scopes
     Status,
     /// Delete the stored sign-in
@@ -19,6 +23,23 @@ pub enum AuthCommand {
         #[arg(long)]
         reveal_secret: bool,
     },
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, ValueEnum)]
+pub enum AccountType {
+    /// A personal Microsoft account, such as Outlook.com or Hotmail
+    Personal,
+    /// A work or school Microsoft account
+    Work,
+}
+
+impl AccountType {
+    pub fn endpoints(self) -> ms_todo_graph::auth::Endpoints {
+        match self {
+            Self::Personal => ms_todo_graph::auth::Endpoints::personal_login(),
+            Self::Work => ms_todo_graph::auth::Endpoints::work_login(),
+        }
+    }
 }
 
 #[derive(Debug, Args)]

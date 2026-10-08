@@ -16,12 +16,17 @@ pub struct Fixture {
 
 impl Fixture {
     pub async fn new() -> Self {
+        Self::with_endpoints(Endpoints::default()).await
+    }
+
+    pub async fn with_endpoints(mut endpoints: Endpoints) -> Self {
         let server = MockServer::start().await;
         let dir = tempfile::tempdir().expect("tempdir");
-        let endpoints = Endpoints {
-            authority: format!("{}/common/oauth2/v2.0", server.uri()),
-            graph: format!("{}/v1.0", server.uri()),
-        };
+        endpoints.authority =
+            endpoints
+                .authority
+                .replacen("https://login.microsoftonline.com", &server.uri(), 1);
+        endpoints.graph = format!("{}/v1.0", server.uri());
         let auth = Authenticator::new(dir.path().join("auth"), endpoints)
             .expect("authenticator")
             .with_poll_unit(Duration::from_millis(2));

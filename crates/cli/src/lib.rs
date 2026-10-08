@@ -182,17 +182,21 @@ fn reads_cache(command: &Command) -> bool {
 
 async fn dispatch(command: Command, paths: &Paths, format: OutputFormat) -> Result<(), CliError> {
     match command {
-        Command::Auth(AuthCommand::Login) => print_success(
-            format,
-            &auth_commands::login(paths, &authenticator(paths)?).await?,
-        ),
+        Command::Auth(AuthCommand::Login { account_type }) => {
+            let account_type = auth_commands::select_account_type(account_type)?;
+            print_success(
+                format,
+                &auth_commands::login(paths, &authenticator(paths, account_type.endpoints())?)
+                    .await?,
+            )
+        }
         Command::Auth(AuthCommand::Status) => print_success(
             format,
-            &auth_commands::status(paths, &authenticator(paths)?).await?,
+            &auth_commands::status(paths, &authenticator(paths, Endpoints::default())?).await?,
         ),
         Command::Auth(AuthCommand::Logout) => print_success(
             format,
-            &auth_commands::logout(&authenticator(paths)?).await?,
+            &auth_commands::logout(&authenticator(paths, Endpoints::default())?).await?,
         ),
         Command::Auth(AuthCommand::Bearer { reveal_secret }) => {
             let bearer = data_commands::bearer(paths, reveal_secret).await?;
@@ -369,8 +373,7 @@ async fn dispatch(command: Command, paths: &Paths, format: OutputFormat) -> Resu
 /// Honours the daemon's debug-only `MS_TODO_GRAPH_URL`, so `auth status`
 /// against a fake Graph (tests, the demo) asks the fake who's signed in
 /// rather than sending a fake token to Microsoft. Release builds ignore it.
-fn authenticator(paths: &Paths) -> Result<Authenticator, CliError> {
-    let mut endpoints = Endpoints::default();
+fn authenticator(paths: &Paths, mut endpoints: Endpoints) -> Result<Authenticator, CliError> {
     if cfg!(debug_assertions)
         && let Ok(url) = std::env::var("MS_TODO_GRAPH_URL")
     {

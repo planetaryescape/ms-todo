@@ -4,7 +4,7 @@ use std::os::unix::fs::PermissionsExt;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
-use ms_todo_graph::auth::{AuthError, SCOPES};
+use ms_todo_graph::auth::{AuthError, Authenticator, Endpoints, SCOPES};
 use serde_json::json;
 use support::{CLIENT_ID, Fixture};
 use wiremock::matchers::{body_string_contains, method, path};
@@ -77,6 +77,83 @@ async fn keeps_polling_while_pending_then_saves_the_token() {
     assert_eq!(token.client_id, CLIENT_ID);
     assert!(token.scopes.contains(&"User.Read".to_owned()));
     assert_eq!(fx.read_token(), Some(token));
+}
+
+#[tokio::test]
+async fn selected_account_route_controls_initiation_and_polling_then_common_refreshes() {
+    for (endpoints, tenant) in [
+        (Endpoints::personal_login(), "consumers"),
+        (Endpoints::work_login(), "organizations"),
+    ] {
+        let fx = Fixture::with_endpoints(endpoints).await;
+        Mock::given(method("POST"))
+            .and(path(format!("/{tenant}/oauth2/v2.0/devicecode")))
+            .and(body_string_contains("client_id=test-client"))
+            .and(body_string_contains("offline_access"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+                "device_code": "dev-code",
+                "user_code": "ABCD-EFGH",
+                "verification_uri": "https://www.microsoft.com/link",
+                "expires_in": 900,
+                "interval": 1
+            })))
+            .expect(1)
+            .mount(&fx.server)
+            .await;
+        Mock::given(method("POST"))
+            .and(path(format!("/{tenant}/oauth2/v2.0/token")))
+            .and(body_string_contains("client_id=test-client"))
+            .and(body_string_contains("device_code=dev-code"))
+            .respond_with(token_success())
+            .expect(1)
+            .mount(&fx.server)
+            .await;
+
+        let code = fx
+            .auth
+            .start_device_flow(CLIENT_ID)
+            .await
+            .expect("device code");
+        assert_eq!(code.verification_uri, "https://www.microsoft.com/link");
+        let token = fx
+            .auth
+            .finish_device_flow(CLIENT_ID, &code)
+            .await
+            .expect("login");
+        let stored: serde_json::Value =
+            serde_json::from_slice(&std::fs::read(fx.token_path()).expect("token file"))
+                .expect("stored json");
+        assert!(stored.get("authority").is_none());
+        assert!(stored.get("account_type").is_none());
+        Mock::given(method("POST"))
+            .and(path(TOKEN_PATH))
+            .and(body_string_contains("grant_type=refresh_token"))
+            .and(body_string_contains("refresh_token=refresh-1"))
+            .and(body_string_contains("client_id=test-client"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+                "access_token": "access-2",
+                "refresh_token": "refresh-2",
+                "expires_in": 3600
+            })))
+            .expect(1)
+            .mount(&fx.server)
+            .await;
+        let common = Authenticator::new(
+            fx.dir.path().join("auth"),
+            Endpoints {
+                authority: format!("{}/common/oauth2/v2.0", fx.server.uri()),
+                graph: format!("{}/v1.0", fx.server.uri()),
+            },
+        )
+        .expect("refresh authenticator");
+        let refreshed = common.refresh(&token).await.expect("common refresh");
+        assert_eq!(refreshed.refresh_token, "refresh-2");
+        assert_eq!(fx.read_token(), Some(refreshed));
+        assert_eq!(
+            fx.server.received_requests().await.expect("requests").len(),
+            3
+        );
+    }
 }
 
 #[tokio::test]
