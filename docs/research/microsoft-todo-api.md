@@ -60,7 +60,7 @@ Two public-client flows apply to a CLI with no web server and no client secret:
 - **Device code flow** (RFC 8628): works with both personal Microsoft accounts and work/school accounts. There's a documented UX quirk on personal accounts — Microsoft's own guidance notes device-code sign-in on an MSA can prompt for sign-in twice (an artifact of how personal accounts are federated into the flow). The quirk is cosmetic; device code remains the right fit for a headless CLI because it needs no redirect listener or secret.
 - **Authorization code + PKCE**: also works for both account types, needs a local redirect listener (loopback) since there's no server-side secret to protect.
 
-Tenant path matters: `/common` accepts both account types, `/consumers` accepts only personal Microsoft accounts, `/organizations` accepts only work/school accounts. For a CLI meant to work regardless of which kind of account BK signs in with, `/common` is the one to use.
+Tenant path matters: `/common` accepts both account types, `/consumers` accepts only personal Microsoft accounts, `/organizations` accepts only work/school accounts. The initial blueprint chose `/common` for both. The [2026-10-08 probe](spikes/personal-device-login-2026-10-08.md) found a personal-account browser failure on that route and a successful consumers login. D-072 selects `/consumers` for personal login and `/organizations` for work/school login; refresh retains `/common`.
 
 ### Registering an app: personal account, no Azure subscription
 

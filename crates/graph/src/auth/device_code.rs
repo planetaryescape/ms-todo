@@ -1,6 +1,5 @@
 // Adapted from mxr crates/provider-outlook/src/auth.rs @ dfb23d10138b1cfc24f8ea7450d3426e5e4da37a
-// Changes: `/common` instead of the consumers/organizations split, Graph
-// scopes, a local deadline from `expires_in`, and a configurable poll unit so
+// Changes: Graph scopes, a local deadline from `expires_in`, and a configurable poll unit so
 // tests don't wait real seconds.
 
 use crate::api_error::{ApiError, RAW_BODY_EXCERPT};

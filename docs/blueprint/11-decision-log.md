@@ -32,6 +32,7 @@ Every decision from the planning session on 2026-09-24, **including the options 
 - We noted the counter-principle ("don't ship features just because you can"). BK decided deliberately.
 
 ### D-004: Device-code sign-in, BK's own app registration, `/common`, no secret.
+- The common-only login authority is superseded by D-072; refresh still uses `/common`.
 - **Options rejected:** a client-secret web flow (the Python CLI; the secret expires and has to be stored); PKCE with a loopback listener (works, but needs a local port and a browser, and device code suits a terminal and SSH); a third-party client ID (MAG&Cie; a trust and availability risk); mxr's `consumers`/`organizations` split (`/common` covers both with one registration).
 
 ### D-005: A local SQLite cache is the read path, with instant local writes. (BK: "I want the cache that will allow the TUI to be blazing fast.")
@@ -562,3 +563,12 @@ BK checked the blueprint against his Obsidian notes and approved folding these g
 - **Keep authorization out of diagnostics:** reqwest errors lose their URL before classification or rendering, and rejected pagination links are not interpolated into errors (D-067). Error kinds and retry decisions stay intact.
 - **Raycast follows the CLI contract:** Search explicitly includes deferred and Someday tasks and labels them (D-061); Browse keeps its normal filtering. Capture puts flags before `--` and text after it; rename sends `--title=<value>` so a leading hyphen stays title content.
 - No protocol change, migration or new product feature. These repair the existing decisions rather than replace them. Regression tests and the shared local/CI check command are recorded in [the implementation handover](../../plans/README.md).
+
+
+### D-072: Select personal or work/school accounts before device-code sign-in. (BK: fix first-run sign-in, 2026-10-08)
+
+`ms-todo auth login` asks for an account type in a terminal. `--account-type personal` uses `/consumers`; `--account-type work` uses `/organizations`. Both the device-code request and token poll use the selected tenant, as [Microsoft's protocol requires](https://learn.microsoft.com/en-us/entra/identity-platform/v2-oauth2-device-code). When stdin or stderr is not a terminal, omitting the flag exits 2 with both explicit commands. The prompt writes to stderr, offers cancellation, and treats EOF as cancellation before any code request.
+
+Replaces D-004's common-only sign-in. A fresh installation repeatedly reached a personal-account browser error reporting a missing `redirect_uri` through `/common`. With the same bundled client ID and scopes, a controlled `/consumers` probe issued a credential. An independent `/common` refresh and read-only Graph account request then succeeded. The [sanitized probe evidence](../research/spikes/personal-device-login-2026-10-08.md) records the observed scope and limits. The device-code flow continues to use Microsoft's returned verification URI.
+
+Refresh keeps `/common`, the existing token format, and the file-lock/compare-and-swap behavior. [Microsoft documents](https://learn.microsoft.com/en-us/entra/identity-platform/refresh-tokens) that refresh tokens are bound to user and client rather than tenant; the live probe confirmed this path. Persisting the login authority would add a token-format change without resolving an observed refresh problem.

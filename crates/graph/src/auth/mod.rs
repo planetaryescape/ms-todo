@@ -53,6 +53,24 @@ impl Default for Endpoints {
     }
 }
 
+impl Endpoints {
+    /// Device-code sign-in for a personal Microsoft account (D-072).
+    pub fn personal_login() -> Self {
+        Self {
+            authority: "https://login.microsoftonline.com/consumers/oauth2/v2.0".into(),
+            ..Self::default()
+        }
+    }
+
+    /// Device-code sign-in for a work or school account (D-072).
+    pub fn work_login() -> Self {
+        Self {
+            authority: "https://login.microsoftonline.com/organizations/oauth2/v2.0".into(),
+            ..Self::default()
+        }
+    }
+}
+
 pub struct Authenticator {
     http: reqwest::Client,
     endpoints: Endpoints,

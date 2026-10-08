@@ -8,16 +8,18 @@ The client ID is not a secret; mxr's security audit reached the same conclusion.
 
 ## Sign-in
 
-**Device code (RFC 8628) against `https://login.microsoftonline.com/common/oauth2/v2.0/{devicecode,token}`.** Adapt `mxr/crates/provider-outlook/src/auth.rs`. That's mxr at `dfb23d1`, 365 lines, and already a working Microsoft device-code implementation:
+**Device code (RFC 8628) against `https://login.microsoftonline.com/{tenant}/oauth2/v2.0/{devicecode,token}`.** `auth login` selects `consumers` for personal accounts or `organizations` for work/school accounts, with the same tenant for initiation and polling (D-072). A terminal prompts for the choice; scripts pass `--account-type personal|work`. Adapt `mxr/crates/provider-outlook/src/auth.rs`. That's mxr at `dfb23d1`, 365 lines, and already a working Microsoft device-code implementation:
 
 - Poll correctly: on `authorization_pending`, keep going; on `slow_down`, add 5 seconds to the interval; on `expired_token` or `access_denied`, stop with a clear error.
 - **Tolerate short network failures while polling.** mxr allows up to 6 failures in a row (`DEVICE_POLL_MAX_TRANSPORT_FAILURES`). The lesson is in mxr's `plans/006-auth-poll-transient-errors.md`: a network blip must not cancel sign-in.
 - Refresh 300 seconds before the token expires (`REFRESH_MARGIN_SECS`).
 - Put a 30-second timeout on HTTP calls during sign-in. mxr's comment notes that the Gmail provider was bitten by exactly this kind of hang.
 - Scopes: `offline_access Tasks.ReadWrite MailboxSettings.ReadWrite User.Read`.
-- Differences from mxr: use `/common` instead of the `consumers`/`organizations` split, and use Graph scopes instead of IMAP and SMTP.
+- Use Graph scopes instead of mxr's IMAP and SMTP scopes.
 
 **Token storage:** a file at `<data_dir>/ms-todo/auth/token.json`, written atomically with mode 0600 (tmp file, then rename, as in spotuify's `atomic_write_mode_0600`, `crates/spotuify-spotify/src/auth.rs:1487`), behind an `fs2` file lock. We're not using the Keychain; see D-012.
+
+**Refresh uses `/common` for both account types**, including credentials saved before account selection existed. Microsoft refresh tokens are bound to user and client, not tenant; D-072 records the successful live common refresh after a consumers login. The token format and compare-and-swap stay the same.
 
 **The daemon is the normal refresher.** Every data request goes through it (D-031). The `auth` commands, which work without a daemon, may also refresh when they need a token (`auth status` does). That's safe because every refresh is the compare-and-swap below, under `auth/token.lock`: whoever takes the lock second finds the new token and uses it instead of spending the old refresh token. Microsoft replaces the refresh token each time it's used. On `invalid_grant`, return a typed `AuthRevoked` error. The daemon stops syncing, the outbox keeps its operations, and clients get an `AuthRequired` event telling the user to run `ms-todo auth login`.
 

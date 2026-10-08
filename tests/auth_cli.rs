@@ -4,6 +4,27 @@
 use assert_cmd::Command;
 use serde_json::Value;
 
+#[test]
+fn login_off_a_terminal_requires_an_explicit_account_type_before_reading_config() {
+    let home = tempfile::tempdir().expect("tempdir");
+    let config = home.path().join("config/ms-todo/config.toml");
+    std::fs::create_dir_all(config.parent().expect("dir")).expect("mkdir");
+    std::fs::write(config, "[auth\n").expect("write config");
+
+    let assert = ms_todo(&home)
+        .env_remove("MS_TODO_CLIENT_ID")
+        .args(["--format", "json", "auth", "login"])
+        .write_stdin("personal\n")
+        .assert()
+        .code(2);
+    assert!(assert.get_output().stdout.is_empty());
+    let error: Value = serde_json::from_slice(&assert.get_output().stderr).expect("json error");
+    assert_eq!(error["error"]["kind"], "invalid_input");
+    let message = error["error"]["message"].as_str().expect("message");
+    assert!(message.contains("--account-type personal"), "{message}");
+    assert!(message.contains("--account-type work"), "{message}");
+}
+
 fn ms_todo(home: &tempfile::TempDir) -> Command {
     let mut command = Command::cargo_bin("ms-todo").expect("ms-todo binary");
     command
@@ -130,7 +151,14 @@ fn config_is_read_from_xdg_config_home_on_every_platform() {
 
     let assert = ms_todo(&home)
         .env_remove("MS_TODO_CLIENT_ID")
-        .args(["--format", "json", "auth", "login"])
+        .args([
+            "--format",
+            "json",
+            "auth",
+            "login",
+            "--account-type",
+            "personal",
+        ])
         .assert()
         .code(2);
 
@@ -149,7 +177,14 @@ fn ms_todo_config_dir_overrides_xdg() {
     let assert = ms_todo(&home)
         .env_remove("MS_TODO_CLIENT_ID")
         .env("MS_TODO_CONFIG_DIR", &custom)
-        .args(["--format", "json", "auth", "login"])
+        .args([
+            "--format",
+            "json",
+            "auth",
+            "login",
+            "--account-type",
+            "work",
+        ])
         .assert()
         .code(2);
 
